@@ -1,381 +1,111 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html>
+  <head>
+    <title>Irregular Clickable Lots with Single Open Label</title>
+    <style>
+      #map {
+        height: 100vh;
+        width: 100%;
+      }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCBTROq6LuvF_IE1r46-T4AeTSV-0d7my8"></script>
+    <script>
+      // Function to parse the file data
+      function parseLotData(text) {
+        const lotData = [];
+        const lines = text.split("\n");
+        let lotCoords = [];
+        let lotName = "";
 
-  <title>SVG Zoom & Pan with Sold and Lot Labels</title>
-  <style>
-html, body {
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
+        lines.forEach((line) => {
+          const matchLotName = line.match(/^lot\d+/);
+          if (matchLotName) {
+            if (lotCoords.length > 0) {
+              lotData.push({ name: lotName, coords: lotCoords });
+            }
+            lotName = matchLotName[0];
+            lotCoords = [];
+          }
 
-body {
-  display: block;
-  font-family: sans-serif;
-  text-align: center;
-}
+          const matchCoordinates = line.match(/lat: ([-\d.]+), lng: ([-\d.]+)/);
+          if (matchCoordinates) {
+            lotCoords.push({
+              lat: parseFloat(matchCoordinates[1]),
+              lng: parseFloat(matchCoordinates[2]),
+            });
+          }
+        });
 
+        // Add the last lot to the array
+        if (lotCoords.length > 0) {
+          lotData.push({ name: lotName, coords: lotCoords });
+        }
 
-svg text {
-  user-select: none;    /* Prevent text selection */
-  cursor: pointer;      /* Show pointer cursor on labels */
-  pointer-events: none; /* So clicks go "through" labels to paths */
-}
+        return lotData;
+      }
 
+      function initMap() {
+        const snazzyStyle = [
+          // Your style array...
+        ];
 
-    path, svg text {
-  -webkit-tap-highlight-color: transparent;
-  tap-highlight-color: transparent;
-}
+        const map = new google.maps.Map(document.getElementById("map"), {
+          zoom: 17.3,
+          center: { lat: 25.554195, lng: -100.235521 },
+          styles: snazzyStyle,
+          mapTypeId: "roadmap"
+        });
 
-#svg-container {
-  width: 90vw;
-  height: 90vh;
-  max-width: 600px;  /* or any max size you prefer */
+        // Dynamically fetch the .txt file and parse the data
+        fetch('lots.txt')
+          .then(response => response.text())  // Read the file content
+          .then(text => {
+            const lotData = parseLotData(text);  // Parse the lot data
 
-  display: block;
-  position: relative;
-    margin: 20px auto;
-}
+            let openInfoWindow = null;
 
-    svg {
-  width: 100%;
-  height: auto;  /* keep aspect ratio */
-  display: block;
-  margin: 0 auto;
-    }
+            // Create polygons based on parsed data
+            lotData.forEach((lot, idx) => {
+              const polygon = new google.maps.Polygon({
+                paths: lot.coords,
+                strokeColor: "#00AA00",
+                strokeOpacity: 0.8,
+                strokeWeight: 2,
+                fillColor: "#00AA00",
+                fillOpacity: 0.35,
+                map: map,
+                zIndex: 1
+              });
 
-    
-/* On small screens (phones), make it bigger */
-@media (max-width: 800px) {
-  #svg-container {
-  width: 90vw;        /* full screen width */
-  height: 90vh;       /* full screen height */
-   
-  }
-}
+              const infoWindow = new google.maps.InfoWindow({
+                content: lot.name,
+                position: lot.coords[0]
+              });
 
+              polygon.addListener("click", () => {
+                if (openInfoWindow) {
+                  openInfoWindow.close();
+                }
+                infoWindow.open(map);
+                openInfoWindow = infoWindow;
+              });
 
+              polygon.addListener("mouseover", () => {
+                polygon.setOptions({ fillOpacity: 0.6 });
+              });
 
-
-
-    path.available:hover {
-      fill-opacity: 0.7;
-      stroke: #5a6b56;
-      stroke-width: 0.1;
-    }
-
-
-
-    path.stroke-only {
-      pointer-events: none;
-      stroke: #000;
-      stroke-width: 0.2;
-      fill: none;
-    }
-
-
-path.available {
-  fill: #66cc66; /* green-ish */
-  cursor: pointer;
-  transition: fill 0.3s, stroke 0.3s;
-}
-path.sold {
-  fill: #cc6666; /* red-ish */
-  cursor: pointer;
-  opacity: 0.8;
-}
-path.unavail {
-  fill: #cccc66; /* yellow-ish */
-  cursor: pointer;
-  opacity: 0.8;
-}
-
-.sold-label {
-  fill: #cc0000;
-  font-weight: bold;
-  font-size: 1px;
-}
-
-.unavail-label {
-  fill: #999900;
-  font-weight: bold;
-  font-size: 1px;
-}
- 
-.lot-label {
-  fill: #004d00;
-  font-weight: bold;
-  font-size: 1px;
-}
- 
-  </style>
-</head>
-<body>
-  <h2>Interactive SVG with Lot Numbers and Sold Labels</h2>
-     <div style="margin: 10px;">
-  <button onclick="downloadJSON()">💾 Save Lots</button>
-  <input type="file" id="upload-json" accept=".json" style="display:none;" onchange="loadJSONFromFile(event)">
-  <button onclick="document.getElementById('upload-json').click()">📂 Load Lots</button>
-</div>
-  <div id="svg-container">
-
-
-     <svg id="my-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 72">
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="0" d="M10.77,36.8,7.15,38.57,5.41,34.85,9,33.1Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="1" d="M12.49,20.31l-3,3.07L5.81,19.72l3-3.07Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="2" d="M12,24.48l1.77,3.43-3.61,1.77L9.08,27.46Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="3" d="M29.8,6.93l2.53,3.37L28.87,12.7l-2.3-3.33Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="4" d="M5.81,19.72l3.66,3.66L6.24,26.66,2.58,23Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="5" d="M6.24,26.66,2.48,30.47l-2.34-5L2.58,23Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="6" d="M4.25,32.37l2.91-3L9,33.1,5.41,34.85Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="7" d="M21.13,29.17l2,3.5-3.93,2.26-1.86-3.59Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="8" d="M18.77,25.07l-3.6,2.07-2-3.85,2.89-2.93Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="9" d="M18.77,25.07l2.36,4.1-3.78,2.17-2.18-4.2Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="10" d="M23.14,32.68l2,3.55L21.1,38.57l-1.88-3.64Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="11" d="M25.18,36.23l2.6,4.53-.18.17-4.25,2L21.1,38.57Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="12" d="M29.7,44.76l-4.16,2.38-2.19-4.22,4.25-2a2.29,2.29,0,0,0,2.1,3.84Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="13" d="M29.8,6.93,26.47,9.24a2,2,0,0,0-1.37-.72h-.25V.37Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="14" d="M18,51.56l1.81,3.69-4,1.94-1.74-3.72Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="15" d="M29.41,38.4l-2-3.5,4.53-2.6,2.21,3.39Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="16" d="M25.38,31.39l4.33-2.49,2.21,3.39-4.53,2.6Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="17" d="M19.81,55.25l1.71,3.49-.56.53L17.6,60.91l-1.74-3.72Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="18" d="M25.28,22.13l2.21,3.39-4.12,2.37-2-3.5Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="19" d="M19.1,38.22l1.77,3.43L17,43.57l-1.7-3.47Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="20" d="M22.83,62.92a2.3,2.3,0,0,0,1.63-.72l1.63-.88L22.62,71.64l-3.28-7Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="21" d="M20.91,15.44l2.16,3.3-3.72,2.14-1.4-2.43Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="22" d="M22.83,62.92l-3.49,1.71L17.6,60.91,21,59.26a2.29,2.29,0,0,0,1.14,3.55Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="23" d="M24.85,11.43l1.89,2.73-3.28,2.27L22,14.28Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="24" d="M23.77,57.45,28,55.39l-1.89,5.94-1.51.74a2.3,2.3,0,0,0,.35-2.25Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="25" d="M31.06,20.42,27.62,22.8l-2.08-3.18,3.36-2.33Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="26" d="M27.62,22.8l3.44-2.38,1.87,2.71a2.29,2.29,0,0,0-.5,1L29.7,26Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="27" d="M22.07,54l4.13-2L28,55.39l-4.21,2.06Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="28" d="M35.08,26.88l-3.3,2.28L29.7,26l2.74-1.89a2.29,2.29,0,0,0,2.64,2.79Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="29" d="M36.61,25.81l1.82-1.26-3.28,9.77-3.38-5.16,3.3-2.28a2.29,2.29,0,0,0,1-.5Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="30" d="M25.53,47.14l4.16-2.38a2.29,2.29,0,0,0,1.1-.57l.14-.15,1.17-.67-3.35,10Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="31" d="M12.38,49.74,10.63,46l3.76-1.84,1.81,3.69Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="32" d="M26.2,52l-4.13,2-1.7-3.47,4.06-2Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="33" d="M35.2,21.85,39,19.22l.84,1.12-1.42,4.22-1.82,1.26a2.29,2.29,0,0,0,.32-1.47Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="34" d="M26.74,14.17l2.16,3.12-3.36,2.33-2.08-3.18Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="35" d="M33.19,18.94l3.7-2.56L39,19.22,35.2,21.85Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="36" d="M22.65,45.09l1.77,3.43-4.06,2L18.67,47Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="37" d="M34.61,13.34l2.28,3-3.7,2.56L31,15.82Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="38" d="M23.07,18.74l2.21,3.39-3.92,2.25-2-3.5Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="39" d="M28.87,12.7l3.46-2.39,2.28,3L31,15.82Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="40" d="M17.33,34.79l1.77,3.43L15.27,40.1l-1.7-3.47Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="41" d="M20.15,5.15,24.86.37V8.51a2,2,0,0,0-1,.33Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="42" d="M23.37,27.89l4.12-2.37,2.21,3.39-4.33,2.49Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="43" d="M17.32,8l2.83-2.87,3.69,3.69-.32.26L21,11.68Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="44" d="M11.87,33.16l3.69-1.81,1.77,3.43-3.76,1.84Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="45" d="M17.32,8,21,11.68l-2.83,2.87L14.49,10.9Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="46" d="M18.15,14.56l-2.83,2.87-3.66-3.66,2.83-2.87Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="47" d="M14.39,44.18,10.63,46,8.89,42.29l3.69-1.81Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="48" d="M7.15,38.57l3.62-1.78,1.81,3.69L8.89,42.29Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="49" d="M11.87,33.16l-1.7-3.47,3.61-1.77,1.77,3.43Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="50" d="M14.12,53.46l-1.74-3.72,3.82-1.87L18,51.56Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="51" d="M29.41,38.4l4.73-2.72.37.57-2.39,7.13-1.17.67A2.3,2.3,0,0,0,31.46,42Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="52" d="M17,43.57l3.91-1.91,1.77,3.43-4,2Z"/>
-<path class="available" stroke="Black" stroke-width="0.1" data-lot-id="53" d="M15.32,17.43l-2.83,2.87L8.83,16.65l2.83-2.87Z"/>
-</svg>
-  </div>
-
-  <!-- Scripts -->
-<script>
-const svg = document.getElementById('my-svg');
-
-function cycleState(plot) {
-  const parent = plot.parentNode;
-  const bbox = plot.getBBox();
-  const cx = bbox.x + bbox.width / 2;
-  const cy = bbox.y + bbox.height / 2;
-
-  // Remove existing label near plot center
-  const existing = Array.from(parent.querySelectorAll('text')).find(t => {
-    return (
-      Math.abs(+t.getAttribute('x') - cx) < 0.1 &&
-      Math.abs(+t.getAttribute('y') - cy) < 0.1
-    );
-  });
-  if (existing) existing.remove();
-
-  if (plot.classList.contains('available')) {
-    plot.classList.remove('available', 'unavail');
-    plot.classList.add('sold');
-    parent.appendChild(createLabel(cx, cy, "SOLD", "sold-label"));
-  } else if (plot.classList.contains('sold')) {
-    plot.classList.remove('available', 'sold');
-    plot.classList.add('unavail');
-    parent.appendChild(createLabel(cx, cy, "UNAVAIL", "unavail-label"));
-  } else {
-    plot.classList.remove('sold', 'unavail');
-    plot.classList.add('available');
-    const lotId = plot.getAttribute('data-lot-id');
-    parent.appendChild(createLabel(cx, cy, `Lot ${lotId}`, "lot-label"));
-  }
-}
-
-function createLabel(x, y, text, className) {
-  const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  label.setAttribute("x", x);
-  label.setAttribute("y", y);
-  label.setAttribute("class", className);
-  label.setAttribute("text-anchor", "middle");
-  label.setAttribute("dominant-baseline", "middle");
-  label.style.userSelect = "none";
-  label.textContent = text;
-  return label;
-}
-
-function initializeLabels() {
-  const plots = svg.querySelectorAll('path[data-lot-id]');
-  plots.forEach(plot => {
-    const bbox = plot.getBBox();
-    const cx = bbox.x + bbox.width / 2;
-    const cy = bbox.y + bbox.height / 2;
-    const lotId = plot.getAttribute('data-lot-id');
-
-    let labelText, labelClass;
-
-    if (plot.classList.contains('sold')) {
-      labelText = "SOLD";
-      labelClass = "sold-label";
-    } else if (plot.classList.contains('unavail')) {
-      labelText = "UNAVAIL";
-      labelClass = "unavail-label";
-    } else {
-      plot.classList.add('available');
-      labelText = `Lot ${lotId}`;
-      labelClass = "lot-label";
-    }
-
-    plot.parentNode.appendChild(createLabel(cx, cy, labelText, labelClass));
-  });
-}
-
-function updateLotsFromStatus(data) {
-  const lots = data.lots || [];
-
-  // Clear old labels
-  const existingLabels = svg.querySelectorAll('text.lot-label, text.sold-label, text.unavail-label');
-  existingLabels.forEach(label => label.remove());
-
-  lots.forEach(({ id, status }) => {
-    const plot = svg.querySelector(`path[data-lot-id="${id}"]`);
-    if (!plot) return;
-
-    plot.classList.remove('available', 'sold', 'unavail');
-    plot.classList.add(status);
-
-    const bbox = plot.getBBox();
-    const cx = bbox.x + bbox.width / 2;
-    const cy = bbox.y + bbox.height / 2;
-
-    let labelText, labelClass;
-    if (status === 'sold') {
-      labelText = "SOLD";
-      labelClass = "sold-label";
-    } else if (status === 'unavail') {
-      labelText = "UNAVAIL";
-      labelClass = "unavail-label";
-    } else {
-      labelText = `Lot ${id}`;
-      labelClass = "lot-label";
-    }
-
-    plot.parentNode.appendChild(createLabel(cx, cy, labelText, labelClass));
-  });
-}
-
-// Export: JSON format compatible with Netlify CMS
-function getLotStatusJSON() {
-  const plots = svg.querySelectorAll('path[data-lot-id]');
-  const lots = [];
-  plots.forEach(plot => {
-    const id = parseInt(plot.getAttribute('data-lot-id'), 10);
-    let status = 'available';
-    if (plot.classList.contains('sold')) status = 'sold';
-    else if (plot.classList.contains('unavail')) status = 'unavail';
-    lots.push({ id, status });
-  });
-  return { lots };
-}
-
-// Save to file
-function downloadJSON() {
-  const data = getLotStatusJSON();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "lot-status.json";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// Load from file
-function loadJSONFromFile(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const json = JSON.parse(e.target.result);
-      updateLotsFromStatus(json);
-    } catch (err) {
-      alert("Invalid JSON file.");
-    }
-    event.target.value = ""; // Allow re-selecting the same file
-  };
-  reader.readAsText(file);
-}
-
-// Events
-svg.addEventListener('click', e => {
-  const target = e.target;
-  if (target.tagName === 'path' && target.hasAttribute('data-lot-id')) {
-    cycleState(target);
-  }
-});
-
-svg.addEventListener('touchend', e => {
-  const touch = e.changedTouches[0];
-  const target = document.elementFromPoint(touch.clientX, touch.clientY);
-  if (target && target.tagName === 'path' && target.hasAttribute('data-lot-id')) {
-    cycleState(target);
-  }
-});
-
-// Initial load using manifest
-fetch('/public/uploads/lot-manifest.json')
-  .then(res => {
-    if (!res.ok) throw new Error("No manifest file");
-    return res.json();
-  })
-  .then(manifest => {
-    return fetch(`/public/uploads/${manifest.latest}`);
-  })
-  .then(res => {
-    if (!res.ok) throw new Error("No JSON file");
-    return res.json();
-  })
-  .then(updateLotsFromStatus)
-  .catch(() => initializeLabels());
-</script>
-
-
-
-
-
- 
- 
-
-</body>
+              polygon.addListener("mouseout", () => {
+                polygon.setOptions({ fillOpacity: 0.35 });
+              });
+            });
+          })
+          .catch(error => {
+            console.error('Error loading or parsing the lot data:', error);
+          });
+      }
+    </script>
+  </head>
+  <body onload="initMap()">
+    <div id="map"></div>
+  </body>
 </html>
