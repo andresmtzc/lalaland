@@ -10,6 +10,104 @@
     </style>
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCBTROq6LuvF_IE1r46-T4AeTSV-0d7my8"></script>
     <script>
+      function initMap() {
+        const minimalStyle = [
+          {
+            "featureType": "all",
+            "elementType": "labels.text.fill",
+            "stylers": [{"saturation": -100}, {"color": "#d3d3d3"}, {"lightness": 50}] // Light gray labels
+          },
+          {
+            "featureType": "all",
+            "elementType": "labels.icon",
+            "stylers": [{"visibility": "off"}] // Remove icons
+          },
+          {
+            "featureType": "landscape",
+            "elementType": "geometry",
+            "stylers": [{"color": "#fafafa"}, {"lightness": 50}] // Very light gray for landscape
+          },
+          {
+            "featureType": "poi",
+            "elementType": "geometry",
+            "stylers": [{"color": "#fafafa"}, {"lightness": 50}] // Soft light for points of interest
+          },
+          {
+            "featureType": "road",
+            "elementType": "geometry.fill",
+            "stylers": [{"color": "#f9f9f9"}, {"lightness": 50}] // Very light roads
+          },
+          {
+            "featureType": "road",
+            "elementType": "geometry.stroke",
+            "stylers": [{"color": "#e0e0e0"}, {"lightness": 40}, {"weight": 0.5}] // Thin, light road borders
+          },
+          {
+            "featureType": "water",
+            "elementType": "geometry",
+            "stylers": [{"color": "#e1f0f6"}, {"lightness": 50}] // Soft light blue for water
+          }
+        ];
+
+        const map = new google.maps.Map(document.getElementById("map"), {
+          zoom: 17.3,
+          center: { lat: 25.462023, lng: -100.15994 },
+          styles: minimalStyle,  // Apply the minimal map style
+          mapTypeId: "roadmap"
+        });
+
+        // Dynamically fetch the .txt file and parse the data
+        fetch('https://lalaland.mx/lots.txt')
+          .then(response => response.text())  // Read the file content
+          .then(text => {
+            const lotData = parseLotData(text);  // Parse the lot data
+
+            let openInfoWindow = null;
+
+            // Create polygons based on parsed data
+            lotData.forEach((lot, idx) => {
+              const fillColor = "#f9f9f9"; // Very light beige/off-white for all lots
+              const borderColor = "#e0e0e0"; // Light gray border color, much lighter than fill
+
+              const polygon = new google.maps.Polygon({
+                paths: lot.coords,
+                strokeColor: borderColor,  // Very light gray border color
+                strokeOpacity: 1,          // No transparency for border
+                strokeWeight: 0.5,           // Thin border
+                fillColor: fillColor,      // Uniform fill color for all lots
+                fillOpacity: 1,            // No transparency for fill
+                geodesic: false,           // Makes the lines straight instead of curved
+                map: map,
+                zIndex: 1
+              });
+
+              const infoWindow = new google.maps.InfoWindow({
+                content: lot.name,
+                position: lot.coords[0]
+              });
+
+              polygon.addListener("click", () => {
+                if (openInfoWindow) {
+                  openInfoWindow.close();
+                }
+                infoWindow.open(map);
+                openInfoWindow = infoWindow;
+              });
+
+              polygon.addListener("mouseover", () => {
+                polygon.setOptions({ fillOpacity: 0.8 });
+              });
+
+              polygon.addListener("mouseout", () => {
+                polygon.setOptions({ fillOpacity: 1 });
+              });
+            });
+          })
+          .catch(error => {
+            console.error('Error loading or parsing the lot data:', error);
+          });
+      }
+
       // Function to parse the file data
       function parseLotData(text) {
         const lotData = [];
@@ -42,66 +140,6 @@
         }
 
         return lotData;
-      }
-
-      function initMap() {
-        const snazzyStyle = [
-          // Your style array...
-        ];
-
-        const map = new google.maps.Map(document.getElementById("map"), {
-          zoom: 17.3,
-          center: { lat: 25.462023, lng: -100.15994 },
-          styles: snazzyStyle,
-          mapTypeId: "roadmap"
-        });
-
-        // Dynamically fetch the .txt file and parse the data
-        fetch('https://lalaland.mx/lots.txt')
-          .then(response => response.text())  // Read the file content
-          .then(text => {
-            const lotData = parseLotData(text);  // Parse the lot data
-
-            let openInfoWindow = null;
-
-            // Create polygons based on parsed data
-            lotData.forEach((lot, idx) => {
-              const polygon = new google.maps.Polygon({
-                paths: lot.coords,
-                strokeColor: "#00AA00",
-                strokeOpacity: 0.8,
-                strokeWeight: 2,
-                fillColor: "#00AA00",
-                fillOpacity: 0.35,
-                map: map,
-                zIndex: 1
-              });
-
-              const infoWindow = new google.maps.InfoWindow({
-                content: lot.name,
-                position: lot.coords[0]
-              });
-
-              polygon.addListener("click", () => {
-                if (openInfoWindow) {
-                  openInfoWindow.close();
-                }
-                infoWindow.open(map);
-                openInfoWindow = infoWindow;
-              });
-
-              polygon.addListener("mouseover", () => {
-                polygon.setOptions({ fillOpacity: 0.6 });
-              });
-
-              polygon.addListener("mouseout", () => {
-                polygon.setOptions({ fillOpacity: 0.35 });
-              });
-            });
-          })
-          .catch(error => {
-            console.error('Error loading or parsing the lot data:', error);
-          });
       }
     </script>
   </head>
