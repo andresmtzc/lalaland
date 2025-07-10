@@ -1,29 +1,175 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <title>Minimal Black & White Lots Map — Mapbox with Toggle</title>
   <meta charset="utf-8">
-  <title>Mapbox Minimal Test</title>
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
-  <script src="https://api.mapbox.com/mapbox-gl-js/v2.16.1/mapbox-gl.js"></script>
-  <link href="https://api.mapbox.com/mapbox-gl-js/v2.16.1/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   <style>
-    body { margin:0; padding:0; }
-    #map { position:absolute; top:0; bottom:0; width:100%; }
+    body { margin: 0; padding: 0; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; background: white; }
+    #menu {
+      position: absolute;
+      background: white;
+      padding: 10px;
+      z-index: 1;
+      top: 10px;
+      left: 10px;
+      font-family: sans-serif;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
+
+<div id="menu">
+  <input id="blueprint" type="radio" name="style" value="blueprint" checked>
+  <label for="blueprint">Blueprint</label>
+  <input id="satellite" type="radio" name="style" value="satellite">
+  <label for="satellite">Satellite</label>
+</div>
 
 <div id="map"></div>
 
 <script>
 mapboxgl.accessToken = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
 
+let lotData = [];
+
 const map = new mapboxgl.Map({
   container: 'map',
-  style: 'mapbox://styles/mapbox/light-v10',
+  style: 'mapbox://styles/andresmtzc/cmcxf2vmh015o01s097ao7n6k',
   center: [-100.15994, 25.461823],
-  zoom: 17.9
+  zoom: 16
 });
+
+fetch('https://lalaland.mx/lots.txt')
+  .then(response => response.text())
+  .then(text => {
+    lotData = parseLotData(text);
+    addLotsLayer(); // when page first loads
+  })
+  .catch(error => console.error(error));
+
+document.getElementById('blueprint').onclick = () => {
+  map.setStyle('mapbox://styles/andresmtzc/cmcxgyd0o000i01qnchoi35vc');
+};
+
+document.getElementById('satellite').onclick = () => {
+  map.setStyle('mapbox://styles/mapbox/satellite-streets-v12');
+};
+
+map.on('style.load', () => {
+  if (lotData.length) {
+    addLotsLayer();
+  }
+});
+
+function addLotsLayer() {
+  const geojson = {
+    "type": "FeatureCollection",
+    "features": lotData.map(lot => ({
+      "type": "Feature",
+      "properties": { "name": lot.name },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [lot.coords.map(c => [c.lng, c.lat])]
+      }
+    }))
+  };
+
+  if (map.getSource('lots')) {
+    map.removeLayer('lots-fill');
+    map.removeLayer('lots-border');
+    map.removeSource('lots');
+  }
+
+  map.addSource('lots', {
+    "type": "geojson",
+    "data": geojson
+  });
+
+  map.addLayer({
+    "id": "lots-fill",
+    "type": "fill",
+    "source": "lots",
+    "paint": {
+      "fill-color": "#000000",
+      "fill-opacity": 0
+    }
+  });
+
+  map.addLayer({
+    "id": "lots-border",
+    "type": "line",
+    "source": "lots",
+    "paint": {
+      "line-color": "#000000",
+      "line-width": 1
+    }
+  });
+
+  map.on('click', 'lots-fill', (e) => {
+    const name = e.features[0].properties.name;
+    const coordinates = e.lngLat;
+    new mapboxgl.Popup()
+      .setLngLat(coordinates)
+      .setHTML(name)
+      .addTo(map);
+  });
+
+  map.on('mouseenter', 'lots-fill', () => {
+    map.getCanvas().style.cursor = 'pointer';
+  });
+  map.on('mouseleave', 'lots-fill', () => {
+    map.getCanvas().style.cursor = '';
+  });
+}
+
+function parseLotData(text) {
+  const lotData = [];
+  const lines = text.split("\n");
+  let lotCoords = [];
+  let lotName = "";
+
+  lines.forEach(line => {
+    const matchLotName = line.match(/^lot\d+/);
+    if (matchLotName) {
+      if (lotCoords.length > 0) {
+        if (
+          lotCoords[0].lat !== lotCoords[lotCoords.length - 1].lat ||
+          lotCoords[0].lng !== lotCoords[lotCoords.length - 1].lng
+        ) {
+          lotCoords.push({ ...lotCoords[0] });
+        }
+        lotData.push({ name: lotName, coords: lotCoords });
+      }
+      lotName = matchLotName[0];
+      lotCoords = [];
+    }
+
+    const matchCoordinates = line.match(/lat: ([-\d.]+), lng: ([-\d.]+)/);
+    if (matchCoordinates) {
+      lotCoords.push({
+        lat: parseFloat(matchCoordinates[1]),
+        lng: parseFloat(matchCoordinates[2]),
+      });
+    }
+  });
+
+  if (lotCoords.length > 0) {
+    if (
+      lotCoords[0].lat !== lotCoords[lotCoords.length - 1].lat ||
+      lotCoords[0].lng !== lotCoords[lotCoords.length - 1].lng
+    ) {
+      lotCoords.push({ ...lotCoords[0] });
+    }
+    lotData.push({ name: lotName, coords: lotCoords });
+  }
+
+  return lotData;
+}
 </script>
 
 </body>
