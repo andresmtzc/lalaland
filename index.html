@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Minimal Black & White Lots Map — Fall Animation</title>
+  <title>Hybrid Lots Map — Seamless Switch</title>
   <meta charset="utf-8">
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
@@ -33,7 +33,6 @@
 <div id="map"></div>
 
 <script>
-// 👇 Replace with your key URL
 fetch('https://lalaland.mx/mapbox.txt')
   .then(res => res.text())
   .then(token => {
@@ -78,47 +77,36 @@ function initMap() {
 }
 
 function addLotsLayer(map) {
-  if (map.getSource('lots')) {
-    lotData.forEach((lot, i) => {
-      if (map.getLayer(`lot-fill-${i}`)) map.removeLayer(`lot-fill-${i}`);
-      if (map.getLayer(`lot-border-${i}`)) map.removeLayer(`lot-border-${i}`);
-      if (map.getSource(`lot-${i}`)) map.removeSource(`lot-${i}`);
-    });
-  }
-
   lotData.forEach((lot, i) => {
     const geojson = {
-      "type": "FeatureCollection",
-      "features": [{
-        "type": "Feature",
-        "properties": { "name": lot.name },
-        "geometry": {
-          "type": "Polygon",
-          "coordinates": [lot.coords.map(c => [c.lng, c.lat])]
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: { name: lot.name },
+        geometry: {
+          type: "Polygon",
+          coordinates: [lot.coords.map(c => [c.lng, c.lat])]
         }
       }]
     };
 
-    map.addSource(`lot-${i}`, {
-      "type": "geojson",
-      "data": geojson
-    });
+    map.addSource(`lot-${i}`, { type: "geojson", data: geojson });
 
     map.addLayer({
-      "id": `lot-fill-${i}`,
-      "type": "fill",
-      "source": `lot-${i}`,
-      "paint": {
+      id: `lot-fill-${i}`,
+      type: "fill",
+      source: `lot-${i}`,
+      paint: {
         "fill-color": "#000000",
         "fill-opacity": 0
       }
     });
 
     map.addLayer({
-      "id": `lot-border-${i}`,
-      "type": "line",
-      "source": `lot-${i}`,
-      "paint": {
+      id: `lot-border-${i}`,
+      type: "line",
+      source: `lot-${i}`,
+      paint: {
         "line-color": "#ffffff",
         "line-width": 1,
         "line-opacity": 0
@@ -127,6 +115,10 @@ function addLotsLayer(map) {
 
     setTimeout(() => animateLotFall(map, i), i * 10);
   });
+
+  setTimeout(() => {
+    addOptimizedLayers(map);
+  }, lotData.length * 10 + 1000);
 }
 
 function animateLotFall(map, i) {
@@ -152,18 +144,18 @@ function animateLotFall(map, i) {
     progress = (time - start) / duration;
     if (progress > 1) progress = 1;
 
-    const eased = 1 - Math.pow(1 - progress, 3); // ease out
-    const scale = 1 + (1 - eased) * 0.3; // starts 30% bigger
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const scale = 1 + (1 - eased) * 0.3;
     const opacity = eased;
 
     const geojson = {
-      "type": "FeatureCollection",
-      "features": [{
-        "type": "Feature",
-        "properties": { "name": lotData[i].name },
-        "geometry": {
-          "type": "Polygon",
-          "coordinates": [scaleCoords(scale)]
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: { name: lotData[i].name },
+        geometry: {
+          type: "Polygon",
+          coordinates: [scaleCoords(scale)]
         }
       }]
     };
@@ -186,12 +178,99 @@ function animateLotFall(map, i) {
       .setHTML(name)
       .addTo(map);
   });
+}
 
-  map.on('mouseenter', `lot-fill-${i}`, () => {
-    map.getCanvas().style.cursor = 'pointer';
+function addOptimizedLayers(map) {
+  const features = lotData.map((lot, i) => ({
+    type: "Feature",
+    properties: { name: lot.name },
+    geometry: {
+      type: "Polygon",
+      coordinates: [lot.coords.map(c => [c.lng, c.lat])]
+    },
+    id: i
+  }));
+
+  const geojson = { type: "FeatureCollection", features };
+
+  if (!map.getSource('lots')) {
+    map.addSource('lots', { type: 'geojson', data: geojson });
+  } else {
+    map.getSource('lots').setData(geojson);
+  }
+
+  map.addLayer({
+    id: 'lots-fill',
+    type: 'fill',
+    source: 'lots',
+    paint: {
+      'fill-color': '#000000',
+      'fill-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        0.2,
+        0
+      ]
+    }
   });
-  map.on('mouseleave', `lot-fill-${i}`, () => {
+
+  map.addLayer({
+    id: 'lots-border',
+    type: 'line',
+    source: 'lots',
+    paint: {
+      'line-color': '#ffffff',
+      'line-width': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        2,
+        1
+      ],
+      'line-opacity': 1
+    }
+  });
+
+  setupHover(map);
+
+  // remove old per-lot layers/sources AFTER optimized is fully visible
+  setTimeout(() => {
+    lotData.forEach((_, i) => {
+      if (map.getLayer(`lot-fill-${i}`)) map.removeLayer(`lot-fill-${i}`);
+      if (map.getLayer(`lot-border-${i}`)) map.removeLayer(`lot-border-${i}`);
+      if (map.getSource(`lot-${i}`)) map.removeSource(`lot-${i}`);
+    });
+  }, 100); // short delay to ensure optimized layers rendered
+}
+
+function setupHover(map) {
+  let hoveredId = null;
+
+  map.on('mousemove', 'lots-fill', (e) => {
+    map.getCanvas().style.cursor = 'crosshair';
+    if (e.features.length > 0) {
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
+      }
+      hoveredId = e.features[0].id;
+      map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: true });
+    }
+  });
+
+  map.on('mouseleave', 'lots-fill', () => {
+    if (hoveredId !== null) {
+      map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
+    }
+    hoveredId = null;
     map.getCanvas().style.cursor = '';
+  });
+
+  map.on('click', 'lots-fill', (e) => {
+    const name = e.features[0].properties.name;
+    const coordinates = e.lngLat;
+    new mapboxgl.Popup()
+      .setLngLat(coordinates)
+      .setHTML(name)
+      .addTo(map);
   });
 }
 
