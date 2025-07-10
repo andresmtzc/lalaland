@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Lots Map — Persistent on Style Change</title>
+  <title>Lots Map — Fade‑in only on style change</title>
   <meta charset="utf-8">
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
@@ -64,8 +64,10 @@ function initMap() {
       if (!animationPlayed) {
         animateGroups(map);
         animationPlayed = true;
+      } else {
+        addOptimizedLayers(map);
+        fadeInOptimizedLayers(map, 500); // only fade‑in on style change
       }
-      addOptimizedLayers(map);
     }
   });
 }
@@ -99,7 +101,7 @@ function animateGroups(map) {
     ((groupCount - 1) * groupDelay) + animationDuration + buffer;
 
   setTimeout(() => {
-    addOptimizedLayers(map);
+    addOptimizedLayers(map); // no fade‑in here
   }, totalTime);
 }
 
@@ -204,6 +206,38 @@ function addOptimizedLayers(map) {
       if (map.getSource(`group-${g}`)) map.removeSource(`group-${g}`);
     }
   }, 100);
+}
+
+function fadeInOptimizedLayers(map, duration = 200) {
+  let start = null;
+
+  function frame(time) {
+    if (!start) start = time;
+    let progress = (time - start) / duration;
+    if (progress > 1) progress = 1;
+
+    map.setPaintProperty('lots-border', 'line-opacity', progress);
+    map.setPaintProperty('lots-fill', 'fill-opacity', [
+      'case',
+      ['boolean', ['feature-state', 'hover'], false],
+      0.2 * progress,
+      0
+    ]);
+
+    if (progress < 1) {
+      requestAnimationFrame(frame);
+    }
+  }
+
+  map.setPaintProperty('lots-border', 'line-opacity', 0);
+  map.setPaintProperty('lots-fill', 'fill-opacity', [
+    'case',
+    ['boolean', ['feature-state', 'hover'], false],
+    0,
+    0
+  ]);
+
+  requestAnimationFrame(frame);
 }
 
 function setupHover(map) {
