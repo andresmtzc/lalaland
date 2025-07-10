@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Lots Map — 20 Groups, Only Borders</title>
+  <title>Lots Map — 20 Groups, Immediate Final Layer</title>
   <meta charset="utf-8">
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
@@ -79,6 +79,8 @@ function animateGroups(map) {
   const groups = Array.from({length: groupCount}, () => []);
   indices.forEach((idx, i) => groups[i % groupCount].push(idx));
 
+  let finishedGroups = 0;
+
   groups.forEach((group, g) => {
     const geojson = {
       type: "FeatureCollection",
@@ -89,17 +91,18 @@ function animateGroups(map) {
     map.addLayer({ id: `group-border-${g}`, type: "line", source: `group-${g}`,
       paint: { "line-color": "#fff", "line-width": 1, "line-opacity": 0 } });
 
-    setTimeout(() => animateGroup(map, g, group), g * 50);
+    setTimeout(() => animateGroup(map, g, group, () => {
+      finishedGroups++;
+      if (finishedGroups === groupCount) {
+        addOptimizedLayers(map);
+      }
+    }), g * 100);
   });
-
-  setTimeout(() => {
-    addOptimizedLayers(map);
-  }, groupCount * 100 + 2000);
 }
 
-function animateGroup(map, g, group) {
+function animateGroup(map, g, group, onComplete) {
   let progress = 0;
-  const duration = 300;
+  const duration = 600;
   const start = performance.now();
 
   const originals = group.map(i => ({
@@ -131,7 +134,11 @@ function animateGroup(map, g, group) {
     map.getSource(`group-${g}`).setData(geojson);
     map.setPaintProperty(`group-border-${g}`, 'line-opacity', opacity);
 
-    if (progress < 1) requestAnimationFrame(frame);
+    if (progress < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      onComplete();
+    }
   }
 
   requestAnimationFrame(frame);
@@ -184,6 +191,21 @@ function addOptimizedLayers(map) {
   }
 
   map.addLayer({
+    id: 'lots-fill',
+    type: 'fill',
+    source: 'lots',
+    paint: {
+      'fill-color': '#000',
+      'fill-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        0.2,
+        0
+      ]
+    }
+  });
+
+  map.addLayer({
     id: 'lots-border',
     type: 'line',
     source: 'lots',
@@ -212,7 +234,7 @@ function addOptimizedLayers(map) {
 function setupHover(map) {
   let hoveredId = null;
 
-  map.on('mousemove', 'lots-border', (e) => {
+  map.on('mousemove', 'lots-fill', (e) => {
     map.getCanvas().style.cursor = 'crosshair';
     if (e.features.length > 0) {
       if (hoveredId !== null) {
@@ -223,7 +245,7 @@ function setupHover(map) {
     }
   });
 
-  map.on('mouseleave', 'lots-border', () => {
+  map.on('mouseleave', 'lots-fill', () => {
     if (hoveredId !== null) {
       map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
     }
@@ -231,7 +253,7 @@ function setupHover(map) {
     map.getCanvas().style.cursor = '';
   });
 
-  map.on('click', 'lots-border', (e) => {
+  map.on('click', 'lots-fill', (e) => {
     const name = e.features[0].properties.name;
     const coordinates = e.lngLat;
     new mapboxgl.Popup()
