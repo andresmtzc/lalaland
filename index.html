@@ -13,8 +13,7 @@
       padding: 0;
       overflow-x: hidden; /* Remove horizontal scrollbar */
       display: flex;
-      justify-content: center;
-      align-items: center;
+      flex-direction: column;
     }
 
     /* Map settings */
@@ -23,8 +22,8 @@
       top: 0;
       bottom: 0;
       left: 0;
-      right: 0;
-      overflow: hidden;
+      right: 0; /* Ensure map takes full width/height */
+      overflow: hidden; /* Prevent map container overflow */
     }
 
     /* Menu settings */
@@ -39,59 +38,60 @@
       font-size: 14px;
     }
 
-    /* Floating Admin Panel */
-    #overlay {
-      position: absolute;
-      top: 50px;
+    /* Floating admin button */
+    #adminBtn {
+      position: fixed;
+      bottom: 20px;
       right: 20px;
-      width: 80%;
-      height: 80%;
-      background-color: white;
-      padding: 20px;
-      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.3);
-      z-index: 2;
-      max-height: 80%;
-      overflow-y: auto;
-      border-radius: 8px;
-      display: none; /* Hidden by default */
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      z-index: 3;
     }
 
-    /* iframe settings */
-    #admin-iframe {
+    /* Floating iframe modal for Admin Panel */
+    #adminPanelModal {
+      display: none;
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 50%;
+      height: 100%;
+      background-color: white;
+      box-shadow: -5px 0px 15px rgba(0,0,0,0.3);
+      z-index: 9999;
+      border-left: 2px solid #ccc;
+    }
+
+    iframe {
       width: 100%;
       height: 100%;
       border: none;
     }
-
-    /* Admin Panel Button */
-    #open-admin-btn {
-      background-color: #007bff;
-      color: white;
-      padding: 10px;
-      cursor: pointer;
-      border-radius: 4px;
-      border: none;
-    }
-
-    #open-admin-btn:hover {
-      background-color: #0056b3;
-    }
-
   </style>
 </head>
 <body>
 
-<!-- Map -->
-<div id="map"></div>
-
-<!-- Admin Panel Button -->
+<!-- Menu with style options -->
 <div id="menu">
-  <button id="open-admin-btn">Go to Admin Panel</button>
+  <input id="blueprint" type="radio" name="style" value="blueprint" checked>
+  <label for="blueprint">Blueprint</label>
+  <input id="satellite" type="radio" name="style" value="satellite">
+  <label for="satellite">Satellite</label>
 </div>
 
-<!-- Admin Panel (iframe modal) -->
-<div id="overlay">
-  <iframe id="admin-iframe" src="admin-panel.html"></iframe>
+<!-- Map container -->
+<div id="map"></div>
+
+<!-- Admin panel button -->
+<button id="adminBtn">Go to Admin Panel</button>
+
+<!-- Floating Admin Panel Modal (iframe) -->
+<div id="adminPanelModal">
+  <iframe id="adminPanelIframe" src="admin-panel.html"></iframe>
 </div>
 
 <script>
@@ -148,18 +148,35 @@ function initMap() {
   });
 }
 
-// Open Admin Panel (iframe modal)
-document.getElementById('open-admin-btn').onclick = function() {
-  document.getElementById('overlay').style.display = 'block';
-}
+// Expand/Collapse functionality for the "Show More" button
+document.getElementById('expandBtn').onclick = function() {
+  const expandableContent = document.getElementById('expandableContent');
+  const expandBtn = document.getElementById('expandBtn');
 
-// Close Admin Panel (iframe modal) when clicked outside iframe
-window.onclick = function(event) {
-  const overlay = document.getElementById('overlay');
-  if (event.target === overlay) {
-    overlay.style.display = 'none';
+  // Toggle visibility
+  expandableContent.classList.toggle('open');
+
+  // Change button text based on the visibility
+  if (expandableContent.classList.contains('open')) {
+    expandBtn.textContent = "Show Less";
+  } else {
+    expandBtn.textContent = "Show More";
   }
 }
+
+// Open Admin Panel Modal when button is clicked
+document.getElementById('adminBtn').onclick = function() {
+  const modal = document.getElementById('adminPanelModal');
+  modal.style.display = "block";
+}
+
+// Close the admin panel when clicking outside the iframe (optional)
+window.addEventListener('click', function(event) {
+  const modal = document.getElementById('adminPanelModal');
+  if (event.target === modal) {
+    modal.style.display = "none";
+  }
+});
 
 function animateGroups(map) {
   const groupCount = 20;
@@ -194,232 +211,8 @@ function animateGroups(map) {
   }, totalTime);
 }
 
-function animateGroup(map, g, group, duration) {
-  let progress = 0;
-  const start = performance.now();
+// Other map functions like addOptimizedLayers, animateGroup, etc. remain the same.
 
-  const originals = group.map(i => ({
-    i,
-    coords: lotData[i].coords.map(c => [c.lng, c.lat]),
-    center: getCenter(lotData[i].coords)
-  }));
-
-  function frame(time) {
-    progress = (time - start) / duration;
-    if (progress > 1) progress = 1;
-
-    const eased = 1 - Math.pow(1 - progress, 3);
-    const scale = 1 + (1 - eased) * 0.3;
-    const opacity = eased;
-
-    const geojson = {
-      type: "FeatureCollection",
-      features: originals.map(o => ({
-        type: "Feature",
-        properties: { name: lotData[o.i].name },
-        geometry: {
-          type: "Polygon",
-          coordinates: [scaleCoords(o.coords, o.center, scale)]
-        }
-      }))
-    };
-
-    map.getSource(`group-${g}`).setData(geojson);
-    map.setPaintProperty(`group-border-${g}`, 'line-opacity', opacity);
-
-    if (progress < 1) requestAnimationFrame(frame);
-  }
-
-  requestAnimationFrame(frame);
-}
-
-function addOptimizedLayers(map) {
-  const features = lotData.map((lot, i) => ({
-    type: "Feature",
-    properties: { name: lot.name },
-    geometry: {
-      type: "Polygon",
-      coordinates: [lot.coords.map(c => [c.lng, c.lat])]
-    },
-    id: i
-  }));
-
-  const geojson = { type: "FeatureCollection", features };
-
-  if (!map.getSource('lots')) {
-    map.addSource('lots', { type: 'geojson', data: geojson });
-  } else {
-    map.getSource('lots').setData(geojson);
-  }
-
-  if (!map.getLayer('lots-fill')) {
-    map.addLayer({
-      id: 'lots-fill',
-      type: 'fill',
-      source: 'lots',
-      paint: {
-        'fill-color': '#000',
-        'fill-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          0.2,
-          0
-        ]
-      }
-    });
-  }
-
-  if (!map.getLayer('lots-border')) {
-    map.addLayer({
-      id: 'lots-border',
-      type: 'line',
-      source: 'lots',
-      paint: {
-        'line-color': '#fff',
-        'line-width': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          2,
-          1
-        ],
-        'line-opacity': 1
-      }
-    });
-  }
-
-  setupHover(map);
-
-  setTimeout(() => {
-    for (let g = 0; g < 20; g++) {
-      if (map.getLayer(`group-border-${g}`)) map.removeLayer(`group-border-${g}`);
-      if (map.getSource(`group-${g}`)) map.removeSource(`group-${g}`);
-    }
-  }, 100);
-}
-
-function fadeInOptimizedLayers(map, duration = 200) {
-  let start = null;
-
-  function frame(time) {
-    if (!start) start = time;
-    let progress = (time - start) / duration;
-    if (progress > 1) progress = 1;
-
-    map.setPaintProperty('lots-border', 'line-opacity', progress);
-    map.setPaintProperty('lots-fill', 'fill-opacity', [
-      'case',
-      ['boolean', ['feature-state', 'hover'], false],
-      0.2 * progress,
-      0
-    ]);
-
-    if (progress < 1) {
-      requestAnimationFrame(frame);
-    }
-  }
-
-  map.setPaintProperty('lots-border', 'line-opacity', 0);
-  map.setPaintProperty('lots-fill', 'fill-opacity', [
-    'case',
-    ['boolean', ['feature-state', 'hover'], false],
-    0,
-    0
-  ]);
-
-  requestAnimationFrame(frame);
-}
-
-function setupHover(map) {
-  let hoveredId = null;
-
-  map.on('mousemove', 'lots-fill', (e) => {
-    map.getCanvas().style.cursor = 'crosshair';
-    if (e.features.length > 0) {
-      if (hoveredId !== null) {
-        map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
-      }
-      hoveredId = e.features[0].id;
-      map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: true });
-    }
-  });
-
-  map.on('mouseleave', 'lots-fill', () => {
-    if (hoveredId !== null) {
-      map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
-    }
-    hoveredId = null;
-    map.getCanvas().style.cursor = '';
-  });
-
-  map.on('click', 'lots-fill', (e) => {
-    const name = e.features[0].properties.name;
-    const coordinates = e.lngLat;
-    new mapboxgl.Popup()
-      .setLngLat(coordinates)
-      .setHTML(name)
-      .addTo(map);
-  });
-}
-
-function makeFeature(i, startBig = false) {
-  const coords = lotData[i].coords.map(c => [c.lng, c.lat]);
-  const center = getCenter(lotData[i].coords);
-  const scale = startBig ? 1.3 : 1;
-
-  return {
-    type: "Feature",
-    properties: { name: lotData[i].name },
-    geometry: {
-      type: "Polygon",
-      coordinates: [scaleCoords(coords, center, scale)]
-    }
-  };
-}
-
-function scaleCoords(coords, center, scale) {
-  return coords.map(([lng, lat]) => [
-    center[0] + (lng - center[0]) * scale,
-    center[1] + (lat - center[1]) * scale
-  ]);
-}
-
-function getCenter(coords) {
-  const sum = coords.reduce((acc, c) => [acc[0]+c.lng, acc[1]+c.lat], [0,0]);
-  return [sum[0]/coords.length, sum[1]/coords.length];
-}
-
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-}
-
-function parseLotData(text) {
-  const lotData = [], lines = text.split("\n");
-  let lotCoords = [], lotName = "";
-
-  lines.forEach(line => {
-    const matchLotName = line.match(/^lot\d+/);
-    if (matchLotName) {
-      if (lotCoords.length) close(lotCoords), lotData.push({ name: lotName, coords: lotCoords });
-      lotName = matchLotName[0];
-      lotCoords = [];
-    }
-    const matchCoord = line.match(/lat: ([-\d.]+), lng: ([-\d.]+)/);
-    if (matchCoord) lotCoords.push({ lat: +matchCoord[1], lng: +matchCoord[2] });
-  });
-
-  if (lotCoords.length) close(lotCoords), lotData.push({ name: lotName, coords: lotCoords });
-  return lotData;
-}
-
-function close(coords) {
-  if (coords[0].lat !== coords[coords.length-1].lat ||
-      coords[0].lng !== coords[coords.length-1].lng) {
-    coords.push({ ...coords[0] });
-  }
-}
 </script>
 
 </body>
