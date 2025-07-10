@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Lots Map — Fade & Disable Current Style</title>
+  <title>Lots Map — Final</title>
   <meta charset="utf-8">
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
@@ -68,11 +68,13 @@
 <script>
 let lotData = [];
 let animationPlayed = false;
+let mapReady = false;
+let currentStyle = 'blueprint';
 
-const supabaseUrl = 'https://jmoxbhodpvnlmtihcwvt.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imptb3hiaG9kcHZubG10aWhjd3Z0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxODM1MDgsImV4cCI6MjA2Nzc1OTUwOH0.-jP1akHIo9R4a2lD15byC5dESSGfeFHu8qlbmHteeJo';
-
-const supabaseClient = window.supabase.createClient(supabaseUrl.trim(), supabaseKey.trim());
+const supabase = window.supabase.createClient(
+  'https://jmoxbhodpvnlmtihcwvt.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imptb3hiaG9kcHZubG10aWhjd3Z0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxODM1MDgsImV4cCI6MjA2Nzc1OTUwOH0.-jP1akHIo9R4a2lD15byC5dESSGfeFHu8qlbmHteeJo'
+);
 
 fetch('https://lalaland.mx/mapbox.txt')
   .then(res => res.text())
@@ -80,21 +82,6 @@ fetch('https://lalaland.mx/mapbox.txt')
     mapboxgl.accessToken = token.trim();
     initMap();
   });
-
-async function checkLotAvailability(lotName) {
-  const { data, error } = await supabaseClient
-    .from('lots')
-    .select('lot_name, availability')
-    .eq('lot_name', lotName)
-    .single();
-
-  if (error) {
-    console.error(`Error fetching availability for ${lotName}:`, error);
-    return null;
-  }
-
-  return data.availability;
-}
 
 function initMap() {
   const map = new mapboxgl.Map({
@@ -104,15 +91,28 @@ function initMap() {
     zoom: 16
   });
 
-  let currentStyle = 'blueprint';
-
   fetch('https://lalaland.mx/lots.txt')
     .then(res => res.text())
     .then(text => {
       lotData = parseLotData(text);
+      if (mapReady && !animationPlayed) {
+        animateGroups(map);
+        animationPlayed = true;
+      }
+      enrichLotsWithAvailability(map);
+    });
+
+  map.on('style.load', () => {
+    mapReady = true;
+    if (lotData.length && !animationPlayed) {
       animateGroups(map);
       animationPlayed = true;
-    });
+    } else if (animationPlayed) {
+      addOptimizedLayers(map);
+      fadeInOptimizedLayers(map);
+      addSoldXs(map);
+    }
+  });
 
   document.getElementById('blueprint').onclick = () => {
     if (currentStyle === 'blueprint') return;
@@ -126,52 +126,31 @@ function initMap() {
     map.setStyle('mapbox://styles/mapbox/satellite-streets-v12');
   };
 
-  map.on('style.load', () => {
-    if (lotData.length) {
-      if (!animationPlayed) {
-        animateGroups(map);
-        animationPlayed = true;
-      } else {
-        addOptimizedLayers(map);
-        fadeInOptimizedLayers(map, 200);
-      }
-    }
-  });
+  document.getElementById('expandBtn').onclick = function() {
+    const expandableContent = document.getElementById('expandableContent');
+    expandableContent.classList.toggle('open');
+    this.textContent = expandableContent.classList.contains('open') ? "Show Less" : "Show More";
+  };
 
-  map.on('click', 'lots-fill', (e) => {
-    const name = e.features[0].properties.name;
-    const coordinates = e.lngLat;
-
-checkLotAvailability(name).then(available => {
-  let status = 'Unknown';
-  if (available === null) {
-    status = 'Unknown';
-  } else if (typeof available === 'string' && available.toLowerCase() === 'sold') {
-    status = 'Sold';
-  } else if (typeof available === 'string' && available.toLowerCase() === 'available') {
-    status = 'Available';
-  } else {
-    status = 'Unknown';
-  }
-
-  new mapboxgl.Popup()
-    .setLngLat(coordinates)
-    .setHTML(`<strong>${name}</strong><br>Availability: ${status}`)
-    .addTo(map);
-});
-  });
+  document.getElementById('toggleAdminPanelBtn').onclick = function() {
+    const overlay = document.getElementById('overlay');
+    overlay.style.display = (overlay.style.display === "none" || overlay.style.display === "") ? "block" : "none";
+  };
 }
 
-document.getElementById('expandBtn').onclick = function() {
-  const expandableContent = document.getElementById('expandableContent');
-  const expandBtn = document.getElementById('expandBtn');
-  expandableContent.classList.toggle('open');
-  expandBtn.textContent = expandableContent.classList.contains('open') ? "Show Less" : "Show More";
-}
+async function enrichLotsWithAvailability(map) {
+  const names = lotData.map(l => l.name);
+  const { data } = await supabase
+    .from('lots')
+    .select('lot_name, availability')
+    .in('lot_name', names);
 
-document.getElementById('toggleAdminPanelBtn').onclick = function() {
-  const overlay = document.getElementById('overlay');
-  overlay.style.display = (overlay.style.display === "none" || overlay.style.display === "") ? "block" : "none";
+  data.forEach(row => {
+    const lot = lotData.find(l => l.name === row.lot_name);
+    if (lot) lot.availability = row.availability || 'Unknown';
+  });
+
+  addSoldXs(map);
 }
 
 function animateGroups(map) {
@@ -209,9 +188,18 @@ function animateGroup(map, g, group, duration) {
 }
 
 function addOptimizedLayers(map) {
-  const features = lotData.map((lot, i) => ({ type: "Feature", properties: { name: lot.name }, geometry: { type: "Polygon", coordinates: [lot.coords.map(c => [c.lng, c.lat])] }, id: i }));
+  const features = lotData.map((lot, i) => ({
+    type: "Feature",
+    properties: { name: lot.name },
+    geometry: { type: "Polygon", coordinates: [lot.coords.map(c => [c.lng, c.lat])] },
+    id: i
+  }));
   const geojson = { type: "FeatureCollection", features };
-  if (!map.getSource('lots')) { map.addSource('lots', { type: 'geojson', data: geojson }); } else { map.getSource('lots').setData(geojson); }
+  if (!map.getSource('lots')) {
+    map.addSource('lots', { type: 'geojson', data: geojson });
+  } else {
+    map.getSource('lots').setData(geojson);
+  }
   if (!map.getLayer('lots-fill')) {
     map.addLayer({ id: 'lots-fill', type: 'fill', source: 'lots', paint: { 'fill-color': '#000', 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.2, 0] } });
   }
@@ -219,22 +207,41 @@ function addOptimizedLayers(map) {
     map.addLayer({ id: 'lots-border', type: 'line', source: 'lots', paint: { 'line-color': '#fff', 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2, 1], 'line-opacity': 1 } });
   }
   setupHover(map);
-  setTimeout(() => { for (let g = 0; g < 20; g++) { if (map.getLayer(`group-border-${g}`)) map.removeLayer(`group-border-${g}`); if (map.getSource(`group-${g}`)) map.removeSource(`group-${g}`); } }, 100);
+  map.on('click', 'lots-fill', (e) => {
+    const name = e.features[0].properties.name;
+    const lot = lotData.find(l => l.name === name);
+    const status = lot && lot.availability ? lot.availability : 'Unknown';
+    new mapboxgl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(`<strong>${name}</strong><br>Availability: ${status}`)
+      .addTo(map);
+  });
 }
 
-function fadeInOptimizedLayers(map, duration = 200) {
-  let start = null;
-  function frame(time) {
-    if (!start) start = time;
-    let progress = (time - start) / duration;
-    if (progress > 1) progress = 1;
-    map.setPaintProperty('lots-border', 'line-opacity', progress);
-    map.setPaintProperty('lots-fill', 'fill-opacity', ['case', ['boolean', ['feature-state', 'hover'], false], 0.2 * progress, 0]);
-    if (progress < 1) requestAnimationFrame(frame);
+function addSoldXs(map) {
+  const soldFeatures = [];
+  lotData.forEach(lot => {
+    if (!lot.availability || lot.availability.toLowerCase() !== 'sold') return;
+    const coords = lot.coords.map(c => [c.lng, c.lat]);
+    if (coords[0][0] === coords[coords.length - 1][0] && coords[0][1] === coords[coords.length - 1][1]) coords.pop();
+    const n = coords.length;
+    if (n < 3) return;
+    soldFeatures.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [coords[0], coords[Math.floor(n/2)]] } });
+    soldFeatures.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [coords[Math.floor(n/4)], coords[Math.floor(3*n/4)]] } });
+  });
+  if (!soldFeatures.length) return;
+  const xGeojson = { type: 'FeatureCollection', features: soldFeatures };
+  if (!map.getSource('sold-x')) {
+    map.addSource('sold-x', { type: 'geojson', data: xGeojson });
+    map.addLayer({ id: 'sold-x-layer', type: 'line', source: 'sold-x', paint: { 'line-color': 'white', 'line-width': 2 } });
+  } else {
+    map.getSource('sold-x').setData(xGeojson);
   }
-  map.setPaintProperty('lots-border', 'line-opacity', 0);
-  map.setPaintProperty('lots-fill', 'fill-opacity', ['case', ['boolean', ['feature-state', 'hover'], false], 0, 0]);
-  requestAnimationFrame(frame);
+}
+
+function fadeInOptimizedLayers(map) {
+  map.setPaintProperty('lots-border', 'line-opacity', 1);
+  map.setPaintProperty('lots-fill', 'fill-opacity', ['case', ['boolean', ['feature-state', 'hover'], false], 0.2, 0]);
 }
 
 function setupHover(map) {
@@ -296,6 +303,5 @@ function close(coords) {
   if (coords[0].lat !== coords[coords.length-1].lat || coords[0].lng !== coords[coords.length-1].lng) coords.push({ ...coords[0] });
 }
 </script>
-
 </body>
 </html>
