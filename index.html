@@ -239,65 +239,58 @@ function addOptimizedLayers(map) {
   }
   setupHover(map);
 
-map.on('click', 'lots-fill', (e) => {
+map.on('click', 'lots-fill', async (e) => {
   const name = e.features[0].properties.name;
   const lot = lotData.find(l => l.name === name);
   const status = lot && lot.availability ? lot.availability : 'Unknown';
 
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const showButton = !!user;
+  const toggleLabel = (status.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+
+  const popupHTML = `
+    <strong>${name}</strong><br>
+    Availability: <span id="availabilityText">${status}</span><br>
+    ${showButton ? `<button id="toggleAvailabilityBtn">${toggleLabel}</button>` : ''}
+  `;
+
   new mapboxgl.Popup()
     .setLngLat(e.lngLat)
-    .setHTML(`
-      <strong>${name}</strong><br>
-      Availability: <span id="availabilityText">${status}</span><br>
-      <button id="toggleAvailabilityBtn" style="display:none;"></button>
-    `)
+    .setHTML(popupHTML)
     .addTo(map);
 
-  setTimeout(async () => {
-    const btn = document.getElementById('toggleAvailabilityBtn');
-    const availabilityText = document.getElementById('availabilityText');
-    if (!btn || !availabilityText) return;
+  if (showButton) {
+    setTimeout(() => {
+      const btn = document.getElementById('toggleAvailabilityBtn');
+      const availabilityText = document.getElementById('availabilityText');
+      if (!btn || !availabilityText) return;
 
-    // botón con el estado opuesto
-    btn.textContent = (status.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+      btn.onclick = async () => {
+        const newAvailability = (lot.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
 
-    // comprobar si hay usuario logueado
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      btn.style.display = 'none'; // ocultar si no logueado
-      return;
-    }
+        const { error } = await supabase
+          .from('lots')
+          .update({ availability: newAvailability })
+          .eq('lot_name', name);
 
-    btn.style.display = 'inline-block'; // mostrar si logueado
+        if (error) {
+          alert('Error updating: ' + error.message);
+          return;
+        }
 
-    btn.onclick = async () => {
-      const newAvailability = (lot.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
-
-      const { error } = await supabase
-        .from('lots')
-        .update({ availability: newAvailability })
-        .eq('lot_name', name);
-
-      if (error) {
-        alert('Error updating: ' + error.message);
-      } else {
-        alert(`Availability updated to ${newAvailability}!`);
         lot.availability = newAvailability;
         availabilityText.textContent = newAvailability;
         btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
-// Remove old Xs for this lot
-soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
 
-// If new status is sold, add the Xs
-if (newAvailability.toLowerCase() === 'sold') {
-  soldXFeatures.push(...makeXFeatures(lot));
-}
-
-// Update the layer data
-map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
-      }
-    };
-  }, 100);
+        soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
+        if (newAvailability.toLowerCase() === 'sold') {
+          soldXFeatures.push(...makeXFeatures(lot));
+        }
+        map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
+      };
+    }, 100);
+  }
 });
 
 
