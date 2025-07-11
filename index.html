@@ -55,7 +55,7 @@
   <label for="satellite">Satellite</label>
 </div>
 
-<button id="toggleAdminPanelBtn">Toggle Admin Panel</button>
+<!--button id="toggleAdminPanelBtn">Toggle Admin Panel</button-->
 <div id="authControls" style="position:absolute;top:50px;right:10px;z-index:5;background:white;padding:8px;border-radius:4px;">
   <span id="userEmail" style="margin-right:10px;"></span>
   <button id="authBtn">Log In</button>
@@ -203,7 +203,6 @@ setTimeout(() => {
   addOptimizedLayers(map);
   setupLotClickHandler(map); // 👈 ADD THIS
 }, totalTime);
-
 }
 
 function animateGroup(map, g, group, duration) {
@@ -330,13 +329,6 @@ function setupLotClickHandler(map) {
   isLotClickHandlerSet = true;
 }
 
-
-
-
-
-
-
-
 function addSoldXs(map) {
   if (!map.getSource('sold-x')) {
     map.addSource('sold-x', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -364,25 +356,105 @@ function addSoldXs(map) {
   map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
 }
 
+
 function makeXFeatures(lot) {
   const coords = lot.coords.map(c => [c.lng, c.lat]);
+  console.log('Lot Coordinates:', coords);  // Debugging: check all coordinates
+
+  // Ensure the polygon is closed correctly
   if (coords[0][0] === coords[coords.length - 1][0] && coords[0][1] === coords[coords.length - 1][1]) coords.pop();
+
   const n = coords.length;
   if (n < 3) return [];
 
+  // Function to calculate the Euclidean distance between two points
+  function distance(p1, p2) {
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // For polygons with 4 points, draw the X between the diagonals
+  if (n === 4) {
+    console.log('Drawing X for 4 points');
+    return [
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [coords[0], coords[2]] }
+      },
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [coords[1], coords[3]] }
+      }
+    ];
+  }
+
+  // For polygons with more than 4 points, find the farthest pair of points
+  let maxDistance = 0;
+  let farthestPair = [];
+
+  // Check the distance between every pair of points
+  for (let i = 0; i < coords.length; i++) {
+    for (let j = i + 1; j < coords.length; j++) {
+      const dist = distance(coords[i], coords[j]);
+      if (dist > maxDistance) {
+        maxDistance = dist;
+        farthestPair = [coords[i], coords[j]];
+      }
+    }
+  }
+
+  console.log('Farthest points:', farthestPair);
+  console.log('Distance:', maxDistance);
+
+  // Get the midpoint of the first diagonal (farthest points)
+  const midpoint = [
+    (farthestPair[0][0] + farthestPair[1][0]) / 2,
+    (farthestPair[0][1] + farthestPair[1][1]) / 2
+  ];
+
+  console.log('Midpoint of the first diagonal:', midpoint);
+
+  // Find the second diagonal by taking the two points that are "opposite" to the farthest pair
+  let secondDiagonal = [];
+  let secondMaxDistance = 0;
+  let secondFarthestPair = [];
+
+  // Loop through the remaining points and find the farthest pair that is symmetric
+  for (let i = 0; i < coords.length; i++) {
+    for (let j = i + 1; j < coords.length; j++) {
+      if (coords[i] === farthestPair[0] || coords[i] === farthestPair[1] || coords[j] === farthestPair[0] || coords[j] === farthestPair[1]) {
+        continue; // Skip the farthest pair already used for the first diagonal
+      }
+
+      const dist = distance(coords[i], coords[j]);
+      if (dist > secondMaxDistance) {
+        secondMaxDistance = dist;
+        secondFarthestPair = [coords[i], coords[j]];
+      }
+    }
+  }
+
+  console.log('Second diagonal points:', secondFarthestPair);
+
+  // Return both diagonals to complete the X
   return [
     {
       type: 'Feature',
       properties: { lotName: lot.name },
-      geometry: { type: 'LineString', coordinates: [coords[0], coords[Math.floor(n / 2)]] }
+      geometry: { type: 'LineString', coordinates: [farthestPair[0], farthestPair[1]] }
     },
     {
       type: 'Feature',
       properties: { lotName: lot.name },
-      geometry: { type: 'LineString', coordinates: [coords[Math.floor(n / 4)], coords[Math.floor(3 * n / 4)]] }
+      geometry: { type: 'LineString', coordinates: [secondFarthestPair[0], secondFarthestPair[1]] }
     }
   ];
 }
+
+
 
 function fadeInOptimizedLayers(map) {
   map.setPaintProperty('lots-border', 'line-opacity', 1);
@@ -555,9 +627,8 @@ authBtn.onclick = async () => {
 window.addEventListener('DOMContentLoaded', async () => {
   await checkAuth();
 });
-
-
 </script>
+
 
 </body>
 </html>
