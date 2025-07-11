@@ -394,37 +394,49 @@ function makeXFeatures(lot) {
   // For polygons with more than 4 points, find the farthest pair of points
   let maxDistance = 0;
   let farthestPair = [];
+  let secondMaxDistance = 0;
+  let secondFarthestPair = [];
 
   // Check the distance between every pair of points
   for (let i = 0; i < coords.length; i++) {
     for (let j = i + 1; j < coords.length; j++) {
       const dist = distance(coords[i], coords[j]);
+
       if (dist > maxDistance) {
+        secondMaxDistance = maxDistance;
+        secondFarthestPair = [...farthestPair];  // Store the previous longest pair
         maxDistance = dist;
-        farthestPair = [coords[i], coords[j]];
+        farthestPair = [coords[i], coords[j]]; // Update the longest pair
+      } else if (dist > secondMaxDistance) {
+        secondMaxDistance = dist;
+        secondFarthestPair = [coords[i], coords[j]]; // Update the second longest pair
       }
     }
   }
 
   console.log('Farthest points:', farthestPair);
-  console.log('Distance:', maxDistance);
+  console.log('Second Farthest points:', secondFarthestPair);
+  console.log('Max Distance:', maxDistance);
+  console.log('Second Max Distance:', secondMaxDistance);
 
   // Get the first diagonal (farthest points)
   const firstDiagonal = [farthestPair[0], farthestPair[1]];
 
   // Define a threshold to skip points too close to the first diagonal
-  const threshold = 0.000038; // Adjust this value as needed
+  const threshold = 0.000048; // Adjust this value as needed
+  console.log('Threshold:', threshold);  // Debugging: check the threshold value
 
   // Function to check if a point is too close to the first diagonal
   function isTooClose(point, lineStart, lineEnd) {
     const dist1 = distance(point, lineStart);
     const dist2 = distance(point, lineEnd);
+    console.log('Checking point:', point, 'Distance to lineStart:', dist1, 'Distance to lineEnd:', dist2);  // Debugging
     return dist1 < threshold || dist2 < threshold;
   }
 
   // Find the second diagonal by excluding points too close to the first diagonal
-  let secondMaxDistance = 0;
-  let secondFarthestPair = [];
+  let secondMaxDistanceCheck = 0;
+  let secondFarthestPairCheck = [];
 
   // Loop through the remaining points and find the second diagonal
   for (let i = 0; i < coords.length; i++) {
@@ -436,22 +448,26 @@ function makeXFeatures(lot) {
       // Skip points too close to the first diagonal
       if (isTooClose(coords[i], farthestPair[0], farthestPair[1]) || isTooClose(coords[j], farthestPair[0], farthestPair[1])) {
         continue;
-      }
+      } 
 
       const dist = distance(coords[i], coords[j]);
-      if (dist > secondMaxDistance) {
-        secondMaxDistance = dist;
-        secondFarthestPair = [coords[i], coords[j]];
+      if (dist > secondMaxDistanceCheck) {
+        secondMaxDistanceCheck = dist;
+        secondFarthestPairCheck = [coords[i], coords[j]];
       }
     }
   }
 
-  console.log('Second diagonal points:', secondFarthestPair);
-
-  // Fallback: If no second diagonal is found, use the first diagonal again
-  if (secondFarthestPair.length === 0) {
-    console.log('No second diagonal found. Falling back to the first diagonal for the second line.');
-    secondFarthestPair = farthestPair; // Use the same pair for the second diagonal
+  // If no second diagonal is found (too close to the first diagonal), return just the first diagonal
+  if (secondFarthestPairCheck.length === 0) {
+    console.log('No second diagonal found. Only first diagonal will be shown.');
+    return [
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [firstDiagonal[0], firstDiagonal[1]] }
+      }
+    ];
   }
 
   // Return both diagonals to complete the X
@@ -464,10 +480,12 @@ function makeXFeatures(lot) {
     {
       type: 'Feature',
       properties: { lotName: lot.name },
-      geometry: { type: 'LineString', coordinates: [secondFarthestPair[0], secondFarthestPair[1]] }
+      geometry: { type: 'LineString', coordinates: [secondFarthestPairCheck[0], secondFarthestPairCheck[1]] }
     }
   ];
 }
+
+
 
 
 
