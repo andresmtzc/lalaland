@@ -13,24 +13,58 @@
     #menu { position:absolute; background:white; padding:10px; z-index:1; top:10px; left:10px; font-family:sans-serif; font-size:14px; }
     #overlay { position:absolute; top:50px; right:20px; width:300px; background:white; padding:20px; box-shadow:0px 0px 10px rgba(0,0,0,0.3); z-index:2; max-height:80%; overflow-y:auto; overflow-x:hidden; border-radius:8px; display:none; }
     
-    #searchBar {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: white;
-  padding: 5px 10px;
-  border-radius: 4px;
-  box-shadow: 0px 0px 5px rgba(0,0,0,0.2);
-  z-index: 4;
-}
 
-#searchBar input {
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 5px;
-  width: 200px;
-}
+  /* Suggestions container is hidden by default */
+  #suggestionsContainer {
+    position: fixed;
+    bottom: 70px;  /* Adjust the distance from the bottom */
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;  /* Hide by default */
+    justify-content: space-between;
+    width: 30%;  /* Adjust width to be centered */
+    z-index: 10; /* Ensure it floats above the map */
+  }
+
+  .suggestionBtn {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    width: 30%; /* Adjust width to fit 3 buttons */
+    text-align: center;
+  }
+
+  .suggestionBtn:hover {
+    background-color: #0056b3;
+  }
+
+  .suggestionBtn:focus {
+    outline: none;
+  }
+
+  /* Search Bar at the bottom */
+  #searchBar {
+    position: fixed;
+    bottom: 10px;  /* Distance from the bottom */
+    left: 50%;
+    transform: translateX(-50%);
+    width: 30%;  /* Adjust the width to your liking */
+    z-index: 5;
+  }
+
+  #searchInput {
+    width: 100%;
+    padding: 8px;
+    font-size: 14px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+  }
+
+
 
     .form-group { margin-bottom:15px; }
     .form-group input { width:100%; padding:10px; margin-top:5px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; }
@@ -89,9 +123,21 @@
   </div>
 </div>
 
+
+<div id="suggestionsContainer">
+  <button class="suggestionBtn" data-name="Santte 2">Santte 2</button>
+  <button class="suggestionBtn" data-name="Santte 1">Santte 1</button>
+  <button class="suggestionBtn" data-name="Colmena">Colmena</button>
+</div>
+
 <div id="searchBar">
+  <!-- Search Input -->
   <input type="text" id="searchInput" placeholder="Search...">
 </div>
+
+
+
+
 
 <script>
 let lotData = [];
@@ -636,10 +682,7 @@ document.getElementById('searchInput').addEventListener('keydown', function (e) 
     const lot = lotData.find(l => l.name.toLowerCase() === name);
     console.log('[SEARCH] Found lot:', lot);
 
-    if (!lot) {
-      alert('Lot not found');
-      return;
-    }
+
 
     const id = lotData.indexOf(lot);
     console.log('[SEARCH] Lot index (feature id):', id);
@@ -733,6 +776,79 @@ authBtn.onclick = async () => {
     alert('Check your email for the magic link to log in!');
   }
 };
+
+
+const suggestions = [
+  { name: "Santte 2", center: [-100.15994, 25.461823] },
+  { name: "Santte 1", center: [-100.15994, 25.261823] },
+  { name: "Colmena", center: [-100.15994, 25.061823] }
+];
+
+const searchInput = document.getElementById('searchInput');
+const suggestionsContainer = document.getElementById('suggestionsContainer');
+
+// Show suggestions only when the input is clicked
+searchInput.addEventListener('focus', function() {
+  suggestionsContainer.style.display = 'flex';  // Show buttons upon focus
+});
+
+// Handle input changes
+searchInput.addEventListener('input', function(e) {
+  const searchText = e.target.value.trim().toLowerCase();
+  const filteredSuggestions = suggestions.filter(s => s.name.toLowerCase().includes(searchText));
+
+  // Show or hide the suggestions based on the filtered results
+  if (filteredSuggestions.length > 0) {
+    suggestionsContainer.style.display = 'flex';  // Show suggestions
+  } else {
+    suggestionsContainer.style.display = 'none';  // Hide if no matches
+  }
+});
+
+// Handle suggestion button clicks
+const suggestionButtons = document.querySelectorAll('.suggestionBtn');
+suggestionButtons.forEach(button => {
+  button.addEventListener('click', function() {
+    const selectedSuggestion = suggestions.find(s => s.name === button.dataset.name);
+    if (selectedSuggestion) {
+      // Fly to the selected suggestion
+      map.flyTo({
+        center: selectedSuggestion.center,  // Fly to the coordinates
+        zoom: 16,  // Adjust the zoom level
+        essential: true  // Ensures the transition is smooth and not interruptible
+      });
+      searchInput.value = selectedSuggestion.name;  // Optionally set the input to the selected suggestion
+      suggestionsContainer.style.display = 'none';  // Hide suggestions after selecting one
+    }
+  });
+});
+
+// Search functionality for matching the input with the suggestion
+searchInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    const searchText = e.target.value.trim().toLowerCase();
+    const selectedSuggestion = suggestions.find(s => s.name.toLowerCase() === searchText);
+
+    if (selectedSuggestion) {
+      // Fly to the matching suggestion if found
+      map.flyTo({
+        center: selectedSuggestion.center,  // Fly to the coordinates
+        zoom: 16,  // Adjust the zoom level
+        essential: true  // Ensures the transition is smooth and not interruptible
+      });
+      searchInput.value = selectedSuggestion.name;  // Optionally set the input to the selected suggestion
+      suggestionsContainer.style.display = 'none';  // Hide suggestions after selecting one
+    } 
+  }
+});
+
+// Hide suggestions when clicking outside
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#searchBar') && !e.target.closest('#suggestionsContainer')) {
+    suggestionsContainer.style.display = 'none';  // Hide suggestions when clicking outside
+  }
+});
+
 
 
 window.addEventListener('DOMContentLoaded', async () => {
