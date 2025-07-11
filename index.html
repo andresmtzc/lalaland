@@ -100,6 +100,7 @@ let mapReady = false;
 let currentStyle = 'blueprint';
 let hoveredId = null; // <-- here
 let map; // 👈 add this line
+let soldXFeatures = [];
 
 const supabase = window.supabase.createClient(
   'https://jmoxbhodpvnlmtihcwvt.supabase.co',
@@ -284,6 +285,16 @@ map.on('click', 'lots-fill', (e) => {
         lot.availability = newAvailability;
         availabilityText.textContent = newAvailability;
         btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+// Remove old Xs for this lot
+soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
+
+// If new status is sold, add the Xs
+if (newAvailability.toLowerCase() === 'sold') {
+  soldXFeatures.push(...makeXFeatures(lot));
+}
+
+// Update the layer data
+map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
       }
     };
   }, 100);
@@ -294,24 +305,50 @@ map.on('click', 'lots-fill', (e) => {
 }
 
 function addSoldXs(map) {
-  const soldFeatures = [];
-  lotData.forEach(lot => {
-    if (!lot.availability || lot.availability.toLowerCase() !== 'sold') return;
-    const coords = lot.coords.map(c => [c.lng, c.lat]);
-    if (coords[0][0] === coords[coords.length - 1][0] && coords[0][1] === coords[coords.length - 1][1]) coords.pop();
-    const n = coords.length;
-    if (n < 3) return;
-    soldFeatures.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [coords[0], coords[Math.floor(n/2)]] } });
-    soldFeatures.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [coords[Math.floor(n/4)], coords[Math.floor(3*n/4)]] } });
-  });
-  if (!soldFeatures.length) return;
-  const xGeojson = { type: 'FeatureCollection', features: soldFeatures };
   if (!map.getSource('sold-x')) {
-    map.addSource('sold-x', { type: 'geojson', data: xGeojson });
-    map.addLayer({ id: 'sold-x-layer', type: 'line', source: 'sold-x', paint: { 'line-color': 'white', 'line-width': 1 } });
-  } else {
-    map.getSource('sold-x').setData(xGeojson);
+    map.addSource('sold-x', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+    map.addLayer({
+      id: 'sold-x-layer',
+      type: 'line',
+      source: 'sold-x',
+      paint: {
+        'line-color': 'white',
+        'line-width': 1
+      }
+    });
   }
+
+  // Initial full render
+  soldXFeatures = [];
+
+  lotData.forEach(lot => {
+    if (lot.availability && lot.availability.toLowerCase() === 'sold') {
+      soldXFeatures.push(...makeXFeatures(lot));
+    }
+  });
+
+  map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
+}
+
+function makeXFeatures(lot) {
+  const coords = lot.coords.map(c => [c.lng, c.lat]);
+  if (coords[0][0] === coords[coords.length - 1][0] && coords[0][1] === coords[coords.length - 1][1]) coords.pop();
+  const n = coords.length;
+  if (n < 3) return [];
+
+  return [
+    {
+      type: 'Feature',
+      properties: { lotName: lot.name },
+      geometry: { type: 'LineString', coordinates: [coords[0], coords[Math.floor(n / 2)]] }
+    },
+    {
+      type: 'Feature',
+      properties: { lotName: lot.name },
+      geometry: { type: 'LineString', coordinates: [coords[Math.floor(n / 4)], coords[Math.floor(3 * n / 4)]] }
+    }
+  ];
 }
 
 function fadeInOptimizedLayers(map) {
