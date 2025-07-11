@@ -241,66 +241,76 @@ const road1 = {
 map.on('style.load', async () => {
   mapReady = true;
 
+  // Animate if needed
   if (lotData.length && !animationPlayed) {
     animateGroups(map);
     animationPlayed = true;
   } else if (animationPlayed) {
-    await enrichLotsWithAvailability(map);  // <-- This refreshes lot.availability
+    await enrichLotsWithAvailability(map);
     addOptimizedLayers(map);
-    setupLotClickHandler(map);              // <-- Must come AFTER availability is refreshed
+    setupLotClickHandler(map);
     fadeInOptimizedLayers(map);
   }
-  
-map.addSource('road1', {
-  type: 'geojson',
-  data: road1
-});
 
-map.addLayer({
-  id: 'road1-line',
-  type: 'line',
-  source: 'road1',
-  layout: {
-    'line-join': 'round',
-    'line-cap': 'round'
-  },
-  paint: {
-    'line-color': '#fff',
-    'line-width': 1
+  // Re-add road1 line
+  map.addSource('road1', {
+    type: 'geojson',
+    data: road1
+  });
+
+  map.addLayer({
+    id: 'road1-line',
+    type: 'line',
+    source: 'road1',
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round'
+    },
+    paint: {
+      'line-color': '#fff',
+      'line-width': 1
+    }
+  });
+
+  // Re-add location pins layer
+  await fetchAndAddLocationPins(); // This should set locationPinsGeoJSON
+
+  if (map.getSource('locationPins')) {
+    map.removeSource('locationPins');
+  }
+  if (map.getLayer('locationPins-layer')) {
+    map.removeLayer('locationPins-layer');
   }
 
+  map.addSource('locationPins', {
+    type: 'geojson',
+    data: locationPinsGeoJSON
+  });
 
+  map.addLayer({
+    id: 'locationPins-layer',
+    type: 'symbol',
+    source: 'locationPins',
+    layout: {
+      'icon-image': 'marker-15',
+      'icon-size': 1.5,
+      'icon-allow-overlap': true,
+      'text-field': ['get', 'title'],
+      'text-offset': [0, 1.2],
+      'text-anchor': 'top'
+    },
+    paint: {
+      'text-color': '#fff'
+    }
+  });
 
-
-});
-
-
-await fetchAndAddLocationPins();
-
-map.addSource('locationPins', {
-  type: 'geojson',
-  data: locationPinsGeoJSON
-});
-
-map.addLayer({
-  id: 'locationPins-layer',
-  type: 'symbol',
-  source: 'locationPins',
-  layout: {
-    'icon-image': 'marker-15',
-    'icon-size': 1.5,
-    'icon-allow-overlap': true,
-    'text-field': ['get', 'title'],
-    'text-offset': [0, 1.2],
-    'text-anchor': 'top'
-  },
-  paint: {
-    'text-color': '#fff'
+  // Load Supabase-based location pins if user is logged in
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    await loadLocationPins(map);
   }
 });
 
-
-});
 
 
 
