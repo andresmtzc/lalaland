@@ -136,17 +136,13 @@ function initMap() {
 map.on('style.load', async () => {
   mapReady = true;
 
-  // 🛠️ Reload lot data because Mapbox wipes sources and layers on style change
-  const text = await fetch('https://lalaland.mx/lots.txt').then(res => res.text());
-  lotData = parseLotData(text);
-
   if (lotData.length && !animationPlayed) {
     animateGroups(map);
     animationPlayed = true;
   } else if (animationPlayed) {
-    await enrichLotsWithAvailability(map);
+    await enrichLotsWithAvailability(map);  // <-- This refreshes lot.availability
     addOptimizedLayers(map);
-    setupLotClickHandler(map);
+    setupLotClickHandler(map);              // <-- Must come AFTER availability is refreshed
     fadeInOptimizedLayers(map);
   }
 });
@@ -276,47 +272,42 @@ function setupLotClickHandler(map) {
 
     if (!showButton) return;
 
-setTimeout(() => {
-  const btn = document.getElementById('toggleAvailabilityBtn');
-  const availabilityText = document.getElementById('availabilityText');
-  if (!btn || !availabilityText) return;
+    setTimeout(() => {
+      const btn = document.getElementById('toggleAvailabilityBtn');
+      const availabilityText = document.getElementById('availabilityText');
+      if (!btn || !availabilityText || !lot) return;
 
-  btn.onclick = async () => {
-    const lotFresh = lotData.find(l => l.name === name);
-    if (!lotFresh) return;
+btn.onclick = async () => {
+  const lotFresh = lotData.find(l => l.name === name);
+  const newAvailability = (lotFresh.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
 
-    const newAvailability = (lotFresh.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
 
-    const { error } = await supabase
-      .from('lots')
-      .update({ availability: newAvailability })
-      .eq('lot_name', name);
+        const { error } = await supabase
+          .from('lots')
+          .update({ availability: newAvailability })
+          .eq('lot_name', name);
 
-    if (error) {
-      alert('Error updating: ' + error.message);
-      return;
-    }
+        if (error) {
+          alert('Error updating: ' + error.message);
+          return;
+        }
 
- lotFresh.availability = newAvailability;
+        lot.availability = newAvailability;
+        availabilityText.textContent = newAvailability;
+        btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
 
-// 🔧 Also update lotData entry
-const index = lotData.findIndex(l => l.name === lotFresh.name);
-if (index !== -1) lotData[index].availability = newAvailability;
-    availabilityText.textContent = newAvailability;
-    btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+        // Update sold-Xs layer
+        soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
+        if (newAvailability.toLowerCase() === 'sold') {
+          soldXFeatures.push(...makeXFeatures(lot));
+        }
 
-    // Update sold-Xs layer
-    soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lotFresh.name);
-    if (newAvailability.toLowerCase() === 'sold') {
-      soldXFeatures.push(...makeXFeatures(lotFresh));
-    }
-
-    map.getSource('sold-x').setData({
-      type: 'FeatureCollection',
-      features: soldXFeatures
-    });
-  };
-}, 100); // Wait for popup DOM
+        map.getSource('sold-x').setData({
+          type: 'FeatureCollection',
+          features: soldXFeatures
+        });
+      };
+    }, 100); // Wait for popup DOM
   });
 }
 
@@ -437,23 +428,6 @@ function parseLotData(text) {
 
 function close(coords) {
   if (coords[0].lat !== coords[coords.length-1].lat || coords[0].lng !== coords[coords.length-1].lng) coords.push({ ...coords[0] });
-}
-
-// 🔽 PLACE THIS FUNCTION RIGHT HERE
-async function loadAndEnrichLotData() {
-  const text = await fetch('https://lalaland.mx/lots.txt').then(res => res.text());
-  lotData = parseLotData(text);
-
-  const names = lotData.map(l => l.name);
-  const { data } = await supabase
-    .from('lots')
-    .select('lot_name, availability')
-    .in('lot_name', names);
-
-  data.forEach(row => {
-    const lot = lotData.find(l => l.name === row.lot_name);
-    if (lot) lot.availability = row.availability || 'Unknown';
-  });
 }
 
 document.getElementById('searchInput').addEventListener('keydown', function (e) {
