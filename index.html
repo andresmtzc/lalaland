@@ -237,43 +237,54 @@ function addOptimizedLayers(map) {
     map.addLayer({ id: 'lots-border', type: 'line', source: 'lots', paint: { 'line-color': '#fff', 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 4, 1], 'line-opacity': 1 } });
   }
   setupHover(map);
+  
 map.on('click', 'lots-fill', (e) => {
   const name = e.features[0].properties.name;
   const lot = lotData.find(l => l.name === name);
   const status = lot && lot.availability ? lot.availability : 'Unknown';
+
   new mapboxgl.Popup()
     .setLngLat(e.lngLat)
     .setHTML(`
       <strong>${name}</strong><br>
-      Availability: ${status}<br>
-      <button id="editLotBtn" style="display:none;">Edit Availability</button>
+      Availability: <span id="availabilityText">${status}</span><br>
+      <button id="toggleAvailabilityBtn" style="display:none;"></button>
     `)
     .addTo(map);
 
-    setTimeout(() => {
-  const btn = document.getElementById('editLotBtn');
-if (btn) {
-  btn.onclick = async () => {
-    const newAvailability = (lot.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+  setTimeout(() => {
+    const btn = document.getElementById('toggleAvailabilityBtn');
+    const availabilityText = document.getElementById('availabilityText');
 
-    const { error } = await supabase
-      .from('lots')
-      .update({ availability: newAvailability })
-      .eq('lot_name', name);
+    if (!btn || !availabilityText) return;
 
-    if (error) {
-      alert('Error updating: ' + error.message);
-    } else {
-      alert(`Availability updated to ${newAvailability}!`);
-      lot.availability = newAvailability; // update local state
-      btn.previousSibling.textContent = `Availability: ${newAvailability}`; // update popup text
-    }
-  };
-}
-}, 100);
+    // Set initial button text
+    btn.textContent = (status.toLowerCase() === 'sold') ? 'Available' : 'Sold';
 
-  checkAuth(); // make sure it sets up button visibility
+    btn.onclick = async () => {
+      const newAvailability = (lot.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+
+      const { error } = await supabase
+        .from('lots')
+        .update({ availability: newAvailability })
+        .eq('lot_name', name);
+
+      if (error) {
+        alert('Error updating: ' + error.message);
+      } else {
+        alert(`Availability updated to ${newAvailability}!`);
+
+        // Update UI and local state
+        lot.availability = newAvailability;
+        availabilityText.textContent = newAvailability;
+        btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+      }
+    };
+  }, 100);
+
+  checkAuth(); // ensure button visibility
 });
+
 }
 
 function addSoldXs(map) {
