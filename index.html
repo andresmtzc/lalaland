@@ -247,13 +247,12 @@ function addOptimizedLayers(map) {
 
 
 function setupLotClickHandler(map) {
-  // Avoid multiple handlers when switching styles
-  map.off('click', 'lots-fill');
+  map.off('click', 'lots-fill'); // Remove previous handler (safe for style switch)
 
   map.on('click', 'lots-fill', async (e) => {
     const name = e.features[0].properties.name;
     const lot = lotData.find(l => l.name === name);
-    const status = lot && lot.availability ? lot.availability : 'Unknown';
+    const status = lot?.availability || 'Unknown';
 
     const { data: { user } } = await supabase.auth.getUser();
     const showButton = !!user;
@@ -272,18 +271,12 @@ function setupLotClickHandler(map) {
 
     if (!showButton) return;
 
-    // ✅ This ensures DOM is ready before attaching logic
-    popup.on('open', () => {
+    setTimeout(() => {
       const btn = document.getElementById('toggleAvailabilityBtn');
       const availabilityText = document.getElementById('availabilityText');
       if (!btn || !availabilityText || !lot) return;
 
       btn.onclick = async () => {
-        if (!lot.availability) {
-          alert("Lot data not loaded properly. Please refresh.");
-          return;
-        }
-
         const newAvailability = (lot.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
 
         const { error } = await supabase
@@ -300,7 +293,7 @@ function setupLotClickHandler(map) {
         availabilityText.textContent = newAvailability;
         btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
 
-        // Update X markers
+        // Update sold-Xs layer
         soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
         if (newAvailability.toLowerCase() === 'sold') {
           soldXFeatures.push(...makeXFeatures(lot));
@@ -311,9 +304,10 @@ function setupLotClickHandler(map) {
           features: soldXFeatures
         });
       };
-    });
+    }, 100); // Wait for popup DOM
   });
 }
+
 
 
 
