@@ -142,6 +142,7 @@ function initMap() {
       addOptimizedLayers(map);
       fadeInOptimizedLayers(map);
       addSoldXs(map);
+      setupLotClickHandler(map); // ✅ Reattach click event
     }
   });
 
@@ -238,64 +239,69 @@ function addOptimizedLayers(map) {
     map.addLayer({ id: 'lots-border', type: 'line', source: 'lots', paint: { 'line-color': '#fff', 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 4, 1], 'line-opacity': 1 } });
   }
   setupHover(map);
-
-map.on('click', 'lots-fill', async (e) => {
-  const name = e.features[0].properties.name;
-  const lot = lotData.find(l => l.name === name);
-  const status = lot && lot.availability ? lot.availability : 'Unknown';
-
-  const { data: { user } } = await supabase.auth.getUser();
-
-  const showButton = !!user;
-  const toggleLabel = (status.toLowerCase() === 'sold') ? 'Available' : 'Sold';
-
-  const popupHTML = `
-    <strong>${name}</strong><br>
-    Availability: <span id="availabilityText">${status}</span><br>
-    ${showButton ? `<button id="toggleAvailabilityBtn">${toggleLabel}</button>` : ''}
-  `;
-
-  new mapboxgl.Popup()
-    .setLngLat(e.lngLat)
-    .setHTML(popupHTML)
-    .addTo(map);
-
-  if (showButton) {
-    setTimeout(() => {
-      const btn = document.getElementById('toggleAvailabilityBtn');
-      const availabilityText = document.getElementById('availabilityText');
-      if (!btn || !availabilityText) return;
-
-      btn.onclick = async () => {
-        const newAvailability = (lot.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
-
-        const { error } = await supabase
-          .from('lots')
-          .update({ availability: newAvailability })
-          .eq('lot_name', name);
-
-        if (error) {
-          alert('Error updating: ' + error.message);
-          return;
-        }
-
-        lot.availability = newAvailability;
-        availabilityText.textContent = newAvailability;
-        btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
-
-        soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
-        if (newAvailability.toLowerCase() === 'sold') {
-          soldXFeatures.push(...makeXFeatures(lot));
-        }
-        map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
-      };
-    }, 100);
-  }
-});
-
-
-
 }
+
+
+function setupLotClickHandler(map) {
+  map.on('click', 'lots-fill', async (e) => {
+    const name = e.features[0].properties.name;
+    const lot = lotData.find(l => l.name === name);
+    const status = lot && lot.availability ? lot.availability : 'Unknown';
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const showButton = !!user;
+    const toggleLabel = (status.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+
+    const popupHTML = `
+      <strong>${name}</strong><br>
+      Availability: <span id="availabilityText">${status}</span><br>
+      ${showButton ? `<button id="toggleAvailabilityBtn">${toggleLabel}</button>` : ''}
+    `;
+
+    new mapboxgl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(popupHTML)
+      .addTo(map);
+
+    if (showButton) {
+      setTimeout(() => {
+        const btn = document.getElementById('toggleAvailabilityBtn');
+        const availabilityText = document.getElementById('availabilityText');
+        if (!btn || !availabilityText) return;
+
+        btn.onclick = async () => {
+          const newAvailability = (lot.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+
+          const { error } = await supabase
+            .from('lots')
+            .update({ availability: newAvailability })
+            .eq('lot_name', name);
+
+          if (error) {
+            alert('Error updating: ' + error.message);
+            return;
+          }
+
+          lot.availability = newAvailability;
+          availabilityText.textContent = newAvailability;
+          btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+
+          // update Xs
+          soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
+          if (newAvailability.toLowerCase() === 'sold') {
+            soldXFeatures.push(...makeXFeatures(lot));
+          }
+          map.getSource('sold-x').setData({
+            type: 'FeatureCollection',
+            features: soldXFeatures
+          });
+        };
+      }, 100);
+    }
+  });
+}
+
+
 
 function addSoldXs(map) {
   if (!map.getSource('sold-x')) {
