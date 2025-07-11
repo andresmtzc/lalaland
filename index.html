@@ -409,24 +409,33 @@ function makeXFeatures(lot) {
   console.log('Farthest points:', farthestPair);
   console.log('Distance:', maxDistance);
 
-  // Get the midpoint of the first diagonal (farthest points)
-  const midpoint = [
-    (farthestPair[0][0] + farthestPair[1][0]) / 2,
-    (farthestPair[0][1] + farthestPair[1][1]) / 2
-  ];
+  // Get the first diagonal (farthest points)
+  const firstDiagonal = [farthestPair[0], farthestPair[1]];
 
-  console.log('Midpoint of the first diagonal:', midpoint);
+  // Define a threshold to skip points too close to the first diagonal
+  const threshold = 0.000038; // Adjust this value as needed
 
-  // Find the second diagonal by taking the two points that are "opposite" to the farthest pair
-  let secondDiagonal = [];
+  // Function to check if a point is too close to the first diagonal
+  function isTooClose(point, lineStart, lineEnd) {
+    const dist1 = distance(point, lineStart);
+    const dist2 = distance(point, lineEnd);
+    return dist1 < threshold || dist2 < threshold;
+  }
+
+  // Find the second diagonal by excluding points too close to the first diagonal
   let secondMaxDistance = 0;
   let secondFarthestPair = [];
 
-  // Loop through the remaining points and find the farthest pair that is symmetric
+  // Loop through the remaining points and find the second diagonal
   for (let i = 0; i < coords.length; i++) {
     for (let j = i + 1; j < coords.length; j++) {
       if (coords[i] === farthestPair[0] || coords[i] === farthestPair[1] || coords[j] === farthestPair[0] || coords[j] === farthestPair[1]) {
         continue; // Skip the farthest pair already used for the first diagonal
+      }
+
+      // Skip points too close to the first diagonal
+      if (isTooClose(coords[i], farthestPair[0], farthestPair[1]) || isTooClose(coords[j], farthestPair[0], farthestPair[1])) {
+        continue;
       }
 
       const dist = distance(coords[i], coords[j]);
@@ -439,12 +448,18 @@ function makeXFeatures(lot) {
 
   console.log('Second diagonal points:', secondFarthestPair);
 
+  // Fallback: If no second diagonal is found, use the first diagonal again
+  if (secondFarthestPair.length === 0) {
+    console.log('No second diagonal found. Falling back to the first diagonal for the second line.');
+    secondFarthestPair = farthestPair; // Use the same pair for the second diagonal
+  }
+
   // Return both diagonals to complete the X
   return [
     {
       type: 'Feature',
       properties: { lotName: lot.name },
-      geometry: { type: 'LineString', coordinates: [farthestPair[0], farthestPair[1]] }
+      geometry: { type: 'LineString', coordinates: [firstDiagonal[0], firstDiagonal[1]] }
     },
     {
       type: 'Feature',
@@ -453,6 +468,8 @@ function makeXFeatures(lot) {
     }
   ];
 }
+
+
 
 
 
