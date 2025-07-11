@@ -56,6 +56,10 @@
 </div>
 
 <button id="toggleAdminPanelBtn">Toggle Admin Panel</button>
+<div id="authControls" style="position:absolute;top:50px;right:10px;z-index:5;background:white;padding:8px;border-radius:4px;">
+  <span id="userEmail" style="margin-right:10px;"></span>
+  <button id="authBtn">Log In</button>
+</div>
 
 <div id="overlay">
   <h2>Manage Lots</h2>
@@ -233,15 +237,43 @@ function addOptimizedLayers(map) {
     map.addLayer({ id: 'lots-border', type: 'line', source: 'lots', paint: { 'line-color': '#fff', 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 4, 1], 'line-opacity': 1 } });
   }
   setupHover(map);
-  map.on('click', 'lots-fill', (e) => {
-    const name = e.features[0].properties.name;
-    const lot = lotData.find(l => l.name === name);
-    const status = lot && lot.availability ? lot.availability : 'Unknown';
-    new mapboxgl.Popup()
-      .setLngLat(e.lngLat)
-      .setHTML(`<strong>${name}</strong><br>Availability: ${status}`)
-      .addTo(map);
-  });
+map.on('click', 'lots-fill', (e) => {
+  const name = e.features[0].properties.name;
+  const lot = lotData.find(l => l.name === name);
+  const status = lot && lot.availability ? lot.availability : 'Unknown';
+  new mapboxgl.Popup()
+    .setLngLat(e.lngLat)
+    .setHTML(`
+      <strong>${name}</strong><br>
+      Availability: ${status}<br>
+      <button id="editLotBtn" style="display:none;">Edit Availability</button>
+    `)
+    .addTo(map);
+
+    setTimeout(() => {
+  const btn = document.getElementById('editLotBtn');
+  if (btn) {
+    btn.onclick = async () => {
+      const newAvailability = prompt('Enter new availability:');
+      if (!newAvailability) return;
+
+      const { error } = await supabase
+        .from('lots')
+        .update({ availability: newAvailability })
+        .eq('lot_name', name);
+
+      if (error) {
+        alert('Error updating: ' + error.message);
+      } else {
+        alert('Availability updated!');
+        lot.availability = newAvailability; // update local state
+      }
+    };
+  }
+}, 100);
+
+  checkAuth(); // make sure it sets up button visibility
+});
 }
 
 function addSoldXs(map) {
@@ -284,6 +316,12 @@ function setupHover(map) {
     hoveredId = null;
     map.getCanvas().style.cursor = '';
   });
+}
+
+function showEditButtons(show) {
+  const btn = document.getElementById('editLotBtn');
+  if (!btn) return;
+  btn.style.display = show ? 'inline-block' : 'none';
 }
 
 function makeFeature(i, startBig = false) {
@@ -360,6 +398,61 @@ document.getElementById('searchInput').addEventListener('keydown', function (e) 
   }
 });
 
+const authBtn = document.getElementById('authBtn');
+const userEmailSpan = document.getElementById('userEmail');
+
+async function checkAuth() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    userEmailSpan.textContent = user.email;
+    authBtn.textContent = 'Log Out';
+    showEditButtons(true);
+  } else {
+    userEmailSpan.textContent = '';
+    authBtn.textContent = 'Log In';
+    showEditButtons(false);
+  }
+}
+
+// login/logout toggle
+let allowedEmails = [];
+
+async function fetchAllowedEmails() {
+  const { data, error } = await supabase
+    .from('lot_editors')
+    .select('email')
+    .eq('lot_table', 'lots');
+
+  if (error) {
+    console.error('Failed to fetch allowed emails', error);
+    return;
+  }
+  allowedEmails = data.map(d => d.email);
+}
+
+fetchAllowedEmails();
+
+authBtn.onclick = async () => {
+  await fetchAllowedEmails(); // 🔷 fetch latest allowed emails right now
+
+  const email = prompt('Enter your email:');
+  if (!email) return;
+
+  if (!allowedEmails.includes(email)) {
+    alert('You are not authorized to edit.');
+    return;
+  }
+
+  const { error } = await supabase.auth.signInWithOtp({ email });
+  if (error) {
+    alert('Login error: ' + error.message);
+  } else {
+    alert('Check your email for the magic link to log in!');
+  }
+};
+
+// initially check
+checkAuth();
 
 </script>
 
