@@ -46,25 +46,47 @@
     outline: none;
   }
 
-  /* Search Bar at the bottom */
-  #searchBar {
-    position: fixed;
-    bottom: 10px;  /* Distance from the bottom */
-    left: 50%;
-    transform: translateX(-50%);
-    width: 30%;  /* Adjust the width to your liking */
-    z-index: 5;
-  }
+  /* Container to hold search + locate me */
+#bottomBarContainer {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 4;
+}
 
-  #searchInput {
-    width: 100%;
-    padding: 8px;
-    font-size: 14px;
-    border-radius: 4px;
-    border: 1px solid #ccc;
-  }
+/* Search bar */
+#searchBar {
+  background: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  box-shadow: 0px 0px 5px rgba(0,0,0,0.2);
+}
 
+#searchBar input {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 5px;
+  width: 200px;
+}
 
+/* Locate Me button */
+#locateMeBtn {
+  background-color: #007bff;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  box-shadow: 0px 0px 5px rgba(0,0,0,0.2);
+}
+
+#locateMeBtn:hover {
+  background-color: #0056b3;
+}
 
     .form-group { margin-bottom:15px; }
     .form-group input { width:100%; padding:10px; margin-top:5px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; }
@@ -130,9 +152,11 @@
   <button class="suggestionBtn" data-name="Colmena">Colmena</button>
 </div>
 
-<div id="searchBar">
-  <!-- Search Input -->
-  <input type="text" id="searchInput" placeholder="Search...">
+<div id="bottomBarContainer">
+  <div id="searchBar">
+    <input type="text" id="searchInput" placeholder="Search...">
+  </div>
+  <div id="locateMeBtn">📍 Locate Me</div>
 </div>
 
 
@@ -857,6 +881,61 @@ document.addEventListener('click', function(e) {
   if (!e.target.closest('#searchBar') && !e.target.closest('#suggestionsContainer')) {
     suggestionsContainer.style.display = 'none';  // Hide suggestions when clicking outside
   }
+});
+
+const locateMeBtn = document.getElementById('locateMeBtn');
+const targetCenter = [-100.15994, 25.461823]; // Santte 2
+
+locateMeBtn.addEventListener('click', () => {
+  if (!navigator.geolocation) {
+    alert('Geolocation not supported');
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition((pos) => {
+    const userCoords = [pos.coords.longitude, pos.coords.latitude];
+
+    const line = {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [userCoords, targetCenter]
+      }
+    };
+
+    if (!map.getSource('user-line')) {
+      map.addSource('user-line', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [line]
+        }
+      });
+
+      map.addLayer({
+        id: 'user-line',
+        type: 'line',
+        source: 'user-line',
+        paint: {
+          'line-color': '#ff0000',
+          'line-width': 2
+        }
+      });
+    } else {
+      map.getSource('user-line').setData({
+        type: 'FeatureCollection',
+        features: [line]
+      });
+    }
+
+    map.flyTo({
+      center: userCoords,
+      zoom: 16,
+      essential: true
+    });
+  }, (err) => {
+    alert('Location access denied');
+  });
 });
 
 
