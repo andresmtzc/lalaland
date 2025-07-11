@@ -182,9 +182,6 @@ async function enrichLotsWithAvailability(map) {
   });
 
   addSoldXs(map);
-
-    // 🔴 Add this to enable live updates after data is enriched
-  setupRealtimeUpdates();
 }
 
 function animateGroups(map) {
@@ -242,8 +239,6 @@ function addOptimizedLayers(map) {
   }
   setupHover(map);
 
-  
-
 map.on('click', 'lots-fill', (e) => {
   const name = e.features[0].properties.name;
   const lot = lotData.find(l => l.name === name);
@@ -275,40 +270,33 @@ map.on('click', 'lots-fill', (e) => {
 
     btn.style.display = 'inline-block'; // mostrar si logueado
 
-btn.onclick = async () => {
-  const newAvailability = (lot.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+    btn.onclick = async () => {
+      const newAvailability = (lot.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
 
-  const { error } = await supabase
-    .from('lots')
-    .update({ availability: newAvailability })
-    .eq('lot_name', name);
+      const { error } = await supabase
+        .from('lots')
+        .update({ availability: newAvailability })
+        .eq('lot_name', name);
 
-  if (error) {
-    alert('Error updating: ' + error.message);
-  } else {
-    alert(`Availability updated to ${newAvailability}!`);
-    lot.availability = newAvailability;
-    availabilityText.textContent = newAvailability;
-    btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+      if (error) {
+        alert('Error updating: ' + error.message);
+      } else {
+        alert(`Availability updated to ${newAvailability}!`);
+        lot.availability = newAvailability;
+        availabilityText.textContent = newAvailability;
+        btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+// Remove old Xs for this lot
+soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
 
-    // ❌ Remove old X
-    soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
-    if (newAvailability.toLowerCase() === 'sold') {
-      soldXFeatures.push(...makeXFeatures(lot));
-    }
-    map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
+// If new status is sold, add the Xs
+if (newAvailability.toLowerCase() === 'sold') {
+  soldXFeatures.push(...makeXFeatures(lot));
+}
 
-    // ✅ Broadcast the change
-    await supabase.channel('lots-updates').send({
-      type: 'broadcast',
-      event: 'lot-update',
-      payload: {
-        lot_name: name,
-        availability: newAvailability
+// Update the layer data
+map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
       }
-    });
-  }
-};
+    };
   }, 100);
 });
 
@@ -345,130 +333,22 @@ function addSoldXs(map) {
 
 function makeXFeatures(lot) {
   const coords = lot.coords.map(c => [c.lng, c.lat]);
+  if (coords[0][0] === coords[coords.length - 1][0] && coords[0][1] === coords[coords.length - 1][1]) coords.pop();
   const n = coords.length;
+  if (n < 3) return [];
 
-  if (coords[0][0] === coords[n - 1][0] && coords[0][1] === coords[n - 1][1]) {
-    coords.pop(); // remove closing coord if it's duplicate
-  }
-
-  const features = [];
-
-  if (n >= 4 && n <= 5) {
-    features.push({
+  return [
+    {
       type: 'Feature',
       properties: { lotName: lot.name },
-      geometry: {
-        type: 'LineString',
-        coordinates: [coords[0], coords[Math.floor(n / 2)]]
-      }
-    });
-    features.push({
+      geometry: { type: 'LineString', coordinates: [coords[0], coords[Math.floor(n / 2)]] }
+    },
+    {
       type: 'Feature',
       properties: { lotName: lot.name },
-      geometry: {
-        type: 'LineString',
-        coordinates: [coords[Math.floor(n / 4)], coords[Math.floor(3 * n / 4)]]
-      }
-    });
-  } else {
-    const { minX, maxX, minY, maxY } = getBoundingBox(coords);
-    features.push({
-      type: 'Feature',
-      properties: { lotName: lot.name },
-      geometry: {
-        type: 'LineString',
-        coordinates: [[minX, minY], [maxX, maxY]]
-      }
-    });
-    features.push({
-      type: 'Feature',
-      properties: { lotName: lot.name },
-      geometry: {
-        type: 'LineString',
-        coordinates: [[minX, maxY], [maxX, minY]]
-      }
-    });
-  }
-
-  return features;
-}
-
-function getBoundingBox(coords) {
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  coords.forEach(([lng, lat]) => {
-    if (lng < minX) minX = lng;
-    if (lng > maxX) maxX = lng;
-    if (lat < minY) minY = lat;
-    if (lat > maxY) maxY = lat;
-  });
-  return { minX, maxX, minY, maxY };
-}
-
-function addSoldXs(map) {
-  if (map.getLayer('sold-x-layer')) map.removeLayer('sold-x-layer');
-  if (map.getSource('sold-x')) map.removeSource('sold-x');
-
-  const soldFeatures = [];
-
-  lotData.forEach(lot => {
-    if (!lot.availability || lot.availability.toLowerCase() !== 'sold') return;
-
-    const coords = lot.coords.map(c => [c.lng, c.lat]);
-    const n = coords.length;
-    if (coords[0][0] === coords[n - 1][0] && coords[0][1] === coords[n - 1][1]) coords.pop();
-
-    if (n >= 4 && n <= 5) {
-      // original logic for nearly rectangular
-      soldFeatures.push({
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: [coords[0], coords[Math.floor(n / 2)]]
-        }
-      });
-      soldFeatures.push({
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: [coords[Math.floor(n / 4)], coords[Math.floor(3 * n / 4)]]
-        }
-      });
-    } else {
-      // fallback: bounding box
-      const { minX, maxX, minY, maxY } = getBoundingBox(coords);
-      soldFeatures.push({
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: [[minX, minY], [maxX, maxY]]
-        }
-      });
-      soldFeatures.push({
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: [[minX, maxY], [maxX, minY]]
-        }
-      });
+      geometry: { type: 'LineString', coordinates: [coords[Math.floor(n / 4)], coords[Math.floor(3 * n / 4)]] }
     }
-  });
-
-  if (!soldFeatures.length) return;
-
-  map.addSource('sold-x', {
-    type: 'geojson',
-    data: { type: 'FeatureCollection', features: soldFeatures }
-  });
-
-  map.addLayer({
-    id: 'sold-x-layer',
-    type: 'line',
-    source: 'sold-x',
-    paint: {
-      'line-color': 'white',
-      'line-width': 1
-    }
-  });
+  ];
 }
 
 function fadeInOptimizedLayers(map) {
@@ -642,48 +522,6 @@ authBtn.onclick = async () => {
 window.addEventListener('DOMContentLoaded', async () => {
   await checkAuth();
 });
-
-function updateLotVisuals(updatedLot) {
-  const lot = lotData.find(l => l.name === updatedLot.lot_name);
-  if (!lot) return;
-
-  lot.availability = updatedLot.availability;
-
-  // Remove old ❌
-  soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
-
-  // Add new ❌ if sold
-  if (lot.availability.toLowerCase() === 'sold') {
-    soldXFeatures.push(...makeXFeatures(lot));
-  }
-
-  // Update map source
-  const source = map.getSource('sold-x');
-  if (source) {
-    source.setData({ type: 'FeatureCollection', features: soldXFeatures });
-  }
-}
-
-function setupRealtimeUpdates() {
-  const channel = supabase.channel('lots-updates');
-
-  channel
-    .on('broadcast', { event: 'lot-update' }, ({ payload }) => {
-      console.log('📡 Broadcast received:', payload);
-
-      const updatedLot = lotData.find(l => l.name === payload.lot_name);
-      if (updatedLot) {
-        updatedLot.availability = payload.availability;
-        updateLotVisuals(updatedLot);
-      }
-    })
-    .subscribe();
-}
-
-
-
-
-
 
 
 </script>
