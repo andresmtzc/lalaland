@@ -6,6 +6,80 @@
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+
+const supabase = createClient(  'https://jmoxbhodpvnlmtihcwvt.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imptb3hiaG9kcHZubG10aWhjd3Z0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxODM1MDgsImV4cCI6MjA2Nzc1OTUwOH0.-jP1akHIo9R4a2lD15byC5dESSGfeFHu8qlbmHteeJo')
+
+// bounce every 3 minutes
+const btn = document.querySelector('.whatsapp-button')
+const startTime = Date.now()
+
+function bounceButton() {
+  btn.style.animation = 'bounce 1s'
+  btn.addEventListener('animationend', () => {
+    btn.style.animation = ''
+  }, { once: true })
+}
+
+// initial + interval bounce
+setTimeout(bounceButton, 3000)
+setInterval(bounceButton, 3 * 60 * 1000)
+
+// generate or retrieve unique user ID
+let userId = localStorage.getItem('whatsapp_user_id')
+if (!userId) {
+  userId = crypto.randomUUID()
+  localStorage.setItem('whatsapp_user_id', userId)
+}
+
+// utility functions
+function getDevice() {
+  const ua = navigator.userAgent
+  if (/mobile/i.test(ua)) return 'Mobile'
+  if (/tablet/i.test(ua)) return 'Tablet'
+  return 'Desktop'
+}
+
+function getBrowser() {
+  const ua = navigator.userAgent
+  if (ua.includes("Chrome")) return "Chrome"
+  if (ua.includes("Firefox")) return "Firefox"
+  if (ua.includes("Safari") && !ua.includes("Chrome")) return "Safari"
+  if (ua.includes("Edge")) return "Edge"
+  return "Other"
+}
+
+// optional: read UTM from URL if present
+const params = new URLSearchParams(window.location.search)
+if (params.get('utm_source')) btn.dataset.utmSource = params.get('utm_source')
+if (params.get('utm_medium')) btn.dataset.utmMedium = params.get('utm_medium')
+if (params.get('utm_campaign')) btn.dataset.utmCampaign = params.get('utm_campaign')
+if (params.get('utm_term')) btn.dataset.utmTerm = params.get('utm_term')
+if (params.get('utm_content')) btn.dataset.utmContent = params.get('utm_content')
+
+btn.addEventListener('click', async () => {
+  const timeOnPageSeconds = Math.round((Date.now() - startTime) / 1000)
+  const pageOrigin = window.location.pathname
+
+  await supabase.from('whatsapp_clicks').insert([{
+    user_id: userId,
+    utm_source: btn.dataset.utmSource || null,
+    utm_medium: btn.dataset.utmMedium || null,
+    utm_campaign: btn.dataset.utmCampaign || null,
+    utm_term: btn.dataset.utmTerm || null,
+    utm_content: btn.dataset.utmContent || null,
+    page_origin: pageOrigin,
+    time_on_page_seconds: timeOnPageSeconds,
+    device: getDevice(),
+    browser: getBrowser(),
+    user_agent: navigator.userAgent
+  }])
+})
+</script>
+
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
   <style>
     body { margin:0; padding:0; overflow-x:hidden; display:flex; }
@@ -13,6 +87,40 @@
     #menu { position:absolute; background:white; padding:10px; z-index:1; top:10px; left:10px; font-family:sans-serif; font-size:14px; }
     #overlay { position:absolute; top:50px; right:20px; width:300px; background:white; padding:20px; box-shadow:0px 0px 10px rgba(0,0,0,0.3); z-index:2; max-height:80%; overflow-y:auto; overflow-x:hidden; border-radius:8px; display:none; }
     
+
+.whatsapp-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #25d366;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  animation: none;
+}
+
+.whatsapp-button img {
+  width: 60%;
+  height: 60%;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-15px);
+  }
+  60% {
+    transform: translateY(-8px);
+  }
+}
+
 
   /* Suggestions container is hidden by default */
   #suggestionsContainer {
@@ -160,6 +268,13 @@
 </div>
 
 
+<a href="https://wa.me/5218185261819" target="_blank" class="whatsapp-button"
+   class="whatsapp-button"
+   data-utm-source="website"
+   data-utm-medium="button"
+   data-utm-campaign="lead_generation">
+  <img src="https://cdn-icons-png.flaticon.com/512/124/124034.png" alt="WhatsApp" />
+</a>
 
 
 
