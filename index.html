@@ -768,13 +768,214 @@ searchInput.addEventListener('input', function(e) {
 
 // ===================== CLICK & SOLD-X =====================
 
+// Handle suggestion button clicks
+const suggestionButtons = document.querySelectorAll('.suggestionBtn');
+suggestionButtons.forEach(button => {
+  button.addEventListener('click', function() {
+    const selectedSuggestion = suggestions.find(s => s.name === button.dataset.name);
+    if (selectedSuggestion) {
+      // Fly to the selected suggestion
+      map.flyTo({
+        center: selectedSuggestion.center,  // Fly to the coordinates
+        zoom: 16,  // Adjust the zoom level
+        essential: true  // Ensures the transition is smooth and not interruptible
+      });
 
 
 
 
+    }
+  });
+});
 
 
 
+
+// ===================== CLICK & SOLD-X =====================
+
+// Hide suggestions when clicking outside
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#searchBar') && !e.target.closest('#suggestionsContainer')) {
+    suggestionsContainer.style.display = 'none';  // Hide suggestions when clicking outside
+  }
+});
+
+const locateMeBtn = document.getElementById('locateMeBtn');
+const targetCenter = [-100.15994, 25.461823]; // Santte 2
+let lastGpsRequestTime = 0;
+const gpsCooldownMs = 15000; // 15 sec cooldown
+
+locateMeBtn.addEventListener('click', () => {
+  const now = Date.now();
+  if (now - lastGpsRequestTime < gpsCooldownMs) {
+    // silently ignore repeated clicks during cooldown
+    return;
+  }
+  lastGpsRequestTime = now;
+
+
+// ===================== LOCATE-ME & USER-LINE =====================
+
+  if (!navigator.geolocation) {
+    // If you want silent fail here too, remove alert:
+    // alert('Geolocation not supported');
+    return;
+  }
+
+  locateMeBtn.textContent = 'Locating...'; 
+
+  navigator.geolocation.getCurrentPosition(async (position) => {
+    const userCoords = [position.coords.longitude, position.coords.latitude];
+
+    // Draw line
+    const line = {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [userCoords, targetCenter]
+      }
+    };
+
+    if (!map.getSource('user-line')) {
+
+// ===================== LOTS LAYERS =====================
+
+      map.addSource('user-line', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [line]
+        }
+      });
+
+      map.addLayer({
+        id: 'user-line',
+        type: 'line',
+        source: 'user-line',
+        paint: {
+          'line-color': 'red',
+          'line-width': 2
+        }
+      });
+    } else {
+      map.getSource('user-line').setData({
+        type: 'FeatureCollection',
+        features: [line]
+      });
+    }
+
+    // Fly to user
+    map.flyTo({
+      center: userCoords,
+      zoom: 16,
+      essential: true
+    });
+
+  // Launch navigation
+  const start = `${position.coords.latitude},${position.coords.longitude}`;
+  const end = `${targetCenter[1]},${targetCenter[0]}`;
+  const navigationUrl = `https://www.google.com/maps/dir/?api=1&origin=${start}&destination=${end}&travelmode=driving`;
+  window.open(navigationUrl, '_blank');
+
+    // Audit to Supabase
+
+// ===================== SUPABASE AUTH =====================
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+// ===================== SUPABASE LOTS =====================
+
+    await supabase.from('location_logs').insert({
+      email: user?.email || null,
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+      browser: navigator.userAgent
+    });
+
+    locateMeBtn.textContent = 'Locate Me'; // Reset
+  }, (err) => {
+    alert('Location access denied');
+    locateMeBtn.textContent = 'Locate Me'; // Reset
+  });
+});
+
+async function loadLocationPins(map) {
+  const { data, error } = await supabase
+    .from('location_logs')
+    .select('lat, lng, email');
+
+  if (error) {
+    console.error('Error loading location pins:', error);
+    return;
+  }
+
+  const features = data.map((entry, index) => ({
+    type: 'Feature',
+    geometry: {
+      type: 'Point',
+      coordinates: [entry.lng, entry.lat]
+    },
+    properties: {
+      email: entry.email,
+      id: index
+    }
+  }));
+
+  const geojson = {
+    type: 'FeatureCollection',
+    features
+  };
+
+  if (!map.getSource('location-pins')) {
+
+// ===================== LOTS LAYERS =====================
+
+    map.addSource('location-pins', {
+      type: 'geojson',
+      data: geojson,
+      cluster: true,
+      clusterRadius: 40,
+    });
+
+    map.addLayer({
+      id: 'clustered-pins',
+      type: 'circle',
+      source: 'location-pins',
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': '#f00',
+        'circle-radius': ['step', ['get', 'point_count'], 15, 10, 20, 50, 25]
+      }
+    });
+
+    map.addLayer({
+      id: 'cluster-count',
+      type: 'symbol',
+      source: 'location-pins',
+      filter: ['has', 'point_count'],
+      layout: {
+        'text-field': ['get', 'point_count'],
+        'text-size': 12
+      },
+      paint: {
+        'text-color': '#fff'
+      }
+    });
+
+    map.addLayer({
+      id: 'unclustered-pins',
+      type: 'circle',
+      source: 'location-pins',
+      filter: ['!', ['has', 'point_count']],
+      paint: {
+        'circle-color': '#f00',
+        'circle-radius': 6
+      }
+    });
+  } else {
+    map.getSource('location-pins').setData(geojson);
+  }
+}
 
 
 
