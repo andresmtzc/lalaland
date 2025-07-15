@@ -1,1330 +1,212 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Lots Map — Final</title>
-  <meta charset="utf-8">
-  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
-  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
-
-<script type="module">
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
-
-const supabase = createClient(  'https://jmoxbhodpvnlmtihcwvt.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imptb3hiaG9kcHZubG10aWhjd3Z0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxODM1MDgsImV4cCI6MjA2Nzc1OTUwOH0.-jP1akHIo9R4a2lD15byC5dESSGfeFHu8qlbmHteeJo')
-
-// bounce every 3 minutes
-const btn = document.querySelector('.whatsapp-button')
-const startTime = Date.now()
-
-function bounceButton() {
-  btn.style.animation = 'bounce 1s'
-  btn.addEventListener('animationend', () => {
-    btn.style.animation = ''
-  }, { once: true })
-}
-
-// initial + interval bounce
-setTimeout(bounceButton, 3000)
-setInterval(bounceButton, 3 * 60 * 1000)
-
-// generate or retrieve unique user ID
-let userId = localStorage.getItem('whatsapp_user_id')
-if (!userId) {
-  userId = crypto.randomUUID()
-  localStorage.setItem('whatsapp_user_id', userId)
-}
-
-// utility functions
-function getDevice() {
-  const ua = navigator.userAgent
-  if (/mobile/i.test(ua)) return 'Mobile'
-  if (/tablet/i.test(ua)) return 'Tablet'
-  return 'Desktop'
-}
-
-function getBrowser() {
-  const ua = navigator.userAgent
-  if (ua.includes("Chrome")) return "Chrome"
-  if (ua.includes("Firefox")) return "Firefox"
-  if (ua.includes("Safari") && !ua.includes("Chrome")) return "Safari"
-  if (ua.includes("Edge")) return "Edge"
-  return "Other"
-}
-
-// optional: read UTM from URL if present
-const params = new URLSearchParams(window.location.search)
-if (params.get('utm_source')) btn.dataset.utmSource = params.get('utm_source')
-if (params.get('utm_medium')) btn.dataset.utmMedium = params.get('utm_medium')
-if (params.get('utm_campaign')) btn.dataset.utmCampaign = params.get('utm_campaign')
-if (params.get('utm_term')) btn.dataset.utmTerm = params.get('utm_term')
-if (params.get('utm_content')) btn.dataset.utmContent = params.get('utm_content')
-
-btn.addEventListener('click', async () => {
-  const timeOnPageSeconds = Math.round((Date.now() - startTime) / 1000)
-  const pageOrigin = window.location.pathname
-
-  await supabase.from('whatsapp_clicks').insert([{
-    user_id: userId,
-    utm_source: btn.dataset.utmSource || null,
-    utm_medium: btn.dataset.utmMedium || null,
-    utm_campaign: btn.dataset.utmCampaign || null,
-    utm_term: btn.dataset.utmTerm || null,
-    utm_content: btn.dataset.utmContent || null,
-    page_origin: pageOrigin,
-    time_on_page_seconds: timeOnPageSeconds,
-    device: getDevice(),
-    browser: getBrowser(),
-    user_agent: navigator.userAgent
-  }])
-})
-</script>
-
-  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
-  <style>
-    body { margin:0; padding:0; overflow-x:hidden; display:flex; }
-    #map { position:absolute; top:0; bottom:0; left:0; right:0; overflow:hidden; }
-    #menu { position:absolute; background:white; padding:10px; z-index:1; top:10px; left:10px; font-family:sans-serif; font-size:14px; }
-    #overlay { position:absolute; top:50px; right:20px; width:300px; background:white; padding:20px; box-shadow:0px 0px 10px rgba(0,0,0,0.3); z-index:2; max-height:80%; overflow-y:auto; overflow-x:hidden; border-radius:8px; display:none; }
-    
-.custom-modal { 
-  position: fixed;
-  top: 100px;
-  bottom: 100px;
-  left: 50px;
-  width: 25vw;
-  background-color: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  border-radius: 0px;
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
-  overflow-y: auto;
-}
-
-/* Mobile styles */
-@media (max-width: 768px) {
-  .custom-modal {
-    top: 24px;
-    left: 30px;
-    right: 30px;
-    bottom: auto;
-    height: 35vh;
-    width: auto;
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lalaland Lots Map</title>
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; height:100%; }
+  #map { height:100%; }
+  #style-switcher {
+    position: absolute; top: 10px; left: 10px; z-index: 1;
+    background: white; padding: 5px; border-radius: 4px;
   }
-}
-
-
-
-.whatsapp-button {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  z-index: 1000;
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background-color: #25d366;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-  animation: none;
-  transition: transform 0.1s ease;
-}
-
-.whatsapp-button:hover {
-transform: scale(1.1);
-}
-
-.whatsapp-button img {
-  width: 60%;
-  height: 60%;
-}
-
-@keyframes bounce {
-  0%, 20%, 50%, 80%, 100% {
-    transform: translateY(0);
-  }
-  40% {
-    transform: translateY(-15px);
-  }
-  60% {
-    transform: translateY(-8px);
-  }
-}
-
-
-  /* Suggestions container is hidden by default */
-  #suggestionsContainer {
-    position: fixed;
-    bottom: 70px;  /* Adjust the distance from the bottom */
-    left: 50%;
-    transform: translateX(-50%);
-    display: none;  /* Hide by default */
-    justify-content: space-between;
-    width: 30%;  /* Adjust width to be centered */
-    z-index: 10; /* Ensure it floats above the map */
-  }
-
-  .suggestionBtn {
-    background-color: #007bff;
-    color: white;
-    border: none;
-    padding: 8px 15px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    width: 30%; /* Adjust width to fit 3 buttons */
-    text-align: center;
-  }
-
-  .suggestionBtn:hover {
-    background-color: #0056b3;
-  }
-
-  .suggestionBtn:focus {
-    outline: none;
-  }
-
-  /* Container to hold search + locate me */
-#bottomBarContainer {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  z-index: 4;
-}
-
-/* Search bar */
-#searchBar {
-  background: white;
-  padding: 5px 10px;
-  border-radius: 4px;
-  box-shadow: 0px 0px 5px rgba(0,0,0,0.2);
-}
-
-#searchBar input {
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 5px;
-  width: 200px;
-}
-
-/* Locate Me button */
-#locateMeBtn {
-  background-color: #007bff;
-  color: white;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  box-shadow: 0px 0px 5px rgba(0,0,0,0.2);
-}
-
-#locateMeBtn:hover {
-  background-color: #0056b3;
-}
-
-    .form-group { margin-bottom:15px; }
-    .form-group input { width:100%; padding:10px; margin-top:5px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; }
-    .form-group button { width:100%; padding:10px; margin-top:10px; border:none; background-color:#28a745; color:white; border-radius:4px; cursor:pointer; }
-    .form-group button:hover { background-color:#218838; }
-    .expandable-content { display:none; margin-top:10px; }
-    .expandable-content.open { display:block; }
-    .expand-btn { background-color:#007bff; color:white; padding:10px; text-align:center; border:none; cursor:pointer; width:100%; border-radius:4px; }
-    .expand-btn:hover { background-color:#0056b3; }
-
-  </style>
+</style>
 </head>
+
 <body>
-
-<div id="map"></div> 
-
-<div id="menu">
-  <input id="blueprint" type="radio" name="style" value="blueprint" checked>
-  <label for="blueprint">Blueprint</label>
-  <input id="satellite" type="radio" name="style" value="satellite">
-  <label for="satellite">Satellite</label>
+<div id="map"></div>
+<div id="style-switcher">
+  <select id="styleSelector">
+    <option value="mapbox://styles/andresmtzc/cmcxf2vmh015o01s097ao7n6k">Lalaland</option>
+    <option value="mapbox://styles/mapbox/satellite-v9">Satellite</option>
+  </select>
 </div>
-
-
-<div id="authControls" style="position:absolute;top:50px;right:10px;z-index:5;background:white;padding:8px;border-radius:4px;">
-  <span id="userEmail" style="margin-right:10px;"></span>
-  <button id="authBtn">Log In</button>
-</div>
-
-<div id="overlay">
-  <h2>Manage Lots</h2>
-  <div id="lotFormContainer">
-    <div class="form-group">
-      <label for="lotName">Lot Name</label>
-      <input type="text" id="lotName" placeholder="Enter Lot Name">
-    </div>
-    <div class="form-group">
-      <label for="availability">Availability</label>
-      <input type="text" id="availability" placeholder="Enter Availability Status">
-    </div>
-    <button id="expandBtn" class="expand-btn">Show More</button>
-    <div id="expandableContent" class="expandable-content">
-      <div class="form-group">
-        <label for="size">Size (m²)</label>
-        <input type="number" id="size" placeholder="Enter Lot Size">
-      </div>
-      <div class="form-group">
-        <label for="price">Price (MXN)</label>
-        <input type="number" id="price" placeholder="Enter Lot Price">
-      </div>
-    </div>
-    <div class="form-group">
-      <button id="updateLotBtn">Update Lot</button>
-    </div>
-  </div>
-</div>
-
-
-<div id="suggestionsContainer">
-  <button class="suggestionBtn" data-name="Santte 2">Santte 2</button>
-  <button class="suggestionBtn" data-name="Santte 1">Santte 1</button>
-  <button class="suggestionBtn" data-name="Colmena">Colmena</button>
-</div>
-
-<div id="bottomBarContainer">
-  <div id="searchBar">
-    <input type="text" id="searchInput" placeholder="Search...">
-  </div>
-  <div id="locateMeBtn">📍 Locate Me</div>
-</div>
-
-
-<a href="https://wa.me/5218185261819" target="_blank" class="whatsapp-button"
-   class="whatsapp-button"
-   data-utm-source="website"
-   data-utm-medium="button"
-   data-utm-campaign="lead_generation">
-  <img src="https://lalaland.mx/whatrans.png" alt="WhatsApp" />
-</a>
-
-
-<div class="custom-modal">
-  <div class="modal-content">
-    <!-- your content here -->
-    <h2>Left-Side Modal</h2>
-    <p>This modal takes up less than 1/3 of the screen.</p>
-  </div>
-</div>
-
-
-
 
 <script>
 let lotData = [];
-let animationPlayed = false;
-let mapReady = false;
-let currentStyle = 'blueprint';
-let hoveredId = null; // <-- here
-let map; // 👈 add this line
-let soldXFeatures = [];
-
-const supabase = window.supabase.createClient(
-  'https://jmoxbhodpvnlmtihcwvt.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imptb3hiaG9kcHZubG10aWhjd3Z0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxODM1MDgsImV4cCI6MjA2Nzc1OTUwOH0.-jP1akHIo9R4a2lD15byC5dESSGfeFHu8qlbmHteeJo'
-);
 
 fetch('https://lalaland.mx/mapbox.txt')
-  .then(res => res.text())
-  .then(token => {
-    mapboxgl.accessToken = token.trim();
-    initMap();
-  });
-
-function initMap() {
-
-// ===================== MAP INIT =====================
-
-  map = new mapboxgl.Map({
+.then(r => r.text())
+.then(token => {
+  mapboxgl.accessToken = token.trim();
+  const map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/andresmtzc/cmcxf2vmh015o01s097ao7n6k',
+    style: document.getElementById('styleSelector').value,
     center: [-100.15994, 25.461823],
     zoom: 16.45
   });
 
-  fetch('https://lalaland.mx/lots.txt')
-    .then(res => res.text())
-    .then(text => {
-      lotData = parseLotData(text);
-      if (mapReady && !animationPlayed) {
-        animateGroups(map);
-        animationPlayed = true;
-      }
-      enrichLotsWithAvailability(map);
+  document.getElementById('styleSelector').addEventListener('change', () => {
+    map.setStyle(document.getElementById('styleSelector').value);
+    map.once('style.load', () => {
+      loadRoad(map, () => {
+        loadLots(map, () => animateLots(map));
+      });
     });
+  });
+// CALL ALL MAP FUNCTIONS (Road, Lot Parse, Lot Animation)
+  map.on('load', () => {
+    loadRoad(map, () => {
+      loadLots(map, () => animateLots(map));
+    });
+  });
+});
+</script>
 
-
-const road1 = {
-  type: 'Feature',
-  geometry: {
-    type: 'LineString',
-    coordinates: [
-        [-100.157757, 25.45803],
-        [-100.157888, 25.458456],
-        [-100.158927, 25.45995],
-        [-100.158501, 25.460763],
-        [-100.158609, 25.461454],
-        [-100.15848, 25.462857],
-        [-100.159828, 25.465042],
-        [-100.161556, 25.464974],
-        [-100.163154, 25.465835],
-        [-100.164051, 25.465707],
-        [-100.165586, 25.466181],
-        [-100.16556, 25.466249],
-        [-100.164044, 25.465781],
-        [-100.163138, 25.46591],
-        [-100.161535, 25.465047],
-        [-100.159783, 25.465116],
-        [-100.158398, 25.462873],
-        [-100.158529, 25.461456],
-        [-100.158419, 25.460752],
-        [-100.158836, 25.459955],
-        [-100.157814, 25.458485],
+<script>
+// ROAD
+const roadGeojson = {
+  type: "FeatureCollection",
+  features: [{
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [-100.157757, 25.45803], [-100.157888, 25.458456], [-100.158927, 25.45995],
+        [-100.158501, 25.460763], [-100.158609, 25.461454], [-100.15848, 25.462857],
+        [-100.159828, 25.465042], [-100.161556, 25.464974], [-100.163154, 25.465835],
+        [-100.164051, 25.465707], [-100.165586, 25.466181], [-100.16556, 25.466249],
+        [-100.164044, 25.465781], [-100.163138, 25.46591], [-100.161535, 25.465047],
+        [-100.159783, 25.465116], [-100.158398, 25.462873], [-100.158529, 25.461456],
+        [-100.158419, 25.460752], [-100.158836, 25.459955], [-100.157814, 25.458485],
         [-100.15768, 25.458049]
-    ]
-  },
-  properties: {}
+      ]
+    }
+  }]
 };
 
-
-
-map.on('style.load', async () => {
-  mapReady = true;
-
-  // Animate if needed
-  if (lotData.length && !animationPlayed) {
-    animateGroups(map);
-    animationPlayed = true;
-  } else if (animationPlayed) {
-    await enrichLotsWithAvailability(map);
-    addOptimizedLayers(map);
-    setupLotClickHandler(map);
-    fadeInOptimizedLayers(map);
-  }
-
-  // Re-add road1 line
-
-// ===================== LOTS LAYERS =====================
-
-  map.addSource('road1', {
-    type: 'geojson',
-    data: road1
-  });
-
+function loadRoad(map, cb) {
+  map.addSource('road', { type: 'geojson', data: roadGeojson });
   map.addLayer({
-    id: 'road1-line',
+    id: 'road',
     type: 'line',
-    source: 'road1',
-    layout: {
-      'line-join': 'round',
-      'line-cap': 'round'
-    },
-    paint: {
-      'line-color': '#fff',
-      'line-width': 1
+    source: 'road',
+    paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0 }
+  });
+
+  let start=null;
+  function animate(ts) {
+    if (!start) start=ts;
+    let p=Math.min((ts-start)/500,1);
+    map.setPaintProperty('road', 'line-opacity', p);
+    if (p<1) requestAnimationFrame(animate);
+    else cb();
+  }
+  requestAnimationFrame(animate);
+}
+</script>
+
+<script>
+// LOT PARSING
+async function loadLots(map, cb) {
+  const txt = await fetch('https://lalaland.mx/lots.txt').then(r => r.text());
+  lotData = parseLots(txt);
+  cb();
+}
+
+function parseLots(text) {
+  const lines = text.trim().split('\n');
+  const lots=[], curr=null;
+  let currentLot=null;
+  lines.forEach(line=>{
+    line=line.trim();
+    if (!line) return;
+    if (!line.startsWith('{')) {
+      if(currentLot) lots.push(currentLot);
+      currentLot={ name:line, coords:[] };
+    } else {
+      const m = line.match(/lat:\s*([0-9.\-]+),\s*lng:\s*([0-9.\-]+)/);
+      if (m && currentLot) currentLot.coords.push([+m[2],+m[1]]);
     }
   });
+  if(currentLot) lots.push(currentLot);
+  return lots;
+}
+</script>
 
-  // Re-add location pins layer
-  await fetchAndAddLocationPins(); // This should set locationPinsGeoJSON
+<script>
+// LOT ANIMATION
+function animateLots(map) {
+  const groups=20, delay=80, duration=250, finalDelay=1000;
 
-  if (map.getSource('locationPins')) {
-    map.removeSource('locationPins');
-  }
-  if (map.getLayer('locationPins-layer')) {
-    map.removeLayer('locationPins-layer');
-  }
+  // shuffle lots
+  const shuffled = [...Array(lotData.length).keys()];
+  shuffle(shuffled);
 
-  map.addSource('locationPins', {
-    type: 'geojson',
-    data: locationPinsGeoJSON
+  // divide into groups
+  const groupArr = Array.from({length:groups},()=>[]);
+  shuffled.forEach((i,idx)=>groupArr[idx%groups].push(i));
+
+  // render each group
+  groupArr.forEach((g,i) => {
+    const geojson = { type:"FeatureCollection", features: g.map(idx=>lotFeature(lotData[idx])) };
+    map.addSource(`lot-group-${i}`, { type:"geojson", data:geojson });
+    map.addLayer({
+      id:`lot-group-${i}`,
+      type:"line",
+      source:`lot-group-${i}`,
+      paint:{ 'line-color':'#fff','line-width':1, 'line-opacity':0 }
+    });
+    setTimeout(()=>fadeInGroup(map,`lot-group-${i}`,duration), i*delay);
   });
 
+  // create final lots layer but keep it hidden
+  const finalGeojson = {
+    type:"FeatureCollection",
+    features: lotData.map(lot=>lotFeature(lot))
+  };
+  map.addSource('lots-final', { type:'geojson', data:finalGeojson });
   map.addLayer({
-    id: 'locationPins-layer',
-    type: 'symbol',
-    source: 'locationPins',
-    layout: {
-      'icon-image': 'marker-15',
-      'icon-size': 1.5,
-      'icon-allow-overlap': true,
-      'text-field': ['get', 'title'],
-      'text-offset': [0, 1.2],
-      'text-anchor': 'top'
-    },
-    paint: {
-      'text-color': '#fff'
-    }
+    id:'lots-final',
+    type:'line',
+    source:'lots-final',
+    layout: { visibility: 'none' },
+    paint:{ 'line-color':'#fff','line-width':1 }
   });
 
-  // Load Supabase-based location pins if user is logged in
+  // after all groups done
+  setTimeout(()=>{
+    // make final lots layer visible first
+    map.setLayoutProperty('lots-final', 'visibility', 'visible');
 
-// ===================== SUPABASE AUTH =====================
+    // then remove groups a frame later
+    setTimeout(()=>{
+      groupArr.forEach((_,i)=>{
+        if (map.getLayer(`lot-group-${i}`)) map.removeLayer(`lot-group-${i}`);
+        if (map.getSource(`lot-group-${i}`)) map.removeSource(`lot-group-${i}`);
+      });
+    }, 50);
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    await loadLocationPins(map);
-  }
-});
-
-
-
-
-
-// ===================== CLICK & SOLD-X =====================
-
-  document.getElementById('blueprint').onclick = () => {
-    if (currentStyle === 'blueprint') return;
-    currentStyle = 'blueprint';
-    map.setStyle('mapbox://styles/andresmtzc/cmcxf2vmh015o01s097ao7n6k');
-  };
-
-  document.getElementById('satellite').onclick = () => {
-    if (currentStyle === 'satellite') return;
-    currentStyle = 'satellite';
-    map.setStyle('mapbox://styles/mapbox/satellite-streets-v12');
-  };
-
-  document.getElementById('expandBtn').onclick = function() {
-    const expandableContent = document.getElementById('expandableContent');
-    expandableContent.classList.toggle('open');
-    this.textContent = expandableContent.classList.contains('open') ? "Show Less" : "Show More";
-  };
-
-
+  }, groups*delay+duration+finalDelay);
 }
 
-
-async function enrichLotsWithAvailability(map) {
-  const names = lotData.map(l => l.name);
-  const { data } = await supabase
-    .from('lots')
-    .select('lot_name, availability')
-    .in('lot_name', names);
-
-  data.forEach(row => {
-    const lot = lotData.find(l => l.name === row.lot_name);
-    if (lot) lot.availability = row.availability || 'Unknown';
-  });
-
-  addSoldXs(map);
+function lotFeature(lot) {
+  const c=[...lot.coords];
+  if (c[0][0]!==c[c.length-1][0] || c[0][1]!==c[c.length-1][1]) c.push(c[0]);
+  return { type:"Feature", geometry:{type:"Polygon",coordinates:[c]}, properties:{name:lot.name}};
 }
 
-
-function animateGroups(map) {
-  const groupCount = 20, groupDelay = 70, animationDuration = 300, buffer = 50;
-  const indices = Array.from({length: lotData.length}, (_, i) => i);
-  shuffle(indices);
-  const groups = Array.from({length: groupCount}, () => []);
-  indices.forEach((idx, i) => groups[i % groupCount].push(idx));
-  groups.forEach((group, g) => {
-    const geojson = { type: "FeatureCollection", features: group.map(i => makeFeature(i, true)) };
-
-// ===================== LOTS LAYERS =====================
-
-    map.addSource(`group-${g}`, { type: "geojson", data: geojson });
-    map.addLayer({ id: `group-border-${g}`, type: "line", source: `group-${g}`, paint: { "line-color": "#fff", "line-width": 1, "line-opacity": 0 } });
-    setTimeout(() => animateGroup(map, g, group, animationDuration), g * groupDelay);
-  });
-const totalTime = ((groupCount - 1) * groupDelay) + animationDuration + buffer;
-setTimeout(() => {
-  addOptimizedLayers(map);
-  setupLotClickHandler(map); // 👈 ADD THIS
-}, totalTime);
-}
-
-function animateGroup(map, g, group, duration) {
-  let progress = 0, start = performance.now();
-  const originals = group.map(i => ({ i, coords: lotData[i].coords.map(c => [c.lng, c.lat]), center: getCenter(lotData[i].coords) }));
-  function frame(time) {
-    progress = (time - start) / duration;
-    if (progress > 1) progress = 1;
-    const eased = 1 - Math.pow(1 - progress, 3), scale = 1 + (1 - eased) * 0.3, opacity = eased;
-    const geojson = {
-      type: "FeatureCollection",
-      features: originals.map(o => ({ type: "Feature", properties: { name: lotData[o.i].name }, geometry: { type: "Polygon", coordinates: [scaleCoords(o.coords, o.center, scale)] } }))
-    };
-    map.getSource(`group-${g}`).setData(geojson);
-    map.setPaintProperty(`group-border-${g}`, 'line-opacity', opacity);
-    if (progress < 1) requestAnimationFrame(frame);
+function fadeInGroup(map,id,duration) {
+  let start=null;
+  function frame(ts) {
+    if(!start) start=ts;
+    let p=Math.min((ts-start)/duration,1);
+    map.setPaintProperty(id,'line-opacity',p);
+    if (p<1) requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 }
 
-function addOptimizedLayers(map) {
-  const features = lotData.map((lot, i) => ({
-    type: "Feature",
-    properties: { name: lot.name },
-    geometry: { type: "Polygon", coordinates: [lot.coords.map(c => [c.lng, c.lat])] },
-    id: i
-  }));
-  const geojson = { type: "FeatureCollection", features };
-  if (!map.getSource('lots')) {
-    map.addSource('lots', { type: 'geojson', data: geojson });
-  } else {
-    map.getSource('lots').setData(geojson);
-  }
-  if (!map.getLayer('lots-fill')) {
-    map.addLayer({ id: 'lots-fill', type: 'fill', source: 'lots', paint: { 'fill-color': '#000', 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.4, 0] } });
-  }
-  if (!map.getLayer('lots-border')) {
-    map.addLayer({ id: 'lots-border', type: 'line', source: 'lots', paint: { 'line-color': '#fff', 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 4, 1], 'line-opacity': 1 } });
-  }
-  setupHover(map);
-}
-
-
-
-// ===================== CLICK & SOLD-X =====================
-
-let isLotClickHandlerSet = false; // Flag to check if the click handler is already set
-
-function setupLotClickHandler(map) {
-  // Only set up the click handler once
-  if (isLotClickHandlerSet) return;
-  
-
-
-
-  // Remove the previous click event listener to prevent duplicates
-  map.off('click', 'lots-fill');
-
-  // Add the click event listener to the lots-fill layer
-  map.on('click', 'lots-fill', async (e) => {
-    // Close any previously open popups before opening a new one
-    const existingPopups = document.querySelectorAll('.mapboxgl-popup');
-    existingPopups.forEach(popup => popup.remove());
-
-    const name = e.features[0].properties.name;
-    const lot = lotData.find(l => l.name === name);
-    const status = lot?.availability || 'Unknown';
-
-
-// ===================== SUPABASE AUTH =====================
-
-    const { data: { user } } = await supabase.auth.getUser();
-    const showButton = !!user;
-    const toggleLabel = (status.toLowerCase() === 'sold') ? 'Available' : 'Sold';
-
-    const popupHTML = `
-      <strong>${name}</strong><br>
-      <span id="availabilityText">${status}</span><br>
-      ${showButton ? `<button id="toggleAvailabilityBtn">${toggleLabel}</button>` : ''}
-    `; 
-
-    const popup = new mapboxgl.Popup()
-      .setLngLat(e.lngLat)
-      .setHTML(popupHTML)
-      .addTo(map);
-
-    if (!showButton) return;
-
-    setTimeout(() => {
-      const btn = document.getElementById('toggleAvailabilityBtn');
-      const availabilityText = document.getElementById('availabilityText');
-      if (!btn || !availabilityText || !lot) return;
-
-      console.log('Sold button found, adding event listener...'); // Debugging
-
-
-// ===================== CLICK & SOLD-X =====================
-
-      btn.onclick = async () => {
-        console.log('Sold button clicked'); // Debugging
-        
-        const lotFresh = lotData.find(l => l.name === name);
-        const newAvailability = (lotFresh.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
-        console.log('New availability:', newAvailability); // Debugging
-
-        const { error } = await supabase
-          .from('lots')
-          .update({ availability: newAvailability })
-          .eq('lot_name', name);
-
-        if (error) {
-          console.error('Error updating:', error.message); // Debugging
-          alert('Error updating: ' + error.message);
-          return;
-        }
-
-
-        lot.availability = newAvailability;
-        availabilityText.textContent = newAvailability;
-        btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
-
-        // Update sold-Xs layer
-        soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
-        if (newAvailability.toLowerCase() === 'sold') {
-          soldXFeatures.push(...makeXFeatures(lot));
-        }
-
-        map.getSource('sold-x').setData({
-          type: 'FeatureCollection',
-          features: soldXFeatures
-        });
-      };
-    }, 100); // Wait for popup DOM
-  });
-
-  // Mark that the click handler is set
-  isLotClickHandlerSet = true;
-
-  
-}
-
-function addSoldXs(map) {
-  if (!map.getSource('sold-x')) {
-
-// ===================== LOTS LAYERS =====================
-
-    map.addSource('sold-x', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-
-    map.addLayer({
-      id: 'sold-x-layer',
-      type: 'line',
-      source: 'sold-x',
-      paint: {
-        'line-color': 'white',
-        'line-width': 1
-      }
-    });
-  }
-
-  // Initial full render
-  soldXFeatures = [];
-
-  lotData.forEach(lot => {
-    if (lot.availability && lot.availability.toLowerCase() === 'sold') {
-      soldXFeatures.push(...makeXFeatures(lot));
-    }
-  });
-
-  map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
-}
-
-
-function makeXFeatures(lot) {
-  const coords = lot.coords.map(c => [c.lng, c.lat]);
-  console.log('Lot Coordinates:', coords);  // Debugging: check all coordinates
-
-  // Ensure the polygon is closed correctly
-  if (coords[0][0] === coords[coords.length - 1][0] && coords[0][1] === coords[coords.length - 1][1]) coords.pop();
-
-  const n = coords.length;
-  if (n < 3) return [];
-
-  // Function to calculate the Euclidean distance between two points
-  function distance(p1, p2) {
-    const dx = p2[0] - p1[0];
-    const dy = p2[1] - p1[1];
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
-  // For polygons with 4 points, draw the X between the diagonals
-  if (n === 4) {
-    console.log('Drawing X for 4 points');
-    return [
-      {
-        type: 'Feature',
-        properties: { lotName: lot.name },
-        geometry: { type: 'LineString', coordinates: [coords[0], coords[2]] }
-      },
-      {
-        type: 'Feature',
-        properties: { lotName: lot.name },
-        geometry: { type: 'LineString', coordinates: [coords[1], coords[3]] }
-      }
-    ];
-  }
-
-  // For polygons with more than 4 points, find the farthest pair of points
-  let maxDistance = 0;
-  let farthestPair = [];
-  let secondMaxDistance = 0;
-  let secondFarthestPair = [];
-
-  // Check the distance between every pair of points
-  for (let i = 0; i < coords.length; i++) {
-    for (let j = i + 1; j < coords.length; j++) {
-      const dist = distance(coords[i], coords[j]);
-
-      if (dist > maxDistance) {
-        secondMaxDistance = maxDistance;
-        secondFarthestPair = [...farthestPair];  // Store the previous longest pair
-        maxDistance = dist;
-        farthestPair = [coords[i], coords[j]]; // Update the longest pair
-      } else if (dist > secondMaxDistance) {
-        secondMaxDistance = dist;
-        secondFarthestPair = [coords[i], coords[j]]; // Update the second longest pair
-      }
-    }
-  }
-
-  console.log('Farthest points:', farthestPair);
-  console.log('Second Farthest points:', secondFarthestPair);
-  console.log('Max Distance:', maxDistance);
-  console.log('Second Max Distance:', secondMaxDistance);
-
-  // Get the first diagonal (farthest points)
-  const firstDiagonal = [farthestPair[0], farthestPair[1]];
-
-  // Define a threshold to skip points too close to the first diagonal
-  const threshold = 0.000038; // Adjust this value as needed
-  console.log('Threshold:', threshold);  // Debugging: check the threshold value
-
-  // Function to check if a point is too close to the first diagonal
-  function isTooClose(point, lineStart, lineEnd) {
-    const dist1 = distance(point, lineStart);
-    const dist2 = distance(point, lineEnd);
-    console.log('Checking point:', point, 'Distance to lineStart:', dist1, 'Distance to lineEnd:', dist2);  // Debugging
-    return dist1 < threshold || dist2 < threshold;
-  }
-
-  // Find the second diagonal by excluding points too close to the first diagonal
-  let secondMaxDistanceCheck = 0;
-  let secondFarthestPairCheck = [];
-
-  // Loop through the remaining points and find the second diagonal
-  for (let i = 0; i < coords.length; i++) {
-    for (let j = i + 1; j < coords.length; j++) {
-      if (coords[i] === farthestPair[0] || coords[i] === farthestPair[1] || coords[j] === farthestPair[0] || coords[j] === farthestPair[1]) {
-        continue; // Skip the farthest pair already used for the first diagonal
-      }
-
-      // Skip points too close to the first diagonal
-      if (isTooClose(coords[i], farthestPair[0], farthestPair[1]) || isTooClose(coords[j], farthestPair[0], farthestPair[1])) {
-        continue;
-      } 
-
-      const dist = distance(coords[i], coords[j]);
-      if (dist > secondMaxDistanceCheck) {
-        secondMaxDistanceCheck = dist;
-        secondFarthestPairCheck = [coords[i], coords[j]];
-      }
-    }
-  }
-
-  // If no second diagonal is found (too close to the first diagonal), return just the first diagonal
-  if (secondFarthestPairCheck.length === 0) {
-    console.log('No second diagonal found. Only first diagonal will be shown.');
-    return [
-      {
-        type: 'Feature',
-        properties: { lotName: lot.name },
-        geometry: { type: 'LineString', coordinates: [firstDiagonal[0], firstDiagonal[1]] }
-      }
-    ];
-  }
-
-  // Return both diagonals to complete the X
-  return [
-    {
-      type: 'Feature',
-      properties: { lotName: lot.name },
-      geometry: { type: 'LineString', coordinates: [firstDiagonal[0], firstDiagonal[1]] }
-    },
-    {
-      type: 'Feature',
-      properties: { lotName: lot.name },
-      geometry: { type: 'LineString', coordinates: [secondFarthestPairCheck[0], secondFarthestPairCheck[1]] }
-    }
-  ];
-}
-
-
-
-
-
-
-
-function fadeInOptimizedLayers(map) {
-  map.setPaintProperty('lots-border', 'line-opacity', 1);
-  map.setPaintProperty('lots-fill', 'fill-opacity', ['case', ['boolean', ['feature-state', 'hover'], false], 0.2, 0]);
-}
-
-function setupHover(map) {
-  map.on('mousemove', 'lots-fill', (e) => {
-    map.getCanvas().style.cursor = 'crosshair';
-    if (e.features.length > 0) {
-      if (hoveredId !== null) map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
-      hoveredId = e.features[0].id;
-      map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: true });
-    }
-  });
-  map.on('mouseleave', 'lots-fill', () => {
-    if (hoveredId !== null) map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
-    hoveredId = null;
-    map.getCanvas().style.cursor = '';
-  });
-}
-
-function showEditButtons(show) {
-  const btn = document.getElementById('editLotBtn');
-  if (!btn) return;
-  btn.style.display = show ? 'inline-block' : 'none';
-}
-
-function makeFeature(i, startBig = false) {
-  const coords = lotData[i].coords.map(c => [c.lng, c.lat]), center = getCenter(lotData[i].coords), scale = startBig ? 1.3 : 1;
-  return { type: "Feature", properties: { name: lotData[i].name }, geometry: { type: "Polygon", coordinates: [scaleCoords(coords, center, scale)] } };
-}
-
-function scaleCoords(coords, center, scale) {
-  return coords.map(([lng, lat]) => [center[0] + (lng - center[0]) * scale, center[1] + (lat - center[1]) * scale]);
-}
-
-function getCenter(coords) {
-  const sum = coords.reduce((acc, c) => [acc[0]+c.lng, acc[1]+c.lat], [0,0]);
-  return [sum[0]/coords.length, sum[1]/coords.length];
-}
-
 function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+  for (let i=arr.length-1;i>0;i--) {
+    const j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
   }
 }
-
-function parseLotData(text) {
-  const lotData = [], lines = text.split("\n");
-  let lotCoords = [], lotName = "";
-  lines.forEach(line => {
-    const matchLotName = line.match(/^lot\d+/);
-    if (matchLotName) {
-      if (lotCoords.length) close(lotCoords), lotData.push({ name: lotName, coords: lotCoords });
-      lotName = matchLotName[0];
-      lotCoords = [];
-    }
-    const matchCoord = line.match(/lat: ([-\d.]+), lng: ([-\d.]+)/);
-    if (matchCoord) lotCoords.push({ lat: +matchCoord[1], lng: +matchCoord[2] });
-  });
-  if (lotCoords.length) close(lotCoords), lotData.push({ name: lotName, coords: lotCoords });
-  return lotData;
-}
-
-function close(coords) {
-  if (coords[0].lat !== coords[coords.length-1].lat || coords[0].lng !== coords[coords.length-1].lng) coords.push({ ...coords[0] });
-}
-
-
-// ===================== SEARCH & SUGGESTIONS =====================
-
-document.getElementById('searchInput').addEventListener('keydown', function (e) {
-  if (e.key === 'Enter') {
-    const name = this.value.trim().toLowerCase();
-    console.log('[SEARCH] You entered:', name);
-
-    const lot = lotData.find(l => l.name.toLowerCase() === name);
-    console.log('[SEARCH] Found lot:', lot);
-
-
-
-    const id = lotData.indexOf(lot);
-    console.log('[SEARCH] Lot index (feature id):', id);
-
-    if (!map.getSource('lots')) {
-      console.warn('[SEARCH] Map source "lots" is not ready.');
-      alert('Map is still loading, please try again.');
-      return;
-    }
-
-    if (hoveredId !== null) {
-      map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
-    }
-
-    hoveredId = id;
-  
-    map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: true });
-  }
-});
-
-const authBtn = document.getElementById('authBtn');
-const userEmailSpan = document.getElementById('userEmail');
-
-async function checkAuth() {
-
-// ===================== SUPABASE AUTH =====================
-
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (user) {
-    userEmailSpan.textContent = `Hello, ${user.email}`;
-    authBtn.textContent = 'Log Out';
-    showEditButtons(true);
-  } else {
-    userEmailSpan.textContent = '';
-    authBtn.textContent = 'Log In';
-    showEditButtons(false);
-  }
-}
-
-// login/logout toggle
-let allowedEmails = [];
-
-async function fetchAllowedEmails() {
-  const { data, error } = await supabase
-    .from('lot_editors')
-    .select('email')
-    .eq('lot_table', 'lots');
-
-  if (error) {
-    console.error('Failed to fetch allowed emails', error);
-    return;
-  }
-  allowedEmails = data.map(d => d.email);
-}
-
-fetchAllowedEmails();
-
-
-// ===================== CLICK & SOLD-X =====================
-
-authBtn.onclick = async () => {
-  await fetchAllowedEmails();
-
-  // Already logged in? Then log out.
-  if (authBtn.textContent === 'Log Out') {
-
-// ===================== SUPABASE AUTH =====================
-
-    await supabase.auth.signOut();
-    await checkAuth();
-    return;
-  }
-
-  const email = prompt('Enter your email:');
-  if (!email) return;
-
-  if (!allowedEmails.includes(email)) {
-    alert('You are not authorized to edit.');
-    return;
-  }
-
-  // 🛑 SPAM PROTECTION STARTS HERE
-  authBtn.disabled = true;
-  setTimeout(() => {
-    authBtn.disabled = false;
-  }, 60000); // 60 seconds lockout
-  // 🛑 SPAM PROTECTION ENDS HERE
-
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: 'https://lalaland.mx'
-    }
-  });
-
-  if (error) {
-    alert('Login error: ' + error.message);
-  } else {
-    alert('Check your email for the magic link to log in!');
-  }
-};
-
-
-// Suggestions data
-const suggestions = [
-  { name: "Santte 2", center: [-100.15994, 25.461823] },
-  { name: "Santte 1", center: [-100.15994, 25.261823] },
-  { name: "Colmena", center: [-100.15994, 25.061823] }
-];
-
-
-// ===================== SEARCH & SUGGESTIONS =====================
-
-const searchInput = document.getElementById('searchInput');
-const suggestionsContainer = document.getElementById('suggestionsContainer');
-
-
-// ===================== CLICK & SOLD-X =====================
-
-// Show suggestions only when the input is clicked
-
-// ===================== SEARCH & SUGGESTIONS =====================
-
-searchInput.addEventListener('focus', function() {
-  suggestionsContainer.style.display = 'flex';  // Show buttons upon focus
-  searchInput.placeholder = 'Suggestions';  // Change placeholder when focused
-});
-
-// Revert placeholder text when the input is blurred
-searchInput.addEventListener('blur', function() {
-  if (searchInput.value.trim() === '') {
-    searchInput.placeholder = 'Search...';  // Revert to default placeholder if empty
-  }
-});
-
-// Handle input changes
-searchInput.addEventListener('input', function(e) {
-  const searchText = e.target.value.trim().toLowerCase();
-  const filteredSuggestions = suggestions.filter(s => s.name.toLowerCase().includes(searchText));
-
-  // Show or hide the suggestions based on the filtered results
-  if (filteredSuggestions.length > 0) {
-    suggestionsContainer.style.display = 'flex';  // Show suggestions
-  } else {
-    suggestionsContainer.style.display = 'none';  // Hide if no matches
-  }
-});
-
-
-// ===================== CLICK & SOLD-X =====================
-
-// Handle suggestion button clicks
-const suggestionButtons = document.querySelectorAll('.suggestionBtn');
-suggestionButtons.forEach(button => {
-  button.addEventListener('click', function() {
-    const selectedSuggestion = suggestions.find(s => s.name === button.dataset.name);
-    if (selectedSuggestion) {
-      // Fly to the selected suggestion
-      map.flyTo({
-        center: selectedSuggestion.center,  // Fly to the coordinates
-        zoom: 16,  // Adjust the zoom level
-        essential: true  // Ensures the transition is smooth and not interruptible
-      });
-
-// ===================== SEARCH & SUGGESTIONS =====================
-
-      searchInput.value = selectedSuggestion.name;  // Optionally set the input to the selected suggestion
-      suggestionsContainer.style.display = 'none';  // Hide suggestions after selecting one
-    }
-  });
-});
-
-// Search functionality for matching the input with the suggestion
-searchInput.addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') {
-    const searchText = e.target.value.trim().toLowerCase();
-    const selectedSuggestion = suggestions.find(s => s.name.toLowerCase() === searchText);
-
-    if (selectedSuggestion) {
-      // Fly to the matching suggestion if found
-      map.flyTo({
-        center: selectedSuggestion.center,  // Fly to the coordinates
-        zoom: 16,  // Adjust the zoom level
-        essential: true  // Ensures the transition is smooth and not interruptible
-      });
-      searchInput.value = selectedSuggestion.name;  // Optionally set the input to the selected suggestion
-      suggestionsContainer.style.display = 'none';  // Hide suggestions after selecting one
-    }
-    // No "lot not found" alert here anymore
-  }
-});
-
-
-// ===================== CLICK & SOLD-X =====================
-
-// Hide suggestions when clicking outside
-document.addEventListener('click', function(e) {
-  if (!e.target.closest('#searchBar') && !e.target.closest('#suggestionsContainer')) {
-    suggestionsContainer.style.display = 'none';  // Hide suggestions when clicking outside
-  }
-});
-
-const locateMeBtn = document.getElementById('locateMeBtn');
-const targetCenter = [-100.15994, 25.461823]; // Santte 2
-let lastGpsRequestTime = 0;
-const gpsCooldownMs = 15000; // 15 sec cooldown
-
-locateMeBtn.addEventListener('click', () => {
-  const now = Date.now();
-  if (now - lastGpsRequestTime < gpsCooldownMs) {
-    // silently ignore repeated clicks during cooldown
-    return;
-  }
-  lastGpsRequestTime = now;
-
-
-// ===================== LOCATE-ME & USER-LINE =====================
-
-  if (!navigator.geolocation) {
-    // If you want silent fail here too, remove alert:
-    // alert('Geolocation not supported');
-    return;
-  }
-
-  locateMeBtn.textContent = 'Locating...'; 
-
-  navigator.geolocation.getCurrentPosition(async (position) => {
-    const userCoords = [position.coords.longitude, position.coords.latitude];
-
-    // Draw line
-    const line = {
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: [userCoords, targetCenter]
-      }
-    };
-
-    if (!map.getSource('user-line')) {
-
-// ===================== LOTS LAYERS =====================
-
-      map.addSource('user-line', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: [line]
-        }
-      });
-
-      map.addLayer({
-        id: 'user-line',
-        type: 'line',
-        source: 'user-line',
-        paint: {
-          'line-color': 'red',
-          'line-width': 2
-        }
-      });
-    } else {
-      map.getSource('user-line').setData({
-        type: 'FeatureCollection',
-        features: [line]
-      });
-    }
-
-    // Fly to user
-    map.flyTo({
-      center: userCoords,
-      zoom: 16,
-      essential: true
-    });
-
-  // Launch navigation
-  const start = `${position.coords.latitude},${position.coords.longitude}`;
-  const end = `${targetCenter[1]},${targetCenter[0]}`;
-  const navigationUrl = `https://www.google.com/maps/dir/?api=1&origin=${start}&destination=${end}&travelmode=driving`;
-  window.open(navigationUrl, '_blank');
-
-    // Audit to Supabase
-
-// ===================== SUPABASE AUTH =====================
-
-    const { data: { user } } = await supabase.auth.getUser();
-
-// ===================== SUPABASE LOTS =====================
-
-    await supabase.from('location_logs').insert({
-      email: user?.email || null,
-      lat: position.coords.latitude,
-      lng: position.coords.longitude,
-      browser: navigator.userAgent
-    });
-
-    locateMeBtn.textContent = 'Locate Me'; // Reset
-  }, (err) => {
-    alert('Location access denied');
-    locateMeBtn.textContent = 'Locate Me'; // Reset
-  });
-});
-
-async function loadLocationPins(map) {
-  const { data, error } = await supabase
-    .from('location_logs')
-    .select('lat, lng, email');
-
-  if (error) {
-    console.error('Error loading location pins:', error);
-    return;
-  }
-
-  const features = data.map((entry, index) => ({
-    type: 'Feature',
-    geometry: {
-      type: 'Point',
-      coordinates: [entry.lng, entry.lat]
-    },
-    properties: {
-      email: entry.email,
-      id: index
-    }
-  }));
-
-  const geojson = {
-    type: 'FeatureCollection',
-    features
-  };
-
-  if (!map.getSource('location-pins')) {
-
-// ===================== LOTS LAYERS =====================
-
-    map.addSource('location-pins', {
-      type: 'geojson',
-      data: geojson,
-      cluster: true,
-      clusterRadius: 40,
-    });
-
-    map.addLayer({
-      id: 'clustered-pins',
-      type: 'circle',
-      source: 'location-pins',
-      filter: ['has', 'point_count'],
-      paint: {
-        'circle-color': '#f00',
-        'circle-radius': ['step', ['get', 'point_count'], 15, 10, 20, 50, 25]
-      }
-    });
-
-    map.addLayer({
-      id: 'cluster-count',
-      type: 'symbol',
-      source: 'location-pins',
-      filter: ['has', 'point_count'],
-      layout: {
-        'text-field': ['get', 'point_count'],
-        'text-size': 12
-      },
-      paint: {
-        'text-color': '#fff'
-      }
-    });
-
-    map.addLayer({
-      id: 'unclustered-pins',
-      type: 'circle',
-      source: 'location-pins',
-      filter: ['!', ['has', 'point_count']],
-      paint: {
-        'circle-color': '#f00',
-        'circle-radius': 6
-      }
-    });
-  } else {
-    map.getSource('location-pins').setData(geojson);
-  }
-}
-
-
-
-window.addEventListener('DOMContentLoaded', async () => {
-  await checkAuth();
-
-// ===================== SUPABASE AUTH =====================
-
-    const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    await loadLocationPins(map);
-}
-
-});
 </script>
-
-
 
 </body>
 </html>
