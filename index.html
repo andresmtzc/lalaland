@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Lots Map — Final</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+
+
+
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+  <style>
+    body { margin:0; padding:0; overflow-x:hidden; display:flex; }
+    #map { position:absolute; top:0; bottom:0; left:0; right:0; overflow:hidden; }
+    #menu { position:absolute; background:white; padding:10px; z-index:1; top:10px; left:10px; font-family:sans-serif; font-size:14px; }
+    #overlay { position:absolute; top:50px; right:20px; width:300px; background:white; padding:20px; box-shadow:0px 0px 10px rgba(0,0,0,0.3); z-index:2; max-height:80%; overflow-y:auto; overflow-x:hidden; border-radius:8px; display:none; }
+    
+
+
+
+
+
+
+
+    .form-group { margin-bottom:15px; }
+    .form-group input { width:100%; padding:10px; margin-top:5px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; }
+    .form-group button { width:100%; padding:10px; margin-top:10px; border:none; background-color:#28a745; color:white; border-radius:4px; cursor:pointer; }
+    .form-group button:hover { background-color:#218838; }
+    .expandable-content { display:none; margin-top:10px; }
+    .expandable-content.open { display:block; }
+    .expand-btn { background-color:#007bff; color:white; padding:10px; text-align:center; border:none; cursor:pointer; width:100%; border-radius:4px; }
+    .expand-btn:hover { background-color:#0056b3; }
+
+  </style>
+</head>
+<body>
+
+<div id="map"></div> 
+
+<div id="menu">
+  <input id="blueprint" type="radio" name="style" value="blueprint" checked>
+  <label for="blueprint">Blueprint</label>
+  <input id="satellite" type="radio" name="style" value="satellite">
+  <label for="satellite">Satellite</label>
+</div>
+
+
+<div id="authControls" style="position:absolute;top:10px;right:10px;z-index:5;background:white;padding:8px;border-radius:4px;">
+  <span id="userEmail" style="margin-right:10px;"></span>
+  <button id="authBtn">Log In</button>
+</div>
+
+
+
+
+
+
+
+
+
+<script>
+let lotData = [];
+let animationPlayed = false;
+let mapReady = false;
+let currentStyle = 'blueprint';
+let hoveredId = null; // <-- here
+let map; // 👈 add this line
+let soldXFeatures = [];
+
+const supabase = window.supabase.createClient(
+  'https://jmoxbhodpvnlmtihcwvt.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imptb3hiaG9kcHZubG10aWhjd3Z0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxODM1MDgsImV4cCI6MjA2Nzc1OTUwOH0.-jP1akHIo9R4a2lD15byC5dESSGfeFHu8qlbmHteeJo'
+);
+
+fetch('https://lalaland.mx/mapbox.txt')
+  .then(res => res.text())
+  .then(token => {
+    mapboxgl.accessToken = token.trim();
+    initMap();
+  });
+
+function initMap() {
+
+// ===================== MAP INIT =====================
+
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/andresmtzc/cmcxf2vmh015o01s097ao7n6k',
+    center: [-100.15994, 25.461823],
+    zoom: 16.45
+  });
+
+  fetch('https://lalaland.mx/lots.txt')
+    .then(res => res.text())
+    .then(text => {
+      lotData = parseLotData(text);
+      if (mapReady && !animationPlayed) {
+        animateGroups(map);
+        animationPlayed = true;
+      }
+      enrichLotsWithAvailability(map);
+    });
+
+
+const road1 = {
+  type: 'Feature',
+  geometry: {
+    type: 'LineString',
+    coordinates: [
+        [-100.157757, 25.45803],
+        [-100.157888, 25.458456],
+        [-100.158927, 25.45995],
+        [-100.158501, 25.460763],
+        [-100.158609, 25.461454],
+        [-100.15848, 25.462857],
+        [-100.159828, 25.465042],
+        [-100.161556, 25.464974],
+        [-100.163154, 25.465835],
+        [-100.164051, 25.465707],
+        [-100.165586, 25.466181],
+        [-100.16556, 25.466249],
+        [-100.164044, 25.465781],
+        [-100.163138, 25.46591],
+        [-100.161535, 25.465047],
+        [-100.159783, 25.465116],
+        [-100.158398, 25.462873],
+        [-100.158529, 25.461456],
+        [-100.158419, 25.460752],
+        [-100.158836, 25.459955],
+        [-100.157814, 25.458485],
+        [-100.15768, 25.458049]
+    ]
+  },
+  properties: {}
+};
+
+
+
+map.on('style.load', async () => {
+  mapReady = true;
+
+  // Animate if needed
+  if (lotData.length && !animationPlayed) {
+    animateGroups(map);
+    animationPlayed = true;
+  } else if (animationPlayed) {
+    await enrichLotsWithAvailability(map);
+    addOptimizedLayers(map);
+    setupLotClickHandler(map);
+    fadeInOptimizedLayers(map);
+  }
+
+  // Re-add road1 line
+
+// ===================== LOTS LAYERS =====================
+
+  map.addSource('road1', {
+    type: 'geojson',
+    data: road1
+  });
+
+  map.addLayer({
+    id: 'road1-line',
+    type: 'line',
+    source: 'road1',
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round'
+    },
+    paint: {
+      'line-color': '#fff',
+      'line-width': 1
+    }
+  });
+
+  
+
+  // Load Supabase-based location pins if user is logged in
+
+// ===================== SUPABASE AUTH =====================
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    await loadLocationPins(map);
+  }
+});
+
+
+
+
+
+// ===================== CLICK & SOLD-X =====================
+
+  document.getElementById('blueprint').onclick = () => {
+    if (currentStyle === 'blueprint') return;
+    currentStyle = 'blueprint';
+    map.setStyle('mapbox://styles/andresmtzc/cmcxf2vmh015o01s097ao7n6k');
+  };
+
+  document.getElementById('satellite').onclick = () => {
+    if (currentStyle === 'satellite') return;
+    currentStyle = 'satellite';
+    map.setStyle('mapbox://styles/mapbox/satellite-streets-v12');
+  };
+
+  document.getElementById('expandBtn').onclick = function() {
+    const expandableContent = document.getElementById('expandableContent');
+    expandableContent.classList.toggle('open');
+    this.textContent = expandableContent.classList.contains('open') ? "Show Less" : "Show More";
+  };
+
+
+}
+
+
+async function enrichLotsWithAvailability(map) {
+  const names = lotData.map(l => l.name);
+  const { data } = await supabase
+    .from('lots')
+    .select('lot_name, availability')
+    .in('lot_name', names);
+
+  data.forEach(row => {
+    const lot = lotData.find(l => l.name === row.lot_name);
+    if (lot) lot.availability = row.availability || 'Unknown';
+  });
+
+  addSoldXs(map);
+}
+
+
+function animateGroups(map) {
+  const groupCount = 20, groupDelay = 70, animationDuration = 300, buffer = 50;
+  const indices = Array.from({length: lotData.length}, (_, i) => i);
+  shuffle(indices);
+  const groups = Array.from({length: groupCount}, () => []);
+  indices.forEach((idx, i) => groups[i % groupCount].push(idx));
+  groups.forEach((group, g) => {
+    const geojson = { type: "FeatureCollection", features: group.map(i => makeFeature(i, true)) };
+
+// ===================== LOTS LAYERS =====================
+
+    map.addSource(`group-${g}`, { type: "geojson", data: geojson });
+    map.addLayer({ id: `group-border-${g}`, type: "line", source: `group-${g}`, paint: { "line-color": "#fff", "line-width": 1, "line-opacity": 0 } });
+    setTimeout(() => animateGroup(map, g, group, animationDuration), g * groupDelay);
+  });
+const totalTime = ((groupCount - 1) * groupDelay) + animationDuration + buffer;
+setTimeout(() => {
+  addOptimizedLayers(map);
+  setupLotClickHandler(map); // 👈 ADD THIS
+}, totalTime);
+}
+
+function animateGroup(map, g, group, duration) {
+  let progress = 0, start = performance.now();
+  const originals = group.map(i => ({ i, coords: lotData[i].coords.map(c => [c.lng, c.lat]), center: getCenter(lotData[i].coords) }));
+  function frame(time) {
+    progress = (time - start) / duration;
+    if (progress > 1) progress = 1;
+    const eased = 1 - Math.pow(1 - progress, 3), scale = 1 + (1 - eased) * 0.3, opacity = eased;
+    const geojson = {
+      type: "FeatureCollection",
+      features: originals.map(o => ({ type: "Feature", properties: { name: lotData[o.i].name }, geometry: { type: "Polygon", coordinates: [scaleCoords(o.coords, o.center, scale)] } }))
+    };
+    map.getSource(`group-${g}`).setData(geojson);
+    map.setPaintProperty(`group-border-${g}`, 'line-opacity', opacity);
+    if (progress < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function addOptimizedLayers(map) {
+  const features = lotData.map((lot, i) => ({
+    type: "Feature",
+    properties: { name: lot.name },
+    geometry: { type: "Polygon", coordinates: [lot.coords.map(c => [c.lng, c.lat])] },
+    id: i
+  }));
+  const geojson = { type: "FeatureCollection", features };
+  if (!map.getSource('lots')) {
+    map.addSource('lots', { type: 'geojson', data: geojson });
+  } else {
+    map.getSource('lots').setData(geojson);
+  }
+  if (!map.getLayer('lots-fill')) {
+    map.addLayer({ id: 'lots-fill', type: 'fill', source: 'lots', paint: { 'fill-color': '#000', 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.4, 0] } });
+  }
+  if (!map.getLayer('lots-border')) {
+    map.addLayer({ id: 'lots-border', type: 'line', source: 'lots', paint: { 'line-color': '#fff', 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 4, 1], 'line-opacity': 1 } });
+  }
+  setupHover(map);
+}
+ 
+
+
+// ===================== CLICK & SOLD-X =====================
+
+let isLotClickHandlerSet = false; // Flag to check if the click handler is already set
+
+function setupLotClickHandler(map) {
+  // Only set up the click handler once
+  if (isLotClickHandlerSet) return;
+  
+
+
+
+  // Remove the previous click event listener to prevent duplicates
+  map.off('click', 'lots-fill');
+
+  // Add the click event listener to the lots-fill layer
+  map.on('click', 'lots-fill', async (e) => {
+    // Close any previously open popups before opening a new one
+    const existingPopups = document.querySelectorAll('.mapboxgl-popup');
+    existingPopups.forEach(popup => popup.remove());
+
+    const name = e.features[0].properties.name;
+    const lot = lotData.find(l => l.name === name);
+    const status = lot?.availability || 'Unknown';
+
+
+// ===================== SUPABASE AUTH =====================
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const showButton = !!user;
+    const toggleLabel = (status.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+
+    const popupHTML = `
+      <strong>${name}</strong><br>
+      <span id="availabilityText">${status}</span><br>
+      ${showButton ? `<button id="toggleAvailabilityBtn">${toggleLabel}</button>` : ''}
+    `; 
+
+    const popup = new mapboxgl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(popupHTML)
+      .addTo(map);
+
+    if (!showButton) return;
+
+    setTimeout(() => {
+      const btn = document.getElementById('toggleAvailabilityBtn');
+      const availabilityText = document.getElementById('availabilityText');
+      if (!btn || !availabilityText || !lot) return;
+
+      console.log('Sold button found, adding event listener...'); // Debugging
+
+
+// ===================== CLICK & SOLD-X =====================
+
+      btn.onclick = async () => {
+        console.log('Sold button clicked'); // Debugging
+        
+        const lotFresh = lotData.find(l => l.name === name);
+        const newAvailability = (lotFresh.availability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+        console.log('New availability:', newAvailability); // Debugging
+
+        const { error } = await supabase
+          .from('lots')
+          .update({ availability: newAvailability })
+          .eq('lot_name', name);
+
+        if (error) {
+          console.error('Error updating:', error.message); // Debugging
+          alert('Error updating: ' + error.message);
+          return;
+        }
+
+
+        lot.availability = newAvailability;
+        availabilityText.textContent = newAvailability;
+        btn.textContent = (newAvailability.toLowerCase() === 'sold') ? 'Available' : 'Sold';
+
+        // Update sold-Xs layer
+        soldXFeatures = soldXFeatures.filter(f => f.properties.lotName !== lot.name);
+        if (newAvailability.toLowerCase() === 'sold') {
+          soldXFeatures.push(...makeXFeatures(lot));
+        }
+
+        map.getSource('sold-x').setData({
+          type: 'FeatureCollection',
+          features: soldXFeatures
+        });
+      };
+    }, 100); // Wait for popup DOM
+  });
+
+  // Mark that the click handler is set
+  isLotClickHandlerSet = true;
+
+  
+}
+
+function addSoldXs(map) {
+  if (!map.getSource('sold-x')) {
+
+// ===================== LOTS LAYERS =====================
+
+    map.addSource('sold-x', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+    map.addLayer({
+      id: 'sold-x-layer',
+      type: 'line',
+      source: 'sold-x',
+      paint: {
+        'line-color': 'white',
+        'line-width': 1
+      }
+    });
+  }
+
+  // Initial full render
+  soldXFeatures = [];
+
+  lotData.forEach(lot => {
+    if (lot.availability && lot.availability.toLowerCase() === 'sold') {
+      soldXFeatures.push(...makeXFeatures(lot));
+    }
+  });
+
+  map.getSource('sold-x').setData({ type: 'FeatureCollection', features: soldXFeatures });
+}
+
+
+function makeXFeatures(lot) {
+  const coords = lot.coords.map(c => [c.lng, c.lat]);
+  console.log('Lot Coordinates:', coords);  // Debugging: check all coordinates
+
+  // Ensure the polygon is closed correctly
+  if (coords[0][0] === coords[coords.length - 1][0] && coords[0][1] === coords[coords.length - 1][1]) coords.pop();
+
+  const n = coords.length;
+  if (n < 3) return [];
+
+  // Function to calculate the Euclidean distance between two points
+  function distance(p1, p2) {
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // For polygons with 4 points, draw the X between the diagonals
+  if (n === 4) {
+    console.log('Drawing X for 4 points');
+    return [
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [coords[0], coords[2]] }
+      },
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [coords[1], coords[3]] }
+      }
+    ];
+  }
+
+  // For polygons with more than 4 points, find the farthest pair of points
+  let maxDistance = 0;
+  let farthestPair = [];
+  let secondMaxDistance = 0;
+  let secondFarthestPair = [];
+
+  // Check the distance between every pair of points
+  for (let i = 0; i < coords.length; i++) {
+    for (let j = i + 1; j < coords.length; j++) {
+      const dist = distance(coords[i], coords[j]);
+
+      if (dist > maxDistance) {
+        secondMaxDistance = maxDistance;
+        secondFarthestPair = [...farthestPair];  // Store the previous longest pair
+        maxDistance = dist;
+        farthestPair = [coords[i], coords[j]]; // Update the longest pair
+      } else if (dist > secondMaxDistance) {
+        secondMaxDistance = dist;
+        secondFarthestPair = [coords[i], coords[j]]; // Update the second longest pair
+      }
+    }
+  }
+
+  console.log('Farthest points:', farthestPair);
+  console.log('Second Farthest points:', secondFarthestPair);
+  console.log('Max Distance:', maxDistance);
+  console.log('Second Max Distance:', secondMaxDistance);
+
+  // Get the first diagonal (farthest points)
+  const firstDiagonal = [farthestPair[0], farthestPair[1]];
+
+  // Define a threshold to skip points too close to the first diagonal
+  const threshold = 0.000038; // Adjust this value as needed
+  console.log('Threshold:', threshold);  // Debugging: check the threshold value
+
+  // Function to check if a point is too close to the first diagonal
+  function isTooClose(point, lineStart, lineEnd) {
+    const dist1 = distance(point, lineStart);
+    const dist2 = distance(point, lineEnd);
+    console.log('Checking point:', point, 'Distance to lineStart:', dist1, 'Distance to lineEnd:', dist2);  // Debugging
+    return dist1 < threshold || dist2 < threshold;
+  }
+
+  // Find the second diagonal by excluding points too close to the first diagonal
+  let secondMaxDistanceCheck = 0;
+  let secondFarthestPairCheck = [];
+
+  // Loop through the remaining points and find the second diagonal
+  for (let i = 0; i < coords.length; i++) {
+    for (let j = i + 1; j < coords.length; j++) {
+      if (coords[i] === farthestPair[0] || coords[i] === farthestPair[1] || coords[j] === farthestPair[0] || coords[j] === farthestPair[1]) {
+        continue; // Skip the farthest pair already used for the first diagonal
+      }
+
+      // Skip points too close to the first diagonal
+      if (isTooClose(coords[i], farthestPair[0], farthestPair[1]) || isTooClose(coords[j], farthestPair[0], farthestPair[1])) {
+        continue;
+      } 
+
+      const dist = distance(coords[i], coords[j]);
+      if (dist > secondMaxDistanceCheck) {
+        secondMaxDistanceCheck = dist;
+        secondFarthestPairCheck = [coords[i], coords[j]];
+      }
+    }
+  }
+
+  // If no second diagonal is found (too close to the first diagonal), return just the first diagonal
+  if (secondFarthestPairCheck.length === 0) {
+    console.log('No second diagonal found. Only first diagonal will be shown.');
+    return [
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [firstDiagonal[0], firstDiagonal[1]] }
+      }
+    ];
+  }
+
+  // Return both diagonals to complete the X
+  return [
+    {
+      type: 'Feature',
+      properties: { lotName: lot.name },
+      geometry: { type: 'LineString', coordinates: [firstDiagonal[0], firstDiagonal[1]] }
+    },
+    {
+      type: 'Feature',
+      properties: { lotName: lot.name },
+      geometry: { type: 'LineString', coordinates: [secondFarthestPairCheck[0], secondFarthestPairCheck[1]] }
+    }
+  ];
+}
+
+
+
+
+
+
+
+function fadeInOptimizedLayers(map) {
+  map.setPaintProperty('lots-border', 'line-opacity', 1);
+  map.setPaintProperty('lots-fill', 'fill-opacity', ['case', ['boolean', ['feature-state', 'hover'], false], 0.2, 0]);
+}
+
+function setupHover(map) {
+  map.on('mousemove', 'lots-fill', (e) => {
+    map.getCanvas().style.cursor = 'crosshair';
+    if (e.features.length > 0) {
+      if (hoveredId !== null) map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
+      hoveredId = e.features[0].id;
+      map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: true });
+    }
+  });
+  map.on('mouseleave', 'lots-fill', () => {
+    if (hoveredId !== null) map.setFeatureState({ source: 'lots', id: hoveredId }, { hover: false });
+    hoveredId = null;
+    map.getCanvas().style.cursor = '';
+  });
+}
+
+function showEditButtons(show) {
+  const btn = document.getElementById('editLotBtn');
+  if (!btn) return;
+  btn.style.display = show ? 'inline-block' : 'none';
+}
+
+function makeFeature(i, startBig = false) {
+  const coords = lotData[i].coords.map(c => [c.lng, c.lat]), center = getCenter(lotData[i].coords), scale = startBig ? 1.3 : 1;
+  return { type: "Feature", properties: { name: lotData[i].name }, geometry: { type: "Polygon", coordinates: [scaleCoords(coords, center, scale)] } };
+}
+
+function scaleCoords(coords, center, scale) {
+  return coords.map(([lng, lat]) => [center[0] + (lng - center[0]) * scale, center[1] + (lat - center[1]) * scale]);
+}
+
+function getCenter(coords) {
+  const sum = coords.reduce((acc, c) => [acc[0]+c.lng, acc[1]+c.lat], [0,0]);
+  return [sum[0]/coords.length, sum[1]/coords.length];
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+function parseLotData(text) {
+  const lotData = [], lines = text.split("\n");
+  let lotCoords = [], lotName = "";
+  lines.forEach(line => {
+    const matchLotName = line.match(/^lot\d+/);
+    if (matchLotName) {
+      if (lotCoords.length) close(lotCoords), lotData.push({ name: lotName, coords: lotCoords });
+      lotName = matchLotName[0];
+      lotCoords = [];
+    }
+    const matchCoord = line.match(/lat: ([-\d.]+), lng: ([-\d.]+)/);
+    if (matchCoord) lotCoords.push({ lat: +matchCoord[1], lng: +matchCoord[2] });
+  });
+  if (lotCoords.length) close(lotCoords), lotData.push({ name: lotName, coords: lotCoords });
+  return lotData;
+}
+
+function close(coords) {
+  if (coords[0].lat !== coords[coords.length-1].lat || coords[0].lng !== coords[coords.length-1].lng) coords.push({ ...coords[0] });
+}
+
+
+
+
+const authBtn = document.getElementById('authBtn');
+const userEmailSpan = document.getElementById('userEmail');
+
+async function checkAuth() {
+
+// ===================== SUPABASE AUTH =====================
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (user) {
+    userEmailSpan.textContent = `Hello, ${user.email}`;
+    authBtn.textContent = 'Log Out';
+    showEditButtons(true);
+  } else {
+    userEmailSpan.textContent = '';
+    authBtn.textContent = 'Log In';
+    showEditButtons(false);
+  }
+}
+
+// login/logout toggle
+let allowedEmails = [];
+
+async function fetchAllowedEmails() {
+  const { data, error } = await supabase
+    .from('lot_editors')
+    .select('email')
+    .eq('lot_table', 'lots');
+
+  if (error) {
+    console.error('Failed to fetch allowed emails', error);
+    return;
+  }
+  allowedEmails = data.map(d => d.email);
+}
+
+fetchAllowedEmails();
+
+
+// ===================== CLICK & SOLD-X =====================
+
+authBtn.onclick = async () => {
+  await fetchAllowedEmails();
+
+  // Already logged in? Then log out.
+  if (authBtn.textContent === 'Log Out') {
+
+// ===================== SUPABASE AUTH =====================
+
+    await supabase.auth.signOut();
+    await checkAuth();
+    return;
+  }
+
+  const email = prompt('Enter your email:');
+  if (!email) return;
+
+  if (!allowedEmails.includes(email)) {
+    alert('You are not authorized to edit.');
+    return;
+  }
+
+  // 🛑 SPAM PROTECTION STARTS HERE
+  authBtn.disabled = true;
+  setTimeout(() => {
+    authBtn.disabled = false;
+  }, 60000); // 60 seconds lockout
+  // 🛑 SPAM PROTECTION ENDS HERE
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: 'https://lalaland.mx'
+    }
+  });
+
+  if (error) {
+    alert('Login error: ' + error.message);
+  } else {
+    alert('Check your email for the magic link to log in!');
+  }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+</script>
+
+
+
+</body>
+</html>
