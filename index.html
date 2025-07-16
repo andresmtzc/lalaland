@@ -496,7 +496,7 @@ function fadeInImage(map) {
 </script> 
 
 <script>
-// === FEATURED LOT POLYGON PULSE ===
+// === FEATURED LOT POLYGON PULSE (ASYNC) ===
 
 // Utility to create a polygon feature from a lot
 function featuredPolygonFeature(lot) {
@@ -516,12 +516,14 @@ function featuredPolygonFeature(lot) {
       coordinates: [coords]
     },
     properties: {
-      name: lot.name
+      name: lot.name,
+      phase: Math.random() * Math.PI * 2, // ✅ random delay per lot
+      opacity: 0.3 // initial value for fill-opacity
     }
   };
 }
 
-// Main function — keep name as requested
+// Main function — still named as requested
 function addFeaturedLotsLayer(map) {
   const featuredLots = lotData.filter(lot => lot.featured);
   if (featuredLots.length === 0) return;
@@ -536,36 +538,52 @@ function addFeaturedLotsLayer(map) {
     }
   });
 
-map.addLayer({
-  id: 'featured-lots-layer',
-  type: 'fill',
-  source: 'featured-lots',
-  paint: {
-    'fill-color': '#FFD700',
-    'fill-opacity': 0.3
-  }
-}, 'lots-final'); // ← add above the lots
-
+  map.addLayer({
+    id: 'featured-lots-layer',
+    type: 'fill',
+    source: 'featured-lots',
+    paint: {
+      'fill-color': '#FFD700',
+      'fill-opacity': ['get', 'opacity'] // ✅ now data-driven
+    }
+  }, 'lots-final');
 
   startPolygonPulse(map);
 }
 
-// Animation for pulsing fill-opacity
+// Animate each polygon’s opacity independently
 function startPolygonPulse(map) {
   let t = 0;
+
   function frame() {
     t += 0.05;
-    const opacity = 0.3 + Math.sin(t) * 0.2; // Range: 0.1 – 0.5
 
-    if (map.getLayer('featured-lots-layer')) {
-      map.setPaintProperty('featured-lots-layer', 'fill-opacity', opacity);
-    }
+    const source = map.getSource('featured-lots');
+    if (!source || !source._data) return;
 
+    const updated = {
+      ...source._data,
+      features: source._data.features.map(f => {
+        const phase = f.properties?.phase ?? 0;
+        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            opacity
+          }
+        };
+      })
+    };
+
+    source.setData(updated); // ⬅ update feature data with new opacities
     requestAnimationFrame(frame);
   }
+
   requestAnimationFrame(frame);
 }
 </script>
+
 
 </body>
 </html> 
