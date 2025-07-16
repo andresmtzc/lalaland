@@ -135,8 +135,11 @@ function parseLots(text) {
 <script>
 // LOT ANIMATION: Animate the appearance of lots
 function animateLots(map, cb) {
-  const groups = 20, delay = 80, duration = 250, finalDelay = 1000;
-  const fadeDuration = 500;
+  const groups = 20,
+    delay = 80,
+    duration = 250,
+    finalDelay = 200; 
+  const fadeDuration = 500; 
 
   // Shuffle lots
   const shuffled = [...Array(lotData.length).keys()];
@@ -146,82 +149,85 @@ function animateLots(map, cb) {
   const groupArr = Array.from({ length: groups }, () => []);
   shuffled.forEach((i, idx) => groupArr[idx % groups].push(i));
 
-  // Render each group with animation
+  // Render each group with fade-in animation
   groupArr.forEach((g, i) => {
-    const geojson = { type: "FeatureCollection", features: g.map(idx => lotFeature(lotData[idx])) };
+    const geojson = {
+      type: "FeatureCollection",
+      features: g.map((idx) => lotFeature(lotData[idx])),
+    };
     map.addSource(`lot-group-${i}`, { type: "geojson", data: geojson });
     map.addLayer({
       id: `lot-group-${i}`,
       type: "line",
       source: `lot-group-${i}`,
-      paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0 }
+      paint: {
+        "line-color": "#fff",
+        "line-width": 1,
+        "line-opacity": 0,
+        "line-opacity-transition": { duration: fadeDuration },
+      },
     });
-    setTimeout(() => fadeInGroup(map, `lot-group-${i}`, duration), i * delay);
+    setTimeout(
+      () => map.setPaintProperty(`lot-group-${i}`, "line-opacity", 1),
+      i * delay
+    );
   });
 
-  // Add final lots layer hidden with opacity 0 but visible
+  // Add final lots layer (initially transparent but visible)
   const finalGeojson = {
     type: "FeatureCollection",
-    features: lotData.map(lot => lotFeature(lot))
+    features: lotData.map((lot) => lotFeature(lot)),
   };
-  map.addSource('lots-final', { type: 'geojson', data: finalGeojson });
+  map.addSource("lots-final", { type: "geojson", data: finalGeojson });
   map.addLayer({
-    id: 'lots-final',
-    type: 'line',
-    source: 'lots-final',
-    layout: { visibility: 'visible' },   // Keep visible but start transparent
-    paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0 }
+    id: "lots-final",
+    type: "line",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "line-color": "#fff",
+      "line-width": 1,
+      "line-opacity": 0,
+      "line-opacity-transition": { duration: fadeDuration },
+    },
   });
 
-  // After all groups animate, fade in final lots and fade out animated groups smoothly
+  // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
-    let start = null;
-    function fadeTransition(timestamp) {
-      if (!start) start = timestamp;
-      let progress = Math.min((timestamp - start) / fadeDuration, 1);
+    // Fade in final lots
+    map.setPaintProperty("lots-final", "line-opacity", 1);
 
-      // Fade in final lots
-      map.setPaintProperty('lots-final', 'line-opacity', progress);
-
-      // Fade out animated groups
+    setTimeout(() => {
+      // Fade out all lot groups simultaneously
       groupArr.forEach((_, i) => {
-        const opacity = 1 - progress;
-        if (map.getLayer(`lot-group-${i}`)) {
-          map.setPaintProperty(`lot-group-${i}`, 'line-opacity', opacity);
+        const id = `lot-group-${i}`;
+        if (map.getLayer(id)) {
+          map.setPaintProperty(id, "line-opacity", 0);
         }
       });
 
-      if (progress < 1) {
-        requestAnimationFrame(fadeTransition);
-      } else {
-        // Remove animated groups after fade out
+      // Remove all lot groups after fade out duration and call callback
+      setTimeout(() => {
         groupArr.forEach((_, i) => {
-          if (map.getLayer(`lot-group-${i}`)) map.removeLayer(`lot-group-${i}`);
-          if (map.getSource(`lot-group-${i}`)) map.removeSource(`lot-group-${i}`);
+          const id = `lot-group-${i}`;
+          if (map.getLayer(id)) map.removeLayer(id);
+          if (map.getSource(id)) map.removeSource(id);
         });
-        if (cb) cb();  // Call callback after transition finishes
-      }
-    }
-    requestAnimationFrame(fadeTransition);
-  }, groups * delay + duration + finalDelay);
+        if (cb) cb();
+      }, fadeDuration);
+    }, finalDelay + fadeDuration); // Wait for fade-in and extra delay before fading out groups
+  }, groups * delay + duration);
 }
 
-// Existing helpers unchanged:
+// Helpers unchanged
 function lotFeature(lot) {
   const c = [...lot.coords];
   if (c[0][0] !== c[c.length - 1][0] || c[0][1] !== c[c.length - 1][1]) c.push(c[0]);
-  return { type: "Feature", geometry: { type: "Polygon", coordinates: [c] }, properties: { name: lot.name } };
-}
-
-function fadeInGroup(map, id, duration) {
-  let start = null;
-  function frame(ts) {
-    if (!start) start = ts;
-    let p = Math.min((ts - start) / duration, 1);
-    map.setPaintProperty(id, 'line-opacity', p);
-    if (p < 1) requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
+  return {
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [c] },
+    properties: { name: lot.name },
+  };
 }
 
 function shuffle(arr) {
@@ -230,7 +236,7 @@ function shuffle(arr) {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
 }
-
+ 
 </script>
 
 <script>
