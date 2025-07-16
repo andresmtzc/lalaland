@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lalaland Lots Map</title>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <style>
+    html, body { margin:0; padding:0; height:100%; }
+    #map { height:100%; }
+  </style>
+</head>
+
+<body>
+<div id="map"></div>
+
+<script>
+// Initialize map data and fetch access token
+let lotData = [];
+
+fetch('https://lalaland.mx/mapbox.txt')
+  .then(r => r.text())
+  .then(token => {
+    mapboxgl.accessToken = token.trim();
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/satellite-streets-v11', // Satellite style with minimal labels
+      center: [-100.15994, 25.461823],
+      zoom: 16.45
+    });
+
+    map.on('load', () => {
+
+loadRoad(map, () => {
+  loadLots(map, () => {
+    animateLots(map, () => {
+      addCustomImage(map);  // This runs only after all lots finish animating
+    });
+  });
+});
+        });
+      });
+
+</script>
+
+<script>
+// ROAD: Add and animate road layer
+const roadGeojson = {
+  type: "FeatureCollection",
+  features: [{
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [-100.157757, 25.45803],
+        [-100.157888, 25.458456],
+        [-100.158984, 25.45995],
+        [-100.15855, 25.460763],
+        [-100.158634, 25.461454],
+        [-100.158488, 25.462755],
+        [-100.15872, 25.463296],
+        [-100.16009, 25.465042],
+        [-100.161556, 25.464865],
+        [-100.163154, 25.465748],
+        [-100.164051, 25.465707],
+        [-100.165586, 25.466227],
+        [-100.165558, 25.466294],
+        [-100.164039, 25.46578],
+        [-100.163133, 25.465821],
+        [-100.161538, 25.46494],
+        [-100.160053, 25.465119],
+        [-100.158649, 25.463331],
+        [-100.158407, 25.462765],
+        [-100.158554, 25.461455],
+        [-100.158468, 25.46075],
+        [-100.158893, 25.459956],
+        [-100.157814, 25.458486],
+        [-100.15768, 25.458049]
+      ]
+    }
+  }]
+};
+
+// Function to add and animate road layer
+function loadRoad(map, cb) {
+  map.addSource('road', { type: 'geojson', data: roadGeojson });
+  map.addLayer({
+    id: 'road',
+    type: 'line',
+    source: 'road',
+    paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0 }
+  });
+
+  let start = null;
+  function animate(ts) {
+    if (!start) start = ts;
+    let p = Math.min((ts - start) / 500, 1);
+    map.setPaintProperty('road', 'line-opacity', p);
+    if (p < 1) requestAnimationFrame(animate);
+    else cb();
+  }
+  requestAnimationFrame(animate);
+}
+</script>
+
+<script>
+// LOT PARSING: Load and parse lot data
+async function loadLots(map, cb) {
+  const txt = await fetch('https://lalaland.mx/lots.txt').then(r => r.text());
+  lotData = parseLots(txt);
+  cb();
+}
+
+function parseLots(text) {
+  const lines = text.trim().split('\n');
+  const lots = [], curr = null;
+  let currentLot = null;
+  lines.forEach(line => {
+    line = line.trim();
+    if (!line) return;
+    if (!line.startsWith('{')) {
+      if (currentLot) lots.push(currentLot);
+      currentLot = { name: line, coords: [] };
+    } else {
+      const m = line.match(/lat:\s*([0-9.\-]+),\s*lng:\s*([0-9.\-]+)/);
+      if (m && currentLot) currentLot.coords.push([+m[2], +m[1]]);
+    }
+  });
+  if (currentLot) lots.push(currentLot);
+  return lots;
+}
+</script>
+
+<script>
+// LOT ANIMATION: Animate the appearance of lots
+function animateLots(map, cb) {
+  const groups = 20, delay = 80, duration = 250, finalDelay = 1000;
+
+  // Shuffle lots
+  const shuffled = [...Array(lotData.length).keys()];
+  shuffle(shuffled);
+
+  // Divide into groups
+  const groupArr = Array.from({ length: groups }, () => []);
+  shuffled.forEach((i, idx) => groupArr[idx % groups].push(i));
+
+  // Render each group with animation
+  groupArr.forEach((g, i) => {
+    const geojson = { type: "FeatureCollection", features: g.map(idx => lotFeature(lotData[idx])) };
+    map.addSource(`lot-group-${i}`, { type: "geojson", data: geojson });
+    map.addLayer({
+      id: `lot-group-${i}`,
+      type: "line",
+      source: `lot-group-${i}`,
+      paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0 }
+    });
+    setTimeout(() => fadeInGroup(map, `lot-group-${i}`, duration), i * delay);
+  });
+
+  // Final lots layer (hidden initially)
+  const finalGeojson = {
+    type: "FeatureCollection",
+    features: lotData.map(lot => lotFeature(lot))
+  };
+  map.addSource('lots-final', { type: 'geojson', data: finalGeojson });
+  map.addLayer({
+    id: 'lots-final',
+    type: 'line',
+    source: 'lots-final',
+    layout: { visibility: 'none' },
+    paint: { 'line-color': '#fff', 'line-width': 1 }
+  });
+
+  // After all groups animate, show final lots and cleanup intermediate layers,
+  // then call the callback to trigger next step (adding image)
+  setTimeout(() => {
+    map.setLayoutProperty('lots-final', 'visibility', 'visible');
+    setTimeout(() => {
+      groupArr.forEach((_, i) => {
+        if (map.getLayer(`lot-group-${i}`)) map.removeLayer(`lot-group-${i}`);
+        if (map.getSource(`lot-group-${i}`)) map.removeSource(`lot-group-${i}`);
+      });
+      if (cb) cb();  // Callback here, after animation and cleanup
+    }, 50);
+  }, groups * delay + duration + finalDelay);
+}
+
+function lotFeature(lot) {
+  const c = [...lot.coords];
+  if (c[0][0] !== c[c.length - 1][0] || c[0][1] !== c[c.length - 1][1]) c.push(c[0]);
+  return { type: "Feature", geometry: { type: "Polygon", coordinates: [c] }, properties: { name: lot.name } };
+}
+
+function fadeInGroup(map, id, duration) {
+  let start = null;
+  function frame(ts) {
+    if (!start) start = ts;
+    let p = Math.min((ts - start) / duration, 1);
+    map.setPaintProperty(id, 'line-opacity', p);
+    if (p < 1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+</script>
+
+<script>
+// DRONE IMAGE - Add custom recent drone satellite image as a raster layer
+function addCustomImage(map) {
+  // Coordinates for the custom drone image (georeferenced)
+  const imageBounds = [
+    [-100.16483, 25.467111], // Top-left corner [lng, lat]
+    [-100.154874, 25.467111], // Top-right corner [lng, lat]
+    [-100.154874, 25.457155], // Bottom-right corner [lng, lat]
+    [-100.16483, 25.457155],  // Bottom-left corner [lng, lat]
+  ];
+
+  map.addSource('drone-satellite', { 
+    type: 'image',
+    url: 'https://lalaland.mx/santte2.jpg', // Your drone image URL
+    coordinates: imageBounds // Set the coordinates for where the image will be placed
+  });
+
+map.addLayer({
+  id: 'drone-satellite-layer',
+  type: 'raster',
+  source: 'drone-satellite',
+  paint: {
+    'raster-opacity': 0
+  }
+}, 'road');  // Insert BELOW 'road' layer, so roads are on top
+
+// Then fade in opacity as you do
+fadeInImage(map);
+}
+
+// Fade-in effect for the image (opacity increases gradually from 0 to 1)
+function fadeInImage(map) {
+  let opacity = 0;
+  const interval = setInterval(() => {
+    opacity += 0.05;  // Increase opacity gradually
+    if (opacity >= 1) {
+      opacity = 1;
+      clearInterval(interval); // Stop once opacity reaches 1
+    }
+    map.setPaintProperty('drone-satellite-layer', 'raster-opacity', opacity);
+  }, 50); // Adjust the interval for smoother or faster fade-in
+} 
+</script> 
+
+</body>
+</html>
