@@ -9,11 +9,108 @@
   <style>
     html, body { margin:0; padding:0; height:100%; }
     #map { height:100%; }
+
+    /* backdrop */
+#modalBackdrop {
+  display: none;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.3);
+  z-index: 9998;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* modal panel */
+#lotModal {
+  display: none;
+  position: fixed;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  z-index: 9999;
+  opacity: 0;
+  transition: all 0.3s ease;
+  padding: 20px;
+  width: 320px; /* iPhone-like width */
+  max-width: 90%;
+}
+
+/* visible */
+#lotModal.show {
+  opacity: 1;
+}
+
+/* content wrapper */
+.modal-content {
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+#lotModalImages img {
+  width: 100%;
+  margin: 10px 0;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* DESKTOP layout */
+@media (min-width: 768px) {
+  #lotModal {
+    top: 30px;
+    left: 30px;
+    transform: none;
+    bottom: auto;
+    height: auto;
+  }
+}
+
+/* MOBILE layout */
+@media (max-width: 767px) {
+  #lotModal {
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(30px);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 320px;
+  }
+
+  #lotModal.show {
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
   </style>
 </head>
 
 <body>
 <div id="map"></div>
+
+<!-- Modal Backdrop -->
+<div id="modalBackdrop" onclick="closeLotModal()"></div>
+
+<!-- Modal Panel -->
+<div id="lotModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeLotModal()">&times;</button>
+    <h2 id="lotModalTitle">Lot Name</h2>
+    <p id="lotModalInfo">Status & details here</p>
+    <div id="lotModalImages">
+      <!-- Images will be inserted here -->
+    </div>
+  </div>
+</div>
+
  
 <script>
   // LOAD SUPABASE
@@ -51,16 +148,28 @@ fetch('https://lalaland.mx/mapbox.txt')
 
 map.on('load', async () => {
   await loadRoad(map, async () => {
-    await loadLotsAsync(map); //Parse lots
-    await window.supabaseReady; // ✅ Espera a que la librería esté lista
+    await loadLotsAsync(map);
+    await window.supabaseReady;
     await enrichLotsWithAvailability();
+
     animateLots(map, () => {
       addCustomImage(map);
       addFeaturedLotsLayer(map);
+
+      // ✅ HERE: add click handler after lots-final exists
+map.on('click', 'lots-final-click', (e) => {
+  const feature = e.features[0];
+  const lotName = feature.properties.name;
+
+  const lot = lotData.find(l => l.name === lotName);
+  if (!lot) return;
+
+  openLotModal(lot);
+      });
     });
   });
 });
-  }); // ✅ this is the correct closing
+});
 </script>  
 
 <script>
@@ -403,6 +512,16 @@ if (soldInGroup.length > 0) {
       "line-opacity-transition": { duration: fadeDuration },
     },
   });
+  map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
+  id: "lots-final-click",
+  type: "fill",
+  source: "lots-final",
+  layout: { visibility: "visible" },
+  paint: {
+    "fill-color": "#000",      // any color
+    "fill-opacity": 0          // invisible
+  }
+});
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
@@ -584,6 +703,51 @@ function startPolygonPulse(map) {
 }
 </script>
 
+<script>
+function openLotModal(lot) {
+  const modal = document.getElementById('lotModal');
+  const backdrop = document.getElementById('modalBackdrop');
+
+  const cleanName = lot.name.replace(/^lot/i, '');
+
+  document.getElementById('lotModalTitle').textContent = `Santte Fase 2 - Lote: ${cleanName}`;
+  document.getElementById('lotModalInfo').textContent =
+    `Status: ${lot.availability}${lot.featured ? ' (Featured)' : ''}`;
+
+  const imagesDiv = document.getElementById('lotModalImages');
+  imagesDiv.innerHTML = ''; // Clear old images
+
+  if (lot.images && lot.images.length) {
+    lot.images.forEach(url => {
+      const img = document.createElement('img');
+      img.src = url;
+      img.style.width = '100%';
+      img.style.marginBottom = '10px';
+      imagesDiv.appendChild(img);
+    });
+  }
+
+  modal.classList.add('show');
+  backdrop.classList.add('show');
+  modal.style.display = 'block';
+  backdrop.style.display = 'block';
+}
+
+function closeLotModal() {
+  const modal = document.getElementById('lotModal');
+  const backdrop = document.getElementById('modalBackdrop');
+  modal.classList.remove('show');
+  backdrop.classList.remove('show');
+
+  // Optionally delay hiding to let the fade-out complete
+  setTimeout(() => {
+    modal.style.display = 'none';
+    backdrop.style.display = 'none';
+  }, 300);
+}
+
+
+</script>
 
 </body>
 </html> 
