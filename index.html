@@ -28,7 +28,7 @@ fetch('https://lalaland.mx/mapbox.txt')
       style: 'mapbox://styles/mapbox/satellite-streets-v11', // Satellite style with minimal labels
       center: [-100.15994, 25.461823],
       zoom: 16.45
-    });
+    }); 
 
     map.on('load', () => {
 
@@ -136,6 +136,7 @@ function parseLots(text) {
 // LOT ANIMATION: Animate the appearance of lots
 function animateLots(map, cb) {
   const groups = 20, delay = 80, duration = 250, finalDelay = 1000;
+  const fadeDuration = 500;
 
   // Shuffle lots
   const shuffled = [...Array(lotData.length).keys()];
@@ -158,7 +159,7 @@ function animateLots(map, cb) {
     setTimeout(() => fadeInGroup(map, `lot-group-${i}`, duration), i * delay);
   });
 
-  // Final lots layer (hidden initially)
+  // Add final lots layer hidden with opacity 0 but visible
   const finalGeojson = {
     type: "FeatureCollection",
     features: lotData.map(lot => lotFeature(lot))
@@ -168,24 +169,44 @@ function animateLots(map, cb) {
     id: 'lots-final',
     type: 'line',
     source: 'lots-final',
-    layout: { visibility: 'none' },
-    paint: { 'line-color': '#fff', 'line-width': 1 }
+    layout: { visibility: 'visible' },   // Keep visible but start transparent
+    paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0 }
   });
 
-  // After all groups animate, show final lots and cleanup intermediate layers,
-  // then call the callback to trigger next step (adding image)
+  // After all groups animate, fade in final lots and fade out animated groups smoothly
   setTimeout(() => {
-    map.setLayoutProperty('lots-final', 'visibility', 'visible');
-    setTimeout(() => {
+    let start = null;
+    function fadeTransition(timestamp) {
+      if (!start) start = timestamp;
+      let progress = Math.min((timestamp - start) / fadeDuration, 1);
+
+      // Fade in final lots
+      map.setPaintProperty('lots-final', 'line-opacity', progress);
+
+      // Fade out animated groups
       groupArr.forEach((_, i) => {
-        if (map.getLayer(`lot-group-${i}`)) map.removeLayer(`lot-group-${i}`);
-        if (map.getSource(`lot-group-${i}`)) map.removeSource(`lot-group-${i}`);
+        const opacity = 1 - progress;
+        if (map.getLayer(`lot-group-${i}`)) {
+          map.setPaintProperty(`lot-group-${i}`, 'line-opacity', opacity);
+        }
       });
-      if (cb) cb();  // Callback here, after animation and cleanup
-    }, 50);
+
+      if (progress < 1) {
+        requestAnimationFrame(fadeTransition);
+      } else {
+        // Remove animated groups after fade out
+        groupArr.forEach((_, i) => {
+          if (map.getLayer(`lot-group-${i}`)) map.removeLayer(`lot-group-${i}`);
+          if (map.getSource(`lot-group-${i}`)) map.removeSource(`lot-group-${i}`);
+        });
+        if (cb) cb();  // Call callback after transition finishes
+      }
+    }
+    requestAnimationFrame(fadeTransition);
   }, groups * delay + duration + finalDelay);
 }
 
+// Existing helpers unchanged:
 function lotFeature(lot) {
   const c = [...lot.coords];
   if (c[0][0] !== c[c.length - 1][0] || c[0][1] !== c[c.length - 1][1]) c.push(c[0]);
@@ -209,6 +230,7 @@ function shuffle(arr) {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
 }
+
 </script>
 
 <script>
@@ -256,4 +278,4 @@ function fadeInImage(map) {
 </script> 
 
 </body>
-</html>
+</html> 
