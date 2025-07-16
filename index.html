@@ -14,35 +14,53 @@
 
 <body>
 <div id="map"></div>
-
+ 
 <script>
-// Initialize map data and fetch access token
+  // LOAD SUPABASE
+  window.supabaseReady = new Promise((resolve, reject) => {
+    const supabaseScript = document.createElement('script');
+    supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    supabaseScript.onload = () => {
+      const { createClient } = supabase;
+      window.supabaseClient = createClient(
+        'https://jmoxbhodpvnlmtihcwvt.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imptb3hiaG9kcHZubG10aWhjd3Z0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxODM1MDgsImV4cCI6MjA2Nzc1OTUwOH0.-jP1akHIo9R4a2lD15byC5dESSGfeFHu8qlbmHteeJo'
+      );
+      console.log('✅ Supabase v2 client initialized');
+      resolve();
+    };
+    supabaseScript.onerror = () => reject(new Error("❌ Failed to load Supabase script"));
+    document.head.appendChild(supabaseScript);
+  });
+</script>
+ 
+<script> 
+// MAP INITIALIZE
 let lotData = [];
-
+ 
 fetch('https://lalaland.mx/mapbox.txt')
   .then(r => r.text())
   .then(token => {
     mapboxgl.accessToken = token.trim();
     const map = new mapboxgl.Map({
       container: 'map',
-      style: 'mapbox://styles/mapbox/satellite-streets-v11', // Satellite style with minimal labels
+      style: 'mapbox://styles/mapbox/satellite-streets-v11',
       center: [-100.15994, 25.461823],
       zoom: 16.45
-    }); 
+    });
 
-    map.on('load', () => {
-
-loadRoad(map, () => {
-  loadLots(map, () => {
+map.on('load', async () => {
+  await loadRoad(map, async () => {
+    await loadLotsAsync(map); //Parse lots
+    await window.supabaseReady; // ✅ Espera a que la librería esté lista
+    await enrichLotsWithAvailability();
     animateLots(map, () => {
-      addCustomImage(map);  // This runs only after all lots finish animating
+      addCustomImage(map);
     });
   });
 });
-        });
-      });
-
-</script>
+  }); // ✅ this is the correct closing
+</script>  
 
 <script>
 // ROAD: Add and animate road layer
@@ -106,10 +124,12 @@ function loadRoad(map, cb) {
 
 <script>
 // LOT PARSING: Load and parse lot data
-async function loadLots(map, cb) {
-  const txt = await fetch('https://lalaland.mx/lots.txt').then(r => r.text());
-  lotData = parseLots(txt);
-  cb();
+function loadLotsAsync(map) {
+  return fetch('https://lalaland.mx/lots.txt')
+    .then(r => r.text())
+    .then(txt => {
+      lotData = parseLots(txt);
+    });
 }
 
 function parseLots(text) {
@@ -129,6 +149,46 @@ function parseLots(text) {
   });
   if (currentLot) lots.push(currentLot);
   return lots;
+}
+</script>
+
+<script>
+  // FETCH AVAILABILITY SUPABASE
+  //Async function to fetch availability info from Supabase and attach it to lotData
+ async function enrichLotsWithAvailability() {
+  if (!lotData || lotData.length === 0) {
+    console.warn('lotData is empty, cannot enrich availability');
+    return;
+  }
+
+  if (!window.supabaseClient) {
+    console.error('Supabase client not initialized yet.');
+    return;
+  }
+ 
+  const names = lotData.map(lot => lot.name);
+
+  const { data, error } = await window.supabaseClient
+    .from('lots')
+    .select('lot_name, availability')
+    .in('lot_name', names);
+
+  if (error) {
+    console.error('Error fetching lot availability from Supabase:', error);
+    return;
+  }
+
+  if (data && data.length > 0) {
+    data.forEach(row => {
+      const lot = lotData.find(l => l.name === row.lot_name);
+      if (lot) {
+        lot.availability = row.availability ?? 'Unknown';
+      }
+    });
+    console.log('Lot data enriched with availability:', lotData);
+  } else {
+    console.warn('No availability data returned for lots');
+  }
 }
 </script>
 
@@ -219,7 +279,7 @@ function animateLots(map, cb) {
   }, groups * delay + duration);
 }
 
-// Helpers unchanged
+// Helpers unchanged HERE COLOR IS ADDED DEPENDING ON AVAILABILITY
 function lotFeature(lot) {
   const c = [...lot.coords];
   if (c[0][0] !== c[c.length - 1][0] || c[0][1] !== c[c.length - 1][1]) c.push(c[0]);
