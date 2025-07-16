@@ -193,13 +193,153 @@ function parseLots(text) {
 </script>
 
 <script>
+// ========== DRAW X ON SOLD LOTS ==========
+function addSoldXs(map, soldLots, fadeDuration = 500) {
+  if (!map.getSource('sold-x')) {
+    map.addSource('sold-x', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+
+    map.addLayer({
+      id: 'sold-x-layer',
+      type: 'line',
+      source: 'sold-x',
+      layout: {},
+      paint: {
+        'line-color': 'white',
+        'line-width': 1,
+        'line-opacity': 0,
+        'line-opacity-transition': { duration: fadeDuration }
+      }
+    });
+  }
+
+  const newFeatures = soldLots.flatMap(makeXFeatures);
+
+  // Merge with existing features
+  const source = map.getSource('sold-x');
+  const current = source._data?.features || [];
+  const updated = [...current, ...newFeatures];
+
+  source.setData({ type: 'FeatureCollection', features: updated });
+
+  // ⏳ Fade in after tiny delay to ensure features are added first
+  setTimeout(() => {
+    map.setPaintProperty('sold-x-layer', 'line-opacity', 1);
+  }, 10);
+}
+function makeXFeatures(lot) {
+  const coords = lot.coords;
+  if (!coords || coords.length < 3) return [];
+
+  // Ensure polygon is not closed twice
+  if (
+    coords[0][0] === coords[coords.length - 1][0] &&
+    coords[0][1] === coords[coords.length - 1][1]
+  ) {
+    coords.pop();
+  }
+
+  const n = coords.length;
+  if (n === 4) {
+    return [
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [coords[0], coords[2]] }
+      },
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [coords[1], coords[3]] }
+      }
+    ];
+  }
+
+  function distance(p1, p2) {
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  let maxDistance = 0;
+  let farthestPair = [];
+  let secondMaxDistance = 0;
+  let secondFarthestPair = [];
+
+  for (let i = 0; i < coords.length; i++) {
+    for (let j = i + 1; j < coords.length; j++) {
+      const dist = distance(coords[i], coords[j]);
+      if (dist > maxDistance) {
+        secondMaxDistance = maxDistance;
+        secondFarthestPair = [...farthestPair];
+        maxDistance = dist;
+        farthestPair = [coords[i], coords[j]];
+      } else if (dist > secondMaxDistance) {
+        secondMaxDistance = dist;
+        secondFarthestPair = [coords[i], coords[j]];
+      }
+    }
+  }
+
+  const threshold = 0.000038;
+  function isTooClose(p, a, b) {
+    return distance(p, a) < threshold || distance(p, b) < threshold;
+  }
+
+  let secondMaxDistanceCheck = 0;
+  let secondFarthestPairCheck = [];
+
+  for (let i = 0; i < coords.length; i++) {
+    for (let j = i + 1; j < coords.length; j++) {
+      if (
+        coords[i] === farthestPair[0] || coords[i] === farthestPair[1] ||
+        coords[j] === farthestPair[0] || coords[j] === farthestPair[1]
+      ) continue;
+      if (
+        isTooClose(coords[i], farthestPair[0], farthestPair[1]) ||
+        isTooClose(coords[j], farthestPair[0], farthestPair[1])
+      ) continue;
+
+      const dist = distance(coords[i], coords[j]);
+      if (dist > secondMaxDistanceCheck) {
+        secondMaxDistanceCheck = dist;
+        secondFarthestPairCheck = [coords[i], coords[j]];
+      }
+    }
+  }
+
+  const features = [
+    {
+      type: 'Feature',
+      properties: { lotName: lot.name },
+      geometry: { type: 'LineString', coordinates: farthestPair }
+    }
+  ];
+
+  if (secondFarthestPairCheck.length === 2) {
+    features.push({
+      type: 'Feature',
+      properties: { lotName: lot.name },
+      geometry: { type: 'LineString', coordinates: secondFarthestPairCheck }
+    });
+  }
+
+  return features;
+}
+</script>
+
+
+<script>
 // LOT ANIMATION: Animate the appearance of lots
 function animateLots(map, cb) {
   const groups = 20,
     delay = 80,
     duration = 250,
     finalDelay = 200; 
-  const fadeDuration = 500; 
+  const fadeDuration = 500;
+  const fadeDurationXs = 1500; 
 
   // Shuffle lots
   const shuffled = [...Array(lotData.length).keys()];
@@ -227,10 +367,18 @@ function animateLots(map, cb) {
         "line-opacity-transition": { duration: fadeDuration },
       },
     });
-    setTimeout(
-      () => map.setPaintProperty(`lot-group-${i}`, "line-opacity", 1),
-      i * delay
-    );
+setTimeout(() => {
+  map.setPaintProperty(`lot-group-${i}`, "line-opacity", 1);
+
+  // ✅ ADD THIS: Draw Xs for sold lots in this group
+  const soldInGroup = g
+    .map(idx => lotData[idx])
+    .filter(lot => (lot.availability ?? '').toLowerCase() === 'sold');
+
+if (soldInGroup.length > 0) {
+  addSoldXs(map, soldInGroup, fadeDurationXs); // ⬅ match fade timing
+} 
+}, i * delay);
   });
 
   // Add final lots layer (initially transparent but visible)
