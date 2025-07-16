@@ -56,6 +56,7 @@ map.on('load', async () => {
     await enrichLotsWithAvailability();
     animateLots(map, () => {
       addCustomImage(map);
+      addFeaturedLotsLayer(map);
     });
   });
 });
@@ -181,9 +182,12 @@ function parseLots(text) {
   if (data && data.length > 0) {
     data.forEach(row => {
       const lot = lotData.find(l => l.name === row.lot_name);
-      if (lot) {
-        lot.availability = row.availability ?? 'Unknown';
-      }
+if (lot) {
+  const value = (row.availability ?? '').toLowerCase();
+
+  lot.featured = value === 'featured';
+  lot.availability = value === 'sold' ? 'sold' : 'available';
+}
     });
     console.log('Lot data enriched with availability:', lotData);
   } else {
@@ -333,7 +337,7 @@ function makeXFeatures(lot) {
 
 <script>
 // LOT ANIMATION: Animate the appearance of lots
-function animateLots(map, cb) {
+function animateLots(map, cb) { 
   const groups = 20,
     delay = 80,
     duration = 250,
@@ -490,6 +494,78 @@ function fadeInImage(map) {
   }, 50); // Adjust the interval for smoother or faster fade-in
 } 
 </script> 
+
+<script>
+// === FEATURED LOT POLYGON PULSE ===
+
+// Utility to create a polygon feature from a lot
+function featuredPolygonFeature(lot) {
+  const coords = [...lot.coords];
+  if (
+    coords.length < 3 ||
+    coords[0][0] !== coords[coords.length - 1][0] ||
+    coords[0][1] !== coords[coords.length - 1][1]
+  ) {
+    coords.push(coords[0]); // Ensure closed polygon
+  }
+
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coords]
+    },
+    properties: {
+      name: lot.name
+    }
+  };
+}
+
+// Main function — keep name as requested
+function addFeaturedLotsLayer(map) {
+  const featuredLots = lotData.filter(lot => lot.featured);
+  if (featuredLots.length === 0) return;
+
+  const features = featuredLots.map(featuredPolygonFeature);
+
+  map.addSource('featured-lots', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features
+    }
+  });
+
+map.addLayer({
+  id: 'featured-lots-layer',
+  type: 'fill',
+  source: 'featured-lots',
+  paint: {
+    'fill-color': '#FFD700',
+    'fill-opacity': 0.3
+  }
+}, 'lots-final'); // ← add above the lots
+
+
+  startPolygonPulse(map);
+}
+
+// Animation for pulsing fill-opacity
+function startPolygonPulse(map) {
+  let t = 0;
+  function frame() {
+    t += 0.05;
+    const opacity = 0.3 + Math.sin(t) * 0.2; // Range: 0.1 – 0.5
+
+    if (map.getLayer('featured-lots-layer')) {
+      map.setPaintProperty('featured-lots-layer', 'fill-opacity', opacity);
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+</script>
 
 </body>
 </html> 
