@@ -10,17 +10,7 @@
     html, body { margin:0; padding:0; height:100%; }
     #map { height:100%; }
 
-    /* backdrop */
-#modalBackdrop {
-  display: none;
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: rgba(0,0,0,0.3);
-  z-index: 9998;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
+
 
 /* modal panel */
 #lotModal {
@@ -77,9 +67,9 @@
 /* MOBILE layout */
 @media (max-width: 767px) {
   #lotModal {
-    bottom: 30px;
+    top: 30px;
     left: 50%;
-    transform: translateX(-50%) translateY(30px);
+    transform: translateX(-50%) translateY(-30px);
     border-radius: 12px;
     width: 90%;
     max-width: 320px;
@@ -96,8 +86,7 @@
 <body>
 <div id="map"></div>
 
-<!-- Modal Backdrop -->
-<div id="modalBackdrop" onclick="closeLotModal()"></div>
+
 
 <!-- Modal Panel -->
 <div id="lotModal">
@@ -174,12 +163,19 @@ map.on('load', async () => {
 map.on('click', 'lots-final-click', (e) => {
   const feature = e.features[0];
   const lotName = feature.properties.name;
-
   const lot = lotData.find(l => l.name === lotName);
   if (!lot) return;
-
   openLotModal(lot);
-      });
+});
+
+// Click outside lots to close modal
+map.on('click', (e) => {
+  const features = map.queryRenderedFeatures(e.point, { layers: ['lots-final-click'] });
+  if (features.length === 0) {
+    closeLotModal();
+  }
+});
+
     });
   });
 });
@@ -721,84 +717,86 @@ function startPolygonPulse(map) {
 
 <script>
   // MODAL HERE
-function openLotModal(lot) {
-  const modal = document.getElementById('lotModal');
-  const backdrop = document.getElementById('modalBackdrop');
+  function openLotModal(lot) {
+    const modal = document.getElementById('lotModal');
 
-  // Map availability status to display text; a single space for "available" to hide text
-  const statusMap = {
-    available: ' ',
-    sold: 'VENDIDO'
-  };
+    // Check if modal was hidden before opening
+    const wasHidden = !modal.classList.contains('show');
 
-  const cleanName = lot.name.replace(/^lot/i, '');
+    // Map availability status to display text; a single space for "available" to hide text
+    const statusMap = {
+      available: ' ',
+      sold: 'VENDIDO'
+    };
 
-  // Set modal title
-  document.getElementById('lotModalTitle').textContent = `Lote: ${cleanName}`;
+    const cleanName = lot.name.replace(/^lot/i, '');
 
-  // Availability normalized lowercase string
-  const availability = (lot.availability ?? '').toLowerCase();
+    // Set modal title
+    document.getElementById('lotModalTitle').textContent = `Lote: ${cleanName}`;
 
-  // Compose status text: show statusMap or fallback, append featured label if applicable
-  const baseStatus = statusMap[availability] ?? lot.availability ?? '';
-  const featuredText = lot.featured ? ' (Recomendado x Lalaland)' : '';
-  document.getElementById('lotModalInfo').textContent = baseStatus.trim() ? baseStatus + featuredText : '';
+    // Availability normalized lowercase string
+    const availability = (lot.availability ?? '').toLowerCase();
 
-  // Get table rows you want to show/hide
-  const sizeRow = document.querySelector('#lotModalTable tr:nth-child(1)');
-  const priceRow = document.querySelector('#lotModalTable tr:nth-child(2)');
+    // Compose status text: show statusMap or fallback, append featured label if applicable
+    const baseStatus = statusMap[availability] ?? lot.availability ?? '';
+    const featuredText = lot.featured ? ' (Recomendado x Lalaland)' : '';
+    document.getElementById('lotModalInfo').textContent = baseStatus.trim() ? baseStatus + featuredText : '';
 
-  if (availability === 'sold') {
-    // Hide size and price rows if sold
-    sizeRow.style.display = 'none';
-    priceRow.style.display = 'none';
-  } else {
-    // Show size and price rows otherwise
-    sizeRow.style.display = '';
-    priceRow.style.display = '';
+    // Get table rows you want to show/hide
+    const sizeRow = document.querySelector('#lotModalTable tr:nth-child(1)');
+    const priceRow = document.querySelector('#lotModalTable tr:nth-child(2)');
 
-    // Fill the size and price cells
-    const rSize = lot.rSize || 0;
-    const millones = lot.millones || 0;
+    if (availability === 'sold') {
+      // Hide size and price rows if sold
+      sizeRow.style.display = 'none';
+      priceRow.style.display = 'none';
+    } else {
+      // Show size and price rows otherwise
+      sizeRow.style.display = '';
+      priceRow.style.display = '';
 
-    document.getElementById('lotSize').textContent = `${rSize} m²`;
-    document.getElementById('lotMDP').textContent = `${millones} MDP`;
-  }
+      // Fill the size and price cells
+      const rSize = lot.rSize || 0;
+      const millones = lot.millones || 0;
 
-  // Clear previous images
-  const imagesDiv = document.getElementById('lotModalImages');
-  imagesDiv.innerHTML = '';
+      document.getElementById('lotSize').textContent = `${rSize} m²`;
+      document.getElementById('lotMDP').textContent = `${millones} MDP`;
+    }
 
-  if (lot.images && lot.images.length) {
-    lot.images.forEach(url => {
-      const img = document.createElement('img');
-      img.src = url;
-      img.style.width = '100%';
-      img.style.marginBottom = '10px';
-      imagesDiv.appendChild(img);
-    });
-  }
+    // Clear previous images
+    const imagesDiv = document.getElementById('lotModalImages');
+    imagesDiv.innerHTML = '';
 
-  // Show the modal and backdrop
-  modal.classList.add('show');
-  backdrop.classList.add('show');
-  modal.style.display = 'block';
-  backdrop.style.display = 'block';
+    if (lot.images && lot.images.length) {
+      lot.images.forEach(url => {
+        const img = document.createElement('img');
+        img.src = url;
+        img.style.width = '100%';
+        img.style.marginBottom = '10px';
+        imagesDiv.appendChild(img);
+      });
+    }
 
-  // Adjust map for modal view
-  adjustMapForModal();
-}
+    // Show the modal
+    modal.classList.add('show');
+    modal.style.display = 'block';
+
+    // Only pan the map if modal was previously hidden (modal is being opened)
+    if (wasHidden) {
+      adjustMapForModal();
+    }
+     }
 
 
 function closeLotModal() {
   const modal = document.getElementById('lotModal');
-  const backdrop = document.getElementById('modalBackdrop');
+
   modal.classList.remove('show');
-  backdrop.classList.remove('show');
+
  
   setTimeout(() => {
     modal.style.display = 'none';
-    backdrop.style.display = 'none';
+
   }, 300);
 
   // 👇 devolver mapa a su posición original
@@ -820,7 +818,7 @@ function adjustMapForModal() {
   const isMobile = window.innerWidth < 768;
 
   const offset = isMobile
-    ? [0, window.innerHeight * 0.19] // mobile: push up
+    ? [0, -window.innerHeight * 0.19] // mobile: push up
     : [-160, 0];                     // desktop: push right
 
   lastOffset = offset; // 📝 guardamos el último offset
