@@ -113,11 +113,7 @@
       <td id="lotSize"></td>
     </tr>
     <tr>
-      <th style="text-align: left;">Precio por m²</th>
-      <td id="lotPricePerM2"></td>
-    </tr>
-    <tr>
-      <th style="text-align: left;">MDP</th>
+      <th style="text-align: left;">Precio</th>
       <td id="lotMDP"></td>
     </tr>
   </tbody>
@@ -298,7 +294,7 @@ function parseLots(text) {
 
   const { data, error } = await window.supabaseClient
     .from('lots')
-    .select('lot_name, availability')
+    .select('lot_name, availability, rSize, millones')
     .in('lot_name', names);
 
   if (error) {
@@ -315,8 +311,7 @@ if (lot) {
   lot.availability = value === 'sold' ? 'sold' : 'available';
 
   lot.rSize = row.rSize;
-  lot.MDP = row.MDP;
-  lot.price = row.price;
+  lot.millones = row.millones;
 }
     });
     console.log('Lot data enriched with availability:', lotData);
@@ -729,27 +724,50 @@ function startPolygonPulse(map) {
 function openLotModal(lot) {
   const modal = document.getElementById('lotModal');
   const backdrop = document.getElementById('modalBackdrop');
-const statusMap = {
-  available: 'Disponible',
-  sold: 'Vendido'
-};
 
-const cleanName = lot.name.replace(/^lot/i, '');
+  // Map availability status to display text; a single space for "available" to hide text
+  const statusMap = {
+    available: ' ',
+    sold: 'VENDIDO'
+  };
 
-document.getElementById('lotModalTitle').textContent = `Santte Fase 2 - Lote: ${cleanName}`;
-document.getElementById('lotModalInfo').textContent =
-  `${statusMap[lot.availability] || lot.availability}${lot.featured ? ' (Recomendado x Lalaland)' : ''}`;
+  const cleanName = lot.name.replace(/^lot/i, '');
 
-const rSize = lot.rSize || 0;
-const MDP = lot.MDP || 0;
-const pricePerM2 = rSize ? Math.round((MDP * 1_000_000) / rSize) : 0;
+  // Set modal title
+  document.getElementById('lotModalTitle').textContent = `Lote: ${cleanName}`;
 
-document.getElementById('lotSize').textContent = `${rSize} m²`;
-document.getElementById('lotMDP').textContent = `$${MDP.toFixed(1)} MDP`;
-document.getElementById('lotPricePerM2').textContent = `$${pricePerM2.toLocaleString()} /m²`;
+  // Availability normalized lowercase string
+  const availability = (lot.availability ?? '').toLowerCase();
 
+  // Compose status text: show statusMap or fallback, append featured label if applicable
+  const baseStatus = statusMap[availability] ?? lot.availability ?? '';
+  const featuredText = lot.featured ? ' (Recomendado x Lalaland)' : '';
+  document.getElementById('lotModalInfo').textContent = baseStatus.trim() ? baseStatus + featuredText : '';
+
+  // Get table rows you want to show/hide
+  const sizeRow = document.querySelector('#lotModalTable tr:nth-child(1)');
+  const priceRow = document.querySelector('#lotModalTable tr:nth-child(2)');
+
+  if (availability === 'sold') {
+    // Hide size and price rows if sold
+    sizeRow.style.display = 'none';
+    priceRow.style.display = 'none';
+  } else {
+    // Show size and price rows otherwise
+    sizeRow.style.display = '';
+    priceRow.style.display = '';
+
+    // Fill the size and price cells
+    const rSize = lot.rSize || 0;
+    const millones = lot.millones || 0;
+
+    document.getElementById('lotSize').textContent = `${rSize} m²`;
+    document.getElementById('lotMDP').textContent = `${millones} MDP`;
+  }
+
+  // Clear previous images
   const imagesDiv = document.getElementById('lotModalImages');
-  imagesDiv.innerHTML = ''; // Clear old images
+  imagesDiv.innerHTML = '';
 
   if (lot.images && lot.images.length) {
     lot.images.forEach(url => {
@@ -761,13 +779,16 @@ document.getElementById('lotPricePerM2').textContent = `$${pricePerM2.toLocaleSt
     });
   }
 
+  // Show the modal and backdrop
   modal.classList.add('show');
   backdrop.classList.add('show');
   modal.style.display = 'block';
   backdrop.style.display = 'block';
 
-    adjustMapForModal();
+  // Adjust map for modal view
+  adjustMapForModal();
 }
+
 
 function closeLotModal() {
   const modal = document.getElementById('lotModal');
