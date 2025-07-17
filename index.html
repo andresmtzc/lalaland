@@ -136,8 +136,10 @@
 <script> 
 // MAP INITIALIZE
 let lotData = [];
-let map;  // declare global
+let map;  // global map variable
+let hoveredId = null;
 
+// Initialize map
 fetch('https://lalaland.mx/mapbox.txt')
   .then(r => r.text())
   .then(token => {
@@ -149,37 +151,71 @@ fetch('https://lalaland.mx/mapbox.txt')
       zoom: 16.45
     });
 
-map.on('load', async () => {
-  await loadRoad(map, async () => {
-    await loadLotsAsync(map);
-    await window.supabaseReady;
-    await enrichLotsWithAvailability();
+    map.on('load', async () => {
+      await loadRoad(map, async () => {
+        await loadLotsAsync(map);
+        await window.supabaseReady;
+        await enrichLotsWithAvailability();
 
-    animateLots(map, () => {
-      addCustomImage(map);
-      addFeaturedLotsLayer(map);
+        animateLots(map, () => {
+          addCustomImage(map);
+          addFeaturedLotsLayer(map);
 
-      // ✅ HERE: add click handler after lots-final exists
-map.on('click', 'lots-final-click', (e) => {
-  const feature = e.features[0];
-  const lotName = feature.properties.name;
-  const lot = lotData.find(l => l.name === lotName);
-  if (!lot) return;
-  openLotModal(lot);
-});
-
-// Click outside lots to close modal
-map.on('click', (e) => {
-  const features = map.queryRenderedFeatures(e.point, { layers: ['lots-final-click'] });
-  if (features.length === 0) {
-    closeLotModal();
+          // Add hover outline layer after lots-final source is ready
+map.addLayer({
+  id: 'lots-hover-outline',
+  type: 'line',
+  source: 'lots-final',
+  paint: {
+    'line-color': '#fff',
+    'line-width': 3,
+    'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
   }
 });
 
-    });
-  });
+map.on('mousemove', 'lots-final-click', (e) => {
+  // Don't override modal highlight
+  if (document.getElementById('lotModal').classList.contains('show')) return;
+  if (hoveredId !== null) {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+  }
+  if (e.features.length > 0) {
+    hoveredId = e.features[0].id;
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: true });
+  }
 });
+
+map.on('mouseleave', 'lots-final-click', () => {
+  if (document.getElementById('lotModal').classList.contains('show')) return;
+  if (hoveredId !== null) {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+  }
+  hoveredId = null;
 });
+
+          // Click on lot: open modal (no persistent selection highlight)
+          map.on('click', 'lots-final-click', (e) => {
+            if (e.features.length === 0) return;
+
+            const feature = e.features[0];
+            const lotName = feature.properties.name;
+            const lot = lotData.find(l => l.name === lotName);
+            if (!lot) return;
+            openLotModal(lot);
+          });
+
+          // Click outside lot closes modal
+          map.on('click', (e) => {
+            const features = map.queryRenderedFeatures(e.point, { layers: ['lots-final-click'] });
+            if (features.length === 0) {
+              closeLotModal();
+            }
+          });
+
+        }); // animateLots callback ends
+      }); // loadRoad callback ends
+    }); // map load ends
+  }); // fetch token ends
 </script>  
 
 <script>
@@ -509,7 +545,7 @@ if (soldInGroup.length > 0) {
   // Add final lots layer (initially transparent but visible)
   const finalGeojson = {
     type: "FeatureCollection",
-    features: lotData.map((lot) => lotFeature(lot)),
+features: lotData.map((lot, i) => lotFeature(lot, i))  // <- pass index here!
   };
   map.addSource("lots-final", { type: "geojson", data: finalGeojson });
   map.addLayer({
@@ -563,13 +599,14 @@ if (soldInGroup.length > 0) {
 }
 
 // Helpers unchanged HERE COLOR IS ADDED DEPENDING ON AVAILABILITY
-function lotFeature(lot) {
+function lotFeature(lot, index) {
   const c = [...lot.coords];
   if (c[0][0] !== c[c.length - 1][0] || c[0][1] !== c[c.length - 1][1]) c.push(c[0]);
   return {
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [c] },
     properties: { name: lot.name },
+        id: index  // unique id for feature state
   };
 }
 
@@ -625,6 +662,8 @@ function fadeInImage(map) {
   }, 50); // Adjust the interval for smoother or faster fade-in
 } 
 </script> 
+
+
 
 <script>
 // === FEATURED LOT POLYGON PULSE (ASYNC) ===
@@ -777,6 +816,19 @@ function startPolygonPulse(map) {
       });
     }
 
+  // Outline this lot on the map
+  // Clear previous hover
+  if (hoveredId !== null) {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+    hoveredId = null;
+  }
+  // Find the feature index for this lot
+  const idx = lotData.findIndex(l => l.name === lot.name);
+  if (idx !== -1) {
+    map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
+    hoveredId = idx; // So further mousemove doesn't clear it
+  }
+
     // Show the modal
     modal.classList.add('show');
     modal.style.display = 'block';
@@ -798,6 +850,13 @@ function closeLotModal() {
     modal.style.display = 'none';
 
   }, 300);
+
+ // Remove hover outline
+  if (hoveredId !== null) {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+    hoveredId = null;
+  }
+
 
   // 👇 devolver mapa a su posición original
   if (map && lastOffset) {
