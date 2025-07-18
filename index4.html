@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lalaland Lots Map</title>
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; height:100%; }
+  #map { height:100%; }
+  #style-switcher {
+    position: absolute; top: 10px; left: 10px; z-index: 1;
+    background: white; padding: 5px; border-radius: 4px;
+  }
+</style>
+</head>
+
+<body>
+<div id="map"></div>
+<div id="style-switcher">
+  <select id="styleSelector">
+    <option value="mapbox://styles/andresmtzc/cmcxf2vmh015o01s097ao7n6k">Lalaland</option>
+    <option value="mapbox://styles/mapbox/satellite-v9">Satellite</option>
+  </select>
+</div>
+
+<script>
+let lotData = [];
+
+fetch('https://lalaland.mx/mapbox.txt')
+.then(r => r.text())
+.then(token => {
+  mapboxgl.accessToken = token.trim();
+  const map = new mapboxgl.Map({
+    container: 'map',
+    style: document.getElementById('styleSelector').value,
+    center: [-100.15994, 25.461823],
+    zoom: 16.45
+  });
+
+  document.getElementById('styleSelector').addEventListener('change', () => {
+    map.setStyle(document.getElementById('styleSelector').value);
+    map.once('style.load', () => {
+      loadRoad(map, () => {
+        loadLots(map, () => animateLots(map));
+      });
+    });
+  });
+// CALL ALL MAP FUNCTIONS (Road, Lot Parse, Lot Animation)
+  map.on('load', () => {
+    loadRoad(map, () => {
+      loadLots(map, () => animateLots(map));
+    });
+  });
+});
+</script>
+
+<script>
+// ROAD
+const roadGeojson = {
+  type: "FeatureCollection",
+  features: [{
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [-100.157757, 25.45803], [-100.157888, 25.458456], [-100.158927, 25.45995],
+        [-100.158501, 25.460763], [-100.158609, 25.461454], [-100.15848, 25.462857],
+        [-100.159828, 25.465042], [-100.161556, 25.464974], [-100.163154, 25.465835],
+        [-100.164051, 25.465707], [-100.165586, 25.466181], [-100.16556, 25.466249],
+        [-100.164044, 25.465781], [-100.163138, 25.46591], [-100.161535, 25.465047],
+        [-100.159783, 25.465116], [-100.158398, 25.462873], [-100.158529, 25.461456],
+        [-100.158419, 25.460752], [-100.158836, 25.459955], [-100.157814, 25.458485],
+        [-100.15768, 25.458049]
+      ]
+    }
+  }]
+};
+
+function loadRoad(map, cb) {
+  map.addSource('road', { type: 'geojson', data: roadGeojson });
+  map.addLayer({
+    id: 'road',
+    type: 'line',
+    source: 'road',
+    paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0 }
+  });
+
+  let start=null;
+  function animate(ts) {
+    if (!start) start=ts;
+    let p=Math.min((ts-start)/500,1);
+    map.setPaintProperty('road', 'line-opacity', p);
+    if (p<1) requestAnimationFrame(animate);
+    else cb();
+  }
+  requestAnimationFrame(animate);
+}
+</script>
+
+<script>
+// LOT PARSING
+async function loadLots(map, cb) {
+  const txt = await fetch('https://lalaland.mx/lots.txt').then(r => r.text());
+  lotData = parseLots(txt);
+  cb();
+}
+
+function parseLots(text) {
+  const lines = text.trim().split('\n');
+  const lots=[], curr=null;
+  let currentLot=null;
+  lines.forEach(line=>{
+    line=line.trim();
+    if (!line) return;
+    if (!line.startsWith('{')) {
+      if(currentLot) lots.push(currentLot);
+      currentLot={ name:line, coords:[] };
+    } else {
+      const m = line.match(/lat:\s*([0-9.\-]+),\s*lng:\s*([0-9.\-]+)/);
+      if (m && currentLot) currentLot.coords.push([+m[2],+m[1]]);
+    }
+  });
+  if(currentLot) lots.push(currentLot);
+  return lots;
+}
+</script>
+
+<script>
+// LOT ANIMATION
+function animateLots(map) {
+  const groups=20, delay=80, duration=250, finalDelay=1000;
+
+  // shuffle lots
+  const shuffled = [...Array(lotData.length).keys()];
+  shuffle(shuffled);
+
+  // divide into groups
+  const groupArr = Array.from({length:groups},()=>[]);
+  shuffled.forEach((i,idx)=>groupArr[idx%groups].push(i));
+
+  // render each group
+  groupArr.forEach((g,i) => {
+    const geojson = { type:"FeatureCollection", features: g.map(idx=>lotFeature(lotData[idx])) };
+    map.addSource(`lot-group-${i}`, { type:"geojson", data:geojson });
+    map.addLayer({
+      id:`lot-group-${i}`,
+      type:"line",
+      source:`lot-group-${i}`,
+      paint:{ 'line-color':'#fff','line-width':1, 'line-opacity':0 }
+    });
+    setTimeout(()=>fadeInGroup(map,`lot-group-${i}`,duration), i*delay);
+  });
+
+  // create final lots layer but keep it hidden
+  const finalGeojson = {
+    type:"FeatureCollection",
+    features: lotData.map(lot=>lotFeature(lot))
+  };
+  map.addSource('lots-final', { type:'geojson', data:finalGeojson });
+  map.addLayer({
+    id:'lots-final',
+    type:'line',
+    source:'lots-final',
+    layout: { visibility: 'none' },
+    paint:{ 'line-color':'#fff','line-width':1 }
+  });
+
+  // after all groups done
+  setTimeout(()=>{
+    // make final lots layer visible first
+    map.setLayoutProperty('lots-final', 'visibility', 'visible');
+
+    // then remove groups a frame later
+    setTimeout(()=>{
+      groupArr.forEach((_,i)=>{
+        if (map.getLayer(`lot-group-${i}`)) map.removeLayer(`lot-group-${i}`);
+        if (map.getSource(`lot-group-${i}`)) map.removeSource(`lot-group-${i}`);
+      });
+    }, 50);
+
+  }, groups*delay+duration+finalDelay);
+}
+
+function lotFeature(lot) {
+  const c=[...lot.coords];
+  if (c[0][0]!==c[c.length-1][0] || c[0][1]!==c[c.length-1][1]) c.push(c[0]);
+  return { type:"Feature", geometry:{type:"Polygon",coordinates:[c]}, properties:{name:lot.name}};
+}
+
+function fadeInGroup(map,id,duration) {
+  let start=null;
+  function frame(ts) {
+    if(!start) start=ts;
+    let p=Math.min((ts-start)/duration,1);
+    map.setPaintProperty(id,'line-opacity',p);
+    if (p<1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function shuffle(arr) {
+  for (let i=arr.length-1;i>0;i--) {
+    const j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+}
+</script>
+
+</body>
+</html>
