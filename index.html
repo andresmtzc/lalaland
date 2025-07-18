@@ -38,15 +38,6 @@
   position: relative;
 }
 
-.modal-close {
-  position: absolute;
-  top: 8px; right: 8px;
-  background: transparent;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-}
-
 #lotModalImages img {
   width: 100%;
   margin: 10px 0;
@@ -81,18 +72,54 @@
   }
 }
 
+.modal-content.modal-animate {
+  animation: slideInUp 0.3s ease;
+}
+
+@keyframes slideInUp {
+  0% {
+    transform: translateY(20px);
+    opacity: 0.2;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+#toaster {
+  position: fixed;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #323232;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  z-index: 10000;
+}
+
+#toaster.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-10px);
+}
   </style>
 </head>
 
 <body>
 <div id="map"></div>
 
-
+<div id="toaster" class="hidden">Loaded most recent image (March 2025)</div>
 
 <!-- Modal Panel -->
 <div id="lotModal">
   <div class="modal-content">
-    <button class="modal-close" onclick="closeLotModal()">&times;</button>
+     <button class="nav-arrow up" onclick="openAdjacentLot(-1)">▲</button>
+
     <h2 id="lotModalTitle">Lot Name</h2>
   <p id="lotModalInfo">Estado</p>
 
@@ -111,6 +138,7 @@
     <div id="lotModalImages">
       <!-- Images will be inserted here -->
     </div>
+      <button class="nav-arrow down" onclick="openAdjacentLot(1)">▼</button>
   </div>
 </div>
 
@@ -154,6 +182,7 @@ fetch('https://lalaland.mx/sb_config.json')
 let lotData = [];
 let map;  // global map variable
 let hoveredId = null;
+let currentLotIndex = -1;
 
 // Initialize map
 fetch('https://lalaland.mx/mapbox.txt')
@@ -670,6 +699,7 @@ map.addLayer({
 
 // Then fade in opacity as you do
 fadeInImage(map);
+showToaster("Loaded most recent image (March 2025)");
 }
 
 // Fade-in effect for the image (opacity increases gradually from 0 to 1)
@@ -684,6 +714,17 @@ function fadeInImage(map) {
     map.setPaintProperty('drone-satellite-layer', 'raster-opacity', opacity);
   }, 50); // Adjust the interval for smoother or faster fade-in
 } 
+
+function showToaster(message, duration = 3000) {
+  const toaster = document.getElementById('toaster');
+  toaster.textContent = message;
+  toaster.classList.add('show');
+
+  setTimeout(() => {
+    toaster.classList.remove('show');
+  }, duration);
+}
+
 </script> 
 
 
@@ -736,7 +777,7 @@ function addFeaturedLotsLayer(map) {
     type: 'fill',
     source: 'featured-lots',
     paint: {
-      'fill-color': '#FFD700',
+      'fill-color': '#FF5C00', //orange
       'fill-opacity': ['get', 'opacity'] // ✅ now data-driven
     }
   }, 'lots-final');
@@ -781,7 +822,7 @@ function startPolygonPulse(map) {
   // MODAL HERE
   function openLotModal(lot) {
     const modal = document.getElementById('lotModal');
-
+currentLotIndex = lotData.findIndex(l => l.name === lot.name);
 
     // Check if modal was hidden before opening
     const wasHidden = !modal.classList.contains('show');
@@ -859,6 +900,13 @@ function startPolygonPulse(map) {
     modal.classList.add('show');
     modal.style.display = 'block';
 
+
+modal.querySelector('.modal-content').classList.add('modal-animate');
+
+setTimeout(() => {
+  modal.querySelector('.modal-content').classList.remove('modal-animate');
+}, 300);
+
     // Only pan the map if modal was previously hidden (modal is being opened)
     if (wasHidden) {
       adjustMapForModal();
@@ -917,9 +965,52 @@ function adjustMapForModal() {
 }
 
 
+function openAdjacentLot(direction) {
+  if (currentLotIndex === -1) return;
 
+  let newIndex = currentLotIndex + direction;
+  if (newIndex < 0) newIndex = lotData.length - 1;
+  if (newIndex >= lotData.length) newIndex = 0;
 
+  const lot = lotData[newIndex];
+  if (lot) openLotModal(lot);
+}
 
+// Scroll navigation on desktop
+document.addEventListener('wheel', (e) => {
+  const modal = document.getElementById('lotModal');
+  if (!modal.classList.contains('show')) return;
+
+  const direction = e.deltaY > 0 ? 1 : -1;
+  openAdjacentLot(direction);
+
+  e.preventDefault(); // prevent page scroll
+}, { passive: false });
+
+// Swipe detection for mobile
+let touchStartY = null;
+
+document.addEventListener('touchstart', (e) => {
+  if (!document.getElementById('lotModal').classList.contains('show')) return;
+  if (e.touches.length === 1) {
+    touchStartY = e.touches[0].clientY;
+  }
+});
+
+document.addEventListener('touchend', (e) => {
+  if (!document.getElementById('lotModal').classList.contains('show')) return;
+  if (touchStartY === null || e.changedTouches.length !== 1) return;
+
+  const touchEndY = e.changedTouches[0].clientY;
+  const deltaY = touchEndY - touchStartY;
+
+  if (Math.abs(deltaY) > 40) { // minimum threshold
+    const direction = deltaY < 0 ? 1 : -1; // swipe up => next, down => previous
+    openAdjacentLot(direction);
+  }
+
+  touchStartY = null;
+});
 
 </script>
 
