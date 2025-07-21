@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Santte 2 Modal</title>
+<title>Santte 2 Modal - Infinite Loop with Thumb Clamp</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
 
@@ -87,6 +87,7 @@ body {
   border-bottom: 1px solid #f0f0f0;
   gap: 8px;
   scroll-snap-align: center;
+  transition: background 0.3s ease;
 }
 
 .info-row:hover {
@@ -209,6 +210,7 @@ body {
   transform: rotate(90deg);
 }
 </style>
+</head>
 
 <body>
 
@@ -231,36 +233,43 @@ body {
 const modal = document.getElementById('lotModal');
 const modalInfo = document.getElementById('modalInfo');
 
-const lots = Array.from({ length: 200 }, (_, i) => ({
+const baseLotsCount = 10;
+const cloneCount = 3;
+
+const baseLots = Array.from({ length: baseLotsCount }, (_, i) => ({
   number: 100 + i,
   size: 150 + (i % 50),
   price: (1.5 + (i % 5) * 0.1).toFixed(1)
 }));
+
+const lots = [
+  ...baseLots.slice(-cloneCount).map(l => ({ ...l, clone:true })),
+  ...baseLots,
+  ...baseLots.slice(0,cloneCount).map(l => ({ ...l, clone:true }))
+];
 
 function render() {
   modalInfo.innerHTML = '';
   lots.forEach((lot, i) => {
     const row = document.createElement('div');
     row.classList.add('info-row');
+    if (lot.clone) row.style.opacity = '0.5';
     row.dataset.index = i;
-
+    row.dataset.baseIndex = lot.clone ? -1 : (lot.number - 100);
     row.innerHTML = `
       <div class="lot-left">
         <div class="lote-label">LOTE</div>
         <div class="lote-number">${lot.number}</div>
       </div>
-
       <div class="lot-middle">
         ${lot.size}<span class="sup">M2</span>
       </div>
-
       <div class="lot-price">
         <div class="price-wrapper">
           <span class="price">$${lot.price}</span>
           <span class="mdp">MDP</span>
         </div>
       </div>
-
       <div class="arrow">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12">
           <path d="M2 6h8M8 4l2 2-2 2" stroke="#888" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -271,6 +280,14 @@ function render() {
   });
 }
 
+function scrollToBaseIndex(baseIndex, smooth = true) {
+  const actualIndex = baseIndex + cloneCount;
+  const target = modalInfo.querySelector(`.info-row[data-index="${actualIndex}"]`);
+  if (target) {
+    target.scrollIntoView({behavior: smooth ? 'smooth' : 'auto', block: 'center'});
+  }
+}
+
 function highlightCenter() {
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
@@ -279,19 +296,36 @@ function highlightCenter() {
   rows.forEach(row => {
     const rect = row.getBoundingClientRect();
     const isCenter = rect.top < centerY && rect.bottom > centerY;
-    row.classList.toggle('active', isCenter);
-    row.classList.toggle('inactive', !isCenter);
+    const isBase = !(row.dataset.baseIndex === "-1");
+    row.classList.toggle('active', isCenter && isBase);
+    row.classList.toggle('inactive', !isCenter && isBase);
   });
 }
 
-function scrollToRow(index, options = { behavior: 'smooth', block: 'center' }) {
-  const target = modalInfo.querySelector(`.info-row[data-index="${index}"]`);
-  if (target) {
-    target.scrollIntoView(options);
+function clampScroll() {
+  const { scrollTop, scrollHeight, clientHeight } = modalInfo;
+  const lotHeight = scrollHeight / lots.length;
+  const bufferHeight = lotHeight * cloneCount;
+  const baseHeight = lotHeight * baseLotsCount;
+
+  if (scrollTop <= bufferHeight * 0.5) {
+    modalInfo.scrollTop = scrollTop + baseHeight;
+  } 
+  else if (scrollTop + clientHeight >= scrollHeight - bufferHeight * 0.5) {
+    modalInfo.scrollTop = scrollTop - baseHeight;
   }
 }
 
-function getCurrentRowIndex() {
+let isDragging = false;
+
+modalInfo.addEventListener('pointerdown', () => {
+  isDragging = true;
+});
+
+function stopDragging() {
+  if (!isDragging) return;
+  isDragging = false;
+
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
   const centerY = containerRect.top + containerRect.height / 2;
@@ -300,65 +334,95 @@ function getCurrentRowIndex() {
   let closestDistance = Infinity;
 
   rows.forEach(row => {
+    if(row.dataset.baseIndex === "-1") return;
     const rect = row.getBoundingClientRect();
     const rowCenter = (rect.top + rect.bottom) / 2;
-    const distance = Math.abs(rowCenter - centerY);
-    if (distance < closestDistance) {
-      closestDistance = distance;
+    const dist = Math.abs(rowCenter - centerY);
+    if (dist < closestDistance) {
+      closestDistance = dist;
+      closestIndex = parseInt(row.dataset.baseIndex, 10);
+    }
+  });
+
+  scrollToBaseIndex(closestIndex, true);
+}
+
+modalInfo.addEventListener('pointerup', stopDragging);
+modalInfo.addEventListener('pointercancel', stopDragging);
+modalInfo.addEventListener('pointerleave', stopDragging);
+
+modalInfo.addEventListener('scroll', () => {
+  requestAnimationFrame(() => {
+    highlightCenter();
+
+if (isDragging) {
+  const lotHeight = modalInfo.scrollHeight / lots.length;
+  const minScroll = lotHeight * (cloneCount + -1);  // start at baseIndex 1 → lot 101
+  const maxScroll = lotHeight * (cloneCount + 10) - modalInfo.clientHeight; // end at baseIndex 8 → lot 108
+
+  if (modalInfo.scrollTop < minScroll) {
+    modalInfo.scrollTop = minScroll;
+  }
+  if (modalInfo.scrollTop > maxScroll) {
+    modalInfo.scrollTop = maxScroll;
+  }
+} else {
+  clampScroll();
+}
+  });
+});
+
+let scrollCooldown = false;
+modalInfo.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if(scrollCooldown || isDragging) return;
+
+  scrollCooldown = true;
+
+  const rows = [...modalInfo.querySelectorAll('.info-row')];
+  const containerRect = modalInfo.getBoundingClientRect();
+  const centerY = containerRect.top + containerRect.height / 2;
+  let closestIndex = 0;
+  let closestDistance = Infinity;
+
+  rows.forEach(row => {
+    const rect = row.getBoundingClientRect();
+    const rowCenter = (rect.top + rect.bottom) / 2;
+    const dist = Math.abs(rowCenter - centerY);
+    if (dist < closestDistance) {
+      closestDistance = dist;
       closestIndex = parseInt(row.dataset.index, 10);
     }
   });
-  return closestIndex;
-}
+
+  const nextIndex = (closestIndex + (e.deltaY > 0 ? 1 : -1) + lots.length) % lots.length;
+  const targetRow = modalInfo.querySelector(`.info-row[data-index="${nextIndex}"]`);
+  if (targetRow) {
+    targetRow.scrollIntoView({behavior: 'smooth', block: 'center'});
+  }
+
+  setTimeout(() => {
+    scrollCooldown = false;
+  }, 100);
+});
 
 function openModal() {
   modal.classList.add('show');
   modal.style.display = 'block';
   render();
   setTimeout(() => {
-    // Scroll to second lot (index 1) initially without smooth scroll for instant highlight
-    scrollToRow(1, {behavior:'auto', block:'center'});
-    highlightCenter(); // highlight immediately on open
+    scrollToBaseIndex(0, false);
   }, 50);
 }
 
 function closeModal() {
   modal.classList.remove('show');
-  setTimeout(() => {
-    modal.style.display = 'none';
-  }, 300);
+  setTimeout(() => modal.style.display = 'none', 300);
 }
 
-modalInfo.addEventListener('scroll', () => {
-  requestAnimationFrame(highlightCenter); // highlight on any scroll
-});
-
-let scrollCooldown = false;
-
-modalInfo.addEventListener('wheel', (e) => {
-  e.preventDefault();
-
-  if (scrollCooldown) return;
-  scrollCooldown = true;
-
-  const currentIndex = getCurrentRowIndex();
-  const nextIndex = (currentIndex + (e.deltaY > 0 ? 1 : -1) + lots.length) % lots.length;
-
-  scrollToRow(nextIndex);
-
-  setTimeout(() => {
-    scrollCooldown = false;
-  }, 0); // 0 ms cooldown for immediate responsiveness
-});
- 
 window.addEventListener('click', (e) => {
   if (e.target === modal) closeModal();
 });
-
-// expose open/close for button & icon usage
-window.openModal = openModal;
-window.closeModal = closeModal; 
- 
 </script>
 
 </body>
