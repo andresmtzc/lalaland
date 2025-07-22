@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Santte 2 Modal - Infinite Loop with Thumb Clamp</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Santte 2 Modal - Fast Infinite Scroll</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
 
@@ -39,6 +39,7 @@ body {
   top: 20px;
   left: 50%;
   transform: translateX(-50%) translateY(-30px);
+  touch-action: pan-y;
 }
 
 #lotModal.show {
@@ -90,6 +91,8 @@ body {
   scroll-snap-type: y mandatory;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  contain: strict;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-info::-webkit-scrollbar {
@@ -130,31 +133,22 @@ body {
   border-bottom: 1px solid #f0f0f0;
   gap: 8px;
   scroll-snap-align: center;
-  transition: background 0.3s ease, opacity 0.3s ease; /* Added opacity transition */
+  transition: background 0.3s ease, opacity 0.3s ease;
+  will-change: transform, opacity;
 }
-
-
 
 .info-row:last-child {
   border-bottom: none;
 }
 
-/* Updated active/inactive styles to work with clones */
 .info-row.active {
   background: #f2efe4;
-  opacity: 1; /* Always full opacity for active */
+  opacity: 1;
 }
 
-/* Ensure non-active clones retain their opacity (if desired) */
-.info-row[data-base-index="-1"]:not(.active) {
-    opacity: 0.5;
-}
-
-/* All other non-active rows */
 .info-row:not(.active) {
-    opacity: 1; /* Default for non-clones, non-active */
+  opacity: 1;
 }
-
 
 .lot-left {
   display: flex;
@@ -306,19 +300,16 @@ body {
 <script>
 // LOAD SUPABASE
 window.supabaseReady = new Promise((resolve, reject) => {
-  // Create a script element to load Supabase v2
   const supabaseScript = document.createElement('script');
   supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
   
   supabaseScript.onload = () => {
-    // Script loaded successfully, now fetch config
     fetch('https://lalaland.mx/sb_config.json')
       .then(r => r.json())
       .then(cfg => {
-        // Initialize Supabase client with the fetched config
         window.supabaseClient = supabase.createClient(cfg.url, cfg.key);
         console.log('✅ Supabase client initialized with config.json');
-        resolve();   // Resolve the promise when both are ready
+        resolve();
       })
       .catch(e => {
         console.error('Failed to load Supabase config:', e);
@@ -331,7 +322,6 @@ window.supabaseReady = new Promise((resolve, reject) => {
     reject(new Error("❌ Failed to load Supabase script"));
   };
   
-  // Append the script tag to the document
   document.head.appendChild(supabaseScript);
 });
 </script>
@@ -343,33 +333,32 @@ const customScrollbar = document.getElementById('customScrollbar');
 const customScrollthumb = document.getElementById('customScrollthumb');
 const loadingSpinner = document.getElementById('loadingSpinner');
 
-const cloneCount = 3; // Keep 3 clones for infinite scroll effect
-let baseLots = []; // This will be populated from Supabase
-let lots = []; // This will be the cloned version for infinite scroll
+const cloneCount = 3;
+let baseLots = [];
+let lots = [];
 let isDataLoaded = false;
 
 let isDragging = false;
 let isScrollbarDragging = false;
 let dragStartY = 0;
 let dragStartScroll = 0;
-let scrollTimeout; // To handle momentum scrolling
+let scrollTimeout;
+let scrollHandlerAttached = true;
+let clampCooldown = false;
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-// Function to extract number from lot_name (e.g. "lot105" → 105)
 function extractLotNumber(lotName) {
-  const num = lotName.replace(/^lot/i, ''); // Remove 'lot' prefix case-insensitively
-  return parseInt(num, 10) || 0; // Convert to number, default to 0 if fails
+  const num = lotName.replace(/^lot/i, '');
+  return parseInt(num, 10) || 0;
 }
 
-// Fetch data from Supabase
 async function fetchLots() {
   try {
     loadingSpinner.style.display = 'block';
     modalInfo.style.opacity = '0.5';
     
-    // Wait for Supabase to be ready
     await window.supabaseReady;
     
-    // Fetch data from your 'lots' table
     const { data, error } = await window.supabaseClient
       .from('lots')
       .select('lot_name, rSize, millones, availability')
@@ -377,7 +366,6 @@ async function fetchLots() {
     
     if (error) throw error;
     
-    // Process the data into our format
     baseLots = data.map(lot => ({
       number: extractLotNumber(lot.lot_name),
       size: lot.rSize,
@@ -385,21 +373,11 @@ async function fetchLots() {
       availability: lot.availability
     }));
     
-    // Create the cloned array for infinite scroll
     updateLotsArray();
-    
     isDataLoaded = true;
     console.log('Successfully loaded', baseLots.length, 'lots from Supabase');
-    
-    // If modal is open, re-render with new data
-    // This part should ideally be handled by openModal to ensure proper init
-    // if (modal.classList.contains('show')) {
-    //   render();
-    //   scrollToBaseIndex(0, false);
-    // }
   } catch (error) {
     console.error('Error fetching lots:', error);
-    // Fallback to some default data if Supabase fails
     baseLots = Array.from({ length: 10 }, (_, i) => ({
       number: 100 + i,
       size: '150',
@@ -426,9 +404,7 @@ function render() {
   lots.forEach((lot, i) => {
     const row = document.createElement('div');
     row.classList.add('info-row');
-    // Removed direct opacity setting here, now handled by CSS :not(.active)
     row.dataset.index = i;
-    // Set baseIndex to -1 for clones, otherwise get actual index
     row.dataset.baseIndex = lot.clone ? -1 : baseLots.findIndex(l => l.number === lot.number);
     row.innerHTML = `
       <div class="lot-left">
@@ -452,7 +428,7 @@ function render() {
     `;
     modalInfo.appendChild(row);
   });
-  updateScrollbar(); // Call after rendering to ensure scrollbar is correct
+  updateScrollbar();
 }
 
 function updateScrollbar() {
@@ -473,9 +449,6 @@ function updateScrollbar() {
   const thumbHeight = Math.max(20, (containerHeight / contentHeight) * containerHeight);
   customScrollthumb.style.height = `${thumbHeight}px`;
 
-  // Map scrollTop smoothly into base content range [0, baseHeight - containerHeight]
-  // Use modulo arithmetic to wrap scrollTop around
-
   let baseScrollTop = ((scrollTop - bufferHeight) % baseHeight);
   if (baseScrollTop < 0) baseScrollTop += baseHeight;
   baseScrollTop = Math.min(baseScrollTop, baseHeight - containerHeight);
@@ -486,9 +459,6 @@ function updateScrollbar() {
   customScrollthumb.style.transform = `translateY(${thumbPosition}px)`;
 }
 
- 
-
-
 function scrollToBaseIndex(baseIndex, smooth = true) {
   if (baseLots.length === 0) return;
   
@@ -496,22 +466,18 @@ function scrollToBaseIndex(baseIndex, smooth = true) {
   const target = modalInfo.querySelector(`.info-row[data-index="${actualIndex}"]`);
 
   if (target) {
-    // Force a re-layout before scrolling to ensure current element positions are known
-    target.offsetWidth; 
+    target.offsetWidth;
+    target.scrollIntoView({
+      behavior: smooth ? 'smooth' : 'auto',
+      block: 'center'
+    });
 
-    target.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
-
-    // For 'auto' (instant) scrolls, call highlight/scrollbar immediately after the scroll is set.
-    // Use a tiny timeout or requestAnimationFrame to ensure the browser has processed the scroll
-    // before recalculating positions for highlighting.
     if (!smooth) {
       setTimeout(() => {
         highlightCenter();
         updateScrollbar();
-      }, 0); // 0ms timeout puts it at the end of the current task queue
+      }, 0);
     }
-    // For 'smooth' scrolls, the 'scroll' event listener will pick it up
-    // as the animation progresses and finishes.
   }
 }
 
@@ -519,50 +485,64 @@ function highlightCenter() {
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
   const centerY = containerRect.top + containerRect.height / 2;
-  const tolerance = 5; // Pixels of tolerance for center detection
+  const tolerance = containerRect.height * 0.15;
+
+  let closestRow = null;
+  let minDistance = Infinity;
 
   rows.forEach(row => {
     const rect = row.getBoundingClientRect();
-    // Check if the center of the viewport overlaps with the row's bounding box,
-    // including a small tolerance.
-    const isCenter = (rect.top - tolerance < centerY && rect.bottom + tolerance > centerY);
+    const rowCenter = (rect.top + rect.bottom) / 2;
+    const dist = Math.abs(rowCenter - centerY);
     
-    // Toggle 'active' based solely on centering, including clones
-    row.classList.toggle('active', isCenter);
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestRow = row;
+    }
   });
+
+  if (closestRow && minDistance <= tolerance) {
+    rows.forEach(row => row.classList.remove('active'));
+    closestRow.classList.add('active');
+  }
 }
 
-let clampCooldown = false;
-
 function clampScroll() {
-  if (baseLots.length === 0 || lots.length === 0) return;
-
-  if (clampCooldown) return;  // Ignore repeated calls during cooldown
+  if (baseLots.length === 0 || lots.length === 0 || clampCooldown) return;
 
   const { scrollTop, scrollHeight, clientHeight } = modalInfo;
   const lotHeight = scrollHeight / lots.length;
   const bufferHeight = lotHeight * cloneCount;
   const baseHeight = lotHeight * baseLots.length;
 
+  let virtualScroll = scrollTop;
+  let needsClamping = false;
+  
   if (scrollTop < bufferHeight) {
+    needsClamping = true;
+    virtualScroll = scrollTop + baseHeight;
+  } 
+  else if (scrollTop + clientHeight >= scrollHeight - bufferHeight) {
+    needsClamping = true;
+    virtualScroll = scrollTop - baseHeight;
+  }
+
+  if (needsClamping) {
     clampCooldown = true;
-    modalInfo.scrollTop = scrollTop + baseHeight;
+    
+    // Minimal interference with scrolling
+    const originalScrollBehavior = modalInfo.style.scrollBehavior;
+    modalInfo.style.scrollBehavior = 'auto';
+    modalInfo.scrollTop = virtualScroll;
+    
     setTimeout(() => {
-      clampCooldown = false;
-      highlightCenter();
-      updateScrollbar();
-    }, 50);  // minimum time for scroll position to stabilize
-  } else if (scrollTop + clientHeight >= scrollHeight - bufferHeight) {
-    clampCooldown = true;
-    modalInfo.scrollTop = scrollTop - baseHeight;
-    setTimeout(() => {
+      modalInfo.style.scrollBehavior = originalScrollBehavior;
       clampCooldown = false;
       highlightCenter();
       updateScrollbar();
     }, 50);
   }
 }
-
 
 function stopDragging() {
   if (!isDragging && !isScrollbarDragging) return;
@@ -572,7 +552,6 @@ function stopDragging() {
   customScrollthumb.classList.remove('active');
   modalInfo.classList.remove('dragging');
 
-  // Once dragging stops, snap to the closest base item
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
   const centerY = containerRect.top + containerRect.height / 2;
@@ -580,9 +559,8 @@ function stopDragging() {
   let closestBaseIndex = 0;
   let closestDistance = Infinity;
 
-  // Find the base (non-cloned) item closest to the center
   rows.forEach(row => {
-    if(row.dataset.baseIndex === "-1") return; // Skip cloned items for snapping target
+    if(row.dataset.baseIndex === "-1") return;
     const rect = row.getBoundingClientRect();
     const rowCenter = (rect.top + rect.bottom) / 2;
     const dist = Math.abs(rowCenter - centerY);
@@ -592,10 +570,9 @@ function stopDragging() {
     }
   });
 
-  scrollToBaseIndex(closestBaseIndex, true); // Snap with smooth scroll
+  scrollToBaseIndex(closestBaseIndex, true);
 }
 
-// Improved scrollbar thumb dragging
 customScrollthumb.addEventListener('pointerdown', (e) => {
   e.stopPropagation();
   isScrollbarDragging = true;
@@ -603,20 +580,16 @@ customScrollthumb.addEventListener('pointerdown', (e) => {
   dragStartScroll = modalInfo.scrollTop;
   customScrollthumb.classList.add('active');
   
-  // Use document-level listeners for reliable tracking
   document.addEventListener('pointermove', handleScrollDrag);
   document.addEventListener('pointerup', stopScrollDrag);
   e.preventDefault();
 });
 
-// Handle scrollbar dragging
 function handleScrollDrag(e) {
   if (isScrollbarDragging) {
     const deltaY = e.clientY - dragStartY;
     const scrollRatio = deltaY / modalInfo.clientHeight;
     modalInfo.scrollTop = dragStartScroll + (scrollRatio * modalInfo.scrollHeight);
-    // clampScroll(); // Removed, handled by general scroll listener
-    // updateScrollbar(); // Removed, handled by general scroll listener
   }
   e.preventDefault();
 }
@@ -627,13 +600,37 @@ function stopScrollDrag() {
     customScrollthumb.classList.remove('active');
     document.removeEventListener('pointermove', handleScrollDrag);
     document.removeEventListener('pointerup', stopScrollDrag);
-    stopDragging(); // This will snap to center
+    stopDragging();
   }
 }
 
-// Content dragging (including touch/pointer drag)
+// Touch handling with native momentum
+modalInfo.addEventListener('touchstart', (e) => {
+  if (e.target.closest('.custom-scrollbar')) return;
+  isDragging = true;
+  dragStartY = e.touches[0].clientY;
+  dragStartScroll = modalInfo.scrollTop;
+  modalInfo.classList.add('dragging');
+}, { passive: true });
+
+document.addEventListener('touchmove', (e) => {
+  if (isDragging) {
+    const deltaY = dragStartY - e.touches[0].clientY;
+    modalInfo.scrollTop = dragStartScroll + deltaY;
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', () => {
+  if (isDragging) {
+    isDragging = false;
+    modalInfo.classList.remove('dragging');
+    setTimeout(stopDragging, 200);
+  }
+});
+
+// Pointer events for desktop
 modalInfo.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('.custom-scrollbar')) return; // Prevent content drag if clicking on scrollbar
+  if (isMobile || e.target.closest('.custom-scrollbar')) return;
   isDragging = true;
   dragStartY = e.clientY;
   dragStartScroll = modalInfo.scrollTop;
@@ -647,7 +644,6 @@ function handleContentDrag(e) {
   if (isDragging) {
     const deltaY = dragStartY - e.clientY;
     modalInfo.scrollTop = dragStartScroll + deltaY;
-    // clampScroll(); // Removed, handled by general scroll listener
   }
   e.preventDefault();
 }
@@ -658,65 +654,34 @@ function stopContentDrag() {
     modalInfo.classList.remove('dragging');
     document.removeEventListener('pointermove', handleContentDrag);
     document.removeEventListener('pointerup', stopContentDrag);
-    stopDragging(); // This will snap to center
+    stopDragging();
   }
 }
 
-modalInfo.addEventListener('scroll', () => {
+function handleScroll() {
+  if (!scrollHandlerAttached) return;
+  
   requestAnimationFrame(() => {
     highlightCenter();
     updateScrollbar();
-    
-    // Only clamp if not actively dragging (as drag handlers clamp already)
-    // This handles mouse wheel and momentum scrolling
-    if (!isDragging && !isScrollbarDragging) {
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        clampScroll(); // clampScroll now also calls highlightCenter and updateScrollbar
-      }, 100); // Adjust delay if needed
-    }
+    clampScroll();
   });
-});
+}
+
+modalInfo.addEventListener('scroll', handleScroll, { passive: true });
 
 modalInfo.addEventListener('wheel', (e) => {
-  e.preventDefault(); // Prevent default page scroll
-  if(isDragging || isScrollbarDragging) return; // Only process if not currently dragging
+  e.preventDefault();
+  if(isDragging || isScrollbarDragging) return;
 
-  const rows = [...modalInfo.querySelectorAll('.info-row')];
-  const containerRect = modalInfo.getBoundingClientRect();
-  const centerY = containerRect.top + containerRect.height / 2;
+  // Native wheel scrolling
+  modalInfo.scrollTop += e.deltaY;
   
-  // Find closest row to the center
-  let closestRow = null;
-  let minDistance = Infinity;
-  
-  rows.forEach(row => {
-    const rect = row.getBoundingClientRect();
-    const distance = Math.abs((rect.top + rect.bottom)/2 - centerY);
-    if (distance < minDistance) {
-      minDistance = distance;
-      closestRow = row;
-    }
-  });
-
-  if (!closestRow) return;
-  
-  const currentIndex = parseInt(closestRow.dataset.index);
-  const direction = Math.sign(e.deltaY); // -1 for scroll up, 1 for scroll down
-  let nextIndex = currentIndex + direction;
-
-  // Ensure nextIndex wraps around the `lots` array
-  if (nextIndex < 0) {
-      nextIndex = lots.length - 1;
-  } else if (nextIndex >= lots.length) {
-      nextIndex = 0;
-  }
-  
-  // Instant snapping (fastest possible)
-  modalInfo.querySelector(`.info-row[data-index="${nextIndex}"]`)?.scrollIntoView({
-    behavior: 'auto', // Use 'auto' for instant snap, 'smooth' for animated
-    block: 'center'
-  });
+  // Just ensure we clamp if needed
+  clearTimeout(scrollTimeout);
+  scrollTimeout = setTimeout(() => {
+    clampScroll();
+  }, 100);
 });
 
 function openModal() {
@@ -726,15 +691,19 @@ function openModal() {
   if (!isDataLoaded) {
     fetchLots().then(() => {
       render();
-      setTimeout(() => { // Give DOM a moment to render before scrolling
-        scrollToBaseIndex(0, false); // Target base index 0 for initial display
-      }, 50);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToBaseIndex(0, false);
+        });
+      });
     });
   } else {
     render();
-    setTimeout(() => { // Give DOM a moment to render before scrolling
-      scrollToBaseIndex(0, false); // Target base index 0 for initial display
-    }, 50);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToBaseIndex(0, false);
+      });
+    });
   } 
 }
 
@@ -747,13 +716,13 @@ window.addEventListener('click', (e) => {
   if (e.target === modal) closeModal();
 });
 
-// Initialize resize observer to update scrollbar
 const resizeObserver = new ResizeObserver(updateScrollbar);
 resizeObserver.observe(modalInfo);
 
-// Pre-fetch data when page loads
-fetchLots();
+setTimeout(() => {
+  fetchLots();
+}, 100);
 </script> 
 
 </body>
-</html>
+</html> 
