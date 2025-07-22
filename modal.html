@@ -8,6 +8,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
 
 <style>
+/* Prevent text selection during dragging */
+.modal-info.dragging,
+.modal-info,
+.info-row {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 body {
   margin: 0;
   font-family: 'Barlow Condensed', Arial, sans-serif;
@@ -69,11 +77,46 @@ body {
   margin: 0;
 }
 
+.modal-content-wrapper {
+  position: relative;
+  height: calc(100% - 54px);
+  overflow: hidden;
+}
+
 .modal-info {
   display: block;
-  height: calc(100% - 54px);
-  overflow-y: auto;
+  height: 100%;
+  overflow-y: scroll;
   scroll-snap-type: y mandatory;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.modal-info::-webkit-scrollbar {
+  display: none;
+}
+
+.custom-scrollbar {
+  position: absolute;
+  right: 4px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: rgba(200, 200, 200, 0.2);
+  border-radius: 3px;
+  z-index: 10;
+}
+
+.custom-scrollthumb {
+  position: absolute;
+  width: 6px;
+  background: #c0c0c0;
+  border-radius: 3px;
+  transition: height 0.2s, background 0.2s;
+}
+
+.custom-scrollthumb:hover, .custom-scrollthumb.active {
+  background: #a0a0a0;
 }
 
 .info-row {
@@ -226,12 +269,19 @@ body {
     </span>
   </div>
   <div class="modal-divider"></div>
-  <div class="modal-info" id="modalInfo"></div>
+  <div class="modal-content-wrapper">
+    <div class="modal-info" id="modalInfo"></div>
+    <div class="custom-scrollbar" id="customScrollbar">
+      <div class="custom-scrollthumb" id="customScrollthumb"></div>
+    </div>
+  </div>
 </div>
 
 <script>
 const modal = document.getElementById('lotModal');
 const modalInfo = document.getElementById('modalInfo');
+const customScrollbar = document.getElementById('customScrollbar');
+const customScrollthumb = document.getElementById('customScrollthumb');
 
 const baseLotsCount = 10;
 const cloneCount = 3;
@@ -247,6 +297,12 @@ const lots = [
   ...baseLots,
   ...baseLots.slice(0,cloneCount).map(l => ({ ...l, clone:true }))
 ];
+
+let isDragging = false;
+let isScrollbarDragging = false;
+let scrollCooldown = false;
+let dragStartY = 0;
+let dragStartScroll = 0;
 
 function render() {
   modalInfo.innerHTML = '';
@@ -278,6 +334,20 @@ function render() {
     `;
     modalInfo.appendChild(row);
   });
+  updateScrollbar();
+}
+
+function updateScrollbar() {
+  const containerHeight = modalInfo.clientHeight;
+  const contentHeight = modalInfo.scrollHeight;
+  const thumbHeight = Math.max(20, (containerHeight / contentHeight) * containerHeight);
+  
+  customScrollthumb.style.height = `${thumbHeight}px`;
+  
+  const scrollRatio = modalInfo.scrollTop / (contentHeight - containerHeight);
+  const thumbPosition = scrollRatio * (containerHeight - thumbHeight);
+  
+  customScrollthumb.style.transform = `translateY(${thumbPosition}px)`;
 }
 
 function scrollToBaseIndex(baseIndex, smooth = true) {
@@ -316,15 +386,13 @@ function clampScroll() {
   }
 }
 
-let isDragging = false;
-
-modalInfo.addEventListener('pointerdown', () => {
-  isDragging = true;
-});
-
 function stopDragging() {
-  if (!isDragging) return;
+  if (!isDragging && !isScrollbarDragging) return;
+  
   isDragging = false;
+  isScrollbarDragging = false;
+  customScrollthumb.classList.remove('active');
+  modalInfo.classList.remove('dragging');
 
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
@@ -347,35 +415,84 @@ function stopDragging() {
   scrollToBaseIndex(closestIndex, true);
 }
 
-modalInfo.addEventListener('pointerup', stopDragging);
-modalInfo.addEventListener('pointercancel', stopDragging);
-modalInfo.addEventListener('pointerleave', stopDragging);
+// Improved scrollbar thumb dragging
+customScrollthumb.addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  isScrollbarDragging = true;
+  dragStartY = e.clientY;
+  dragStartScroll = modalInfo.scrollTop;
+  customScrollthumb.classList.add('active');
+  
+  // Use document-level listeners for reliable tracking
+  document.addEventListener('pointermove', handleScrollDrag);
+  document.addEventListener('pointerup', stopScrollDrag);
+  e.preventDefault();
+});
+
+// Handle scrollbar dragging
+function handleScrollDrag(e) {
+  if (isScrollbarDragging) {
+    const deltaY = e.clientY - dragStartY;
+    const scrollRatio = deltaY / modalInfo.clientHeight;
+    modalInfo.scrollTop = dragStartScroll + (scrollRatio * modalInfo.scrollHeight);
+    updateScrollbar();
+  }
+  e.preventDefault();
+}
+
+function stopScrollDrag() {
+  if (isScrollbarDragging) {
+    isScrollbarDragging = false;
+    customScrollthumb.classList.remove('active');
+    document.removeEventListener('pointermove', handleScrollDrag);
+    document.removeEventListener('pointerup', stopScrollDrag);
+    stopDragging();
+  }
+}
+
+// Content dragging
+modalInfo.addEventListener('pointerdown', (e) => {
+  isDragging = true;
+  dragStartY = e.clientY;
+  dragStartScroll = modalInfo.scrollTop;
+  modalInfo.classList.add('dragging');
+  document.addEventListener('pointermove', handleContentDrag);
+  document.addEventListener('pointerup', stopContentDrag);
+  e.preventDefault();
+});
+
+function handleContentDrag(e) {
+  if (isDragging) {
+    const deltaY = dragStartY - e.clientY;
+    modalInfo.scrollTop = dragStartScroll + deltaY;
+  }
+  e.preventDefault();
+}
+
+function stopContentDrag() {
+  if (isDragging) {
+    isDragging = false;
+    modalInfo.classList.remove('dragging');
+    document.removeEventListener('pointermove', handleContentDrag);
+    document.removeEventListener('pointerup', stopContentDrag);
+    stopDragging();
+  }
+}
 
 modalInfo.addEventListener('scroll', () => {
   requestAnimationFrame(() => {
     highlightCenter();
-
-if (isDragging) {
-  const lotHeight = modalInfo.scrollHeight / lots.length;
-  const minScroll = lotHeight * (cloneCount + -1);  // start at baseIndex 1 → lot 101
-  const maxScroll = lotHeight * (cloneCount + 10) - modalInfo.clientHeight; // end at baseIndex 8 → lot 108
-
-  if (modalInfo.scrollTop < minScroll) {
-    modalInfo.scrollTop = minScroll;
-  }
-  if (modalInfo.scrollTop > maxScroll) {
-    modalInfo.scrollTop = maxScroll;
-  }
-} else {
-  clampScroll();
-}
+    updateScrollbar();
+    
+    if (!isDragging && !isScrollbarDragging) {
+      clampScroll();
+    }
   });
 });
 
-let scrollCooldown = false;
 modalInfo.addEventListener('wheel', (e) => {
   e.preventDefault();
-  if(scrollCooldown || isDragging) return;
+  if(scrollCooldown || isDragging || isScrollbarDragging) return;
 
   scrollCooldown = true;
 
@@ -423,6 +540,10 @@ function closeModal() {
 window.addEventListener('click', (e) => {
   if (e.target === modal) closeModal();
 });
+
+// Initialize resize observer to update scrollbar
+const resizeObserver = new ResizeObserver(updateScrollbar);
+resizeObserver.observe(modalInfo);
 </script>
 
 </body>
