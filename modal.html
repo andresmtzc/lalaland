@@ -95,7 +95,8 @@ body {
 
 
 .modal-info {
-  display: block;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   overflow-y: scroll;
   scroll-snap-type: y mandatory;
@@ -136,8 +137,8 @@ body {
 
 
 .info-row {
-  flex: none;
-  height: calc(100% / 3);
+  flex: 1 0 auto;  /* each row takes equal share */
+  min-height: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -538,34 +539,42 @@ function scrollToBaseIndex(baseIndex, smooth = true) {
 
 function highlightCenter() {
   const rows = [...modalInfo.querySelectorAll('.info-row')];
-  const containerRect = modalInfo.getBoundingClientRect();
-  const centerY = containerRect.top + containerRect.height / 2;
-  const tolerance = 16; // relaxed margin for visual center
+  if (rows.length === 0) return;
 
-  let closestRow = null;
-  let closestDistance = Infinity;
+  // Calculate row height - assume all equal height, pick first row
+  const rowHeight = rows[0].offsetHeight;
 
-  rows.forEach(row => {
-    const rect = row.getBoundingClientRect();
-    const rowCenter = (rect.top + rect.bottom) / 2;
-    const distance = Math.abs(rowCenter - centerY);
+  // Current scrollTop inside modal-info
+  const scrollTop = modalInfo.scrollTop;
 
-    // Clear previous state
-    row.classList.remove('active');
-    row.classList.add('inactive');
+  // Calculate index of first visible row 
+  const firstVisibleIndex = Math.floor(scrollTop / rowHeight);
 
-    // If within acceptable distance, mark as candidate
-    if (distance < closestDistance && distance <= row.clientHeight / 2 + tolerance) {
-      closestRow = row;
-      closestDistance = distance;
+  // The 2nd visible row index (middle row of 3 visible rows)
+  let targetIndex = firstVisibleIndex + 1;
+
+  // Clamp to valid indices
+  if (targetIndex >= rows.length) {
+    targetIndex = rows.length - 1;
+  }
+
+  // Clear all active/inactive states and add active to target row, skip clones
+  rows.forEach((row, i) => {
+    if (row.dataset.baseIndex === "-1") {
+      row.classList.remove('active');
+      row.classList.add('inactive');
+      return;
+    }
+    if (i === targetIndex) {
+      row.classList.add('active');
+      row.classList.remove('inactive');
+    } else {
+      row.classList.remove('active');
+      row.classList.add('inactive');
     }
   });
-
-  if (closestRow) {
-    closestRow.classList.add('active');
-    closestRow.classList.remove('inactive');
-  } 
 }
+
 
 
 
