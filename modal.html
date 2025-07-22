@@ -137,7 +137,7 @@ body {
 
 .info-row {
   flex: none;
-  height: 33.3%;
+  height: calc(100% / 3);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -540,16 +540,37 @@ function highlightCenter() {
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
   const centerY = containerRect.top + containerRect.height / 2;
+  const tolerance = 16; // relaxed margin for visual center
 
+  let closestRow = null;
+  let closestDistance = Infinity;
 
   rows.forEach(row => {
     const rect = row.getBoundingClientRect();
-    const isCenter = rect.top < centerY && rect.bottom > centerY;
-    const isBase = !(row.dataset.baseIndex === "-1"); // Check if it's a base (non-cloned) item
-    row.classList.toggle('active', isCenter && isBase);
-    row.classList.toggle('inactive', !isCenter && isBase);
+    const rowCenter = (rect.top + rect.bottom) / 2;
+    const distance = Math.abs(rowCenter - centerY);
+
+    // Clear previous state
+    row.classList.remove('active');
+    row.classList.add('inactive');
+
+    // If within acceptable distance, mark as candidate
+    if (distance < closestDistance && distance <= row.clientHeight / 2 + tolerance) {
+      closestRow = row;
+      closestDistance = distance;
+    }
   });
+
+  if (closestRow) {
+    closestRow.classList.add('active');
+    closestRow.classList.remove('inactive');
+  } 
 }
+
+
+
+
+ 
 
 
 function clampScroll() {
@@ -687,31 +708,32 @@ modalInfo.addEventListener('scroll', () => {
     
     // Only clamp if not actively dragging (as drag handlers clamp already)
     // This handles mouse wheel and momentum scrolling
-    if (!isDragging && !isScrollbarDragging) {
-      clampScroll();
-      // Added: Timeout to catch end of momentum scrolling on mobile
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        clampScroll();
-      }, 100); // Adjust delay if needed
-    }
+if (!isDragging && !isScrollbarDragging) {
+  clampScroll();
+  clearTimeout(scrollTimeout);
+  scrollTimeout = setTimeout(() => {
+    clampScroll();
+    highlightCenter(); // ✅ Now triggers after final scroll clamp
+  }, 100); // You can adjust timing if needed
+} else {
+  highlightCenter(); // ✅ Immediate during drag or swipe
+}
   });
 });
 
 
 modalInfo.addEventListener('wheel', (e) => {
-  e.preventDefault(); // Prevent default page scroll
-  if(isDragging || isScrollbarDragging) return; // Only process if not currently dragging
-
+  e.preventDefault();
+  if (isDragging || isScrollbarDragging) return;
 
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
   const centerY = containerRect.top + containerRect.height / 2;
-  
-  // Find closest row to the center
+
+  // Find current center row
   let closestRow = null;
   let minDistance = Infinity;
-  
+
   rows.forEach(row => {
     const rect = row.getBoundingClientRect();
     const distance = Math.abs((rect.top + rect.bottom)/2 - centerY);
@@ -721,49 +743,48 @@ modalInfo.addEventListener('wheel', (e) => {
     }
   });
 
-
   if (!closestRow) return;
-  
-  const currentIndex = parseInt(closestRow.dataset.index);
-  const direction = Math.sign(e.deltaY); // -1 for scroll up, 1 for scroll down
+
+  const currentIndex = parseInt(closestRow.dataset.index, 10);
+  const direction = Math.sign(e.deltaY);
   let nextIndex = currentIndex + direction;
 
-  // Ensure nextIndex wraps around the `lots` array
+  // Wrap around logic
   if (nextIndex < 0) {
-      nextIndex = lots.length - 1;
+    nextIndex = lots.length - 1;
   } else if (nextIndex >= lots.length) {
-      nextIndex = 0;
+    nextIndex = 0;
   }
-  
-  // Instant snapping (fastest possible)
-  modalInfo.querySelector(`.info-row[data-index="${nextIndex}"]`)?.scrollIntoView({
-    behavior: 'auto', // Use 'auto' for instant snap, 'smooth' for animated
-    block: 'center'
-  });
+
+  const nextRow = modalInfo.querySelector(`.info-row[data-index="${nextIndex}"]`);
+  if (nextRow) {
+    nextRow.scrollIntoView({ behavior: 'auto', block: 'center' });
+  }
 });
+
 
 
 function openModal() {
   modal.classList.add('show');
   modal.style.display = 'block';
 
+  const postScrollRender = () => {
+    scrollToBaseIndex(0, false);
+    requestAnimationFrame(() => {
+      highlightCenter();     // Now runs after scroll and layout settle
+      updateScrollbar();     // Ensure scrollbar matches correct position
+    });
+  };
+
   if (!isDataLoaded) {
     fetchLots().then(() => {
       render();
-      setTimeout(() => { // Give DOM a moment to render before scrolling
-        scrollToBaseIndex(0, false);
-        highlightCenter();        // <-- Add this
-        updateScrollbar();        // <-- And this to update thumb position
-      }, 50);
+      setTimeout(postScrollRender, 50); // Let DOM render first
     });
   } else {
     render();
-    setTimeout(() => { // Give DOM a moment to render before scrolling
-      scrollToBaseIndex(0, false);
-      highlightCenter();          // <-- Add this here too
-      updateScrollbar();          // <-- And here
-    }, 50);
-  } 
+    setTimeout(postScrollRender, 50);   // Let DOM render first
+  }
 }
 
 
