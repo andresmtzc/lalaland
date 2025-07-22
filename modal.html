@@ -90,6 +90,8 @@ body {
   scroll-snap-type: y mandatory;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .modal-info::-webkit-scrollbar {
@@ -344,7 +346,9 @@ let isDataLoaded = false;
 
 let isDragging = false;
 let isScrollbarDragging = false;
-let scrollCooldown = false;
+let isAutoScrolling = false;
+let scrollEndTimeout = null;
+
 let dragStartY = 0;
 let dragStartScroll = 0;
 
@@ -485,27 +489,59 @@ function highlightCenter() {
 }
 
 function clampScroll() {
-  if (baseLots.length === 0) return;
-
+  if (baseLots.length === 0 || isAutoScrolling) return;
+  
   const { scrollTop, scrollHeight, clientHeight } = modalInfo;
   const lotHeight = scrollHeight / lots.length;
-  const bufferHeight = lotHeight * cloneCount;
   const baseHeight = lotHeight * baseLots.length;
-
-  const mobileFactor = window.innerWidth < 768 ? 0.8 : 0.5;
-
-  const topThreshold = bufferHeight * mobileFactor;
-  const bottomThreshold = scrollHeight - bufferHeight * mobileFactor - clientHeight;
-
-  // Agrega tolerancia mínima (en píxeles) para evitar bucles infinitos
-  const tolerance = 100; // puedes ajustar esto según el rendimiento
-
-  if (scrollTop <= topThreshold - tolerance) {
+  
+  // Calculate thresholds more precisely
+  const topThreshold = lotHeight * cloneCount * 0.5; // Middle of top clone zone
+  const bottomThreshold = scrollHeight - (lotHeight * cloneCount * 0.5) - clientHeight; // Middle of bottom clone zone
+  
+  if (scrollTop <= topThreshold) {
+    isAutoScrolling = true;
+    // Jump to equivalent position in main content (near bottom)
     modalInfo.scrollTop = scrollTop + baseHeight;
-  } else if (scrollTop >= bottomThreshold + tolerance) {
+    setTimeout(() => { isAutoScrolling = false; }, 100);
+  } 
+  else if (scrollTop >= bottomThreshold) {
+    isAutoScrolling = true;
+    // Jump to equivalent position in main content (near top)
     modalInfo.scrollTop = scrollTop - baseHeight;
+    setTimeout(() => { isAutoScrolling = false; }, 100);
   }
 }
+
+modalInfo.addEventListener('scroll', () => {
+  if (isAutoScrolling) return;
+  
+  requestAnimationFrame(() => {
+    highlightCenter();
+    updateScrollbar();
+    
+    if (!isDragging && !isScrollbarDragging) {
+      clampScroll();
+    }
+    
+    // Additional check for mobile momentum scrolling
+    if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
+    scrollEndTimeout = setTimeout(() => {
+      if (!isDragging && !isScrollbarDragging && !isAutoScrolling) {
+        const { scrollTop, scrollHeight, clientHeight } = modalInfo;
+        const lotHeight = scrollHeight / lots.length;
+        const baseHeight = lotHeight * baseLots.length;
+        
+        // Extra bottom check for mobile
+        if (scrollTop + clientHeight >= scrollHeight - 5) {
+          isAutoScrolling = true;
+          modalInfo.scrollTop = lotHeight * cloneCount + (scrollTop - (baseHeight + lotHeight * cloneCount));
+          setTimeout(() => { isAutoScrolling = false; }, 100);
+        }
+      }
+    }, 150); // Slightly longer timeout for mobile
+  });
+});
 
 function stopDragging() {
   if (!isDragging && !isScrollbarDragging) return;
@@ -605,15 +641,25 @@ modalInfo.addEventListener('scroll', () => {
     highlightCenter();
     updateScrollbar();
     
-    if (!isDragging && !isScrollbarDragging) {
+    if (!isDragging && !isScrollbarDragging && !isAutoScrolling) {
       clampScroll();
     }
+    
+    // Clear any pending timeout
+    if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
+    
+    // Set a new timeout to handle momentum scrolling on mobile
+    scrollEndTimeout = setTimeout(() => {
+      if (!isDragging && !isScrollbarDragging && !isAutoScrolling) {
+        clampScroll();
+      }
+    }, 100);
   });
 });
 
 modalInfo.addEventListener('wheel', (e) => {
   e.preventDefault();
-  if(isDragging || isScrollbarDragging) return; // Only keep essential guards
+  if(isDragging || isScrollbarDragging) return;
 
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
@@ -679,5 +725,5 @@ resizeObserver.observe(modalInfo);
 fetchLots();
 </script>
 
-</body>
+</body> 
 </html>
