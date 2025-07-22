@@ -90,6 +90,7 @@ body {
   scroll-snap-type: y mandatory;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  touch-action: none; /* Disables browser's native scroll handling */
 }
 
 .modal-info::-webkit-scrollbar {
@@ -122,10 +123,11 @@ body {
 .info-row {
   flex: none;
   height: 33.3%;
+  min-height: 80px; /* Larger touch target */
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 24px;
+  padding: 12px 24px; /* More padding for mobile */
   cursor: pointer;
   border-bottom: 1px solid #f0f0f0;
   gap: 8px;
@@ -347,6 +349,12 @@ let isScrollbarDragging = false;
 let scrollCooldown = false;
 let dragStartY = 0;
 let dragStartScroll = 0;
+let scrollTimeout;
+
+// Detect mobile devices
+function isMobile() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
 
 // Function to extract number from lot_name (e.g. "lot105" → 105)
 function extractLotNumber(lotName) {
@@ -485,18 +493,30 @@ function highlightCenter() {
 }
 
 function clampScroll() {
-  if (baseLots.length === 0) return;
+  if (baseLots.length === 0 || !modalInfo.scrollHeight) return;
   
   const { scrollTop, scrollHeight, clientHeight } = modalInfo;
   const lotHeight = scrollHeight / lots.length;
   const bufferHeight = lotHeight * cloneCount;
   const baseHeight = lotHeight * baseLots.length;
 
-  if (scrollTop <= bufferHeight * 0.5) {
+  // More forgiving thresholds for mobile
+  const threshold = bufferHeight * (isMobile() ? 0.8 : 0.5);
+
+  if (scrollTop <= threshold) {
     modalInfo.scrollTop = scrollTop + baseHeight;
+    vibrate();
   } 
-  else if (scrollTop + clientHeight >= scrollHeight - bufferHeight * 0.5) {
+  else if (scrollTop + clientHeight >= scrollHeight - threshold) {
     modalInfo.scrollTop = scrollTop - baseHeight;
+    vibrate();
+  }
+}
+
+// Simple vibration feedback
+function vibrate() {
+  if ('vibrate' in navigator && isMobile()) {
+    navigator.vibrate(10);
   }
 }
 
@@ -564,8 +584,38 @@ function stopScrollDrag() {
   }
 }
 
-// Content dragging
+// Touch event handlers for mobile
+modalInfo.addEventListener('touchstart', handleTouchStart, { passive: false });
+modalInfo.addEventListener('touchmove', handleTouchMove, { passive: false });
+modalInfo.addEventListener('touchend', handleTouchEnd);
+
+function handleTouchStart(e) {
+  isDragging = true;
+  dragStartY = e.touches[0].clientY;
+  dragStartScroll = modalInfo.scrollTop;
+  modalInfo.classList.add('dragging');
+  e.preventDefault();
+}
+
+function handleTouchMove(e) {
+  if (isDragging) {
+    const deltaY = dragStartY - e.touches[0].clientY;
+    modalInfo.scrollTop = dragStartScroll + deltaY;
+    e.preventDefault();
+  }
+}
+
+function handleTouchEnd() {
+  if (isDragging) {
+    isDragging = false;
+    modalInfo.classList.remove('dragging');
+    stopDragging();
+  }
+}
+
+// Pointer events for desktop
 modalInfo.addEventListener('pointerdown', (e) => {
+  if (isMobile()) return; // Skip on mobile
   isDragging = true;
   dragStartY = e.clientY;
   dragStartScroll = modalInfo.scrollTop;
@@ -593,26 +643,42 @@ function stopContentDrag() {
   }
 }
 
+// Improved scroll handling
 modalInfo.addEventListener('scroll', () => {
-  requestAnimationFrame(() => {
+  if (isDragging) {
+    modalInfo.style.overflow = 'hidden';
+    requestAnimationFrame(() => {
+      modalInfo.style.overflow = 'auto';
+    });
+  }
+  
+  clearTimeout(scrollTimeout);
+  scrollTimeout = setTimeout(() => {
     highlightCenter();
     updateScrollbar();
     
     if (!isDragging && !isScrollbarDragging) {
       clampScroll();
     }
-  });
+  }, 50);
 });
 
-modalInfo.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  if(isDragging || isScrollbarDragging) return; // Only keep essential guards
+// Improved wheel/touch handling
+modalInfo.addEventListener('wheel', handleWheel, { passive: false });
 
+function handleWheel(e) {
+  e.preventDefault();
+  if(isDragging || isScrollbarDragging) return;
+
+  // Handle both wheel and touch events
+  const deltaY = e.deltaY || e.deltaY === 0 ? e.deltaY : 
+                (e.wheelDeltaY ? -e.wheelDeltaY : 0);
+  
+  const direction = Math.sign(deltaY);
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
   const centerY = containerRect.top + containerRect.height / 2;
   
-  // Find closest row
   let closestRow = null;
   let minDistance = Infinity;
   
@@ -628,15 +694,14 @@ modalInfo.addEventListener('wheel', (e) => {
   if (!closestRow) return;
   
   const currentIndex = parseInt(closestRow.dataset.index);
-  const direction = Math.sign(e.deltaY);
   const nextIndex = (currentIndex + direction + lots.length) % lots.length;
   
-  // INSTANT snapping (fastest possible)
+  // Use smooth scrolling on desktop, instant on mobile
   modalInfo.querySelector(`.info-row[data-index="${nextIndex}"]`)?.scrollIntoView({
-    behavior: 'auto',
+    behavior: isMobile() ? 'auto' : 'smooth',
     block: 'center'
   });
-});
+}
 
 function openModal() {
   modal.classList.add('show');
