@@ -252,6 +252,25 @@ body {
 .close-x:hover svg {
   transform: rotate(90deg);
 }
+
+.loading-spinner {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #ac8f5f;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
 </style>
 </head>
 
@@ -270,6 +289,7 @@ body {
   </div>
   <div class="modal-divider"></div>
   <div class="modal-content-wrapper">
+    <div class="loading-spinner" id="loadingSpinner"></div>
     <div class="modal-info" id="modalInfo"></div>
     <div class="custom-scrollbar" id="customScrollbar">
       <div class="custom-scrollthumb" id="customScrollthumb"></div>
@@ -278,31 +298,121 @@ body {
 </div>
 
 <script>
+  // LOAD SUPABASE
+  window.supabaseReady = new Promise((resolve, reject) => {
+    // Create a script element to load Supabase v2
+    const supabaseScript = document.createElement('script');
+    supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    
+    supabaseScript.onload = () => {
+      // Script loaded successfully, now fetch config
+      fetch('https://lalaland.mx/sb_config.json')
+        .then(r => r.json())
+        .then(cfg => {
+          // Initialize Supabase client with the fetched config
+          window.supabaseClient = supabase.createClient(cfg.url, cfg.key);
+          console.log('✅ Supabase client initialized with config.json');
+          resolve();  // Resolve the promise when both are ready
+        })
+        .catch(e => {
+          console.error('Failed to load Supabase config:', e);
+          reject(new Error("❌ Failed to load Supabase config"));
+        });
+    };
+    
+    supabaseScript.onerror = () => {
+      console.error("❌ Failed to load Supabase script");
+      reject(new Error("❌ Failed to load Supabase script"));
+    };
+    
+    // Append the script tag to the document
+    document.head.appendChild(supabaseScript);
+  });
+</script>
+
+<script>
 const modal = document.getElementById('lotModal');
 const modalInfo = document.getElementById('modalInfo');
 const customScrollbar = document.getElementById('customScrollbar');
 const customScrollthumb = document.getElementById('customScrollthumb');
+const loadingSpinner = document.getElementById('loadingSpinner');
 
-const baseLotsCount = 10;
-const cloneCount = 3;
-
-const baseLots = Array.from({ length: baseLotsCount }, (_, i) => ({
-  number: 100 + i,
-  size: 150 + (i % 50),
-  price: (1.5 + (i % 5) * 0.1).toFixed(1)
-}));
-
-const lots = [
-  ...baseLots.slice(-cloneCount).map(l => ({ ...l, clone:true })),
-  ...baseLots,
-  ...baseLots.slice(0,cloneCount).map(l => ({ ...l, clone:true }))
-];
+const cloneCount = 3; // Keep 3 clones for infinite scroll effect
+let baseLots = []; // This will be populated from Supabase
+let lots = []; // This will be the cloned version for infinite scroll
+let isDataLoaded = false;
 
 let isDragging = false;
 let isScrollbarDragging = false;
 let scrollCooldown = false;
 let dragStartY = 0;
 let dragStartScroll = 0;
+
+// Function to extract number from lot_name (e.g. "lot105" → 105)
+function extractLotNumber(lotName) {
+  const num = lotName.replace(/^lot/i, ''); // Remove 'lot' prefix case-insensitively
+  return parseInt(num, 10) || 0; // Convert to number, default to 0 if fails
+}
+
+// Fetch data from Supabase
+async function fetchLots() {
+  try {
+    loadingSpinner.style.display = 'block';
+    modalInfo.style.opacity = '0.5';
+    
+    // Wait for Supabase to be ready
+    await window.supabaseReady;
+    
+    // Fetch data from your 'lots' table
+    const { data, error } = await window.supabaseClient
+      .from('lots')
+      .select('lot_name, rSize, millones, availability')
+      .order('lot_name', { ascending: true });
+    
+    if (error) throw error;
+    
+    // Process the data into our format
+    baseLots = data.map(lot => ({
+      number: extractLotNumber(lot.lot_name),
+      size: lot.rSize,
+      price: lot.millones,
+      availability: lot.availability
+    }));
+    
+    // Create the cloned array for infinite scroll
+    updateLotsArray();
+    
+    isDataLoaded = true;
+    console.log('Successfully loaded', baseLots.length, 'lots from Supabase');
+    
+    // If modal is open, re-render with new data
+    if (modal.classList.contains('show')) {
+      render();
+      scrollToBaseIndex(0, false);
+    }
+  } catch (error) {
+    console.error('Error fetching lots:', error);
+    // Fallback to some default data if Supabase fails
+    baseLots = Array.from({ length: 10 }, (_, i) => ({
+      number: 100 + i,
+      size: '150',
+      price: '1.5',
+      availability: 'available'
+    }));
+    updateLotsArray();
+  } finally {
+    loadingSpinner.style.display = 'none';
+    modalInfo.style.opacity = '1';
+  }
+}
+
+function updateLotsArray() {
+  lots = [
+    ...baseLots.slice(-cloneCount).map(l => ({ ...l, clone: true })),
+    ...baseLots,
+    ...baseLots.slice(0, cloneCount).map(l => ({ ...l, clone: true }))
+  ];
+}
 
 function render() {
   modalInfo.innerHTML = '';
@@ -311,7 +421,7 @@ function render() {
     row.classList.add('info-row');
     if (lot.clone) row.style.opacity = '0.5';
     row.dataset.index = i;
-    row.dataset.baseIndex = lot.clone ? -1 : (lot.number - 100);
+    row.dataset.baseIndex = lot.clone ? -1 : baseLots.findIndex(l => l.number === lot.number);
     row.innerHTML = `
       <div class="lot-left">
         <div class="lote-label">LOTE</div>
@@ -351,6 +461,8 @@ function updateScrollbar() {
 }
 
 function scrollToBaseIndex(baseIndex, smooth = true) {
+  if (baseLots.length === 0) return;
+  
   const actualIndex = baseIndex + cloneCount;
   const target = modalInfo.querySelector(`.info-row[data-index="${actualIndex}"]`);
   if (target) {
@@ -373,10 +485,12 @@ function highlightCenter() {
 }
 
 function clampScroll() {
+  if (baseLots.length === 0) return;
+  
   const { scrollTop, scrollHeight, clientHeight } = modalInfo;
   const lotHeight = scrollHeight / lots.length;
   const bufferHeight = lotHeight * cloneCount;
-  const baseHeight = lotHeight * baseLotsCount;
+  const baseHeight = lotHeight * baseLots.length;
 
   if (scrollTop <= bufferHeight * 0.5) {
     modalInfo.scrollTop = scrollTop + baseHeight;
@@ -492,44 +606,53 @@ modalInfo.addEventListener('scroll', () => {
 
 modalInfo.addEventListener('wheel', (e) => {
   e.preventDefault();
-  if(scrollCooldown || isDragging || isScrollbarDragging) return;
-
-  scrollCooldown = true;
+  if(isDragging || isScrollbarDragging) return; // Only keep essential guards
 
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
   const centerY = containerRect.top + containerRect.height / 2;
-  let closestIndex = 0;
-  let closestDistance = Infinity;
-
+  
+  // Find closest row
+  let closestRow = null;
+  let minDistance = Infinity;
+  
   rows.forEach(row => {
     const rect = row.getBoundingClientRect();
-    const rowCenter = (rect.top + rect.bottom) / 2;
-    const dist = Math.abs(rowCenter - centerY);
-    if (dist < closestDistance) {
-      closestDistance = dist;
-      closestIndex = parseInt(row.dataset.index, 10);
+    const distance = Math.abs((rect.top + rect.bottom)/2 - centerY);
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestRow = row;
     }
   });
 
-  const nextIndex = (closestIndex + (e.deltaY > 0 ? 1 : -1) + lots.length) % lots.length;
-  const targetRow = modalInfo.querySelector(`.info-row[data-index="${nextIndex}"]`);
-  if (targetRow) {
-    targetRow.scrollIntoView({behavior: 'smooth', block: 'center'});
-  }
-
-  setTimeout(() => {
-    scrollCooldown = false;
-  }, 100);
+  if (!closestRow) return;
+  
+  const currentIndex = parseInt(closestRow.dataset.index);
+  const direction = Math.sign(e.deltaY);
+  const nextIndex = (currentIndex + direction + lots.length) % lots.length;
+  
+  // INSTANT snapping (fastest possible)
+  modalInfo.querySelector(`.info-row[data-index="${nextIndex}"]`)?.scrollIntoView({
+    behavior: 'auto',
+    block: 'center'
+  });
 });
 
 function openModal() {
   modal.classList.add('show');
   modal.style.display = 'block';
-  render();
-  setTimeout(() => {
-    scrollToBaseIndex(0, false);
-  }, 50);
+  
+  if (!isDataLoaded) {
+    fetchLots().then(() => {
+      render();
+      scrollToBaseIndex(0, false);
+    });
+  } else {
+    render();
+    setTimeout(() => {
+      scrollToBaseIndex(0, false);
+    }, 50);
+  }
 }
 
 function closeModal() {
@@ -544,6 +667,9 @@ window.addEventListener('click', (e) => {
 // Initialize resize observer to update scrollbar
 const resizeObserver = new ResizeObserver(updateScrollbar);
 resizeObserver.observe(modalInfo);
+
+// Pre-fetch data when page loads
+fetchLots();
 </script>
 
 </body>
