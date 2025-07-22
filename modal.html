@@ -90,8 +90,6 @@ body {
   scroll-snap-type: y mandatory;
   -ms-overflow-style: none;
   scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
 }
 
 .modal-info::-webkit-scrollbar {
@@ -346,9 +344,7 @@ let isDataLoaded = false;
 
 let isDragging = false;
 let isScrollbarDragging = false;
-let isAutoScrolling = false;
-let scrollEndTimeout = null;
-
+let scrollCooldown = false;
 let dragStartY = 0;
 let dragStartScroll = 0;
 
@@ -489,59 +485,20 @@ function highlightCenter() {
 }
 
 function clampScroll() {
-  if (baseLots.length === 0 || isAutoScrolling) return;
+  if (baseLots.length === 0) return;
   
   const { scrollTop, scrollHeight, clientHeight } = modalInfo;
   const lotHeight = scrollHeight / lots.length;
+  const bufferHeight = lotHeight * cloneCount;
   const baseHeight = lotHeight * baseLots.length;
-  
-  // Calculate thresholds more precisely
-  const topThreshold = lotHeight * cloneCount * 0.5; // Middle of top clone zone
-  const bottomThreshold = scrollHeight - (lotHeight * cloneCount * 0.5) - clientHeight; // Middle of bottom clone zone
-  
-  if (scrollTop <= topThreshold) {
-    isAutoScrolling = true;
-    // Jump to equivalent position in main content (near bottom)
+
+  if (scrollTop <= bufferHeight * 0.5) {
     modalInfo.scrollTop = scrollTop + baseHeight;
-    setTimeout(() => { isAutoScrolling = false; }, 100);
   } 
-  else if (scrollTop >= bottomThreshold) {
-    isAutoScrolling = true;
-    // Jump to equivalent position in main content (near top)
+  else if (scrollTop + clientHeight >= scrollHeight - bufferHeight * 0.5) {
     modalInfo.scrollTop = scrollTop - baseHeight;
-    setTimeout(() => { isAutoScrolling = false; }, 100);
   }
 }
-
-modalInfo.addEventListener('scroll', () => {
-  if (isAutoScrolling) return;
-  
-  requestAnimationFrame(() => {
-    highlightCenter();
-    updateScrollbar();
-    
-    if (!isDragging && !isScrollbarDragging) {
-      clampScroll();
-    }
-    
-    // Additional check for mobile momentum scrolling
-    if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
-    scrollEndTimeout = setTimeout(() => {
-      if (!isDragging && !isScrollbarDragging && !isAutoScrolling) {
-        const { scrollTop, scrollHeight, clientHeight } = modalInfo;
-        const lotHeight = scrollHeight / lots.length;
-        const baseHeight = lotHeight * baseLots.length;
-        
-        // Extra bottom check for mobile
-        if (scrollTop + clientHeight >= scrollHeight - 5) {
-          isAutoScrolling = true;
-          modalInfo.scrollTop = lotHeight * cloneCount + (scrollTop - (baseHeight + lotHeight * cloneCount));
-          setTimeout(() => { isAutoScrolling = false; }, 100);
-        }
-      }
-    }, 150); // Slightly longer timeout for mobile
-  });
-});
 
 function stopDragging() {
   if (!isDragging && !isScrollbarDragging) return;
@@ -641,25 +598,15 @@ modalInfo.addEventListener('scroll', () => {
     highlightCenter();
     updateScrollbar();
     
-    if (!isDragging && !isScrollbarDragging && !isAutoScrolling) {
+    if (!isDragging && !isScrollbarDragging) {
       clampScroll();
     }
-    
-    // Clear any pending timeout
-    if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
-    
-    // Set a new timeout to handle momentum scrolling on mobile
-    scrollEndTimeout = setTimeout(() => {
-      if (!isDragging && !isScrollbarDragging && !isAutoScrolling) {
-        clampScroll();
-      }
-    }, 100);
   });
 });
 
 modalInfo.addEventListener('wheel', (e) => {
   e.preventDefault();
-  if(isDragging || isScrollbarDragging) return;
+  if(isDragging || isScrollbarDragging) return; // Only keep essential guards
 
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
@@ -725,5 +672,5 @@ resizeObserver.observe(modalInfo);
 fetchLots();
 </script>
 
-</body> 
+</body>
 </html>
