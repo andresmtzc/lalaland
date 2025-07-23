@@ -17,6 +17,11 @@
   -webkit-user-select: none;
 }
 
+.arrow-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 body {
   margin: 0;
   font-family: 'Barlow Condensed', Arial, sans-serif;
@@ -72,31 +77,6 @@ body {
   font-weight: 700;
   text-align: center;
   color: #ac8f5f;
-}
-
-.modal-subheader {
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  background: #fdfbf5;
-  border-top: 1px solid #e0e0e0;
-  border-bottom: 1px solid #e0e0e0;
-  padding: 8px;
-  font-size: 14px;
-  color: #888;
-  cursor: pointer;
-  user-select: none;
-}
-
-.modal-subheader .filter {
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: background 0.3s ease, color 0.3s ease;
-}
-
-.modal-subheader .filter.active {
-  background: #ac8f5f;
-  color: #fff;
 }
 
 .modal-divider {
@@ -202,6 +182,111 @@ body {
   display: flex;
   align-items: baseline;
 }
+
+.lot-middle--sold {
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+  display: flex; /* make sure it's a flex container */
+}
+
+.lot-price--hidden {
+  flex: 0 !important;
+  width: 0 !important;
+  opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
+}
+
+.info-row--featured {
+  position: relative;
+  box-sizing: border-box;
+  margin-right: 14px;
+}
+
+/* animations only when .animate-featured is added */
+.info-row--featured.animate-featured::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 0;
+  background: #ed7a14;
+  animation: draw-vertical 0.3s forwards;
+  animation-delay: 0s;
+  z-index: 2;
+}
+
+.info-row--featured.animate-featured::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 2px;
+  background: #ed7a14;
+  animation: draw-horizontal 0.3s forwards;
+  animation-delay: 0.3s;
+  z-index: 2;
+}
+
+.info-row--featured.animate-featured .border-left {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  height: 0;
+  background: #ed7a14;
+  animation: draw-vertical 0.3s forwards;
+  animation-delay: 0.6s;
+  z-index: 2;
+}
+
+.info-row--featured.animate-featured .border-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: #ed7a14;
+  animation: draw-horizontal 0.3s forwards;
+  animation-delay: 0.9s;
+  z-index: 2;
+}
+
+.featured-label {
+  position: absolute;
+  top: -20px;
+  right: 12px;
+  background: #ed7a14;
+  color: #fff;
+  font-size: 14px;
+  padding: 2px 6px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.info-row--featured.animate-featured .featured-label {
+  animation: label-pop 0.3s forwards;
+  animation-delay: 1.4s;
+}
+
+/* Keyframes */
+@keyframes draw-horizontal {
+  to { width: 100%; }
+}
+
+@keyframes draw-vertical {
+  to { height: 100%; }
+}
+
+@keyframes label-pop {
+  to { opacity: 1; }
+}
+
+
 
 .sup {
   font-size: 60%;
@@ -312,9 +397,7 @@ body {
         <path d="M2 2l8 8M10 2l-8 8" stroke="#888" stroke-width="1" stroke-linecap="round"/>
       </svg>
     </span>
-    
   </div>
-  
   <div class="modal-divider"></div>
   <div class="modal-content-wrapper">
     <div class="loading-spinner" id="loadingSpinner"></div>
@@ -433,30 +516,67 @@ function render() {
     row.classList.add('info-row');
     row.dataset.index = i;
     row.dataset.baseIndex = lot.clone ? -1 : baseLots.findIndex(l => l.number === lot.number);
+
+    const isFeatured = lot.availability === 'Featured';
+    const isSold = lot.availability === 'Sold';
+
+    if (isFeatured) row.classList.add('info-row--featured');
+
     row.innerHTML = `
       <div class="lot-left">
         <div class="lote-label">LOTE</div>
         <div class="lote-number">${lot.number}</div>
       </div>
-      <div class="lot-middle">
-        ${lot.size}<span class="sup">M2</span>
+
+      <div class="lot-middle ${isSold ? 'lot-middle--sold' : ''}">
+        ${
+          isSold
+            ? `<div style="font-size:48px; font-weight:700; color:#ed7a14;">VENDIDO</div>`
+            : `${lot.size}<span class="sup">M2</span>`
+        }
       </div>
-      <div class="lot-price">
+
+      <div class="lot-price ${isSold ? 'lot-price--hidden' : ''}">
         <div class="price-wrapper">
           <span class="price">$${lot.price}</span>
           <span class="mdp">MDP</span>
         </div>
       </div>
-      <div class="arrow">
+
+      <div class="arrow ${isFeatured ? '' : 'arrow-hidden'}">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12">
           <path d="M2 6h8M8 4l2 2-2 2" stroke="#888" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
     `;
+
+    if (isFeatured) {
+      const left = document.createElement('div');
+      left.classList.add('border-left');
+      row.appendChild(left);
+
+      const top = document.createElement('div');
+      top.classList.add('border-top');
+      row.appendChild(top);
+
+      const label = document.createElement('div');
+      label.classList.add('featured-label');
+      label.textContent = 'LALALAND SELECTION';
+      row.appendChild(label);
+    }
+
     modalInfo.appendChild(row);
   });
   updateScrollbar();
 }
+
+
+
+
+
+
+
+
 
 function updateScrollbar() {
   const containerHeight = modalInfo.clientHeight;
@@ -518,20 +638,26 @@ function highlightCenter(isClamping = false) {
     const rect = row.getBoundingClientRect();
     const rowCenter = (rect.top + rect.bottom) / 2;
     const dist = Math.abs(rowCenter - centerY);
-    
+
     if (dist < minDistance) {
       minDistance = dist;
       closestRow = row;
     }
+
+    row.classList.remove('active');
+    row.classList.remove('animate-featured');
   });
 
   if (closestRow && minDistance <= tolerance) {
-    rows.forEach(row => {
-      row.classList.remove('active');
-    });
     closestRow.classList.add('active');
+
+    if (closestRow.classList.contains('info-row--featured')) {
+      void closestRow.offsetWidth; // force reflow
+      closestRow.classList.add('animate-featured');
+    }
   }
 }
+
 
 function clampScroll() {
   if (baseLots.length === 0 || lots.length === 0 || clampCooldown) return;
