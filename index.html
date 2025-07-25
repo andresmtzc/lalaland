@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -630,10 +629,6 @@
   bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
-
-
-
-
   cursor: pointer;
   z-index: 10;
   display: none; /* hidden by default */
@@ -641,7 +636,6 @@
 }
 
 .bottom-plus-button:hover {
-
   transform: translateX(-50%) scale(1.1);
 }
 
@@ -660,13 +654,22 @@
   display: none !important;
 }
 
-
-
-
-
-
-
-
+/* Side length labels */
+.side-length-label {
+  position: absolute;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Barlow Condensed', Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
 
 #toaster {
   position: fixed;
@@ -773,7 +776,6 @@
       <div class="details-content">
         <div class="details-header">
           <div class="details-lot-number"><span id="detailNumber"></span></div>
-
         </div>
         <div class="details-body">
           <div class="details-section">
@@ -795,14 +797,13 @@
     <div class="custom-scrollbar" id="customScrollbar">
       <div class="custom-scrollthumb" id="customScrollthumb"></div>
     </div>
-    
   </div>
   <div class="bottom-plus-button" onclick="handlePlusButton()">
-  <svg viewBox="0 0 16 16">
-    <path d="M8 3 L8 13 M3 8 L13 8"
-          fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" />
-  </svg>
-</div>
+    <svg viewBox="0 0 16 16">
+      <path d="M8 3 L8 13 M3 8 L13 8"
+            fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" />
+    </svg>
+  </div>
 </div>
 
 <!-- Whatsapp button -->
@@ -832,53 +833,88 @@
   setInterval(bounceButton, 3 * 60 * 1000);
 </script>
 
- <script>
+<script>
   //HASH FOR URL
   function openInitialLotModal() {
-  const hash = window.location.hash;
-  if (hash.startsWith('#lot=')) {
-    const lotName = decodeURIComponent(hash.slice(5));
-    const lot = lotData.find(l => l.name === lotName);
-    if (lot) openModal(lot);
+    const hash = window.location.hash;
+    if (hash.startsWith('#lot=')) {
+      const lotName = decodeURIComponent(hash.slice(5));
+      const lot = lotData.find(l => l.name === lotName);
+      if (lot) openModal(lot);
+    }
   }
-}
-  </script>
+</script>
    
 <script>
   // LOAD SUPABASE
-window.supabaseReady = new Promise((resolve, reject) => {
-  const supabaseScript = document.createElement('script');
-  supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-  
-  supabaseScript.onload = () => {
-    fetch('https://lalaland.mx/sb_config.json')
-      .then(r => r.json())
-      .then(cfg => {
-        window.supabaseClient = supabase.createClient(cfg.url, cfg.key);
-        console.log('✅ Supabase client initialized with config.json');
-        resolve();
-      })
-      .catch(e => {
-        console.error('Failed to load Supabase config:', e);
-        reject(new Error("❌ Failed to load Supabase config"));
-      });
-  };
-  
-  supabaseScript.onerror = () => {
-    console.error("❌ Failed to load Supabase script");
-    reject(new Error("❌ Failed to load Supabase script"));
-  };
-  
-  document.head.appendChild(supabaseScript);
-});
+  window.supabaseReady = new Promise((resolve, reject) => {
+    const supabaseScript = document.createElement('script');
+    supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    
+    supabaseScript.onload = () => {
+      fetch('https://lalaland.mx/sb_config.json')
+        .then(r => r.json())
+        .then(cfg => {
+          window.supabaseClient = supabase.createClient(cfg.url, cfg.key);
+          console.log('✅ Supabase client initialized with config.json');
+          resolve();
+
+          // ✅ ✅ ✅ ADD REALTIME SUBSCRIPTION HERE
+          const channel = window.supabaseClient
+            .channel('lots-realtime')
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'lots',
+              },
+              (payload) => {
+                console.log('📡 Change detected:', payload);
+
+                const updatedLotName = payload.new?.lot_name || payload.old?.lot_name;
+                const updatedIndex = lotData.findIndex(l => l.name === updatedLotName);
+
+                if (updatedIndex !== -1) {
+                  const lot = lotData[updatedIndex];
+
+                  // Update local lot data
+                  lot.availability = (payload.new?.availability ?? '').toLowerCase();
+                  lot.featured = lot.availability === 'featured';
+                  lot.rSize = payload.new?.rSize ?? lot.rSize;
+                  lot.millones = payload.new?.millones ?? lot.millones;
+
+                  // Refresh visual on map
+                  refreshLotVisuals(map, lot);
+                }
+              }
+            )
+            .subscribe()
+            .catch(error => console.error('❌ Realtime subscription failed:', error));
+        })
+        .catch(e => {
+          console.error('Failed to load Supabase config:', e);
+          reject(new Error("❌ Failed to load Supabase config"));
+        });
+    };
+    
+    supabaseScript.onerror = () => {
+      console.error("❌ Failed to load Supabase script");
+      reject(new Error("❌ Failed to load Supabase script"));
+    };
+    
+    document.head.appendChild(supabaseScript);
+  });
 </script>
- 
+
 <script> 
 // MAP INITIALIZE
 let lotData = [];
 let map;  // global map variable
 let hoveredId = null;
 let currentLotIndex = -1;
+let sideLengthLabels = []; // Array to store side length label elements
+let currentLabeledLot = null; // Track which lot has labels
 
 // Initialize map
 fetch('https://lalaland.mx/mapbox.txt')
@@ -892,7 +928,7 @@ fetch('https://lalaland.mx/mapbox.txt')
       zoom: 16.45
     });
 
-map.doubleClickZoom.disable();
+    map.doubleClickZoom.disable();
 
     map.on('load', async () => {
       await loadRoad(map, async () => {
@@ -904,93 +940,200 @@ map.doubleClickZoom.disable();
           addCustomImage(map);
           addFeaturedLotsLayer(map);
 
-map.on('click', (e) => {
-  // Don't close if clicking inside modal
-  if (e.originalEvent?.target.closest('#lotModal')) return;
-  
-  // Only close if clicking outside polygons
-  const features = map.queryRenderedFeatures(e.point, { 
-    layers: ['lots-final-click'] 
-  });
-  
-  if (features.length === 0) {
-    closeModal();
-  }
-});
+          // ===== NEW INTERACTION HANDLERS =====
+          // Clear labels on any map movement
+          map.on('moveend', () => {
+            if (currentLabeledLot) removeSideLengthLabels();
+          });
+
+          // Clear labels when clicking a different lot
+          map.on('click', 'lots-final-click', (e) => {
+            if (e.features.length > 0) {
+              const newLot = lotData.find(l => l.name === e.features[0].properties.name);
+              if (currentLabeledLot && currentLabeledLot.name !== newLot.name) {
+                removeSideLengthLabels();
+              }
+            }
+          });
+          // ===== END NEW HANDLERS =====
+
+          map.on('click', (e) => {
+            // Don't close if clicking inside modal
+            if (e.originalEvent?.target.closest('#lotModal')) return;
+            
+            // Only close if clicking outside polygons
+            const features = map.queryRenderedFeatures(e.point, { 
+              layers: ['lots-final-click'] 
+            });
+            
+            if (features.length === 0) {
+              closeModal();
+            }
+          });
 
           // Add hover outline layer after lots-final source is ready
-map.addLayer({
-  id: 'lots-hover-outline',
-  type: 'line',
-  source: 'lots-final',
-  paint: {
-    'line-color': '#fff',
-    'line-width': 3,
-    'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
-  }
-});
+          map.addLayer({
+            id: 'lots-hover-outline',
+            type: 'line',
+            source: 'lots-final',
+            paint: {
+              'line-color': '#fff',
+              'line-width': 3,
+              'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
+            }
+          });
 
-  console.log('Ready to open initial modal, lotData:', lotData);
-  openInitialLotModal();
+          console.log('Ready to open initial modal, lotData:', lotData);
+          openInitialLotModal();
 
-map.on('mousemove', 'lots-final-click', (e) => {
-  // Don't override modal highlight
-  if (document.getElementById('lotModal').classList.contains('show')) return;
-  if (hoveredId !== null) {
-    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-  }
-  if (e.features.length > 0) {
-    hoveredId = e.features[0].id;
-    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: true });
-  }
-});
+          map.on('mousemove', 'lots-final-click', (e) => {
+            // Don't override modal highlight
+            if (document.getElementById('lotModal').classList.contains('show')) return;
+            if (hoveredId !== null) {
+              map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+            }
+            if (e.features.length > 0) {
+              hoveredId = e.features[0].id;
+              map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: true });
+            }
+          });
 
-map.on('mouseleave', 'lots-final-click', () => {
-  if (document.getElementById('lotModal').classList.contains('show')) return;
-  if (hoveredId !== null) {
-    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-  }
-  hoveredId = null;
-});
+          map.on('mouseleave', 'lots-final-click', () => {
+            if (document.getElementById('lotModal').classList.contains('show')) return;
+            if (hoveredId !== null) {
+              map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+            }
+            hoveredId = null;
+          });
 
           // Click on lot: open modal (no persistent selection highlight)
-map.on('click', 'lots-final-click', (e) => {
-  if (e.features.length === 0) return;
+          map.on('click', 'lots-final-click', (e) => {
+            if (e.features.length === 0) return;
 
-  const feature = e.features[0];
-  const lotName = feature.properties.name;
-  const lot = lotData.find(l => l.name === lotName);
-  if (!lot) return;
+            const feature = e.features[0];
+            const lotName = feature.properties.name;
+            const lot = lotData.find(l => l.name === lotName);
+            if (!lot) return;
 
-  // Remove previous hover
-  if (hoveredId !== null) {
-    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-    hoveredId = null;
-  }
+            // Remove previous hover
+            if (hoveredId !== null) {
+              map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+              hoveredId = null;
+            }
 
-  // Find index
-  const idx = lotData.findIndex(l => l.name === lot.name);
-  if (idx !== -1) {
-    map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
-    hoveredId = idx;
-    currentLotIndex = idx;
-  }
+            // Find index
+            const idx = lotData.findIndex(l => l.name === lot.name);
+            if (idx !== -1) {
+              map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
+              hoveredId = idx;
+              currentLotIndex = idx;
+            }
 
-  openModal(lot);
+            openModal(lot);
 
-  // 🟩 Scroll modal to correct lot
-  const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-  if (baseIndex !== -1) {
-    scrollToBaseIndex(baseIndex, true);
-  }
-});
-
-
-
+            // 🟩 Scroll modal to correct lot
+            const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+            if (baseIndex !== -1) {
+              scrollToBaseIndex(baseIndex, true);
+            }
+          });
         }); // animateLots callback ends
       }); // loadRoad callback ends
     }); // map load ends
   }); // fetch token ends
+
+// === SIDE LENGTH LABELS ===
+function addSideLengthLabels(lot) {
+  // First remove any existing labels
+  removeSideLengthLabels();
+
+  // Store reference to the newly labeled lot
+  currentLabeledLot = lot;
+
+  // Get the lot's coordinates
+  const coords = [...lot.coords];
+  if (coords.length < 3) return;
+
+  // Ensure polygon is closed
+  if (coords[0][0] !== coords[coords.length - 1][0] || 
+      coords[0][1] !== coords[coords.length - 1][1]) {
+    coords.push(coords[0]);
+  }
+
+  // Calculate side lengths and midpoints
+  for (let i = 0; i < coords.length - 1; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
+    
+    // Calculate midpoint for label position
+    const midpoint = [
+      (start[0] + end[0]) / 2,
+      (start[1] + end[1]) / 2
+    ];
+
+    // Calculate distance in meters
+    const distance = turf.distance(
+      turf.point(start),
+      turf.point(end),
+      { units: 'meters' }
+    );
+
+    // Round to nearest 0.5m
+    const roundedDistance = Math.round(distance * 2) / 2;
+    
+    // Create label element
+    const label = document.createElement('div');
+    label.className = 'side-length-label';
+    label.textContent = `${roundedDistance}m`;
+    label.style.position = 'absolute';
+    
+    // Convert coordinates to pixel position
+    const pixelPos = map.project(midpoint);
+    label.style.left = `${pixelPos.x}px`;
+    label.style.top = `${pixelPos.y}px`;
+    
+    // Add to map container
+    document.getElementById('map').appendChild(label);
+    sideLengthLabels.push(label);
+  }
+
+  // Update labels on map move
+  map.on('move', updateSideLengthPositions);
+}
+
+function updateSideLengthPositions() {
+  if (!currentLabeledLot || sideLengthLabels.length === 0) return;
+  
+  const coords = [...currentLabeledLot.coords];
+  if (coords[0][0] !== coords[coords.length - 1][0] || 
+      coords[0][1] !== coords[coords.length - 1][1]) {
+    coords.push(coords[0]);
+  }
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
+    const midpoint = [
+      (start[0] + end[0]) / 2,
+      (start[1] + end[1]) / 2
+    ];
+    
+    const pixelPos = map.project(midpoint);
+    sideLengthLabels[i].style.left = `${pixelPos.x}px`;
+    sideLengthLabels[i].style.top = `${pixelPos.y}px`;
+  }
+}
+
+function removeSideLengthLabels() {
+  sideLengthLabels.forEach(label => {
+    if (label.parentNode) {
+      label.parentNode.removeChild(label);
+    }
+  });
+  sideLengthLabels = [];
+  currentLabeledLot = null;
+  map.off('move', updateSideLengthPositions);
+}
 </script>  
 
 <script>
@@ -1097,52 +1240,50 @@ function parseLots(text) {
 
   return lots;
 }
-
 </script>
 
 <script>
   // FETCH AVAILABILITY SUPABASE
   //Async function to fetch availability info from Supabase and attach it to lotData
- async function enrichLotsWithAvailability() {
-  if (!lotData || lotData.length === 0) {
-    console.warn('lotData is empty, cannot enrich availability');
-    return;
+  async function enrichLotsWithAvailability() {
+    if (!lotData || lotData.length === 0) {
+      console.warn('lotData is empty, cannot enrich availability');
+      return;
+    }
+
+    if (!window.supabaseClient) {
+      console.error('Supabase client not initialized yet.');
+      return;
+    }
+  
+    const names = lotData.map(lot => lot.name);
+
+    const { data, error } = await window.supabaseClient
+      .from('lots')
+      .select('lot_name, availability, rSize, millones')
+      .in('lot_name', names);
+
+    if (error) {
+      console.error('Error fetching lot availability from Supabase:', error);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      data.forEach(row => {
+        const lot = lotData.find(l => l.name === row.lot_name);
+        if (lot) {
+          const value = (row.availability ?? '').toLowerCase();
+          lot.featured = value === 'featured';
+          lot.availability = value === 'sold' ? 'sold' : 'available';
+          lot.rSize = row.rSize;
+          lot.millones = row.millones;
+        }
+      });
+      console.log('Lot data enriched with availability:', lotData);
+    } else {
+      console.warn('No availability data returned for lots');
+    }
   }
-
-  if (!window.supabaseClient) {
-    console.error('Supabase client not initialized yet.');
-    return;
-  }
- 
-  const names = lotData.map(lot => lot.name);
-
-  const { data, error } = await window.supabaseClient
-    .from('lots')
-    .select('lot_name, availability, rSize, millones')
-    .in('lot_name', names);
-
-  if (error) {
-    console.error('Error fetching lot availability from Supabase:', error);
-    return;
-  }
-
-  if (data && data.length > 0) {
-    data.forEach(row => {
-      const lot = lotData.find(l => l.name === row.lot_name);
-if (lot) {
-  const value = (row.availability ?? '').toLowerCase();
-  lot.featured = value === 'featured';
-  lot.availability = value === 'sold' ? 'sold' : 'available';
-
-  lot.rSize = row.rSize;
-  lot.millones = row.millones;
-}
-    });
-    console.log('Lot data enriched with availability:', lotData);
-  } else {
-    console.warn('No availability data returned for lots');
-  }
-}
 </script>
 
 <script>
@@ -1182,6 +1323,7 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
     map.setPaintProperty('sold-x-layer', 'line-opacity', 1);
   }, 10);
 }
+
 function makeXFeatures(lot) {
   const coords = lot.coords;
   if (!coords || coords.length < 3) return [];
@@ -1283,7 +1425,6 @@ function makeXFeatures(lot) {
 }
 </script>
 
-
 <script>
 // LOT ANIMATION: Animate the appearance of lots
 function animateLots(map, cb) { 
@@ -1320,24 +1461,24 @@ function animateLots(map, cb) {
         "line-opacity-transition": { duration: fadeDuration },
       },
     });
-setTimeout(() => {
-  map.setPaintProperty(`lot-group-${i}`, "line-opacity", 1);
+    setTimeout(() => {
+      map.setPaintProperty(`lot-group-${i}`, "line-opacity", 1);
 
-  // ✅ ADD THIS: Draw Xs for sold lots in this group
-  const soldInGroup = g
-    .map(idx => lotData[idx])
-    .filter(lot => (lot.availability ?? '').toLowerCase() === 'sold');
+      // ✅ ADD THIS: Draw Xs for sold lots in this group
+      const soldInGroup = g
+        .map(idx => lotData[idx])
+        .filter(lot => (lot.availability ?? '').toLowerCase() === 'sold');
 
-if (soldInGroup.length > 0) {
-  addSoldXs(map, soldInGroup, fadeDurationXs); // ⬅ match fade timing
-} 
-}, i * delay);
+      if (soldInGroup.length > 0) {
+        addSoldXs(map, soldInGroup, fadeDurationXs); // ⬅ match fade timing
+      } 
+    }, i * delay);
   });
 
   // Add final lots layer (initially transparent but visible)
   const finalGeojson = {
     type: "FeatureCollection",
-features: lotData.map((lot, i) => lotFeature(lot, i))  // <- pass index here!
+    features: lotData.map((lot, i) => lotFeature(lot, i))  // <- pass index here!
   };
   map.addSource("lots-final", { type: "geojson", data: finalGeojson });
   map.addLayer({
@@ -1353,15 +1494,15 @@ features: lotData.map((lot, i) => lotFeature(lot, i))  // <- pass index here!
     },
   });
   map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
-  id: "lots-final-click",
-  type: "fill",
-  source: "lots-final",
-  layout: { visibility: "visible" },
-  paint: {
-    "fill-color": "#000",      // any color
-    "fill-opacity": 0          // invisible
-  }
-});
+    id: "lots-final-click",
+    type: "fill",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "fill-color": "#000",      // any color
+      "fill-opacity": 0          // invisible
+    }
+  });
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
@@ -1398,7 +1539,7 @@ function lotFeature(lot, index) {
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [c] },
     properties: { name: lot.name },
-        id: index  // unique id for feature state
+    id: index  // unique id for feature state
   };
 }
 
@@ -1408,7 +1549,6 @@ function shuffle(arr) {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
 }
- 
 </script>
 
 <script>
@@ -1428,18 +1568,18 @@ function addCustomImage(map) {
     coordinates: imageBounds // Set the coordinates for where the image will be placed
   });
 
-map.addLayer({
-  id: 'drone-satellite-layer',
-  type: 'raster',
-  source: 'drone-satellite',
-  paint: {
-    'raster-opacity': 0
-  }
-}, 'road');  // Insert BELOW 'road' layer, so roads are on top
+  map.addLayer({
+    id: 'drone-satellite-layer',
+    type: 'raster',
+    source: 'drone-satellite',
+    paint: {
+      'raster-opacity': 0
+    }
+  }, 'road');  // Insert BELOW 'road' layer, so roads are on top
 
-// Then fade in opacity as you do
-fadeInImage(map);
-showToaster("Loaded most recent image (March 2025)");
+  // Then fade in opacity as you do
+  fadeInImage(map);
+  showToaster("Loaded most recent image (March 2025)");
 }
 
 // Fade-in effect for the image (opacity increases gradually from 0 to 1)
@@ -1464,10 +1604,7 @@ function showToaster(message, duration = 3000) {
     toaster.classList.remove('show');
   }, duration);
 } 
-
 </script> 
-
-
 
 <script>
 // === FEATURED LOT POLYGON PULSE (ASYNC) ===
@@ -1525,7 +1662,7 @@ function addFeaturedLotsLayer(map) {
   startPolygonPulse(map);
 }
 
-// Animate each polygon’s opacity independently
+// Animate each polygon's opacity independently
 function startPolygonPulse(map) {
   let t = 0;
 
@@ -1556,6 +1693,81 @@ function startPolygonPulse(map) {
 
   requestAnimationFrame(frame);
 }
+</script>
+
+<script>
+// === SIDE LENGTH LABELS ===
+let currentLabeledLot = null; // Track which lot has labels
+
+function addSideLengthLabels(lot) {
+  // First remove any existing labels
+  removeSideLengthLabels();
+
+  // Store reference to the newly labeled lot
+  currentLabeledLot = lot;
+
+  // Get the lot's coordinates
+  const coords = [...lot.coords];
+  if (coords.length < 3) return;
+
+  // Ensure polygon is closed
+  if (coords[0][0] !== coords[coords.length - 1][0] || 
+      coords[0][1] !== coords[coords.length - 1][1]) {
+    coords.push(coords[0]);
+  }
+
+  // Calculate side lengths and midpoints
+  for (let i = 0; i < coords.length - 1; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
+    
+    // Calculate midpoint for label position
+    const midpoint = [
+      (start[0] + end[0]) / 2,
+      (start[1] + end[1]) / 2
+    ];
+
+    // Calculate distance in meters
+    const distance = turf.distance(
+      turf.point(start),
+      turf.point(end),
+      { units: 'meters' }
+    );
+
+    // Round to nearest 0.5m
+    const roundedDistance = Math.round(distance * 2) / 2;
+    
+    // Create label element
+    const label = document.createElement('div');
+    label.className = 'side-length-label';
+    label.textContent = `${roundedDistance}m`;
+    label.style.position = 'absolute';
+    
+    // Convert coordinates to pixel position
+    const pixelPos = map.project(midpoint);
+    label.style.left = `${pixelPos.x}px`;
+    label.style.top = `${pixelPos.y}px`;
+    
+    // Add to map container
+    document.getElementById('map').appendChild(label);
+    sideLengthLabels.push(label);
+  }
+
+  // Update labels on map move
+  map.on('move', updateSideLengthPositions);
+}
+
+function removeSideLengthLabels() {
+  sideLengthLabels.forEach(label => {
+    if (label.parentNode) {
+      label.parentNode.removeChild(label);
+    }
+  });
+  sideLengthLabels = [];
+  currentLabeledLot = null;
+  map.off('move', updateSideLengthPositions);
+}
+
 </script>
 
 <script>
@@ -1698,14 +1910,22 @@ function setupLotClickHandlers() {
         }
 
         const [lng, lat] = lotData[lotMapIndex].center;
-        map.flyTo({
+        currentLotIndex = lotMapIndex; // Set the current lot index
+        
+        map.easeTo({
           center: [lng, lat],
-          zoom: 18,
+          zoom: 18.8,
           speed: 1.2,
-          curve: 1.5
+          curve: 1.5,
+          offset: [0, 180]
         });
-      }
 
+        // Add side length labels after zooming
+        setTimeout(() => {
+          addSideLengthLabels(lotData[lotMapIndex]);
+        }, 1200);
+      }
+ 
       // Fill in lot details
       detailSize.textContent = lot.size;
       detailPrice.textContent = lot.price;
@@ -1720,8 +1940,6 @@ function setupLotClickHandlers() {
     });
   });
 }
-
-
 
 backButton.addEventListener('click', () => {
   const modal = document.getElementById('lotModal');
@@ -1745,19 +1963,21 @@ backButton.addEventListener('click', () => {
   // Re-enable scrolling
   scrollHandlerAttached = true;
 
-  //return to previous map zoom sate
-  if (previousMapView && map) {
-  map.flyTo({
-    center: previousMapView.center,
-    zoom: previousMapView.zoom,
-    bearing: previousMapView.bearing,
-    pitch: previousMapView.pitch,
-    speed: 1.2,
-    curve: 1.5
-  });
-  previousMapView = null;
-}
+  // Remove side length labels
+  removeSideLengthLabels();
 
+  // Return to previous map zoom state
+  if (previousMapView && map) {
+    map.flyTo({
+      center: previousMapView.center,
+      zoom: previousMapView.zoom,
+      bearing: previousMapView.bearing,
+      pitch: previousMapView.pitch,
+      speed: 1.2,
+      curve: 1.5
+    });
+    previousMapView = null;
+  }
 });
 
 function render() {
@@ -1926,7 +2146,6 @@ function highlightCenter(isClamping = false) {
     }
   }
 }
-
 
 function clampScroll() {
   if (baseLots.length === 0 || lots.length === 0 || clampCooldown) return;
@@ -2125,8 +2344,6 @@ modalInfo.addEventListener('wheel', (e) => {
   });
 });
 
-
-
 function openModal(lot = null, baseIndex = 0) {
   const wasHidden = !modal.classList.contains('show');
 
@@ -2170,8 +2387,6 @@ function openModal(lot = null, baseIndex = 0) {
   }
 }
 
-    
-
 function closeModal() {
   const modal = document.getElementById('lotModal');
   const plusIcon = document.querySelector('.plus-button .plus-icon');
@@ -2181,6 +2396,9 @@ function closeModal() {
   modal.classList.remove('expanded');
   plusIcon.style.display = 'block';
   minusIcon.style.display = 'none';
+
+  // Remove side length labels
+  removeSideLengthLabels();
 
   // Restore original view before modal opened
   if (preModalView && map) {
@@ -2213,9 +2431,6 @@ function closeModal() {
   setTimeout(() => modal.style.display = 'none', 300);
 }
 
-
-
-
 function handlePlusButton() {
   const modal = document.getElementById('lotModal');
   const plusIcon = document.querySelector('.plus-button .plus-icon');
@@ -2234,6 +2449,6 @@ function handlePlusButton() {
   }
 }
 </script>
-
+ 
 </body>
-</html> 
+</html>
