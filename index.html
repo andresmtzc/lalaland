@@ -413,6 +413,11 @@
   align-items: center;
 }
 
+.arrow-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .arrow svg {
   width: 16px;
   height: 16px;
@@ -681,6 +686,23 @@
   white-space: nowrap;
     opacity: 0; /* Start invisible */
   transition: opacity 0.2s ease;
+    transform-origin: center center;
+  
+}
+
+@keyframes pop-in {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
 }
 
 body.fonts-loaded .side-length-label {
@@ -689,8 +711,8 @@ body.fonts-loaded .side-length-label {
 
 #toaster {
   position: fixed;
-  width:56%;
-  bottom: 10px;
+  width:50%;
+  top: 20px;
   left: 50%;
   transform: translateX(-50%);
   background: #323232; 
@@ -705,6 +727,32 @@ body.fonts-loaded .side-length-label {
 }
 
 #toaster.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-10px);
+}
+
+
+#ctaToaster {
+  position: fixed;
+  width: 50%;
+  max-width: 400px;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #25d366; /* WhatsApp green */
+  color: white;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  z-index: 10000;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+#ctaToaster.show {
   opacity: 1;
   transform: translateX(-50%) translateY(-10px);
 }
@@ -755,6 +803,7 @@ body.fonts-loaded .side-length-label {
 <div id="map"></div>
 
 <div id="toaster" class="hidden">Loaded most recent image (March 2025)</div>
+<div id="ctaToaster" class="hidden"></div>
 
 <!-- Modal Panel -->
 <div id="lotModal">
@@ -1060,62 +1109,50 @@ fetch('https://lalaland.mx/mapbox.txt')
 
 // === SIDE LENGTH LABELS ===
 function addSideLengthLabels(lot) {
-  // First remove any existing labels
   removeSideLengthLabels();
-
-  // Store reference to the newly labeled lot
   currentLabeledLot = lot;
 
-  // Get the lot's coordinates
   const coords = [...lot.coords];
   if (coords.length < 3) return;
 
-  // Ensure polygon is closed
-  if (coords[0][0] !== coords[coords.length - 1][0] || 
-      coords[0][1] !== coords[coords.length - 1][1]) {
+  if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
     coords.push(coords[0]);
   }
 
-  // Calculate side lengths and midpoints
-  for (let i = 0; i < coords.length - 1; i++) {
-    const start = coords[i];
-    const end = coords[i + 1];
-    
-    // Calculate midpoint for label position
-    const midpoint = [
-      (start[0] + end[0]) / 2,
-      (start[1] + end[1]) / 2
-    ];
+  coords.forEach((_, i) => {
+    if (i >= coords.length - 1) return;
 
-    // Calculate distance in meters
-    const distance = turf.distance(
-      turf.point(start),
-      turf.point(end),
-      { units: 'meters' }
-    );
+    setTimeout(() => {
+      const start = coords[i];
+      const end = coords[i + 1];
+      const midpoint = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
 
-    // Round to nearest 0.5m
-    const roundedDistance = Math.round(distance * 2) / 2;
-    
-    // Create label element
-    const label = document.createElement('div');
-    label.className = 'side-length-label';
-    label.textContent = `${roundedDistance}m`;
-    label.style.position = 'absolute';
-    
-    // Convert coordinates to pixel position
-    const pixelPos = map.project(midpoint);
-    label.style.left = `${pixelPos.x}px`;
-    label.style.top = `${pixelPos.y}px`;
-    
-    // Add to map container
-    document.getElementById('map').appendChild(label);
-    sideLengthLabels.push(label);
-  }
+      const distance = turf.distance(turf.point(start), turf.point(end), { units: 'meters' });
+      const roundedDistance = Math.round(distance * 2) / 2;
 
-  // Update labels on map move
+      const label = document.createElement('div');
+      label.className = 'side-length-label';
+      label.textContent = `${roundedDistance}m`;
+      label.style.position = 'absolute';
+
+      const pixelPos = map.project(midpoint);
+label.style.left = `${pixelPos.x}px`;
+label.style.top = `${pixelPos.y}px`;
+label.style.transform = 'translate(-50%, -50%) scale(0.4)';
+      label.style.opacity = '0';
+label.style.transform = 'scale(0.4)';
+label.style.animation = 'pop-in 0.35s cubic-bezier(0.25, 1.25, 0.5, 1) forwards';
+
+      document.getElementById('map').appendChild(label);
+      requestAnimationFrame(() => label.style.opacity = '1');
+
+      sideLengthLabels.push(label);
+    }, i * 200); // ← Ajusta este valor para controlar el tiempo entre etiquetas
+  });
+
   map.on('move', updateSideLengthPositions);
 }
+
 
 function updateSideLengthPositions() {
   if (!currentLabeledLot || sideLengthLabels.length === 0) return;
@@ -1598,6 +1635,19 @@ function addCustomImage(map) {
   showToaster("Loaded most recent image (March 2025)");
 }
 
+//CTA
+function showCta(message = "Want more info about this lot?", duration = 5000) {
+  const ctaToaster = document.getElementById('ctaToaster');
+  ctaToaster.classList.remove('hidden');
+  ctaToaster.textContent = message;
+  ctaToaster.classList.add('show');
+
+  setTimeout(() => {
+    ctaToaster.classList.remove('show');
+    setTimeout(() => ctaToaster.classList.add('hidden'), 400); // Wait for fade out
+  }, duration);
+}
+ 
 // Fade-in effect for the image (opacity increases gradually from 0 to 1)
 function fadeInImage(map) {
   let opacity = 0;
@@ -1888,36 +1938,31 @@ function updateLotsArray() {
 }
 
 function setupLotClickHandlers() {
-  const featuredRows = document.querySelectorAll('.info-row--featured');
+  const allRows = document.querySelectorAll('.info-row');
 
-  featuredRows.forEach(row => {
+  allRows.forEach(row => {
     row.addEventListener('click', (e) => {
-      if (isDragging || isScrollbarDragging) return;
+      // Only proceed if this is the active center row
+      if (!row.classList.contains('active-center')) return;
 
       const index = row.dataset.index;
       const lot = lots[index];
+      const status = (lot.availability ?? '').toLowerCase();
 
-      // Save map state BEFORE modal shifts layout
-      if (map && map.getCenter) {
-        preModalView = {
-          center: map.getCenter().toArray(),
-          zoom: map.getZoom(),
-          bearing: map.getBearing(),
-          pitch: map.getPitch()
-        };
+      // 🔴 SOLD → Do nothing
+      if (status === 'sold') return;
+
+      // 🟡 AVAILABLE → Show CTA only
+      if (status === 'available') {
+        showCta("This lot isn't featured. Want more info? Chat with us on WhatsApp!");
+        return;
       }
 
-      // Update header
-      headerLotNumber.textContent = `: Lote ${lot.number}`;
-      headerLotNumber.style.display = 'inline';
-
-      // Zoom into selected lot
-      const lotNumber = lot.number;
-      const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
-      if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
-        // Save zoomed-in view (for back button)
+      // ✅ FEATURED → Proceed with full detail view
+      if (status === 'featured') {
+        // Save map state BEFORE modal shifts layout
         if (map && map.getCenter) {
-          previousMapView = {
+          preModalView = {
             center: map.getCenter().toArray(),
             zoom: map.getZoom(),
             bearing: map.getBearing(),
@@ -1925,37 +1970,55 @@ function setupLotClickHandlers() {
           };
         }
 
-        const [lng, lat] = lotData[lotMapIndex].center;
-        currentLotIndex = lotMapIndex; // Set the current lot index
-        
-        map.easeTo({
-          center: [lng, lat],
-          zoom: 18.8,
-          speed: 1.2,
-          curve: 1.5,
-          offset: [0, 180]
-        });
+        // Update header
+        headerLotNumber.textContent = `: Lote ${lot.number}`;
+        headerLotNumber.style.display = 'inline';
 
-        // Add side length labels after zooming
-        setTimeout(() => {
-          addSideLengthLabels(lotData[lotMapIndex]);
-        }, 1200);
+        // Zoom into selected lot
+        const lotNumber = lot.number;
+        const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
+        if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
+          // Save zoomed-in view (for back button)
+          previousMapView = {
+            center: map.getCenter().toArray(),
+            zoom: map.getZoom(),
+            bearing: map.getBearing(),
+            pitch: map.getPitch()
+          };
+
+          const [lng, lat] = lotData[lotMapIndex].center;
+          currentLotIndex = lotMapIndex;
+
+          map.easeTo({
+            center: [lng, lat],
+            zoom: 18.8,
+            speed: 1.2,
+            curve: 1.5,
+            offset: [0, 180]
+          });
+
+          // Add side length labels after zooming
+          setTimeout(() => {
+            addSideLengthLabels(lotData[lotMapIndex]);
+          }, 1200);
+        }
+
+        // Fill in lot details
+        detailSize.textContent = lot.size;
+        detailPrice.textContent = lot.price;
+
+        // Show detail view
+        document.querySelector('.modal-content-wrapper').classList.add('show-details');
+        lotDetails.classList.add('active');
+        backButton.style.display = 'flex';
+        document.querySelector('.plus-button').style.display = 'flex';
+
+        scrollHandlerAttached = false;
       }
- 
-      // Fill in lot details
-      detailSize.textContent = lot.size;
-      detailPrice.textContent = lot.price;
-
-      // Show detail view
-      document.querySelector('.modal-content-wrapper').classList.add('show-details');
-      lotDetails.classList.add('active');
-      backButton.style.display = 'flex';
-      document.querySelector('.plus-button').style.display = 'flex';
-
-      scrollHandlerAttached = false;
     });
   });
 }
+
 
 backButton.addEventListener('click', () => {
   const modal = document.getElementById('lotModal');
@@ -2117,12 +2180,17 @@ function highlightCenter(isClamping = false) {
   let closestRow = null;
   let minDistance = Infinity;
 
+  // Clear previous active states
+  rows.forEach(row => {
+    row.classList.remove('active');
+    row.classList.remove('active-center');
+  });
+
+  // Find closest row to center
   rows.forEach(row => {
     const rect = row.getBoundingClientRect();
     const rowCenter = (rect.top + rect.bottom) / 2;
     const dist = Math.abs(rowCenter - centerY);
-
-    row.classList.remove('active');
 
     if (dist < minDistance) {
       minDistance = dist;
@@ -2130,14 +2198,18 @@ function highlightCenter(isClamping = false) {
     }
   });
 
+  // If we found a row close enough to center
   if (closestRow && minDistance <= tolerance) {
+    // Mark as active (for styling) and active-center (for click handling)
     closestRow.classList.add('active');
+    closestRow.classList.add('active-center');
 
+    // Handle featured lot animation
     if (closestRow.classList.contains('info-row--featured')) {
       const index = closestRow.dataset.index;
 
       if (!animatedFeaturedLots.has(index)) {
-        void closestRow.offsetWidth;
+        void closestRow.offsetWidth; // Trigger reflow
         closestRow.classList.add('animate-featured');
         animatedFeaturedLots.add(index);
       } else {
@@ -2145,7 +2217,7 @@ function highlightCenter(isClamping = false) {
       }
     }
 
-    // 🔄 Sync polygon hover with centered row
+    // Sync polygon hover with centered row
     const baseIndex = parseInt(closestRow.dataset.baseIndex, 10);
     if (!isNaN(baseIndex)) {
       const lot = baseLots[baseIndex];
