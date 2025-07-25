@@ -7,6 +7,7 @@
   <title>Lalaland Lots Map</title>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
   <style>
     html, body { margin:0; padding:0; height:100%; font-family: 'Barlow Condensed', Arial, sans-serif; }
@@ -1066,9 +1067,11 @@ function parseLots(text) {
   const lines = text.trim().split('\n');
   const lots = [], curr = null;
   let currentLot = null;
+
   lines.forEach(line => {
     line = line.trim();
     if (!line) return;
+
     if (!line.startsWith('{')) {
       if (currentLot) lots.push(currentLot);
       currentLot = { name: line, coords: [] };
@@ -1077,9 +1080,24 @@ function parseLots(text) {
       if (m && currentLot) currentLot.coords.push([+m[2], +m[1]]);
     }
   });
+
   if (currentLot) lots.push(currentLot);
+
+  // ➕ Calculate center using Turf
+  lots.forEach(lot => {
+    try {
+      const poly = turf.polygon([[...lot.coords, lot.coords[0]]]); // Close ring
+      const center = turf.centroid(poly).geometry.coordinates;
+      lot.center = center;
+    } catch (err) {
+      console.warn('Failed to calculate center for', lot.name, err);
+      lot.center = [0, 0]; // Fallback
+    }
+  });
+
   return lots;
 }
+
 </script>
 
 <script>
@@ -1650,10 +1668,25 @@ function setupLotClickHandlers() {
       const index = row.dataset.index;
       const lot = lots[index];
       
+
+  
       // Update header with lot number
       headerLotNumber.textContent = `: Lote ${lot.number}`;
       headerLotNumber.style.display = 'inline';
       
+    //zoom in detailed lot
+      const lotNumber = lot.number;
+const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
+if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
+  const [lng, lat] = lotData[lotMapIndex].center;
+  map.flyTo({
+    center: [lng, lat],
+    zoom: 18, // or adjust this value
+    speed: 1.2,
+    curve: 1.5
+  });
+}
+
       // Fill in the details
       detailSize.textContent = lot.size;
       detailPrice.textContent = lot.price;
@@ -1681,7 +1714,7 @@ backButton.addEventListener('click', () => {
     plusIcon.style.display = 'block';
     minusIcon.style.display = 'none';
   }
-  
+   
   // Return to list view
   headerLotNumber.style.display = 'none';
   document.querySelector('.modal-content-wrapper').classList.remove('show-details');
