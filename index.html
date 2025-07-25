@@ -1597,7 +1597,8 @@ const cloneCount = 3;
 let baseLots = [];
 let lots = [];
 let isDataLoaded = false;
-
+let previousMapView = null; // for "Back" button inside modal
+let preModalView = null;    // for closing modal completely
 let isDragging = false;
 let isScrollbarDragging = false;
 let dragStartY = 0;
@@ -1660,48 +1661,67 @@ function updateLotsArray() {
 
 function setupLotClickHandlers() {
   const featuredRows = document.querySelectorAll('.info-row--featured');
-  
+
   featuredRows.forEach(row => {
     row.addEventListener('click', (e) => {
       if (isDragging || isScrollbarDragging) return;
-      
+
       const index = row.dataset.index;
       const lot = lots[index];
-      
 
-  
-      // Update header with lot number
+      // Save map state BEFORE modal shifts layout
+      if (map && map.getCenter) {
+        preModalView = {
+          center: map.getCenter().toArray(),
+          zoom: map.getZoom(),
+          bearing: map.getBearing(),
+          pitch: map.getPitch()
+        };
+      }
+
+      // Update header
       headerLotNumber.textContent = `: Lote ${lot.number}`;
       headerLotNumber.style.display = 'inline';
-      
-    //zoom in detailed lot
-      const lotNumber = lot.number;
-const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
-if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
-  const [lng, lat] = lotData[lotMapIndex].center;
-  map.flyTo({
-    center: [lng, lat],
-    zoom: 18, // or adjust this value
-    speed: 1.2,
-    curve: 1.5
-  });
-}
 
-      // Fill in the details
+      // Zoom into selected lot
+      const lotNumber = lot.number;
+      const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
+      if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
+        // Save zoomed-in view (for back button)
+        if (map && map.getCenter) {
+          previousMapView = {
+            center: map.getCenter().toArray(),
+            zoom: map.getZoom(),
+            bearing: map.getBearing(),
+            pitch: map.getPitch()
+          };
+        }
+
+        const [lng, lat] = lotData[lotMapIndex].center;
+        map.flyTo({
+          center: [lng, lat],
+          zoom: 18,
+          speed: 1.2,
+          curve: 1.5
+        });
+      }
+
+      // Fill in lot details
       detailSize.textContent = lot.size;
       detailPrice.textContent = lot.price;
-  
-      // Show details view and buttons
+
+      // Show detail view
       document.querySelector('.modal-content-wrapper').classList.add('show-details');
       lotDetails.classList.add('active');
       backButton.style.display = 'flex';
       document.querySelector('.plus-button').style.display = 'flex';
-      
-      // Disable scrolling on the list view
+
       scrollHandlerAttached = false;
     });
   });
 }
+
+
 
 backButton.addEventListener('click', () => {
   const modal = document.getElementById('lotModal');
@@ -1724,6 +1744,20 @@ backButton.addEventListener('click', () => {
   
   // Re-enable scrolling
   scrollHandlerAttached = true;
+
+  //return to previous map zoom sate
+  if (previousMapView && map) {
+  map.flyTo({
+    center: previousMapView.center,
+    zoom: previousMapView.zoom,
+    bearing: previousMapView.bearing,
+    pitch: previousMapView.pitch,
+    speed: 1.2,
+    curve: 1.5
+  });
+  previousMapView = null;
+}
+
 });
 
 function render() {
@@ -2142,23 +2176,45 @@ function closeModal() {
   const modal = document.getElementById('lotModal');
   const plusIcon = document.querySelector('.plus-button .plus-icon');
   const minusIcon = document.querySelector('.plus-button .minus-icon');
-  
+
   // Reset expanded state and icons
   modal.classList.remove('expanded');
   plusIcon.style.display = 'block';
   minusIcon.style.display = 'none';
-  
-  if (map && lastOffset) {
-  map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
-  lastOffset = [0, 0];
-}
+
+  // Restore original view before modal opened
+  if (preModalView && map) {
+    map.flyTo({
+      center: preModalView.center,
+      zoom: preModalView.zoom,
+      bearing: preModalView.bearing,
+      pitch: preModalView.pitch,
+      speed: 1.2,
+      curve: 1.5
+    });
+
+    // After the flyTo animation ends, apply panBy to compensate for the modal shift
+    map.once('moveend', () => {
+      if (lastOffset) {
+        map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
+        lastOffset = [0, 0];
+      }
+    });
+
+    preModalView = null;
+  } else if (map && lastOffset) {
+    // fallback if no preModalView is saved
+    map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
+    lastOffset = [0, 0];
+  }
 
   // Close modal
   modal.classList.remove('show');
   setTimeout(() => modal.style.display = 'none', 300);
-
-
 }
+
+
+
 
 function handlePlusButton() {
   const modal = document.getElementById('lotModal');
