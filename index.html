@@ -2458,7 +2458,7 @@ modalInfo.addEventListener('wheel', (e) => {
 function openModal(lot = null, baseIndex = 0) {
   const wasHidden = !modal.classList.contains('show');
 
-  // 🧹 Reset state first
+  // 🧹 Reset modal state
   headerLotNumber.style.display = 'none';
   document.querySelector('.modal-content-wrapper').classList.remove('show-details');
   lotDetails.classList.remove('active');
@@ -2466,37 +2466,45 @@ function openModal(lot = null, baseIndex = 0) {
   document.querySelector('.plus-button').style.display = 'none';
   modal.classList.remove('expanded');
 
+  // 🟢 Reattach scroll handler in case it was disabled
+  scrollHandlerAttached = true;
+
   modal.classList.add('show');
   modal.style.display = 'block';
 
   if (wasHidden) {
     adjustMapForModal();
   }
+ 
+  const doScrollAndHighlight = () => {
+    const scrollToIndex = lot
+      ? baseLots.findIndex(l => l.number === extractLotNumber(lot.name))
+      : baseIndex;
+
+    scrollToBaseIndex(scrollToIndex, false);
+
+    // ✅ Force highlight after rendering
+    setTimeout(() => {
+      highlightCenter();
+      updateScrollbar();
+    }, 100);
+  };
 
   if (!isDataLoaded) {
     fetchLots().then(() => {
       render();
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const scrollToIndex = lot
-            ? baseLots.findIndex(l => l.number === extractLotNumber(lot.name))
-            : baseIndex;
-          scrollToBaseIndex(scrollToIndex, false);
-        });
+        requestAnimationFrame(doScrollAndHighlight);
       });
     });
   } else {
     render();
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const scrollToIndex = lot
-          ? baseLots.findIndex(l => l.number === extractLotNumber(lot.name))
-          : baseIndex;
-        scrollToBaseIndex(scrollToIndex, false);
-      });
+      requestAnimationFrame(doScrollAndHighlight);
     });
   }
 }
+
 
 function closeModal() {
   const modal = document.getElementById('lotModal');
