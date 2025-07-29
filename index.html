@@ -482,6 +482,14 @@
   transition: transform 0.3s ease;
   z-index: 5;
   border-radius: 12px;
+  overflow-y: auto;  
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}
+
+/* Optional visual feedback when about to expand */
+.lot-details.overscroll {
+  transform: translateX(100%) scale(0.97);
+  transition: transform 0.2s ease;
 }
 
 .lot-details.active {
@@ -863,12 +871,7 @@ body.fonts-loaded .side-length-label {
       <div class="custom-scrollthumb" id="customScrollthumb"></div>
     </div>
   </div>
-  <div class="bottom-plus-button" onclick="handlePlusButton()">
-    <svg viewBox="0 0 16 16">
-      <path d="M8 3 L8 13 M3 8 L13 8"
-            fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" />
-    </svg>
-  </div>
+  
 </div>
 
 <!-- Whatsapp button -->
@@ -2033,6 +2036,7 @@ function setupLotClickHandlers() {
         // Show detail view
         document.querySelector('.modal-content-wrapper').classList.add('show-details');
         lotDetails.classList.add('active');
+        setupAutoExpand();
         backButton.style.display = 'flex';
         document.querySelector('.plus-button').style.display = 'flex';
 
@@ -2566,6 +2570,65 @@ function handlePlusButton() {
     plusIcon.style.display = 'block';
     minusIcon.style.display = 'none';
   }
+}
+
+//AUTOEXPAND DETAIL VIEW
+function setupAutoExpand() {
+  const lotDetails = document.getElementById('lotDetails');
+  let startY = 0;
+  let isDragging = false;
+
+  // Touch events for mobile
+  lotDetails.addEventListener('touchstart', (e) => {
+    startY = e.touches[0].clientY;
+    isDragging = true;
+  }, { passive: true });
+
+  lotDetails.addEventListener('touchmove', (e) => {
+    if (!isDragging) return;
+    
+    const y = e.touches[0].clientY;
+    const diff = startY - y;
+    
+    // At top and pulling down
+    if (lotDetails.scrollTop === 0 && diff < 0) {
+      e.preventDefault();
+      lotDetails.classList.add('overscroll');
+      if (Math.abs(diff) > 50) { // 50px threshold
+        handlePlusButton();
+        lotDetails.classList.remove('overscroll');
+      }
+    }
+    // At bottom and pulling up
+    else if (lotDetails.scrollHeight - lotDetails.scrollTop <= lotDetails.clientHeight + 1 && diff > 0) {
+      e.preventDefault();
+      lotDetails.classList.add('overscroll');
+      if (diff > 50) { // 50px threshold
+        handlePlusButton();
+        lotDetails.classList.remove('overscroll');
+      }
+    }
+  }, { passive: false });
+
+  lotDetails.addEventListener('touchend', () => {
+    isDragging = false;
+    lotDetails.classList.remove('overscroll');
+  });
+
+  // Mouse wheel for desktop
+  lotDetails.addEventListener('wheel', (e) => {
+    const atTop = lotDetails.scrollTop === 0;
+    const atBottom = lotDetails.scrollHeight - lotDetails.scrollTop <= lotDetails.clientHeight + 1;
+    
+    if ((atTop && e.deltaY < 0) || (atBottom && e.deltaY > 0)) {
+      e.preventDefault();
+      lotDetails.classList.add('overscroll');
+      setTimeout(() => {
+        handlePlusButton();
+        lotDetails.classList.remove('overscroll');
+      }, 100);
+    }
+  }, { passive: false });
 }
 </script>
  
