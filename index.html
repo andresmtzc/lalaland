@@ -884,6 +884,160 @@ body.fonts-loaded .side-length-label {
   display: block;
 }
 
+/* Add these new styles to your production CSS */
+#lotModal:not(.expanded) .lot-details {
+  overflow-y: hidden !important;
+}
+
+#lotModal.expanded .lot-details {
+  overflow-y: auto !important;
+}
+
+/* Detail View Styles */
+.detail-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 0px;
+}
+
+.tag-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.featured-tag {
+  background: #ff8400;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 200;
+  padding: 3px 6px;
+  border-radius: 0px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.nickname {
+  color: #FF8400;
+  font-size: 20px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-style: normal;
+}
+
+.subtitle-row {
+  color: #8a8880;
+  font-size: 13px;
+  margin-bottom: 12px;
+  padding-left: 8px;
+  font-style: italic;
+  text-align: center;
+}
+
+.detail-data-row {
+  display: flex;
+  width: 100%;
+  padding: 2px 8px;
+  box-sizing: border-box;
+  gap: 8px;
+  align-items: center;
+}
+
+.detail-data-row > div {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+
+.detail-data-row .lot-left {
+  flex: 1;
+  text-align: left;
+  padding-left: 0;
+  margin-left: 0;
+}
+
+.detail-data-row .lot-price {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.detail-data-row .price-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.7em;
+  margin-right: 2em;
+}
+
+.detail-data-row .price {
+  font-size: 24px;
+  line-height: 1;
+  position: relative;
+  top: 0.1em;
+}
+
+.detail-data-row .mdp {
+  font-size: 14px;
+  color: #b18d69;
+  line-height: 1;
+  margin-top: 2px;
+  position: relative;
+  left: 0;
+  transform: none;
+}
+
+.detail-extra-row {
+  width: 100%;
+  overflow: hidden;
+  border-top: 1px solid #e0e0e0;
+  margin: 0;
+  padding: 0;
+  margin-top: 8px;
+}
+
+.lot-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  margin: 0;
+  padding: 0;
+}
+
+.lot-details {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.price-per-m2-column {
+  flex: none;
+  width: 20%;
+  font-size: 24px;
+  color: #8a8880;
+  line-height: 1;
+  font-weight: 400;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+}
+
+.price-per-m2-column sup.sup {
+  font-size: 60%;
+  position: relative;
+  top: -0.6em;
+  text-transform: uppercase;
+  color: #b18d69;
+}
   </style>
 </head>
 
@@ -937,27 +1091,7 @@ body.fonts-loaded .side-length-label {
   <div class="modal-divider"></div>
   <div class="modal-content-wrapper">
     <div class="loading-spinner" id="loadingSpinner"></div>
-    <div class="lot-details" id="lotDetails">
-      <div class="details-content">
-        <div class="details-header">
-          <div class="details-lot-number"><span id="detailNumber"></span></div>
-        </div>
-        <div class="details-body">
-          <div class="details-section">
-            <div class="details-label">Size</div>
-            <div class="details-value"><span id="detailSize">0</span> M<sup>2</sup></div>
-          </div>
-          <div class="details-section">
-            <div class="details-label">Price</div>
-            <div class="details-value">$<span id="detailPrice">0</span> MDP</div>
-          </div>
-          <div class="details-section">
-            <div class="details-label">Placeholder</div>
-            <div class="details-value" id="detailAvailability">Chorito</div>
-          </div>
-        </div>
-      </div>
-    </div>
+<div class="lot-details" id="lotDetails"></div>
     <div class="modal-info" id="modalInfo"></div>
     <div class="custom-scrollbar" id="customScrollbar">
       <div class="custom-scrollthumb" id="customScrollthumb"></div>
@@ -1770,7 +1904,7 @@ function addCustomImage(map) {
 
   // Then fade in opacity as you do
   fadeInImage(map);
-  showToaster("Cargamos la imágen área más actual - (marzo 2025)");
+  showToaster("Cargamos la imágen área más actual — (marzo 2025)");
 }
 
 //CTA
@@ -2059,9 +2193,10 @@ async function fetchLots() {
     
     await window.supabaseReady;
     
+    // Fetch ALL data (including images) upfront
     const { data, error } = await window.supabaseClient
       .from('lots')
-      .select('lot_name, rSize, millones, availability')
+      .select('lot_name, rSize, millones, availability, nickname, subtitle, image')
       .order('lot_name', { ascending: true });
     
     if (error) throw error;
@@ -2070,19 +2205,30 @@ async function fetchLots() {
       number: extractLotNumber(lot.lot_name),
       size: lot.rSize,
       price: lot.millones,
-      availability: lot.availability
+      availability: lot.availability,
+      // Store all detail data upfront
+      detailData: {
+        nickname: lot.nickname,
+        subtitle: lot.subtitle,
+        image: lot.image
+      }
     }));
     
     updateLotsArray();
     isDataLoaded = true;
-    console.log('Successfully loaded', baseLots.length, 'lots from Supabase');
+    console.log('✅ Pre-loaded all lots + images');
   } catch (error) {
     console.error('Error fetching lots:', error);
+    // Fallback dummy data
     baseLots = Array.from({ length: 10 }, (_, i) => ({
       number: 100 + i,
       size: '150',
       price: '1.5',
-      availability: 'available'
+      availability: 'available',
+      detailData: {
+        nickname: `Lot ${100 + i}`,
+        image: 'https://via.placeholder.com/800x400?text=No+Image'
+      }
     }));
     updateLotsArray();
   } finally {
@@ -2103,26 +2249,22 @@ function setupLotClickHandlers() {
   const allRows = document.querySelectorAll('.info-row');
 
   allRows.forEach(row => {
-    row.addEventListener('click', (e) => {
-      // Only proceed if this is the active center row
+    row.addEventListener('click', async (e) => {
       if (!row.classList.contains('active-center')) return;
 
       const index = row.dataset.index;
       const lot = lots[index];
       const status = (lot.availability ?? '').toLowerCase();
 
-      // 🔴 SOLD → Do nothing
       if (status === 'sold') return;
 
-      // 🟡 AVAILABLE → Show CTA only
       if (status === 'available') {
         showCta("¡Este lote también tiene mucho potencial! ¿lo vemos juntos? Escríbenos por WhatsApp.");
         return;
       }
 
-      // ✅ FEATURED → Proceed with full detail view
       if (status === 'featured') {
-        // Save map state BEFORE modal shifts layout
+        // Save map state
         if (map && map.getCenter) {
           preModalView = {
             center: map.getCenter().toArray(),
@@ -2132,15 +2274,10 @@ function setupLotClickHandlers() {
           };
         }
 
-        // Update header
-        // headerLotNumber.textContent = `: LOTE ${lot.number}`;
-        headerLotNumber.style.display = 'inline';
-
-        // Zoom into selected lot
         const lotNumber = lot.number;
         const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
+        
         if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
-          // Save zoomed-in view (for back button)
           previousMapView = {
             center: map.getCenter().toArray(),
             zoom: map.getZoom(),
@@ -2151,34 +2288,123 @@ function setupLotClickHandlers() {
           const [lng, lat] = lotData[lotMapIndex].center;
           currentLotIndex = lotMapIndex;
 
-          map.easeTo({
-            center: [lng, lat],
-            zoom: 18.8,
-            speed: 1.2,
-            curve: 1.5,
-            offset: [0, 180]
+          // 1. First start the map animation
+          await new Promise(resolve => {
+            map.once('moveend', resolve);
+            map.easeTo({
+              center: [lng, lat],
+              zoom: 18.8,
+              speed: 1.2,
+              curve: 1.5,
+              offset: [0, 180]
+            });
           });
 
-          // Add side length labels after zooming
-          setTimeout(() => {
-            addSideLengthLabels(lotData[lotMapIndex]);
-          }, 1200);
+          // 2. Then add labels and show detail view
+          addSideLengthLabels(lotData[lotMapIndex]);
+          showDetailViewForLot(index);
+        } else {
+          // Fallback if map data isn't available
+          showDetailViewForLot(index);
         }
-
-        // Fill in lot details
-        detailSize.textContent = lot.size;
-        detailPrice.textContent = lot.price;
-
-        // Show detail view
-        document.querySelector('.modal-content-wrapper').classList.add('show-details');
-        lotDetails.classList.add('active');
-        backButton.style.display = 'flex';
-        document.querySelector('.plus-button').style.display = 'flex';
-
-        scrollHandlerAttached = false;
       }
     });
   });
+}
+
+async function showDetailViewForLot(index) {
+  // Clear previous details
+  lotDetails.innerHTML = '';
+  
+  // Get the pre-fetched lot data
+  const lot = lots[index];
+  const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
+  const detailData = lot.detailData || {};
+
+  // Create container for detail view
+  const detailContainer = document.createElement('div');
+  detailContainer.className = 'detail-container';
+
+  // ===== HEADER SECTION =====
+  const headerSection = document.createElement('div');
+  headerSection.className = 'detail-header';
+  
+  // Tag row with LALALAND SELECTION and nickname
+  headerSection.innerHTML = `
+    <div class="tag-row">
+      ${lot.featured ? '<div class="featured-tag">LALALAND SELECTION</div>' : ''}
+      <div class="nickname">${detailData.nickname || 'Lot ' + lot.number}</div>
+    </div>
+    ${detailData.subtitle ? `
+      <div class="subtitle-row">${detailData.subtitle}</div>
+    ` : ''}
+  `;
+  detailContainer.appendChild(headerSection);
+
+  // ===== PRICE/SIZE ROW =====
+  const detailRow = document.createElement('div');
+  detailRow.className = 'detail-data-row';
+  
+  // Calculate price per m2
+  const price = parseFloat(lot.price);
+  const size = parseFloat(lot.size);
+  let pricePerM2Formatted = 'N/A';
+  
+  if (price > 0 && size > 0) {
+    const pricePerM2 = (price * 1000000) / size;
+    pricePerM2Formatted = `$${pricePerM2.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<sup class="sup">/M2</sup>`;
+  }
+
+  // Build the price/size row
+  detailRow.innerHTML = `
+    <div class="lot-left">
+      <div class="lote-label">LOTE</div>
+      <div class="lote-number">${lot.number}</div>
+    </div>
+    
+    <div class="lot-middle">
+      ${lot.size}<span class="sup">M2</span>
+    </div>
+    
+    <div class="lot-price">
+      <div class="price-wrapper">
+        <span class="price">$${lot.price}</span>
+        <span class="mdp">MDP</span>
+      </div>
+    </div>
+    
+    <div class="price-per-m2-column">
+      ${pricePerM2Formatted}
+    </div>
+  `;
+  detailContainer.appendChild(detailRow);
+
+  // ===== IMAGE ROW =====
+  if (detailData.image || (lotMapData && lotMapData.image)) {
+    const extraRow = document.createElement('div');
+    extraRow.className = 'detail-extra-row';
+    extraRow.innerHTML = `
+      <img src="${detailData.image || lotMapData.image || 'https://via.placeholder.com/800x400?text=No+Image+Available'}"
+           class="lot-image"
+           onerror="this.src='https://via.placeholder.com/800x400?text=Image+Not+Available'">
+    `;
+    detailContainer.appendChild(extraRow);
+  }
+
+  // Add to DOM
+  lotDetails.appendChild(detailContainer);
+
+  // Activate modal view
+  document.querySelector('.modal-content-wrapper').classList.add('show-details');
+  lotDetails.classList.add('active');
+  backButton.style.display = 'flex';
+  document.querySelector('.plus-button').style.display = 'flex';
+  scrollHandlerAttached = false;
+
+  // Add side length labels if we have map data
+  if (lotMapData) {
+    addSideLengthLabels(lotMapData);
+  }
 }
 
 
