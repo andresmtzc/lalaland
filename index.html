@@ -99,11 +99,10 @@
   #lotModal.expanded {
     position: fixed;
     top: 50%;
-    left: 20px;
-    width: min(2 * 360px + 48px); /* ~2x + padding, clamp to 70vw */
-    max-width: 900px;                   /* safety cap */
-    height: min(85vh, 900px);           /* taller, but not full screen */
-    transform: translateY(-50%);
+    left: 50%;
+    transform: translate(-50%, -50%); /* center horizontally & vertically */
+    width: min(80vw, 900px);          /* responsive width cap */
+    height: min(85vh, 900px);
   }
 }
  
@@ -2322,17 +2321,24 @@ function setupLotClickHandlers() {
           const [lng, lat] = lotData[lotMapIndex].center;
           currentLotIndex = lotMapIndex;
 
-          // 1. First start the map animation
-          await new Promise(resolve => {
-            map.once('moveend', resolve);
-            map.easeTo({
-              center: [lng, lat],
-              zoom: 18.8,
-              speed: 1.2,
-              curve: 1.5,
-              offset: [0, 180]
-            });
-          });
+// 1. First start the map animation
+await new Promise(resolve => {
+  map.once('moveend', resolve);
+
+  const isDesktop = window.innerWidth >= 768;
+  const isExpanded = document.getElementById('lotModal').classList.contains('expanded');
+
+  const xOffset = isDesktop ? (isExpanded ? 420 : 200) : 0; // 👉 more pan on desktop
+  const yOffset = isDesktop ? 0 : 180;                       // keep vertical nudged on mobile
+
+  map.easeTo({
+    center: [lng, lat],
+    zoom: 18.8,
+    speed: 1.2,
+    curve: 1.5,
+    offset: [xOffset, yOffset]
+  });
+});
 
           // 2. Then add labels and show detail view
           addSideLengthLabels(lotData[lotMapIndex]);
@@ -2978,13 +2984,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const modal = document.getElementById('lotModal');
   const resetBtn = document.getElementById('resetViewBtn');
 
-  const observer = new MutationObserver(() => {
+const observer = new MutationObserver(() => {
+  if (window.innerWidth < 768) { // 📱 Only hide on mobile
     if (modal.classList.contains('expanded')) {
       resetBtn.classList.add('hide');
     } else {
       resetBtn.classList.remove('hide');
     }
-  });
+  } else {
+    resetBtn.classList.remove('hide'); // 💻 Always visible on desktop
+  }
+});
 
   observer.observe(modal, {
     attributes: true,
