@@ -1317,6 +1317,7 @@ let hoveredId = null;
 let currentLotIndex = -1;
 let sideLengthLabels = []; // Array to store side length label elements
 let currentLabeledLot = null; // Track which lot has labels
+let isDetailOpen = false;
 
 
 // Initialize map
@@ -1347,9 +1348,13 @@ map = new mapboxgl.Map({
 
           // ===== NEW INTERACTION HANDLERS =====
           // Clear labels on any map movement
-          map.on('moveend', () => {
-            if (currentLabeledLot) removeSideLengthLabels();
-          });
+map.on('moveend', () => {
+  // Only clear labels if we are NOT in detail view
+  if (!isDetailOpen && currentLabeledLot) {
+    removeSideLengthLabels();
+  }
+});
+
 
           // Clear labels when clicking a different lot
           map.on('click', 'lots-final-click', (e) => {
@@ -2125,80 +2130,7 @@ function startPolygonPulse(map) {
 }
 </script>
 
-<script>
-// === SIDE LENGTH LABELS ===
-let currentLabeledLot = null; // Track which lot has labels
 
-function addSideLengthLabels(lot) {
-  // First remove any existing labels
-  removeSideLengthLabels();
-
-  // Store reference to the newly labeled lot
-  currentLabeledLot = lot;
-
-  // Get the lot's coordinates
-  const coords = [...lot.coords];
-  if (coords.length < 3) return;
-
-  // Ensure polygon is closed
-  if (coords[0][0] !== coords[coords.length - 1][0] || 
-      coords[0][1] !== coords[coords.length - 1][1]) {
-    coords.push(coords[0]);
-  }
-
-  // Calculate side lengths and midpoints
-  for (let i = 0; i < coords.length - 1; i++) {
-    const start = coords[i];
-    const end = coords[i + 1];
-    
-    // Calculate midpoint for label position
-    const midpoint = [
-      (start[0] + end[0]) / 2,
-      (start[1] + end[1]) / 2
-    ];
-
-    // Calculate distance in meters
-    const distance = turf.distance(
-      turf.point(start),
-      turf.point(end),
-      { units: 'meters' }
-    );
-
-    // Round to nearest 0.5m
-    const roundedDistance = Math.round(distance * 2) / 2;
-    
-    // Create label element
-    const label = document.createElement('div');
-    label.className = 'side-length-label';
-    label.textContent = `${roundedDistance}m`;
-    label.style.position = 'absolute';
-    
-    // Convert coordinates to pixel position
-    const pixelPos = map.project(midpoint);
-    label.style.left = `${pixelPos.x}px`;
-    label.style.top = `${pixelPos.y}px`;
-    
-    // Add to map container
-    document.getElementById('map').appendChild(label);
-    sideLengthLabels.push(label);
-  }
-
-  // Update labels on map move
-  map.on('move', updateSideLengthPositions);
-}
-
-function removeSideLengthLabels() {
-  sideLengthLabels.forEach(label => {
-    if (label.parentNode) {
-      label.parentNode.removeChild(label);
-    }
-  });
-  sideLengthLabels = [];
-  currentLabeledLot = null;
-  map.off('move', updateSideLengthPositions);
-}
-
-</script>
 
 <script>
   // MODAL HERE
@@ -2377,7 +2309,7 @@ await new Promise(resolve => {
 });
 
           // 2. Then add labels and show detail view
-          addSideLengthLabels(lotData[lotMapIndex]);
+        
           showDetailViewForLot(index);
         } else {
           // Fallback if map data isn't available
@@ -2391,7 +2323,7 @@ await new Promise(resolve => {
 async function showDetailViewForLot(index) {
   // Clear previous details
   lotDetails.innerHTML = '';
-  
+  isDetailOpen = true;
   // Get the pre-fetched lot data
   const lot = lots[index];
   const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
@@ -2490,6 +2422,9 @@ backButton.addEventListener('click', () => {
   const plusIcon = document.querySelector('.plus-button .plus-icon');
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   
+  isDetailOpen = false;
+removeSideLengthLabels(); // you already call this — keep it
+
   // Reset expanded state if needed
   if (modal.classList.contains('expanded')) {
     modal.classList.remove('expanded');
@@ -2983,6 +2918,10 @@ function closeModal() {
   const modal = document.getElementById('lotModal');
   const plusIcon = document.querySelector('.plus-button .plus-icon');
   const minusIcon = document.querySelector('.plus-button .minus-icon');
+
+
+isDetailOpen = false;
+removeSideLengthLabels(); // already present — keep it
 
   // Reset expanded state and icons
   modal.classList.remove('expanded');
