@@ -1070,6 +1070,29 @@ body.fonts-loaded .side-length-label {
   margin-left: 0 !important;
   text-align: left !important;
 }
+
+.map-info-button {
+  position: fixed;
+  bottom: 30px;
+  left: 30px;
+  width: 48px; height: 48px;
+  border: none; outline: none;
+  background-color: #ff8400;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  z-index: 10000;
+  transition: transform .2s ease, opacity .3s ease;
+}
+.map-info-button:hover { transform: scale(1.1); }
+.map-info-button svg { width: 24px; height: 24px; stroke: #fff; fill: none; stroke-width: 2; }
+
+.map-info-button.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
   </style>
 </head>
 
@@ -1157,6 +1180,16 @@ body.fonts-loaded .side-length-label {
   </svg>
 </button>
 
+<button id="infoBtn" class="map-info-button" title="Ver info">
+  <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Circle outline normal thickness -->
+    <circle cx="12" cy="12" r="9" stroke-width="2"></circle>
+
+    <!-- "i" parts thicker -->
+    <line x1="12" y1="8"  x2="12" y2="8"  stroke-width="3"></line>  <!-- dot -->
+    <line x1="12" y1="11" x2="12" y2="16" stroke-width="3"></line>  <!-- stem -->
+  </svg>
+</button>
 
 <script>
   const btn = document.querySelector('.whatsapp-button');
@@ -1178,7 +1211,7 @@ body.fonts-loaded .side-length-label {
 const ctaToaster = document.getElementById('ctaToaster');
 const whatsappBtn = document.querySelector('.whatsapp-button');
 
-const observer = new MutationObserver(() => {
+const ctaobserver = new MutationObserver(() => {
   if (ctaToaster.classList.contains('show')) {
     setTimeout(() => {
       whatsappBtn.classList.add('bounce');
@@ -1191,12 +1224,12 @@ const observer = new MutationObserver(() => {
   }
 });
 
-observer.observe(ctaToaster, {
+ctaobserver.observe(ctaToaster, {
   attributes: true,
   attributeFilter: ['class']
 });
 
-observer.observe(ctaToaster, {
+ctaobserver.observe(ctaToaster, {
   attributes: true,
   attributeFilter: ['class']
 });
@@ -1284,6 +1317,7 @@ let hoveredId = null;
 let currentLotIndex = -1;
 let sideLengthLabels = []; // Array to store side length label elements
 let currentLabeledLot = null; // Track which lot has labels
+
 
 // Initialize map
 fetch('https://lalaland.mx/mapbox.txt')
@@ -2187,7 +2221,7 @@ function adjustMapForModal() {
   console.log('🔄 map.panBy:', offset);
   map.panBy(offset, { duration: 800 });
 }
-
+ 
 const modal = document.getElementById('lotModal');
 const modalInfo = document.getElementById('modalInfo');
 const customScrollbar = document.getElementById('customScrollbar');
@@ -2214,6 +2248,7 @@ let dragStartScroll = 0;
 let scrollTimeout;
 let scrollHandlerAttached = true;
 let clampCooldown = false;
+let infoMode = false;
 
 function extractLotNumber(lotName) {
   const num = lotName.replace(/^lot/i, '');
@@ -2865,25 +2900,51 @@ modalInfo.addEventListener('wheel', (e) => {
 function openModal(lot = null, baseIndex = 0) {
   const wasHidden = !modal.classList.contains('show');
 
-  // 🧹 Reset modal state
+  // 🧹 Reset modal state (your existing code)
   headerLotNumber.style.display = 'none';
   document.querySelector('.modal-content-wrapper').classList.remove('show-details');
   lotDetails.classList.remove('active');
   backButton.style.display = 'none';
   document.querySelector('.plus-button').style.display = 'none';
   modal.classList.remove('expanded');
- 
-
-  // 🟢 Reattach scroll handler in case it was disabled
   scrollHandlerAttached = true;
 
+  // 🔶 If we're going to list mode, clear previous INFO content *before showing the modal*
+  const modalInfoEl = document.getElementById('modalInfo');
+  const customScrollbarEl = document.getElementById('customScrollbar');
+  const spinnerEl = document.getElementById('loadingSpinner');
+
+  if (!infoMode) {
+    // Pre-clear to avoid flashing old info content
+    modalInfoEl.innerHTML = '';
+    customScrollbarEl.style.display = '';   // make sure scrollbar is back for list
+    spinnerEl.style.display = 'block';      // show spinner immediately
+    modalInfoEl.style.opacity = '0';        // hide list container until rendered
+  }
+
+  // Now show the modal
   modal.classList.add('show');
   modal.style.display = 'block';
+  if (wasHidden) adjustMapForModal();
 
-  if (wasHidden) {
-    adjustMapForModal();
+  // 🔸 INFO MODE short-circuit (your existing block)
+  if (infoMode) {
+    modal.classList.add('expanded');
+    modalInfoEl.innerHTML = `
+      <div style="padding:20px; color:#8a8880;">
+        <h2 style="color:#a17345; margin-bottom:10px;">Sobre Santte 2</h2>
+        <p>Bienvenido a Santte 2. Aquí puedes poner descripción, ubicación, beneficios, etc.</p>
+        <p>Para más información contáctanos por WhatsApp o visita nuestras oficinas.</p>
+      </div>
+    `;
+    customScrollbarEl.style.display = 'none';
+    spinnerEl.style.display = 'none';
+    scrollHandlerAttached = false;
+    infoMode = false;
+    return;
   }
- 
+
+  // 👇 Normal list flow
   const doScrollAndHighlight = () => {
     const scrollToIndex = lot
       ? baseLots.findIndex(l => l.number === extractLotNumber(lot.name))
@@ -2891,11 +2952,13 @@ function openModal(lot = null, baseIndex = 0) {
 
     scrollToBaseIndex(scrollToIndex, false);
 
-    // ✅ Force highlight after rendering
+    // show list once content exists
     setTimeout(() => {
       highlightCenter();
       updateScrollbar();
-    }, 100);
+      spinnerEl.style.display = 'none';   // hide spinner after render
+      modalInfoEl.style.opacity = '1';    // fade in the list
+    }, 0);
   };
 
   if (!isDataLoaded) {
@@ -2912,6 +2975,8 @@ function openModal(lot = null, baseIndex = 0) {
     });
   }
 }
+
+   
 
 
 function closeModal() {
@@ -2980,33 +3045,61 @@ function handlePlusButton() {
  
  
 <script>
-  //RESET GPS
+// RESET GPS + INFO (reusing #lotModal)
 document.addEventListener('DOMContentLoaded', () => {
-  const modal = document.getElementById('lotModal');
+  const modal    = document.getElementById('lotModal');
   const resetBtn = document.getElementById('resetViewBtn');
+  const infoBtn  = document.getElementById('infoBtn'); // left orange button
 
+  // Open lot modal in "info mode" (replace list content)
+infoBtn.addEventListener('click', () => {
+  infoMode = true;        // tell openModal to skip list rendering
+  openModal();            // reuse the same modal
+
+  // Force expanded mode
+  modal.classList.add('expanded');
+
+  const modalInfo = document.getElementById('modalInfo');
+  const customScrollbar = document.getElementById('customScrollbar');
+
+  // Replace list with your static info content
+  modalInfo.innerHTML = `
+    <div style="padding:20px; color:#8a8880;">
+      <h2 style="color:#a17345; margin-bottom:10px;">Sobre Santte 2</h2>
+      <p>Bienvenido a Santte 2. Aquí puedes poner descripción, ubicación, beneficios, etc.</p>
+      <p>Para más información contáctanos por WhatsApp o visita nuestras oficinas.</p>
+    </div>
+  `;
+
+  // Hide scrollbar for static content
+  customScrollbar.style.display = 'none';
+});
+
+ 
+  // Hide/show floating buttons while modal is expanded (mobile)
 const observer = new MutationObserver(() => {
-  if (window.innerWidth < 768) { // 📱 Only hide on mobile
+  if (window.innerWidth < 768) {
     if (modal.classList.contains('expanded')) {
       resetBtn.classList.add('hide');
+      infoBtn.classList.add('hide');
     } else {
       resetBtn.classList.remove('hide');
+      infoBtn.classList.remove('hide');
     }
   } else {
-    resetBtn.classList.remove('hide'); // 💻 Always visible on desktop
+    resetBtn.classList.remove('hide');
+    infoBtn.classList.remove('hide');
   }
 });
 
-  observer.observe(modal, {
-    attributes: true,
-    attributeFilter: ['class']
-  });
+  observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
 
-const initialZoom = window.innerWidth >= 768 ? 17 : 16.45;
- 
+  // Reset map view (existing behavior)
+  const initialZoom = window.innerWidth >= 768 ? 17 : 16.45;
   resetBtn.addEventListener('click', () => {
+    if (!window.map) return;
     map.flyTo({
-      center: [-100.15994, 25.461823], // your initial center
+      center: [-100.15994, 25.461823],
       zoom: initialZoom,
       bearing: 0,
       pitch: 0,
@@ -3016,6 +3109,9 @@ const initialZoom = window.innerWidth >= 768 ? 17 : 16.45;
   });
 });
 </script>
+
+
+
 
 </body>
 </html>
