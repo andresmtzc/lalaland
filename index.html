@@ -1095,6 +1095,46 @@ body.fonts-loaded .side-length-label {
   pointer-events: none;
 }
 
+/* Agendar Cita Button */
+.schedule-appointment-btn {
+  background-color: #ff8400;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  width: 100%;
+  margin-top: 16px;
+  transition: background-color 0.3s ease;
+}
+
+.schedule-appointment-btn:hover {
+  background-color: #e67300;
+}
+
+.calendly-embed-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fcfaf3; /* same as modal */
+  z-index: 6; /* above lotDetails (z:5) */
+  overflow: hidden; /* Hide scrollbar */
+}
+
+.calendly-embed-container iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block; /* Remove any extra space around iframe */
+}
+
+
+
+
   </style>
 </head>
 
@@ -1148,8 +1188,17 @@ body.fonts-loaded .side-length-label {
   <div class="modal-divider"></div>
   <div class="modal-content-wrapper">
     <div class="loading-spinner" id="loadingSpinner"></div>
+
 <div class="lot-details" id="lotDetails"></div>
-    <div class="modal-info" id="modalInfo"></div>
+
+<!-- Calendly must be a sibling, not inside lotDetails -->
+<div id="calendlyEmbed" class="calendly-embed-container" style="display:none;">
+  <div id="calendly-inline-widget" style="min-width:320px; height:100%;"></div>
+</div>
+
+<div class="modal-info" id="modalInfo"></div>
+
+
     <div class="custom-scrollbar" id="customScrollbar">
       <div class="custom-scrollthumb" id="customScrollthumb"></div>
     </div>
@@ -2337,19 +2386,18 @@ async function showDetailViewForLot(index) {
 
   // ===== HEADER SECTION =====
   const headerSection = document.createElement('div');
-headerSection.className = 'detail-header';
+  headerSection.className = 'detail-header';
 
-// Tag row with LALALAND SELECTION and nickname
-headerSection.innerHTML = `
-  <div class="tag-row">
-    
-    ${lot.availability === 'Featured' ? '<div class="featured-tag">SELECCIÓN LALALAND</div>' : ''}
-    <div class="nickname">${detailData.nickname || 'Lot ' + lot.number}</div>
-  </div>
-  ${detailData.subtitle ? `
-    <div class="subtitle-row">${detailData.subtitle}</div>
-  ` : ''}
-`;
+  // Tag row with LALALAND SELECTION and nickname
+  headerSection.innerHTML = `
+    <div class="tag-row">
+      ${lot.availability === 'Featured' ? '<div class="featured-tag">SELECCIÓN LALALAND</div>' : ''}
+      <div class="nickname">${detailData.nickname || 'Lot ' + lot.number}</div>
+    </div>
+    ${detailData.subtitle ? `
+      <div class="subtitle-row">${detailData.subtitle}</div>
+    ` : ''}
+  `;
   detailContainer.appendChild(headerSection);
 
   // ===== PRICE/SIZE ROW =====
@@ -2391,41 +2439,79 @@ headerSection.innerHTML = `
   detailContainer.appendChild(detailRow);
 
   // ===== IMAGE ROW =====
-  if (detailData.image || (lotMapData && lotMapData.image)) {
+  const image = new Image();  // Create an image element
+  image.src = detailData.image || lotMapData.image || 'https://via.placeholder.com/800x400?text=No+Image+Available';
+  image.onload = function() {
+    // This runs once the image is fully loaded
+
+    // Add image to the DOM
     const extraRow = document.createElement('div');
     extraRow.className = 'detail-extra-row';
     extraRow.innerHTML = `
-      <img src="${detailData.image || lotMapData.image || 'https://via.placeholder.com/800x400?text=No+Image+Available'}"
-           class="lot-image"
-           onerror="this.src='https://via.placeholder.com/800x400?text=Image+Not+Available'">
+      <img src="${image.src}" class="lot-image" onerror="this.src='https://via.placeholder.com/800x400?text=Image+Not+Available'">
     `;
     detailContainer.appendChild(extraRow);
-  }
 
-  // Add to DOM
-  lotDetails.appendChild(detailContainer);
+    // Add the Agendar Cita button below the image after the image is loaded
+    const scheduleButton = document.createElement('button');
+    scheduleButton.id = 'scheduleAppointmentBtn';
+    scheduleButton.className = 'schedule-appointment-btn';
+    scheduleButton.innerText = 'Agendar Cita';
 
-  // Activate modal view
-  document.querySelector('.modal-content-wrapper').classList.add('show-details');
-  lotDetails.classList.add('active');
-  backButton.style.display = 'flex';
-  document.querySelector('.plus-button').style.display = 'flex';
-  scrollHandlerAttached = false;
+    detailContainer.appendChild(scheduleButton);
 
-  // Add side length labels if we have map data
-  if (lotMapData) {
-    addSideLengthLabels(lotMapData);
-  }
+    // Add to DOM after the image is loaded
+    lotDetails.appendChild(detailContainer);
+
+    // Activate modal view
+    document.querySelector('.modal-content-wrapper').classList.add('show-details');
+    lotDetails.classList.add('active');
+    backButton.style.display = 'flex';
+    document.querySelector('.plus-button').style.display = 'flex';
+    scrollHandlerAttached = false;
+
+    // Add side length labels if we have map data
+    if (lotMapData) {
+      addSideLengthLabels(lotMapData);
+    }
+
+    // === Step 4: Add the Event Listener for the "Agendar Cita" Button ===
+    document.getElementById('scheduleAppointmentBtn').addEventListener('click', function () {
+      // Hide lot details and show Calendly
+      document.getElementById('lotDetails').style.display = 'none'; // Hide lot details
+
+      // Show Calendly widget
+      document.getElementById('calendlyEmbed').style.display = 'block';
+
+      // Initialize Calendly widget
+      loadCalendlyWidget({ lot, detailData });
+    });
+  };
+
+  // If the image fails to load, use the fallback image
+  image.onerror = function() {
+    image.src = 'https://via.placeholder.com/800x400?text=Image+Not+Available';
+  };
 }
+
 
 
 backButton.addEventListener('click', () => {
   const modal = document.getElementById('lotModal');
   const plusIcon = document.querySelector('.plus-button .plus-icon');
   const minusIcon = document.querySelector('.plus-button .minus-icon');
-  
+  const calendly = document.getElementById('calendlyEmbed');
+
   isDetailOpen = false;
-removeSideLengthLabels(); // you already call this — keep it
+  removeSideLengthLabels(); // keep it
+
+  // Check if we're in the Calendly view
+  if (calendly && calendly.style.display === 'block') {
+    // Close Calendly and return to lot details
+    calendly.style.display = 'none';
+    document.getElementById('lotDetails').style.display = 'block';
+    return; // exit here to avoid further actions
+  }
 
   // Reset expanded state if needed
   if (modal.classList.contains('expanded')) {
@@ -2433,14 +2519,14 @@ removeSideLengthLabels(); // you already call this — keep it
     plusIcon.style.display = 'block';
     minusIcon.style.display = 'none';
   }
-   
+
   // Return to list view
   headerLotNumber.style.display = 'none';
   document.querySelector('.modal-content-wrapper').classList.remove('show-details');
   lotDetails.classList.remove('active');
   backButton.style.display = 'none';
   document.querySelector('.plus-button').style.display = 'none';
-  
+
   // Re-enable scrolling
   scrollHandlerAttached = true;
 
@@ -2460,6 +2546,7 @@ removeSideLengthLabels(); // you already call this — keep it
     previousMapView = null;
   }
 });
+
 
 function render() {
   modalInfo.innerHTML = '';
@@ -2845,6 +2932,8 @@ function openModal(lot = null, baseIndex = 0) {
   document.querySelector('.plus-button').style.display = 'none';
   modal.classList.remove('expanded');
   scrollHandlerAttached = true;
+  document.getElementById('calendlyEmbed').style.display = 'none';
+  document.getElementById('lotDetails').style.display = 'block';
 
   // 🔶 If we're going to list mode, clear previous INFO content *before showing the modal*
   const modalInfoEl = document.getElementById('modalInfo');
@@ -2981,7 +3070,61 @@ function handlePlusButton() {
     plusIcon.style.display = 'block';
     minusIcon.style.display = 'none';
   }
+ }
+
+function loadCalendlyWidget({ lot, detailData }) {
+const url = `https://calendly.com/lalaland_/santte2` +
+    `?hide_gdpr_banner=1&background_color=fcfaf3&text_color=1a1a1a&primary_color=ff8400` +
+    `&utm_campaign=lot-${encodeURIComponent(lot.number)}` +
+    (detailData?.nickname ? `&utm_content=${encodeURIComponent(detailData.nickname)}` : '') +
+    `&branding=hide`; // This hides the "Desarrollado por Calendly"
+
+  const init = () => {
+    Calendly.initInlineWidget({
+      url,
+      parentElement: document.getElementById('calendly-inline-widget'),
+    });
+
+    // Now hide the elements once Calendly is initialized
+    hideCalendlyElements();
+  };
+
+  if (!window.Calendly) {
+    const s = document.createElement('script');
+    s.src = 'https://assets.calendly.com/assets/external/widget.js';
+    s.onload = init;
+    document.head.appendChild(s);
+  } else {
+    // Clear previous iframe to avoid stale state
+    const host = document.getElementById('calendly-inline-widget');
+    host.innerHTML = '';
+    init();
+  }
 }
+
+// Function to hide Calendly elements (branding and cookie banner)
+function hideCalendlyElements() {
+  const iframe = document.querySelector('#calendly-inline-widget iframe');
+
+  if (iframe) {
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+
+    // Wait until iframe content is fully loaded
+    iframe.onload = () => {
+      const style = document.createElement('style');
+      style.innerHTML = `
+        .calendly-branding, .calendly-cookie-banner {
+          display: none !important;
+        }
+      `;
+      iframeDoc.head.appendChild(style);  // Append the CSS to hide the unwanted sections
+    };
+  }
+}
+
+
+
+
 </script>
  
  
@@ -3051,7 +3194,7 @@ const observer = new MutationObserver(() => {
 });
 </script>
 
-
+ 
 
 
 </body>
