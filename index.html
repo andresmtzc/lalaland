@@ -3243,99 +3243,204 @@ const observer = new MutationObserver(() => {
 </script>
 
 <script>
-// ========= GPS Tracking with First FlyTo & Distance Auto-Stop =========
+// ========= GPS Tracking + First FlyTo + Distance Auto-Stop + Heading Arrow =========
 
-// Lot center coordinates (longitude, latitude) — CHANGE to your lot
-const lotCenter = [-100.15994, 25.461823];
-const maxDistanceMeters = 300; // threshold in meters to auto-stop
+// --- CONFIG: set your lot center & radius ---
+const lotCenter = [-100.15994, 25.461823]; // [lng, lat]
+const maxDistanceMeters = 300;              // auto-stop if user farther than this
 
+// --- State ---
 let gpsWatchId = null;
 let lastUserLngLat = null;
 let hasInitialFly = false;
+let userHeading = null;
+let headingListenerAttached = false;
 
-// Calculate distance in meters (Haversine)
+// --- Utils ---
 function distanceInMeters(lng1, lat1, lng2, lat2) {
-  const R = 6371000; // Earth radius in meters
-  const toRad = deg => deg * Math.PI / 180;
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 +
+  const a = Math.sin(dLat/2)**2 +
             Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-            Math.sin(dLng / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+            Math.sin(dLng/2)**2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Create layers for location dot + accuracy ring
-function ensureUserLocationLayers() {
-  if (!map || map.getSource('user-location')) return;
+// Create a tiny arrow icon via canvas (works everywhere)
+function ensureUserHeadingIcon() {
+  if (!map || map.hasImage('user-arrow')) return;
+  const size = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
 
-  map.addSource('user-location', {
-    type: 'geojson',
-    data: { type: 'FeatureCollection', features: [] }
-  });
+  // Draw a simple upward triangle (arrow), centered
+  ctx.translate(size/2, size/2);
+  ctx.beginPath();
+  ctx.moveTo(0, -22);     // tip
+  ctx.lineTo(10, 10);     // right
+  ctx.lineTo(-10, 10);    // left
+  ctx.closePath();
+  ctx.fillStyle = '#1a73e8';
+  ctx.fill();
+
+  // White outline
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+
+  map.addImage('user-arrow', c, { pixelRatio: 2 });
+}
+
+// Create sources/layers for user position, accuracy ring, and heading arrow
+function ensureUserLocationLayers() {
+  if (!map) return;
+
+  if (!map.getSource('user-location')) {
+    map.addSource('user-location', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+  }
 
   // Accuracy ring
-  map.addLayer({
-    id: 'user-accuracy-circle',
-    type: 'circle',
-    source: 'user-location',
-    paint: {
-      'circle-radius': [
-        'interpolate', ['linear'], ['zoom'],
-        15, ['coalesce', ['get', 'accRadiusZ15'], 2],
-        22, ['coalesce', ['get', 'accRadiusZ22'], 500]
+  if (!map.getLayer('user-accuracy-circle')) {
+    map.addLayer({
+      id: 'user-accuracy-circle',
+      type: 'circle',
+      source: 'user-location',
+      paint: {
+        'circle-radius': [
+          'interpolate', ['linear'], ['zoom'],
+          15, ['coalesce', ['get', 'accRadiusZ15'], 2],
+          22, ['coalesce', ['get', 'accRadiusZ22'], 500]
+        ],
+        'circle-color': '#1a73e826',
+        'circle-stroke-color': '#1a73e8',
+        'circle-stroke-width': 1
       ],
-      'circle-color': '#1a73e826',
-      'circle-stroke-color': '#1a73e8',
-      'circle-stroke-width': 1
-    },
-    filter: ['==', ['get', 'role'], 'accuracy']
-  });
+      filter: ['==', ['get', 'role'], 'accuracy']
+    });
+  }
 
   // User dot
-  map.addLayer({
-    id: 'user-dot',
-    type: 'circle',
-    source: 'user-location',
-    paint: {
-      'circle-radius': 6,
-      'circle-color': '#1a73e8',
-      'circle-stroke-color': '#ffffff',
-      'circle-stroke-width': 2
-    },
-    filter: ['==', ['get', 'role'], 'point']
-  });
+  if (!map.getLayer('user-dot')) {
+    map.addLayer({
+      id: 'user-dot',
+      type: 'circle',
+      source: 'user-location',
+      paint: {
+        'circle-radius': 6,
+        'circle-color': '#1a73e8',
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 2
+      },
+      filter: ['==', ['get', 'role'], 'point']
+    });
+  }
+
+  // Heading arrow (symbol)
+  ensureUserHeadingIcon();
+  if (!map.getLayer('user-heading')) {
+    map.addLayer({
+      id: 'user-heading',
+      type: 'symbol',
+      source: 'user-location',
+      layout: {
+        'icon-image': 'user-arrow',
+        'icon-size': 0.6,
+        'icon-rotate': ['coalesce', ['get', 'heading'], 0], // degrees clockwise from North
+        'icon-rotation-alignment': 'map',
+        'icon-allow-overlap': true
+      },
+      filter: ['==', ['get', 'role'], 'heading']
+    });
+  }
 }
 
-// Update dot + accuracy ring position
+// Update the GeoJSON features for dot, ring, and heading arrow
 function updateUserLocation(lng, lat, accuracyMeters = 10) {
   const src = map.getSource('user-location');
   if (!src) return;
 
   const acc = Math.max(accuracyMeters, 5);
-  src.setData({
-    type: 'FeatureCollection',
-    features: [
-      {
-        type: 'Feature',
-        properties: { role: 'point' },
-        geometry: { type: 'Point', coordinates: [lng, lat] }
+
+  const features = [
+    {
+      type: 'Feature',
+      properties: { role: 'point' },
+      geometry: { type: 'Point', coordinates: [lng, lat] }
+    },
+    {
+      type: 'Feature',
+      properties: {
+        role: 'accuracy',
+        accRadiusZ15: Math.min(12, Math.max(2, acc / 6)),
+        accRadiusZ22: Math.min(600, Math.max(50, acc * 6))
       },
-      {
-        type: 'Feature',
-        properties: {
-          role: 'accuracy',
-          accRadiusZ15: Math.min(12, Math.max(2, acc / 6)),
-          accRadiusZ22: Math.min(600, Math.max(50, acc * 6))
-        },
-        geometry: { type: 'Point', coordinates: [lng, lat] }
-      }
-    ]
-  });
+      geometry: { type: 'Point', coordinates: [lng, lat] }
+    }
+  ];
+
+  // Only add heading feature if we have a reading
+  if (typeof userHeading === 'number' && isFinite(userHeading)) {
+    features.push({
+      type: 'Feature',
+      properties: {
+        role: 'heading',
+        heading: userHeading
+      },
+      geometry: { type: 'Point', coordinates: [lng, lat] }
+    });
+  }
+
+  src.setData({ type: 'FeatureCollection', features });
 }
 
-// Start GPS tracking
+// Attach device orientation listener (with iOS permission flow)
+async function ensureHeadingListener() {
+  if (headingListenerAttached) return;
+
+  const handler = (e) => {
+    // iOS Safari: webkitCompassHeading (0..360, 0 = North, clockwise)
+    if (typeof e.webkitCompassHeading === 'number') {
+      userHeading = e.webkitCompassHeading;
+    } else if (e.absolute && typeof e.alpha === 'number') {
+      // Most browsers: alpha is 0 at North, increasing clockwise — but often in device frame.
+      // Using 360 - alpha aligns to compass-like heading (North=0, clockwise).
+      userHeading = (360 - e.alpha + 360) % 360;
+    } else {
+      return; // no useful heading
+    }
+
+    // Repaint heading feature at current location if known
+    if (lastUserLngLat) {
+      updateUserLocation(lastUserLngLat[0], lastUserLngLat[1]);
+    }
+  };
+
+  // iOS 13+ requires a user gesture to request permission
+  if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const resp = await DeviceOrientationEvent.requestPermission();
+      if (resp === 'granted') {
+        window.addEventListener('deviceorientation', handler, true);
+        headingListenerAttached = true;
+      }
+    } catch (e) {
+      // silently ignore; no heading available
+    }
+  } else {
+    // Android / others
+    window.addEventListener('deviceorientationabsolute', handler, true);
+    window.addEventListener('deviceorientation', handler, true);
+    headingListenerAttached = true;
+  }
+}
+
+// Start GPS (flies once on first fix)
 function startGPS() {
   if (!('geolocation' in navigator)) {
     showToaster('Geolocation not supported.');
@@ -3343,6 +3448,7 @@ function startGPS() {
   }
 
   ensureUserLocationLayers();
+  ensureHeadingListener(); // try to enable heading; if denied, dot still works
 
   if (gpsWatchId != null) {
     showToaster('GPS already on.');
@@ -3357,7 +3463,7 @@ function startGPS() {
       lastUserLngLat = [longitude, latitude];
       updateUserLocation(longitude, latitude, accuracy);
 
-      // Fly once on first fix
+      // Fly only once on first fix
       if (!hasInitialFly) {
         hasInitialFly = true;
         map.flyTo({
@@ -3368,10 +3474,10 @@ function startGPS() {
         });
       }
 
-      // Distance check from lot center
+      // Auto-stop if too far from lot center
       const dist = distanceInMeters(longitude, latitude, lotCenter[0], lotCenter[1]);
       if (dist > maxDistanceMeters) {
-        showToaster("You are not currently near lot, turning off GPS");
+        showToaster('You are not currently near lot, turning off GPS');
         stopGPS();
       }
     },
@@ -3398,40 +3504,35 @@ function stopGPS() {
   showToaster('GPS off.');
 }
 
-// Optional: manual center button
+// Optional helper to manually center later (no auto-follow)
 function centerOnUser(zoom = 17) {
   if (!lastUserLngLat) return;
   map.flyTo({ center: lastUserLngLat, zoom, speed: 1.2, curve: 1.5 });
 }
 
-// GPS button click
+// Wire GPS button + auto-stops
 document.addEventListener('DOMContentLoaded', function () {
   const gpsBtn = document.getElementById('gpsButton');
-  if (!gpsBtn) return;
+  if (gpsBtn) {
+    gpsBtn.addEventListener('click', () => {
+      if (gpsWatchId == null) startGPS();
+      else stopGPS();
+    });
+  }
 
-  gpsBtn.addEventListener('click', () => {
-    if (gpsWatchId == null) startGPS();
-    else stopGPS();
-  });
-});
-
-// Auto-stop when modal closes
-document.addEventListener('DOMContentLoaded', function () {
+  // Auto-stop when modal closes
   const modal = document.getElementById('lotModal');
-  if (!modal) return;
-  const observer = new MutationObserver(() => {
-    if (!modal.classList.contains('show')) {
-      stopGPS();
-    }
-  });
-  observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+  if (modal) {
+    const obs = new MutationObserver(() => {
+      if (!modal.classList.contains('show')) stopGPS();
+    });
+    obs.observe(modal, { attributes: true, attributeFilter: ['class'] });
+  }
 });
 
 // Auto-stop when tab hidden
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    stopGPS();
-  }
+  if (document.hidden) stopGPS();
 });
 </script>
 
