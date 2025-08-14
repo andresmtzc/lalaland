@@ -1075,20 +1075,20 @@ body.fonts-loaded .side-length-label {
 
 .map-info-button {
   position: fixed;
-  bottom: 30px;
-  left: 30px;
+  bottom: 20px;
+  left: 0px;
   width: 48px; height: 48px;
   border: none; outline: none;
-  background-color: #ff8400;
+  background-color: rgba(0,0,0,0);
   border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  box-shadow: 0 2px 6px rgba(0,0,0,0);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
   z-index: 10000;
   transition: transform .2s ease, opacity .3s ease;
 }
 .map-info-button:hover { transform: scale(1.1); }
-.map-info-button svg { width: 24px; height: 24px; stroke: #fff; fill: none; stroke-width: 2; }
+.map-info-button svg { width: 24px; height: 24px; stroke: #ff8400; fill: #1A1A1A; stroke-width: 2; }
 
 .map-info-button.hide {
   opacity: 0;
@@ -1101,35 +1101,36 @@ body.fonts-loaded .side-length-label {
   color: white;
   border: none;
   padding: 12px 24px;
-  border-radius: 4px;
+  border-radius: 0px;
   cursor: pointer;
   font-size: 16px;
   font-weight: 600;
   width: 100%;
   margin-top: 16px;
   transition: background-color 0.3s ease;
+  font-family: 'Barlow Condensed';
 }
 
 .schedule-appointment-btn:hover {
   background-color: #e67300;
 }
 
+/* Add to your existing styles */
 .calendly-embed-container {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: #fcfaf3; /* same as modal */
-  z-index: 6; /* above lotDetails (z:5) */
-  overflow: hidden; /* Hide scrollbar */
+  background: #fcfaf3;
+  z-index: 1000;
+  overflow: hidden;
 }
 
 .calendly-embed-container iframe {
   width: 100%;
   height: 100%;
-  border: 0;
-  display: block; /* Remove any extra space around iframe */
+  border: none;
 }
 
 
@@ -1193,7 +1194,11 @@ body.fonts-loaded .side-length-label {
 
 <!-- Calendly must be a sibling, not inside lotDetails -->
 <div id="calendlyEmbed" class="calendly-embed-container" style="display:none;">
-  <div id="calendly-inline-widget" style="min-width:320px; height:100%;"></div>
+
+  <iframe id="calendly-iframe" 
+          src="about:blank"
+          frameborder="0"
+          style="width:100%;height:100%;"></iframe>
 </div>
 
 <div class="modal-info" id="modalInfo"></div>
@@ -2456,7 +2461,7 @@ async function showDetailViewForLot(index) {
     const scheduleButton = document.createElement('button');
     scheduleButton.id = 'scheduleAppointmentBtn';
     scheduleButton.className = 'schedule-appointment-btn';
-    scheduleButton.innerText = 'Agendar Cita';
+    scheduleButton.innerText = 'Agendar Visita';
 
     detailContainer.appendChild(scheduleButton);
 
@@ -3073,54 +3078,40 @@ function handlePlusButton() {
  }
 
 function loadCalendlyWidget({ lot, detailData }) {
-const url = `https://calendly.com/lalaland_/santte2` +
-    `?hide_gdpr_banner=1&background_color=fcfaf3&text_color=1a1a1a&primary_color=ff8400` +
-    `&utm_campaign=lot-${encodeURIComponent(lot.number)}` +
-    (detailData?.nickname ? `&utm_content=${encodeURIComponent(detailData.nickname)}` : '') +
-    `&branding=hide`; // This hides the "Desarrollado por Calendly"
-
-  const init = () => {
-    Calendly.initInlineWidget({
-      url,
-      parentElement: document.getElementById('calendly-inline-widget'),
-    });
-
-    // Now hide the elements once Calendly is initialized
-    hideCalendlyElements();
+  const container = document.getElementById('calendlyEmbed');
+  const iframe = document.getElementById('calendly-iframe');
+  
+  // Build the Calendly URL with all hiding parameters
+  const calendlyUrl = new URL('https://calendly.com/lalaland_/santte2');
+  calendlyUrl.searchParams.set('hide_gdpr_banner', '1');
+  calendlyUrl.searchParams.set('background_color', 'fcfaf3');
+  calendlyUrl.searchParams.set('text_color', '1a1a1a');
+  calendlyUrl.searchParams.set('primary_color', 'ff8400');
+  
+  // Load the iframe
+  iframe.src = calendlyUrl.toString();
+  container.style.display = 'block';
+  
+  // Add close handler
+  document.querySelector('.calendly-close-btn').onclick = () => {
+    container.style.display = 'none';
+    document.getElementById('lotDetails').style.display = 'block';
+    iframe.src = 'about:blank'; // Reset iframe
   };
-
-  if (!window.Calendly) {
-    const s = document.createElement('script');
-    s.src = 'https://assets.calendly.com/assets/external/widget.js';
-    s.onload = init;
-    document.head.appendChild(s);
-  } else {
-    // Clear previous iframe to avoid stale state
-    const host = document.getElementById('calendly-inline-widget');
-    host.innerHTML = '';
-    init();
-  }
+  
+  // Nuclear option to remove branding (runs every 500ms)
+  const checkForBranding = setInterval(() => {
+    try {
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+      const elements = iframeDoc.querySelectorAll('.calendly-branding, .calendly-cookie-banner');
+      elements.forEach(el => el.remove());
+    } catch(e) {
+      // Cross-origin error - we'll rely on URL parameters
+      clearInterval(checkForBranding);
+    }
+  }, 500);
 }
 
-// Function to hide Calendly elements (branding and cookie banner)
-function hideCalendlyElements() {
-  const iframe = document.querySelector('#calendly-inline-widget iframe');
-
-  if (iframe) {
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-
-    // Wait until iframe content is fully loaded
-    iframe.onload = () => {
-      const style = document.createElement('style');
-      style.innerHTML = `
-        .calendly-branding, .calendly-cookie-banner {
-          display: none !important;
-        }
-      `;
-      iframeDoc.head.appendChild(style);  // Append the CSS to hide the unwanted sections
-    };
-  }
-}
 
 
 
