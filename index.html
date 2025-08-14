@@ -3243,7 +3243,7 @@ const observer = new MutationObserver(() => {
 </script>
 
 <script>
-// ========= GPS Tracking + First FlyTo + Distance Auto-Stop + Heading Arrow =========
+// ========= GPS Tracking (map-ready guarded) =========
 
 // --- CONFIG: set your lot center & radius ---
 const lotCenter = [-100.15994, 25.461823]; // [lng, lat]
@@ -3262,41 +3262,44 @@ function distanceInMeters(lng1, lat1, lng2, lat2) {
   const toRad = d => d * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat/2)**2 +
+  const a = Math.sin(dLat / 2) ** 2 +
             Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-            Math.sin(dLng/2)**2;
+            Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Create a tiny arrow icon via canvas (works everywhere)
+function mapIsReady() {
+  try {
+    return !!(window.map && map.style && map.isStyleLoaded());
+  } catch {
+    return false;
+  }
+}
+
+// Create a tiny arrow icon via canvas
 function ensureUserHeadingIcon() {
   if (!map || map.hasImage('user-arrow')) return;
   const size = 64;
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d');
-
-  // Draw a simple upward triangle (arrow), centered
-  ctx.translate(size/2, size/2);
+  ctx.translate(size / 2, size / 2);
   ctx.beginPath();
-  ctx.moveTo(0, -22);     // tip
-  ctx.lineTo(10, 10);     // right
-  ctx.lineTo(-10, 10);    // left
+  ctx.moveTo(0, -22);
+  ctx.lineTo(10, 10);
+  ctx.lineTo(-10, 10);
   ctx.closePath();
   ctx.fillStyle = '#1a73e8';
   ctx.fill();
-
-  // White outline
   ctx.lineWidth = 3;
-  ctx.strokeStyle = '#ffffff';
+  ctx.strokeStyle = '#fff';
   ctx.stroke();
-
   map.addImage('user-arrow', c, { pixelRatio: 2 });
 }
 
 // Create sources/layers for user position, accuracy ring, and heading arrow
 function ensureUserLocationLayers() {
-  if (!map) return;
+  if (!mapIsReady()) return;
 
   if (!map.getSource('user-location')) {
     map.addSource('user-location', {
@@ -3305,7 +3308,6 @@ function ensureUserLocationLayers() {
     });
   }
 
-  // Accuracy ring
   if (!map.getLayer('user-accuracy-circle')) {
     map.addLayer({
       id: 'user-accuracy-circle',
@@ -3320,12 +3322,11 @@ function ensureUserLocationLayers() {
         'circle-color': '#1a73e826',
         'circle-stroke-color': '#1a73e8',
         'circle-stroke-width': 1
-      ],
+      },
       filter: ['==', ['get', 'role'], 'accuracy']
     });
   }
 
-  // User dot
   if (!map.getLayer('user-dot')) {
     map.addLayer({
       id: 'user-dot',
@@ -3341,7 +3342,6 @@ function ensureUserLocationLayers() {
     });
   }
 
-  // Heading arrow (symbol)
   ensureUserHeadingIcon();
   if (!map.getLayer('user-heading')) {
     map.addLayer({
@@ -3351,7 +3351,7 @@ function ensureUserLocationLayers() {
       layout: {
         'icon-image': 'user-arrow',
         'icon-size': 0.6,
-        'icon-rotate': ['coalesce', ['get', 'heading'], 0], // degrees clockwise from North
+        'icon-rotate': ['coalesce', ['get', 'heading'], 0],
         'icon-rotation-alignment': 'map',
         'icon-allow-overlap': true
       },
@@ -3384,14 +3384,10 @@ function updateUserLocation(lng, lat, accuracyMeters = 10) {
     }
   ];
 
-  // Only add heading feature if we have a reading
   if (typeof userHeading === 'number' && isFinite(userHeading)) {
     features.push({
       type: 'Feature',
-      properties: {
-        role: 'heading',
-        heading: userHeading
-      },
+      properties: { role: 'heading', heading: userHeading },
       geometry: { type: 'Point', coordinates: [lng, lat] }
     });
   }
@@ -3404,24 +3400,18 @@ async function ensureHeadingListener() {
   if (headingListenerAttached) return;
 
   const handler = (e) => {
-    // iOS Safari: webkitCompassHeading (0..360, 0 = North, clockwise)
     if (typeof e.webkitCompassHeading === 'number') {
-      userHeading = e.webkitCompassHeading;
+      userHeading = e.webkitCompassHeading; // iOS
     } else if (e.absolute && typeof e.alpha === 'number') {
-      // Most browsers: alpha is 0 at North, increasing clockwise — but often in device frame.
-      // Using 360 - alpha aligns to compass-like heading (North=0, clockwise).
-      userHeading = (360 - e.alpha + 360) % 360;
+      userHeading = (360 - e.alpha + 360) % 360; // others
     } else {
-      return; // no useful heading
+      return;
     }
-
-    // Repaint heading feature at current location if known
     if (lastUserLngLat) {
       updateUserLocation(lastUserLngLat[0], lastUserLngLat[1]);
     }
   };
 
-  // iOS 13+ requires a user gesture to request permission
   if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
     try {
       const resp = await DeviceOrientationEvent.requestPermission();
@@ -3430,25 +3420,38 @@ async function ensureHeadingListener() {
         headingListenerAttached = true;
       }
     } catch (e) {
-      // silently ignore; no heading available
+      // ignore
     }
   } else {
-    // Android / others
     window.addEventListener('deviceorientationabsolute', handler, true);
     window.addEventListener('deviceorientation', handler, true);
     headingListenerAttached = true;
   }
 }
 
-// Start GPS (flies once on first fix)
+// Start GPS
 function startGPS() {
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    console.warn('Geolocation requires HTTPS or localhost.');
+  }
   if (!('geolocation' in navigator)) {
     showToaster('Geolocation not supported.');
     return;
   }
 
+  if (!mapIsReady()) {
+    console.debug('[GPS] Map not ready; deferring until style is loaded.');
+    const once = () => {
+      map.off('load', once);
+      if (mapIsReady()) startGPS();
+      else map.once('idle', startGPS);
+    };
+    map.once('load', once);
+    return;
+  }
+
   ensureUserLocationLayers();
-  ensureHeadingListener(); // try to enable heading; if denied, dot still works
+  ensureHeadingListener();
 
   if (gpsWatchId != null) {
     showToaster('GPS already on.');
@@ -3463,18 +3466,11 @@ function startGPS() {
       lastUserLngLat = [longitude, latitude];
       updateUserLocation(longitude, latitude, accuracy);
 
-      // Fly only once on first fix
       if (!hasInitialFly) {
         hasInitialFly = true;
-        map.flyTo({
-          center: [longitude, latitude],
-          zoom: 17,
-          speed: 1.2,
-          curve: 1.5
-        });
+        map.flyTo({ center: [longitude, latitude], zoom: 17, speed: 1.2, curve: 1.5 });
       }
 
-      // Auto-stop if too far from lot center
       const dist = distanceInMeters(longitude, latitude, lotCenter[0], lotCenter[1]);
       if (dist > maxDistanceMeters) {
         showToaster('You are not currently near lot, turning off GPS');
@@ -3486,6 +3482,7 @@ function startGPS() {
       if (err.code === err.PERMISSION_DENIED) msg = 'Location permission denied.';
       if (err.code === err.POSITION_UNAVAILABLE) msg = 'Location unavailable.';
       if (err.code === err.TIMEOUT) msg = 'Location timeout.';
+      console.warn('[GPS]', err);
       showToaster(msg);
       stopGPS();
     },
@@ -3495,7 +3492,6 @@ function startGPS() {
   showToaster('GPS on — updating dot in real time.');
 }
 
-// Stop GPS tracking
 function stopGPS() {
   if (gpsWatchId != null) {
     navigator.geolocation.clearWatch(gpsWatchId);
@@ -3504,7 +3500,6 @@ function stopGPS() {
   showToaster('GPS off.');
 }
 
-// Optional helper to manually center later (no auto-follow)
 function centerOnUser(zoom = 17) {
   if (!lastUserLngLat) return;
   map.flyTo({ center: lastUserLngLat, zoom, speed: 1.2, curve: 1.5 });
@@ -3520,7 +3515,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // Auto-stop when modal closes
   const modal = document.getElementById('lotModal');
   if (modal) {
     const obs = new MutationObserver(() => {
@@ -3530,11 +3524,11 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 
-// Auto-stop when tab hidden
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopGPS();
 });
 </script>
+
 
 
 
