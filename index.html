@@ -3243,11 +3243,30 @@ const observer = new MutationObserver(() => {
 </script>
 
 <script>
-// ======== Realtime GPS — dot only, no recenter ========
+// ========= GPS Tracking with First FlyTo & Distance Auto-Stop =========
+
+// Lot center coordinates (longitude, latitude) — CHANGE to your lot
+const lotCenter = [-100.15994, 25.461823];
+const maxDistanceMeters = 300; // threshold in meters to auto-stop
+
 let gpsWatchId = null;
 let lastUserLngLat = null;
+let hasInitialFly = false;
 
-// Create dot + accuracy ring layers if they don't exist
+// Calculate distance in meters (Haversine)
+function distanceInMeters(lng1, lat1, lng2, lat2) {
+  const R = 6371000; // Earth radius in meters
+  const toRad = deg => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Create layers for location dot + accuracy ring
 function ensureUserLocationLayers() {
   if (!map || map.getSource('user-location')) return;
 
@@ -3289,7 +3308,7 @@ function ensureUserLocationLayers() {
   });
 }
 
-// Update the dot + ring position
+// Update dot + accuracy ring position
 function updateUserLocation(lng, lat, accuracyMeters = 10) {
   const src = map.getSource('user-location');
   if (!src) return;
@@ -3316,8 +3335,8 @@ function updateUserLocation(lng, lat, accuracyMeters = 10) {
   });
 }
 
-// Start GPS tracking (no recenter)
-function startGPS_NoRecenter() {
+// Start GPS tracking
+function startGPS() {
   if (!('geolocation' in navigator)) {
     showToaster('Geolocation not supported.');
     return;
@@ -3330,11 +3349,31 @@ function startGPS_NoRecenter() {
     return;
   }
 
+  hasInitialFly = false;
+
   gpsWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude, longitude, accuracy } = pos.coords;
       lastUserLngLat = [longitude, latitude];
       updateUserLocation(longitude, latitude, accuracy);
+
+      // Fly once on first fix
+      if (!hasInitialFly) {
+        hasInitialFly = true;
+        map.flyTo({
+          center: [longitude, latitude],
+          zoom: 17,
+          speed: 1.2,
+          curve: 1.5
+        });
+      }
+
+      // Distance check from lot center
+      const dist = distanceInMeters(longitude, latitude, lotCenter[0], lotCenter[1]);
+      if (dist > maxDistanceMeters) {
+        showToaster("You are not currently near lot, turning off GPS");
+        stopGPS();
+      }
     },
     err => {
       let msg = 'Error getting location.';
@@ -3359,26 +3398,27 @@ function stopGPS() {
   showToaster('GPS off.');
 }
 
-// Optional: one-shot manual center
+// Optional: manual center button
 function centerOnUser(zoom = 17) {
   if (!lastUserLngLat) return;
   map.flyTo({ center: lastUserLngLat, zoom, speed: 1.2, curve: 1.5 });
 }
 
-// Wire GPS button
+// GPS button click
 document.addEventListener('DOMContentLoaded', function () {
   const gpsBtn = document.getElementById('gpsButton');
   if (!gpsBtn) return;
 
   gpsBtn.addEventListener('click', () => {
-    if (gpsWatchId == null) startGPS_NoRecenter();
+    if (gpsWatchId == null) startGPS();
     else stopGPS();
   });
 });
 
-// Auto-stop GPS when modal closes
+// Auto-stop when modal closes
 document.addEventListener('DOMContentLoaded', function () {
   const modal = document.getElementById('lotModal');
+  if (!modal) return;
   const observer = new MutationObserver(() => {
     if (!modal.classList.contains('show')) {
       stopGPS();
@@ -3387,13 +3427,14 @@ document.addEventListener('DOMContentLoaded', function () {
   observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
 });
 
-// Auto-stop GPS when tab is hidden
+// Auto-stop when tab hidden
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     stopGPS();
   }
 });
 </script>
+
 
 
 
