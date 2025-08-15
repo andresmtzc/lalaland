@@ -3249,10 +3249,10 @@ const observer = new MutationObserver(() => {
 (() => {
   'use strict';
 
-  // ===== Namespace (avoid global collisions) GPS HERE =====
+  // ===== Namespace (avoid global collisions) =====
   const NS = (window.__LL_GPS__ = window.__LL_GPS__ || {});
 
-  // Config (read existing, or set defaults)
+  // Config
   NS.lotCenter = NS.lotCenter || [-100.15994, 25.461823];
   NS.maxDistanceMeters = NS.maxDistanceMeters || 1000;
 
@@ -3262,13 +3262,12 @@ const observer = new MutationObserver(() => {
   NS.hasInitialFly = false;
   NS.userHeading = null;
   NS.headingListenerAttached = false;
-  NS.farAwayTimer = null; // grace before auto-off
+  NS.farAwayTimer = null;
+  NS.farWarned = false;
 
   // Utils
   const safeToaster = (msg, duration) => {
-    try {
-      if (typeof window.showToaster === 'function') window.showToaster(msg, duration);
-    } catch (e) {}
+    try { if (typeof window.showToaster === 'function') window.showToaster(msg, duration); } catch {}
   };
 
   const distanceMeters = (a, b) => {
@@ -3347,53 +3346,51 @@ const observer = new MutationObserver(() => {
         layout: {
           'icon-image': 'll-user-arrow',
           'icon-size': 0.6,
-          'icon-rotate': ['coalesce', ['get', 'heading'], 0],
+          'icon-rotate': ['get', 'heading'],        // <-- always present (see updateUserLocation)
           'icon-rotation-alignment': 'map',
-          'icon-allow-overlap': true
+          'icon-allow-overlap': true,
+          'icon-anchor': 'center'
         },
         filter: ['==', ['get', 'role'], 'heading']
       });
     }
   }
 
-  // Always include a heading symbol; use 0° until real heading arrives
   function updateUserLocation(lng, lat, accuracyMeters = 10) {
     const src = map && map.getSource('ll-user-location');
     if (!src) return;
 
     const acc = Math.max(accuracyMeters, 5);
-    const heading = isFinite(NS.userHeading) ? NS.userHeading : 0;
-
-    src.setData({
-      type: 'FeatureCollection',
-      features: [
-        { type: 'Feature', properties: { role: 'point' }, geometry: { type: 'Point', coordinates: [lng, lat] } },
-        {
-          type: 'Feature',
-          properties: {
-            role: 'accuracy',
-            accRadiusZ15: Math.min(12, Math.max(2, acc / 6)),
-            accRadiusZ22: Math.min(600, Math.max(50, acc * 6))
-          },
-          geometry: { type: 'Point', coordinates: [lng, lat] }
+    const heading = Number.isFinite(NS.userHeading) ? NS.userHeading : 0; // <-- default arrow visible
+    const features = [
+      { type: 'Feature', properties: { role: 'point' }, geometry: { type: 'Point', coordinates: [lng, lat] } },
+      {
+        type: 'Feature',
+        properties: {
+          role: 'accuracy',
+          accRadiusZ15: Math.min(12, Math.max(2, acc / 6)),
+          accRadiusZ22: Math.min(600, Math.max(50, acc * 6))
         },
-        {
-          type: 'Feature',
-          properties: { role: 'heading', heading },
-          geometry: { type: 'Point', coordinates: [lng, lat] }
-        }
-      ]
-    });
+        geometry: { type: 'Point', coordinates: [lng, lat] }
+      },
+      { // <-- heading feature is ALWAYS present
+        type: 'Feature',
+        properties: { role: 'heading', heading },
+        geometry: { type: 'Point', coordinates: [lng, lat] }
+      }
+    ];
+    src.setData({ type: 'FeatureCollection', features });
   }
 
   async function ensureHeadingListener() {
     if (NS.headingListenerAttached) return;
 
     const onOrientation = (e) => {
-      if (typeof e.webkitCompassHeading === 'number') {
-        NS.userHeading = e.webkitCompassHeading;          // iOS Safari
-      } else if (e.absolute && typeof e.alpha === 'number') {
-        NS.userHeading = (360 - e.alpha + 360) % 360;      // Android (approx)
+      if (typeof e?.webkitCompassHeading === 'number') {
+        NS.userHeading = e.webkitCompassHeading;               // iOS (degrees CW from north)
+      } else if (typeof e?.alpha === 'number') {
+        // Android/others: alpha is degrees CW from north in most modern browsers
+        NS.userHeading = (360 - e.alpha + 360) % 360;          // convert to compass-like CW
       } else {
         return;
       }
@@ -3403,41 +3400,42 @@ const observer = new MutationObserver(() => {
     };
 
     const DOE = window.DeviceOrientationEvent;
-    try {
-      if (DOE && typeof DOE.requestPermission === 'function') {
-        const res = await DOE.requestPermission(); // called from click path
+    if (DOE && typeof DOE.requestPermission === 'function') {
+      try {
+        const res = await DOE.requestPermission(); // must be inside user gesture
         if (res === 'granted') {
           window.addEventListener('deviceorientation', onOrientation, true);
           NS.headingListenerAttached = true;
         }
-      } else {
-        window.addEventListener('deviceorientationabsolute', onOrientation, true);
-        window.addEventListener('deviceorientation', onOrientation, true);
-        NS.headingListenerAttached = true;
-      }
-    } catch {}
+      } catch {}
+    } else {
+      window.addEventListener('deviceorientationabsolute', onOrientation, true);
+      window.addEventListener('deviceorientation', onOrientation, true);
+      NS.headingListenerAttached = true;
+    }
   }
 
   function stopGPS(reasonMsg, duration) {
-    if (NS.farAwayTimer) { clearTimeout(NS.farAwayTimer); NS.farAwayTimer = null; }
     if (NS.gpsWatchId != null) {
       try { navigator.geolocation.clearWatch(NS.gpsWatchId); } catch {}
       NS.gpsWatchId = null;
     }
+    if (NS.farAwayTimer) { clearTimeout(NS.farAwayTimer); NS.farAwayTimer = null; }
+    NS.farWarned = false;
     safeToaster(reasonMsg || 'GPS off.', duration);
   }
 
   function startGPS() {
-    if (!('geolocation' in navigator)) { safeToaster('Geolocation not supported.', 4000); return; }
-    if (!window.map) { safeToaster('Map is not ready.', 4000); return; }
+    if (!('geolocation' in navigator)) { safeToaster('Geolocation not supported.'); return; }
+    if (!window.map) { safeToaster('Map is not ready.'); return; }
 
     ensureUserLocationLayers();
-    ensureHeadingListener(); // async, don’t block toast
+    ensureHeadingListener(); // don't await — keep it under the click gesture
 
-    if (NS.gpsWatchId != null) { safeToaster('GPS already on.', 2500); return; }
+    if (NS.gpsWatchId != null) { safeToaster('GPS already on.'); return; }
 
-    // Immediate feedback on click
-    safeToaster('GPS on — updating dot in real time.', 2500);
+    // Immediate click feedback
+    safeToaster('GPS on — updating dot in real time.');
     NS.hasInitialFly = false;
 
     NS.gpsWatchId = navigator.geolocation.watchPosition(
@@ -3454,17 +3452,22 @@ const observer = new MutationObserver(() => {
           } catch {}
         }
 
-        // Far-away check with a short grace period so heading can appear
+        // ---- Far-away logic with GRACE PERIOD so you can see heading ----
         const dist = distanceMeters(NS.lastUserLngLat, NS.lotCenter);
+
         if (dist > NS.maxDistanceMeters) {
-          if (!NS.farAwayTimer) {
-            NS.farAwayTimer = setTimeout(() => {
-              stopGPS('You are not currently near lot — turning off GPS.', 5000);
-            }, 2500); // grace period (~2.5s)
+          if (!NS.farWarned) {
+            NS.farWarned = true;
+            safeToaster('You are not currently near lot — turning off GPS…', 5000);
           }
-        } else if (NS.farAwayTimer) {
-          clearTimeout(NS.farAwayTimer);
-          NS.farAwayTimer = null;
+          if (NS.farAwayTimer) clearTimeout(NS.farAwayTimer);
+          NS.farAwayTimer = setTimeout(() => {
+            stopGPS('You are not currently near lot — turning off GPS.', 5000);
+          }, 3000); // keep GPS alive ~3s so the arrow can be seen
+        } else {
+          // back within range — cancel any pending auto-off
+          if (NS.farAwayTimer) { clearTimeout(NS.farAwayTimer); NS.farAwayTimer = null; }
+          NS.farWarned = false;
         }
       },
       (err) => {
@@ -3472,7 +3475,7 @@ const observer = new MutationObserver(() => {
         if (err && err.code === err.PERMISSION_DENIED) msg = 'Location permission denied.';
         if (err && err.code === err.POSITION_UNAVAILABLE) msg = 'Location unavailable.';
         if (err && err.code === err.TIMEOUT) msg = 'Location timeout.';
-        stopGPS(msg, 4000);
+        stopGPS(msg, 5000);
       },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
     );
@@ -3485,7 +3488,7 @@ const observer = new MutationObserver(() => {
       btn.__llBound = true;
       btn.addEventListener('click', () => {
         if (NS.gpsWatchId == null) startGPS();
-        else stopGPS('GPS off.', 2000);
+        else stopGPS();
       });
     }
 
@@ -3506,6 +3509,7 @@ const observer = new MutationObserver(() => {
   });
 })();
 </script>
+
 
 
 
