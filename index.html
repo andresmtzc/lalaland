@@ -1171,6 +1171,63 @@ body.fonts-loaded .side-length-label {
 }
 
 
+/* camera FAB (hidden until GPS starts) */
+#cameraButton{
+  position: fixed;
+  bottom: 200px;          /* sits above GPS (140) and Reset (80) */
+  right: 11px;
+  z-index: 9999;
+  display: none;
+}
+#takePhotoBtn{
+  width: 48px; height: 48px;
+  border: none; outline: none;
+  background:#fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+  transition: transform .2s ease, box-shadow .2s ease;
+  font-size: 20px; line-height: 1;
+}
+#takePhotoBtn:hover{ transform: scale(1.1); }
+
+/* thumbnail markers */
+.photo-marker{
+  width: 40px; height: 40px;
+  background-size: cover; background-position:center;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  position: relative;
+}
+.photo-timestamp{
+  position: absolute;
+  bottom: -12px; left: 50%;
+  transform: translateX(-50%);
+  background: #1A1A1A; color:#fff;
+  font-size: 10px; padding: 2px 6px; border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* full-screen viewer */
+#photoModal{
+  display:none; position:fixed; inset:0;
+  background: rgba(0,0,0,0.92); z-index: 10000;
+}
+#photoModal #modalImage{
+  max-width:90%; max-height:90%;
+  margin:auto; display:block; position:relative; top:50%; transform:translateY(-50%);
+  box-shadow: 0 6px 24px rgba(0,0,0,.4);
+}
+#photoModal #closeModal{
+  position:absolute; top:20px; right:20px;
+  background:#f44336; color:white; border:none; border-radius:50%;
+  width:40px; height:40px; font-size:20px; cursor:pointer;
+}
+
+
+
   </style>
 </head>
 
@@ -1338,10 +1395,6 @@ ctaobserver.observe(ctaToaster, {
   attributeFilter: ['class']
 });
 
-ctaobserver.observe(ctaToaster, {
-  attributes: true,
-  attributeFilter: ['class']
-});
 </script>
 
 <script>
@@ -1454,6 +1507,8 @@ map = new mapboxgl.Map({
         animateLots(map, () => {
           addCustomImage(map);
           addFeaturedLotsLayer(map);
+
+if (window.__LL_PHOTOS__?.init) window.__LL_PHOTOS__.init();
 
           // ===== NEW INTERACTION HANDLERS =====
           // Clear labels on any map movement
@@ -3145,12 +3200,7 @@ function loadCalendlyWidget({ lot, detailData }) {
   iframe.src = calendlyUrl.toString();
   container.style.display = 'block';
   
-  // Add close handler
-  document.querySelector('.calendly-close-btn').onclick = () => {
-    container.style.display = 'none';
-    document.getElementById('lotDetails').style.display = 'block';
-    iframe.src = 'about:blank'; // Reset iframe
-  };
+
   
   // Nuclear option to remove branding (runs every 500ms)
   const checkForBranding = setInterval(() => {
@@ -3252,6 +3302,11 @@ const observer = new MutationObserver(() => {
 
   // ===== Namespace =====
   const NS = (window.__LL_GPS__ = window.__LL_GPS__ || {});
+
+// ---- simple event bus
+NS._listeners = {};
+NS.on = function (evt, cb) { (NS._listeners[evt] ||= []).push(cb); };
+NS.emit = function (evt, payload) { (NS._listeners[evt] || []).forEach(fn => { try { fn(payload); } catch {} }); };
 
   // Config
   NS.lotCenter = NS.lotCenter || [-100.15994, 25.461823];
@@ -3463,6 +3518,10 @@ function startGPS() {
   ensureUserLocationLayers();
   ensureHeadingListener();
 
+// show camera immediately on GPS start
+document.getElementById('cameraButton')?.style && (document.getElementById('cameraButton').style.display = 'block');
+
+
   // 3. Clear previous instance if exists
   if (NS.gpsWatchId !== null) {
     navigator.geolocation.clearWatch(NS.gpsWatchId);
@@ -3473,6 +3532,8 @@ function startGPS() {
     (pos) => {
       const { latitude, longitude, accuracy, heading } = pos.coords;
       NS.lastUserLngLat = [longitude, latitude];
+
+if (!NS._notifiedStart) { NS._notifiedStart = true; NS.emit('gps-start'); }
 
       // Use GPS heading if compass unavailable
       if (heading && !NS.userHeading) {
@@ -3540,12 +3601,19 @@ function stopGPS(reason) {
     NS.headingMarker = null; // ← Critical! Prevents ghost markers
   }
 
+// hide camera immediately on GPS stop
+document.getElementById('cameraButton')?.style && (document.getElementById('cameraButton').style.display = 'none');
+
+
   // 4. Reset all tracking states
   NS.lastUserLngLat = null;
   NS.userHeading = null;
   NS.lastSmoothedHeading = null;
 
   safeToaster(reason || 'GPS stopped');
+
+  NS._notifiedStart = false;
+NS.emit('gps-stop');
 }
 
 })();
@@ -3553,9 +3621,263 @@ function stopGPS(reason) {
 
 
 
+<script>
+(() => {
+  'use strict';
+  
+  // ===== Photo System =====
+  const PhotoSystem = (window.__LL_PHOTOS__ = window.__LL_PHOTOS__ || {});
+  
+  // Configuration
+  PhotoSystem.markers = [];
+  PhotoSystem.layerId = 'user-photos';
+  PhotoSystem.maxPhotoSize = 800; // Max width/height in pixels
+  
+  // Initialize when Mapbox GL is ready
+PhotoSystem.init = function() {
+  // These will now use the CSS from your stylesheet
+  this.createCameraButton();
+  this.createPhotoModal();
+  this.loadSavedPhotos();
+  
+  // show immediately if GPS is already active
+const cam = document.getElementById('cameraButton');
+if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUserLngLat)) {
+  cam.style.display = 'block';
+}
+
+  // GPS event listeners
+  if (window.__LL_GPS__) {
+    window.__LL_GPS__.on('gps-start', () => {
+      document.getElementById('cameraButton').style.display = 'block';
+    });
+    
+    window.__LL_GPS__.on('gps-stop', () => {
+      document.getElementById('cameraButton').style.display = 'none';
+    });
+  }
+};
+
+  PhotoSystem.createCameraButton = function() {
+    // Only create once
+    if (document.getElementById('cameraButton')) return;
+    
+    const html = `
+      <div id="cameraButton" style="display:none;">
+        <button id="takePhotoBtn">📸</button>
+        <input type="file" id="fileUpload" accept="image/*" capture="environment" hidden>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    
+    // Event listeners
+    document.getElementById('takePhotoBtn').addEventListener('click', () => {
+      this.activateCamera();
+    });
+    
+    document.getElementById('fileUpload').addEventListener('change', (e) => {
+      if (e.target.files.length) this.processImageFile(e.target.files[0]);
+    });
+  };
+
+  PhotoSystem.createPhotoModal = function() {
+    if (document.getElementById('photoModal')) return;
+    
+    const html = `
+      <div id="photoModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:10000;">
+        <img id="modalImage" style="max-width:90%; max-height:90%; margin:auto; display:block; position:relative; top:50%; transform:translateY(-50%);">
+        <button id="closeModal" style="position:absolute; top:20px; right:20px; background:#f44336; color:white; border:none; border-radius:50%; width:40px; height:40px; font-size:20px;">×</button>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    
+    document.getElementById('closeModal').addEventListener('click', () => {
+      document.getElementById('photoModal').style.display = 'none';
+    });
+  };
+
+  PhotoSystem.activateCamera = function() {
+    // Fallback to file input if no camera access
+    if (!navigator.mediaDevices?.getUserMedia) {
+      document.getElementById('fileUpload').click();
+      return;
+    }
+    
+    const preview = document.createElement('div');
+    preview.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: black;
+      z-index: 9999;
+    `;
+
+    const video = document.createElement('video');
+    video.style.cssText = 'width:100%; height:100%; object-fit:contain;';
+
+    const captureBtn = document.createElement('button');
+    captureBtn.textContent = 'Capture';
+    captureBtn.style.cssText = `
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 24px;
+      background: #4285F4;
+      color: white;
+      border: none;
+      border-radius: 50px;
+      font-size: 16px;
+    `;
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = `
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      padding: 8px 16px;
+      background: #f44336;
+      color: white;
+      border: none;
+      border-radius: 50px;
+    `;
+
+    preview.appendChild(video);
+    preview.appendChild(captureBtn);
+    preview.appendChild(cancelBtn);
+    document.body.appendChild(preview);
+
+    navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: 'environment' },
+      audio: false 
+    }).then(stream => {
+      video.srcObject = stream;
+      video.play();
+
+      captureBtn.addEventListener('click', () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        
+        canvas.toBlob(blob => {
+          this.processImageFile(blob);
+          preview.remove();
+          stream.getTracks().forEach(track => track.stop());
+        }, 'image/jpeg', 0.8);
+      });
+
+      cancelBtn.addEventListener('click', () => {
+        preview.remove();
+        stream.getTracks().forEach(track => track.stop());
+      });
+    }).catch(() => {
+      preview.remove();
+      document.getElementById('fileUpload').click();
+    });
+  };
+
+  PhotoSystem.processImageFile = function(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.src = e.target.result;
+        
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > this.maxPhotoSize) {
+              height *= this.maxPhotoSize / width;
+              width = this.maxPhotoSize;
+            }
+          } else {
+            if (height > this.maxPhotoSize) {
+              width *= this.maxPhotoSize / height;
+              height = this.maxPhotoSize;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          
+          const photoData = canvas.toDataURL('image/jpeg', 0.8);
+          resolve(photoData);
+        };
+      };
+      reader.readAsDataURL(file);
+    }).then(photoData => {
+      if (window.__LL_GPS__?.lastUserLngLat) {
+        this.addPhotoMarker(window.__LL_GPS__.lastUserLngLat, photoData);
+        this.savePhoto(photoData);
+      }
+    });
+  };
+
+  PhotoSystem.addPhotoMarker = function(lngLat, photoData) {
+    const el = document.createElement('div');
+    el.className = 'photo-marker';
+    el.style.backgroundImage = `url(${photoData})`;
+    
+    const time = document.createElement('div');
+    time.className = 'photo-timestamp';
+    time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    el.appendChild(time);
+    
+    const marker = new mapboxgl.Marker({
+      element: el,
+      anchor: 'center'
+    }).setLngLat(lngLat).addTo(map);
+    
+    el.addEventListener('click', () => {
+      document.getElementById('modalImage').src = photoData;
+      document.getElementById('photoModal').style.display = 'block';
+    });
+    
+    this.markers.push({ marker, data: photoData });
+  };
+
+  PhotoSystem.savePhoto = function(photoData) {
+    const photos = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
+    photos.push({
+      lngLat: window.__LL_GPS__?.lastUserLngLat,
+      data: photoData,
+      timestamp: new Date().toISOString()
+    });
+    localStorage.setItem('mapPhotos', JSON.stringify(photos));
+  };
+
+  PhotoSystem.loadSavedPhotos = function() {
+    const saved = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
+    saved.forEach(photo => {
+      if (photo.lngLat) {
+        this.addPhotoMarker(photo.lngLat, photo.data);
+      }
+    });
+  };
+
+// Show FAB immediately if GPS is already active
+if (window.__LL_GPS__?.lastUserLngLat) {
+  const cam = document.getElementById('cameraButton');
+  if (cam) cam.style.display = 'block';
+}
 
 
+})();
+</script>
 
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  window.__LL_PHOTOS__?.init?.();
+});
+</script>
 
 </body>
 </html>
