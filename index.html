@@ -1161,60 +1161,6 @@ body.fonts-loaded .side-length-label {
   display: block;
 }
 
-#cameraButton{
-  position: fixed;
-  bottom: 200px;          /* sits above GPS (140) and Reset (80) */
-  right: 11px;
-  z-index: 9999;
-  display: none;
-}
-#takePhotoBtn{
-  width: 48px; height: 48px;
-  border: none; outline: none;
-  background:#fff;
-  border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0,0,0,.15);
-  display:flex; align-items:center; justify-content:center;
-  cursor:pointer;
-  transition: transform .2s ease, box-shadow .2s ease;
-  font-size: 20px; line-height: 1;
-}
-#takePhotoBtn:hover{ transform: scale(1.1); }
-
-/* thumbnail markers */
-.photo-marker{
-  width: 40px; height: 40px;
-  background-size: cover; background-position:center;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 2px 6px rgba(0,0,0,.25);
-  position: relative;
-}
-.photo-timestamp{
-  position: absolute;
-  bottom: -12px; left: 50%;
-  transform: translateX(-50%);
-  background: #1A1A1A; color:#fff;
-  font-size: 10px; padding: 2px 6px; border-radius: 10px;
-  white-space: nowrap;
-}
-
-/* full-screen viewer */
-#photoModal{
-  display:none; position:fixed; inset:0;
-  background: rgba(0,0,0,0.92); z-index: 10000;
-}
-#photoModal #modalImage{
-  max-width:90%; max-height:90%;
-  margin:auto; display:block; position:relative; top:50%; transform:translateY(-50%);
-  box-shadow: 0 6px 24px rgba(0,0,0,.4);
-}
-#photoModal #closeModal{
-  position:absolute; top:20px; right:20px;
-  background:#f44336; color:white; border:none; border-radius:50%;
-  width:40px; height:40px; font-size:20px; cursor:pointer;
-}
-
 /* Hide back/expand controls only in PIN mode */
 #lotModal.pin-mode #backButton,
 #lotModal.pin-mode .plus-button,
@@ -1226,6 +1172,32 @@ body.fonts-loaded .side-length-label {
 #lotModal.pin-mode .custom-scrollbar {
   display: none !important;
 }
+
+/* Auth controls in modal header */
+.auth-controls {
+  display: none;               /* hide by default to avoid flashes */
+  position: absolute;
+  right: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  gap: 8px;
+}
+.auth-btn {
+  width: 32px; height: 32px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:50%; background:none; border:none; cursor:pointer;
+  transition: all .3s ease;
+}
+.auth-btn:hover { background: rgba(255,255,255,0.1); }
+.auth-btn svg { transition: fill .3s ease; }
+.auth-btn:hover svg { fill: #ff8400; }
+
+/* Auth modal inputs/buttons */
+#auth-modal input { background:#333; color:#fff; border:1px solid #555; border-radius:4px; }
+#auth-modal button { cursor:pointer; transition: opacity .2s; }
+#auth-modal button:hover { opacity:.9; }
+#auth-modal #auth-cancel:hover { color:#fff; }
+
   </style>
 </head>
 
@@ -1274,6 +1246,21 @@ body.fonts-loaded .side-length-label {
         style="display: none;"/>
 </svg>
 </div>
+
+<div class="auth-controls">
+  <button id="modal-login-btn" class="header-control auth-btn" title="Login" style="display:none;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#888">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V9h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+    </svg>
+  </button>
+  <button id="modal-logout-btn" class="header-control auth-btn" title="Logout" style="display:none;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#888">
+      <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+    </svg>
+  </button>
+</div>
+
+
   </div>
   <div class="modal-divider"></div>
   <div class="modal-content-wrapper">
@@ -1302,6 +1289,28 @@ body.fonts-loaded .side-length-label {
   </svg>
   </div>
 </div>
+
+<!-- AUTH MODAL -->
+<div id="auth-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:10000;">
+  <div style="max-width:400px; margin:100px auto; background:#1a1a1a; padding:20px; border-radius:8px; color:white;">
+    <h2 style="color:#ff8400; margin-bottom:20px;">Editor Login</h2>
+
+    <div id="auth-step-email">
+      <p>Enter authorized email to receive OTP:</p>
+      <input type="email" id="auth-email" style="width:100%; padding:10px; margin:10px 0; background:#333; color:white; border:1px solid #555;">
+      <button id="request-otp" style="background:#ff8400; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer;">Send Verification Code</button>
+    </div>
+
+    <div id="auth-step-otp" style="display:none;">
+      <p>Enter 6-digit code sent to <span id="otp-email-display" style="font-weight:bold;"></span>:</p>
+      <input type="text" id="auth-otp" style="width:100%; padding:10px; margin:10px 0; background:#333; color:white; border:1px solid #555;" maxlength="6">
+      <button id="verify-otp" style="background:#ff8400; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer;">Verify Code</button>
+    </div>
+
+    <button id="auth-cancel" style="margin-top:20px; background:none; color:#aaa; border:none; cursor:pointer;">Cancel</button>
+  </div>
+</div>
+
 
 <!-- Whatsapp button -->
 <a href="https://wa.me/5218185261819" target="_blank" class="whatsapp-button"
@@ -1386,6 +1395,7 @@ ctaobserver.observe(ctaToaster, {
 <script>
   //HASH FOR URL
   function openInitialLotModal() {
+    modalSource = "url";
     const hash = window.location.hash;
     if (hash.startsWith('#lot=')) {
       const lotName = decodeURIComponent(hash.slice(5));
@@ -1569,7 +1579,7 @@ map.on('moveend', () => {
           // Click on lot: open modal (no persistent selection highlight)
           map.on('click', 'lots-final-click', (e) => {
             if (e.features.length === 0) return;
-
+modalSource = "map";
             const feature = e.features[0];
             const lotName = feature.properties.name;
             const lot = lotData.find(l => l.name === lotName);
@@ -2332,6 +2342,7 @@ let scrollTimeout;
 let scrollHandlerAttached = true;
 let clampCooldown = false;
 let infoMode = false;
+let modalSource = null;
 
 function extractLotNumber(lotName) {
   const num = lotName.replace(/^lot/i, '');
@@ -3065,10 +3076,21 @@ if (document.getElementById('lotModal')?.classList.contains('pin-mode')) {
     modalInfoEl.style.opacity = '0';        // hide list container until rendered
   }
 
+    const authControls = document.querySelector(".auth-controls");
+    if (modalSource === "info") {
+        authControls.style.display = "flex";
+    } else {
+        authControls.style.display = "none";
+    } 
+
+    modalSource = null;
+
   // Now show the modal
   modal.classList.add('show');
   modal.style.display = 'block';
   if (wasHidden) adjustMapForModal();
+
+  
 
   // 🔸 INFO MODE short-circuit (your existing block)
   if (infoMode) {
@@ -3275,6 +3297,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Open lot modal in "info mode" (replace list content)
 infoBtn.addEventListener('click', () => {
   infoMode = true;        // tell openModal to skip list rendering
+  modalSource = "info";
   openModal();            // reuse the same modal
 
   // Force expanded mode
@@ -3372,332 +3395,114 @@ function hideCalendlyEmbed() {
 </script>
 
 
-
-
-
 <script>
-(() => {
-  'use strict';
+// ===== AUTH (email OTP) =====
+let currentUser = null;
 
-  // ===== Namespace =====
-  const NS = (window.__LL_GPS__ = window.__LL_GPS__ || {});
-
-// ---- simple event bus
-NS._listeners = {};
-NS.on = function (evt, cb) { (NS._listeners[evt] ||= []).push(cb); };
-NS.emit = function (evt, payload) { (NS._listeners[evt] || []).forEach(fn => { try { fn(payload); } catch {} }); };
-
-  // Config
-  NS.lotCenter = NS.lotCenter || [-100.15994, 25.461823];
-  NS.maxDistanceMeters = NS.maxDistanceMeters || 1000;
-
-  // State
-  NS.gpsWatchId = null;
-  NS.lastUserLngLat = null;
-  NS.hasInitialFly = false;
-  NS.userHeading = null;
-  NS.headingListenerAttached = false;
-  NS.farAwayTimer = null;
-  NS.farWarned = false;
-  NS.headingMarker = null;
-  
-  // Smoothing (for Android)
-  NS.headingSmoothingFactor = 0.15;
-  NS.lastSmoothedHeading = null;
-
-  // Utils
-  const safeToaster = (msg, duration = 3000) => {
-    try { if (typeof window.showToaster === 'function') window.showToaster(msg, duration); } catch {}
-  };
-
-  // Distance calculation
-  const distanceMeters = (a, b) => {
-    const [lng1, lat1] = a, [lng2, lat2] = b;
-    const R = 6371000, φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lng2 - lng1) * Math.PI / 180;
-    const a_ = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    return R * 2 * Math.atan2(Math.sqrt(a_), Math.sqrt(1 - a_));
-  };
-
-  // Smooth heading
-  const smoothHeading = (newHeading) => {
-    if (NS.lastSmoothedHeading === null) {
-      NS.lastSmoothedHeading = newHeading;
-    } else {
-      const diff = ((newHeading - NS.lastSmoothedHeading + 540) % 360) - 180;
-      NS.lastSmoothedHeading = (NS.lastSmoothedHeading + diff * NS.headingSmoothingFactor) % 360;
-    }
-    return NS.lastSmoothedHeading;
-  };
-
-  // ===== Core Functions =====
-  function ensureUserLocationLayers() {
-    if (!window.map) return;
-
-    if (!map.getSource('ll-user-location')) {
-      map.addSource('ll-user-location', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] }
-      });
-    }
-
-    if (!map.getLayer('ll-user-accuracy')) {
-      map.addLayer({
-        id: 'll-user-accuracy',
-        type: 'circle',
-        source: 'll-user-location',
-        paint: {
-          'circle-radius': ['interpolate', ['linear'], ['zoom'],
-            15, ['coalesce', ['get', 'accRadiusZ15'], 2],
-            22, ['coalesce', ['get', 'accRadiusZ22'], 500]
-          ],
-          'circle-color': '#1a73e826',
-          'circle-stroke-color': '#1a73e8',
-          'circle-stroke-width': 1
-        },
-        filter: ['==', ['get', 'role'], 'accuracy']
-      });
-    }
-
-    if (!map.getLayer('ll-user-dot')) {
-      map.addLayer({
-        id: 'll-user-dot',
-        type: 'circle',
-        source: 'll-user-location',
-        paint: {
-          'circle-radius': 8,
-          'circle-color': '#4285F4',
-          'circle-stroke-color': '#FFFFFF',
-          'circle-stroke-width': 2
-        },
-        filter: ['==', ['get', 'role'], 'point']
-      });
-    }
-
-    ensureHeadingMarker();
-  }
-
-  // Google Maps-style cone (wide part forward, pointy end at dot)
-  function ensureHeadingMarker() {
-  if (!window.map || NS.headingMarker) return;
-
-  const el = document.createElement('div');
-  el.style.width = '70px';
-  el.style.height = '50px';
-  el.style.pointerEvents = 'none';
-  el.style.zIndex = '1000';
-  el.innerHTML = `
-    <svg viewBox="0 0 70 50" width="70" height="50">
-      <!-- Solid wide cone (140° opening) -->
-      <path d="M35 45 L5 5 L65 5 Z" 
-            fill="#1a73e8" 
-            opacity="0.6"
-            stroke="none"/>
-    </svg>
-  `;
-
-  NS.headingMarker = new mapboxgl.Marker({
-    element: el,
-    offset: [0, -25],
-    anchor: 'center'
-  })
-    .setRotationAlignment('map')
-    .setPitchAlignment('map')
-    .setLngLat(NS.lotCenter)
-    .addTo(map);
+async function checkAuthStatus() {
+  await window.supabaseReady;
+  const { data: { user } } = await window.supabaseClient.auth.getUser();
+  currentUser = user || null;
+  updateAuthUI();
+  return currentUser;
 }
 
-  // Handle compass data
-  async function ensureHeadingListener() {
-    if (NS.headingListenerAttached) return;
+async function isUserEditor() {
+  if (!currentUser?.email) return false;
+  const { data, error } = await window.supabaseClient
+    .from('editors')
+    .select('email')
+    .eq('email', currentUser.email)
+    .maybeSingle();
+  return !!(data && !error);
+}
 
-    const onOrientation = (e) => {
-      let rawHeading;
-      if (typeof e?.webkitCompassHeading === 'number') {
-        rawHeading = e.webkitCompassHeading; // iOS
-      } 
-      else if (typeof e?.alpha === 'number') {
-        rawHeading = (360 - e.alpha) % 360; // Android
-      }
-      else {
-        return;
-      }
-
-      NS.userHeading = smoothHeading(rawHeading);
-
-      if (NS.lastUserLngLat) {
-        updateUserLocation(NS.lastUserLngLat[0], NS.lastUserLngLat[1]);
-      }
-    };
-
-    if ('ondeviceorientationabsolute' in window) {
-      window.addEventListener('deviceorientationabsolute', onOrientation, true);
-    } else {
-      window.addEventListener('deviceorientation', onOrientation, true);
-    }
-    NS.headingListenerAttached = true;
+function updateAuthUI() {
+  const loginBtn = document.getElementById('modal-login-btn');
+  const logoutBtn = document.getElementById('modal-logout-btn');
+  if (loginBtn && logoutBtn) {
+    if (currentUser) { loginBtn.style.display = 'none'; logoutBtn.style.display = 'flex'; }
+    else { loginBtn.style.display = 'flex'; logoutBtn.style.display = 'none'; }
   }
+  updateEditorFeatures();
+}
 
-  // Update cone direction (no 180° offset needed!)
-  function updateUserLocation(lng, lat, accuracyMeters = 10) {
-    const src = map?.getSource('ll-user-location');
-    if (!src) return;
+function updateEditorFeatures() {
+  // Add Pin button visibility
+  const addPinBtn = document.getElementById('addPinBtn');
+  isUserEditor().then(isEditor => {
+    if (addPinBtn) addPinBtn.style.display = isEditor ? 'block' : 'none';
+    // Any element with .upload-photo-btn can be toggled too (if you add that class later)
+    document.querySelectorAll('.upload-photo-btn').forEach(btn => { btn.style.display = isEditor ? 'block' : 'none'; });
+  });
+}
 
-    src.setData({
-      type: 'FeatureCollection',
-      features: [
-        { type: 'Feature', properties: { role: 'point' }, geometry: { type: 'Point', coordinates: [lng, lat] } },
-        {
-          type: 'Feature',
-          properties: {
-            role: 'accuracy',
-            accRadiusZ15: Math.min(12, Math.max(2, accuracyMeters / 6)),
-            accRadiusZ22: Math.min(600, Math.max(50, accuracyMeters * 6))
-          },
-          geometry: { type: 'Point', coordinates: [lng, lat] }
-        }
-      ]
-    });
+// Modal show/hide
+function showAuthModal() {
+  document.getElementById('auth-modal').style.display = 'block';
+  document.getElementById('auth-step-email').style.display = 'block';
+  document.getElementById('auth-step-otp').style.display = 'none';
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-otp').value = '';
+}
+function hideAuthModal() {
+  document.getElementById('auth-modal').style.display = 'none';
+}
 
-    // Directly use the heading (cone SVG is already correctly oriented)
-    if (NS.headingMarker) {
-      NS.headingMarker.setLngLat([lng, lat]);
-      NS.headingMarker.setRotation(NS.userHeading || 0);
-    }
-  }
+// Init & events
+async function initAuth() {
+  await window.supabaseReady;
 
-  // ===== UI Controls =====
-  document.addEventListener('DOMContentLoaded', () => {
-    const gpsBtn = document.getElementById('gpsButton');
-    if (gpsBtn && !gpsBtn.__llBound) {
-      gpsBtn.__llBound = true;
-      gpsBtn.addEventListener('click', () => {
-        if (NS.gpsWatchId == null) startGPS();
-        else stopGPS();
-      });
-    }
+  document.getElementById('modal-login-btn')?.addEventListener('click', showAuthModal);
+  document.getElementById('modal-logout-btn')?.addEventListener('click', async () => {
+    await window.supabaseClient.auth.signOut();
+    window.location.reload();
   });
 
-function startGPS() {
-  // Always show startup notification
-  safeToaster('Activating GPS...', 2000);
+  document.getElementById('request-otp')?.addEventListener('click', async () => {
+    const email = document.getElementById('auth-email').value.trim();
+    if (!email) return;
 
-  // 1. Check prerequisites
-  if (!navigator.geolocation) {
-    safeToaster('Geolocation not supported on this device', 5000);
-    return;
-  }
-  if (!window.map) {
-    safeToaster('Please wait - map is still loading', 5000);
-    return;
-  }
-
-  // 2. Initialize UI elements
-  ensureUserLocationLayers();
-  ensureHeadingListener();
-
-// show camera immediately on GPS start
-document.getElementById('cameraButton')?.style && (document.getElementById('cameraButton').style.display = 'block');
-
-
-  // 3. Clear previous instance if exists
-  if (NS.gpsWatchId !== null) {
-    navigator.geolocation.clearWatch(NS.gpsWatchId);
-  }
-
-  // 4. Start new GPS session
-  NS.gpsWatchId = navigator.geolocation.watchPosition(
-    (pos) => {
-      const { latitude, longitude, accuracy, heading } = pos.coords;
-      NS.lastUserLngLat = [longitude, latitude];
-
-if (!NS._notifiedStart) { NS._notifiedStart = true; NS.emit('gps-start'); }
-
-      // Use GPS heading if compass unavailable
-      if (heading && !NS.userHeading) {
-        NS.userHeading = smoothHeading(heading);
-      }
-
-      updateUserLocation(longitude, latitude, accuracy);
-
-      // Initial zoom to user
-      if (!NS.hasInitialFly) {
-        NS.hasInitialFly = true;
-        map.flyTo({
-          center: [longitude, latitude],
-          zoom: 17,
-          speed: 1.2,
-          curve: 1.5
-        });
-        safeToaster('GPS active - tracking your location', 3000);
-      }
-    },
-    (err) => {
-      let errorMsg = 'GPS error';
-      switch(err.code) {
-        case err.PERMISSION_DENIED:
-          errorMsg = 'Please enable location permissions';
-          break;
-        case err.POSITION_UNAVAILABLE:
-          errorMsg = 'Location signal lost';
-          break;
-        case err.TIMEOUT:
-          errorMsg = 'GPS timeout - try moving outdoors';
-          break;
-      }
-      stopGPS(errorMsg);
-    },
-    { 
-      enableHighAccuracy: true,
-      maximumAge: 2000,
-      timeout: 10000 
-    }
-  );
-
-  // Confirm activation
-  NS.gpsWatchId !== null && safeToaster('GPS activated successfully', 2000);
-}
-
-function stopGPS(reason) {
-  // 1. Stop GPS tracking
-  if (NS.gpsWatchId) {
-    navigator.geolocation.clearWatch(NS.gpsWatchId);
-    NS.gpsWatchId = null;
-  }
-
-  // 2. Clear the dot/accuracy circle (if layers exist)
-  if (map?.getSource('ll-user-location')) {
-    map.getSource('ll-user-location').setData({ 
-      type: 'FeatureCollection', 
-      features: [] 
+    const { error } = await window.supabaseClient.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.href }
     });
-  }
+    if (error) { alert('Error sending OTP: ' + error.message); return; }
 
-  // 3. Remove the heading arrow (if it exists)
-  if (NS.headingMarker) {
-    NS.headingMarker.remove();
-    NS.headingMarker = null; // ← Critical! Prevents ghost markers
-  }
+    document.getElementById('otp-email-display').textContent = email;
+    document.getElementById('auth-step-email').style.display = 'none';
+    document.getElementById('auth-step-otp').style.display = 'block';
+  });
 
-// hide camera immediately on GPS stop
-document.getElementById('cameraButton')?.style && (document.getElementById('cameraButton').style.display = 'none');
+  document.getElementById('verify-otp')?.addEventListener('click', async () => {
+    const email = document.getElementById('auth-email').value.trim();
+    const token = document.getElementById('auth-otp').value.trim();
 
+    const { data, error } = await window.supabaseClient.auth.verifyOtp({ email, token, type: 'email' });
+    if (error) { alert('Invalid code: ' + error.message); return; }
 
-  // 4. Reset all tracking states
-  NS.lastUserLngLat = null;
-  NS.userHeading = null;
-  NS.lastSmoothedHeading = null;
+    currentUser = data.user;
+    // Only allow if in editors table
+    if (!(await isUserEditor())) {
+      await window.supabaseClient.auth.signOut();
+      alert('This email is not authorized as an editor');
+      hideAuthModal();
+      updateAuthUI();
+      return;
+    }
+    hideAuthModal();
+    updateAuthUI();
+  });
 
-  safeToaster(reason || 'GPS stopped');
+  document.getElementById('auth-cancel')?.addEventListener('click', hideAuthModal);
 
-  NS._notifiedStart = false;
-NS.emit('gps-stop');
+  // Initial state + subscribe to changes
+  await checkAuthStatus();
+  window.supabaseClient.auth.onAuthStateChange(async () => { await checkAuthStatus(); });
 }
 
-})();
+document.addEventListener('DOMContentLoaded', initAuth);
 </script>
-
 
 
 
@@ -3758,38 +3563,43 @@ NS.emit('gps-stop');
   };
 
   // ---- Toggle add mode (no gating on _isVisible)
-  PS.toggleAddMode = function () {
-    if (!window.map) { toast('Map is still loading…'); return; }
-    PS.addMode = !PS.addMode;
-    const btn = document.getElementById('addPinBtn');
-    if (btn) btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,.35)' : '';
-    map.getCanvas().style.cursor = PS.addMode ? 'crosshair' : '';
-    if (PS.addMode && !PS._mapClickHandler) {
-      PS._mapClickHandler = (e) => {
-        const t = e.originalEvent?.target;
-        if (t && (t.closest('#lotModal') || t.closest('.mapboxgl-ctrl') || t.closest('button') || t.closest('a'))) return;
-        PS.createPinAt(e.lngLat).finally(() => {
-          PS.addMode = false;
-          PS.toggleAddMode();
-        });
-      };
-      map.on('click', PS._mapClickHandler);
-      toast('Click the map to drop a pin');
-    } else if (!PS.addMode && PS._mapClickHandler) {
-      map.off('click', PS._mapClickHandler);
-      PS._mapClickHandler = null;
-    }
-  };
+PS.toggleAddMode = async function () {
+  if (!window.map) { toast('Map is still loading…'); return; }
+  if (!(await isUserEditor())) { showAuthModal(); return; }   // ⬅ gate
+
+  PS.addMode = !PS.addMode;
+  const btn = document.getElementById('addPinBtn');
+  if (btn) btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,.35)' : '';
+  map.getCanvas().style.cursor = PS.addMode ? 'crosshair' : '';
+  if (PS.addMode && !PS._mapClickHandler) {
+    PS._mapClickHandler = (e) => {
+      const t = e.originalEvent?.target;
+      if (t && (t.closest('#lotModal') || t.closest('.mapboxgl-ctrl') || t.closest('button') || t.closest('a'))) return;
+      PS.createPinAt(e.lngLat).finally(() => { PS.addMode = false; PS.toggleAddMode(); });
+    };
+    map.on('click', PS._mapClickHandler);
+    toast('Click the map to drop a pin');
+  } else if (!PS.addMode && PS._mapClickHandler) {
+    map.off('click', PS._mapClickHandler);
+    PS._mapClickHandler = null;
+  }
+};
 
   // ---- DB create
-  PS.createPinAt = async function (lngLat) {
-    await window.supabaseReady;
-    const { data, error } = await window.supabaseClient
-      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat }).select().single();
-    if (error) { console.error(error); toast('Could not create pin'); return; }
-    PS.addMarker(data);
-    toast('Pin added');
-  };
+PS.createPinAt = async function (lngLat) {
+  await window.supabaseReady;
+  if (!(await isUserEditor())) { showAuthModal(); return; }
+
+  const { data, error } = await window.supabaseClient
+    .from('pins')
+    .insert({ lng: lngLat.lng, lat: lngLat.lat, user_id: currentUser?.id || null })
+    .select().single();
+
+  if (error) { console.error(error); toast('Could not create pin'); return; }
+  PS.addMarker(data);
+  toast('Pin added');
+};
+
 
   // ---- HTML marker (size here)
   PS.markerElement = function () {
@@ -3852,6 +3662,7 @@ PS._revealMarkers = function () {
 
   // ---- Open in your lot modal (same as before)
 PS.openPinInModal = async function (pin) {
+   modalSource = "pin";
   await window.supabaseReady;
 document.getElementById('lotModal').classList.add('pin-mode');
 
@@ -3934,6 +3745,15 @@ document.getElementById('lotModal').classList.add('pin-mode');
   `;
   lotDetails.appendChild(container);
 
+// Hide the upload UI for non-editors
+isUserEditor().then(isEditor => {
+  // your <input> lives inside the <label>, so hide the label (its parent)
+  const uploadLabel = container.querySelector(`#ps-upload-${pin.id}`)?.parentElement;
+  if (uploadLabel) {
+    uploadLabel.style.display = isEditor ? 'inline-block' : 'none';
+  }
+});
+
   // Click to view photo
   container.querySelectorAll('.ps-thumb').forEach(div => {
     div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
@@ -3941,11 +3761,12 @@ document.getElementById('lotModal').classList.add('pin-mode');
 
   // Upload handler
   const input = container.querySelector(`#ps-upload-${pin.id}`);
-  input.addEventListener('change', async (e) => {
-    if (!e.target.files || !e.target.files[0]) return;
-    try {
-      const blob = await compressImageToJPEG(e.target.files[0], 1200);
-      const path = `${pin.id}/${Date.now()}.jpg`;
+input.addEventListener('change', async (e) => {
+  if (!(await isUserEditor())) { showAuthModal(); e.target.value=''; return; }   // ⬅ gate
+  if (!e.target.files || !e.target.files[0]) return;
+  try {
+    const blob = await compressImageToJPEG(e.target.files[0], 1200);
+    const path = `${pin.id}/${Date.now()}.jpg`;
 
       const up = await window.supabaseClient.storage.from('pin-photos')
         .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
@@ -4048,5 +3869,6 @@ document.getElementById('lotModal').classList.add('pin-mode');
   }
 })();
 </script>
+
 </body>
 </html>
