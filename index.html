@@ -1508,7 +1508,7 @@ map = new mapboxgl.Map({
           addCustomImage(map);
           addFeaturedLotsLayer(map);
 
-if (window.__LL_PHOTOS__?.init) window.__LL_PHOTOS__.init();
+
 
           // ===== NEW INTERACTION HANDLERS =====
           // Clear labels on any map movement
@@ -3625,456 +3625,290 @@ NS.emit('gps-stop');
 (() => {
   'use strict';
 
-  const PhotoSystem = (window.__LL_PHOTOS__ = window.__LL_PHOTOS__ || {});
+  const PS = (window.__LL_PINS__ = window.__LL_PINS__ || {});
+  PS.markers = new Map();    // id -> { pin, marker }
+  PS.addMode = false;
+  PS._mapClickHandler = null;
 
-  // ----- Config
-  PhotoSystem._inited = false;
-  PhotoSystem.markers = [];                 // [{ id, marker, data, lngLat:[lng,lat], timestamp }]
-  PhotoSystem.maxPhotoSize = 800;
-  PhotoSystem.currentIndex = null;
-  PhotoSystem.clusterSourceId = 'll-photo-points';
-  PhotoSystem.clusterLayerId = 'll-photo-clusters';
-  PhotoSystem.clusterCountLayerId = 'll-photo-cluster-count';
-  PhotoSystem.unclusteredLayerId = 'll-photo-unclustered';
-  PhotoSystem.clusterMaxZoom = 17;          // cluster until this zoom
-  PhotoSystem._clusterReady = false;
-
+  // Small helpers
+  const toast = (m, t=2500) => { try{ window.showToaster?.(m, t);}catch{} };
   const uid = () => (Date.now().toString(36) + Math.random().toString(36).slice(2));
 
-  // ===== Init
-  PhotoSystem.init = function () {
-    if (this._inited) return;      // prevent double init
-    this._inited = true;
+  // Compress to JPEG ~800px
+  async function compressImageToJPEG(fileOrBlob, maxSize = 1000) {
+    const file = fileOrBlob;
+    const dataURL = await new Promise((res) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.readAsDataURL(file);
+    });
 
-    this.createCameraButton();
-    this.createPhotoModal();
-    this.ensureClusterLayers();     // safe to call multiple times
-    this.loadSavedPhotos();
-    this.handleMarkerVisibility();  // set initial visibility
+    const img = await new Promise((res) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.src = dataURL;
+    });
 
-    // show camera FAB if GPS is already running
-    const cam = document.getElementById('cameraButton');
-    if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUserLngLat)) {
-      cam.style.display = 'block';
+    let { width, height } = img;
+    if (width > height && width > maxSize) {
+      height = Math.round(height * (maxSize / width));
+      width = maxSize;
+    } else if (height > width && height > maxSize) {
+      width = Math.round(width * (maxSize / height));
+      height = maxSize;
     }
 
-    // GPS events
-    if (window.__LL_GPS__) {
-      window.__LL_GPS__.on('gps-start', () => {
-        const el = document.getElementById('cameraButton');
-        if (el) el.style.display = 'block';
-      });
-      window.__LL_GPS__.on('gps-stop', () => {
-        const el = document.getElementById('cameraButton');
-        if (el) el.style.display = 'none';
-      });
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+    return await new Promise((res) => canvas.toBlob(b => res(b), 'image/jpeg', 0.85));
+  }
+
+  // UI: add “Add Pin” button (stacked above GPS / Reset)
+  PS.addAddPinButton = function () {
+    if (document.getElementById('addPinBtn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'addPinBtn';
+    btn.className = 'gps-button';        // reuse your round button style
+    btn.title = 'Add point';
+    btn.style.bottom = '200px';          // Reset=80, GPS=140, this=200
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    `;
+    btn.addEventListener('click', () => PS.toggleAddMode());
+    document.body.appendChild(btn);
+  };
+
+  PS.toggleAddMode = function () {
+    PS.addMode = !PS.addMode;
+    const btn = document.getElementById('addPinBtn');
+    if (!btn) return;
+
+    btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,.35)' : '';
+    map.getCanvas().style.cursor = PS.addMode ? 'crosshair' : '';
+
+    // attach/detach map click handler
+    if (PS.addMode && !PS._mapClickHandler) {
+      PS._mapClickHandler = (e) => {
+        // ignore clicks on UI
+        const t = e.originalEvent?.target;
+        if (t && (t.closest('#lotModal') || t.closest('.mapboxgl-ctrl') || t.closest('button') || t.closest('a'))) return;
+
+        PS.createPinAt(e.lngLat).finally(() => {
+          PS.addMode = false;
+          PS.toggleAddMode(); // turn it off and cleanup visuals
+        });
+      };
+      map.on('click', PS._mapClickHandler);
+      toast('Click the map to drop a pin');
+    } else if (!PS.addMode && PS._mapClickHandler) {
+      map.off('click', PS._mapClickHandler);
+      PS._mapClickHandler = null;
     }
   };
 
-  // ===== UI pieces
-  PhotoSystem.createCameraButton = function () {
-    if (document.getElementById('cameraButton')) return;
-    const html = `
-      <div id="cameraButton" style="display:none;">
-        <button id="takePhotoBtn">📸</button>
-        <input type="file" id="fileUpload" accept="image/*" capture="environment" hidden>
-      </div>`;
-    document.body.insertAdjacentHTML('beforeend', html);
-    document.getElementById('takePhotoBtn').addEventListener('click', () => this.activateCamera());
-    document.getElementById('fileUpload').addEventListener('change', (e) => {
-      if (e.target.files.length) this.processImageFile(e.target.files[0]);
-    });
+  // Create pin in DB, then marker
+  PS.createPinAt = async function (lngLat) {
+    await window.supabaseReady;
+    const { data, error } = await window.supabaseClient
+      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat }).select().single();
+
+    if (error) { console.error(error); toast('Could not create pin'); return; }
+    PS.addMarker(data);
+    toast('Pin added');
   };
 
-  PhotoSystem.createPhotoModal = function () {
-    if (document.getElementById('photoModal')) return;
-    const html = `
-      <div id="photoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:10000;">
-        <img id="modalImage" style="max-width:90%; max-height:90%; margin:auto; display:block; position:relative; top:50%; transform:translateY(-50%); box-shadow:0 6px 24px rgba(0,0,0,.4);" />
-        <button id="closeModal"  style="position:absolute; top:20px; right:20px;  background:#f44336; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer;">×</button>
-        <button id="deletePhoto" style="position:absolute; top:20px; left:20px;   background:#ff8400; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:18px; cursor:pointer;" title="Delete">🗑️</button>
-        <button id="prevPhoto"  style="position:absolute; left:20px;  top:50%; transform:translateY(-50%); background:#ffffff22; color:#fff; border:none; border-radius:50%; width:44px; height:44px; font-size:20px; cursor:pointer;">‹</button>
-        <button id="nextPhoto"  style="position:absolute; right:20px; top:50%; transform:translateY(-50%); background:#ffffff22; color:#fff; border:none; border-radius:50%; width:44px; height:44px; font-size:20px; cursor:pointer;">›</button>
-      </div>`;
-    document.body.insertAdjacentHTML('beforeend', html);
-
-    document.getElementById('closeModal').addEventListener('click', () => {
-      document.getElementById('photoModal').style.display = 'none';
-      this.currentIndex = null;
-    });
-    document.getElementById('deletePhoto').addEventListener('click', () => this.deleteCurrent());
-    document.getElementById('prevPhoto').addEventListener('click', () => this.prevPhoto());
-    document.getElementById('nextPhoto').addEventListener('click', () => this.nextPhoto());
-
-    // Keyboard nav
-    window.addEventListener('keydown', (e) => {
-      const open = document.getElementById('photoModal').style.display === 'block';
-      if (!open) return;
-      if (e.key === 'ArrowLeft') this.prevPhoto();
-      if (e.key === 'ArrowRight') this.nextPhoto();
-      if (e.key === 'Escape') document.getElementById('closeModal').click();
-    });
+  // Build a draggable orange dot
+  PS.markerElement = function () {
+    const el = document.createElement('div');
+    el.style.width = '14px';
+    el.style.height = '14px';
+    el.style.borderRadius = '50%';
+    el.style.background = '#ff8400';
+    el.style.border = '2px solid #fff';
+    el.style.boxShadow = '0 2px 6px rgba(0,0,0,.3)';
+    el.style.cursor = 'pointer';
+    return el;
   };
 
-  // ===== Camera / file input (with Upload next to Capture)
-  PhotoSystem.activateCamera = function () {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      document.getElementById('fileUpload').click(); // fallback
+  PS.addMarker = function (pin) {
+    // If it exists, just sync position
+    if (PS.markers.has(pin.id)) {
+      PS.markers.get(pin.id).marker.setLngLat([pin.lng, pin.lat]);
+      PS.markers.get(pin.id).pin = pin;
       return;
     }
 
-    // Overlay
-    const preview = document.createElement('div');
-    preview.style.cssText = 'position:fixed; inset:0; background:black; z-index:9999;';
-
-    // Live video
-    const video = document.createElement('video');
-    video.style.cssText = 'width:100%; height:100%; object-fit:contain;';
-
-    // Top-right cancel
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = 'position:absolute; top:20px; right:20px; padding:8px 16px; background:#f44336; color:#fff; border:none; border-radius:50px; cursor:pointer;';
-
-    // Bottom control bar (centered)
-    const controls = document.createElement('div');
-    controls.style.cssText = 'position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:12px;';
-
-    // Capture
-    const captureBtn = document.createElement('button');
-    captureBtn.textContent = 'Capture';
-    captureBtn.style.cssText = 'padding:12px 24px; background:#4285F4; color:#fff; border:none; border-radius:50px; font-size:16px; cursor:pointer;';
-
-    // Upload
-    const uploadBtn = document.createElement('button');
-    uploadBtn.textContent = 'Upload';
-    uploadBtn.style.cssText = 'padding:12px 24px; background:#ff8400; color:#fff; border:none; border-radius:50px; font-size:16px; cursor:pointer;';
-
-    // Hidden file input scoped to this overlay
-    const overlayFile = document.createElement('input');
-    overlayFile.type = 'file';
-    overlayFile.accept = 'image/*';
-
-    // Assemble
-    controls.appendChild(captureBtn);
-    controls.appendChild(uploadBtn);
-    preview.appendChild(video);
-    preview.appendChild(cancelBtn);
-    preview.appendChild(controls);
-    preview.appendChild(overlayFile);
-    document.body.appendChild(preview);
-
-    let activeStream = null;
-
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-      .then(stream => {
-        activeStream = stream;
-        video.srcObject = stream;
-        video.play();
-
-        // Capture from camera
-        captureBtn.addEventListener('click', () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          canvas.getContext('2d').drawImage(video, 0, 0);
-          canvas.toBlob(async (blob) => {
-            await this.processImageFile(blob);
-            cleanup();
-          }, 'image/jpeg', 0.8);
-        });
-
-        // Upload flow
-        uploadBtn.addEventListener('click', () => overlayFile.click());
-        overlayFile.addEventListener('change', async (e) => {
-          if (e.target.files && e.target.files[0]) {
-            await this.processImageFile(e.target.files[0]);
-            cleanup();
-          }
-        });
-
-        cancelBtn.addEventListener('click', () => cleanup());
-      })
-      .catch(() => {
-        // camera failed -> fallback to global picker
-        document.body.removeChild(preview);
-        document.getElementById('fileUpload').click();
-      });
-
-    function cleanup() {
-      try { if (activeStream) activeStream.getTracks().forEach(t => t.stop()); } catch {}
-      if (preview.parentNode) preview.parentNode.removeChild(preview);
-    }
-  };
-
-  PhotoSystem.processImageFile = function (file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image(); img.src = e.target.result;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let { width, height } = img;
-          if (width > height) {
-            if (width > this.maxPhotoSize) { height *= this.maxPhotoSize / width; width = this.maxPhotoSize; }
-          } else {
-            if (height > this.maxPhotoSize) { width *= this.maxPhotoSize / height; height = this.maxPhotoSize; }
-          }
-          canvas.width = width; canvas.height = height;
-          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.8));
-        };
-      };
-      reader.readAsDataURL(file);
-    }).then(photoData => {
-      if (window.__LL_GPS__?.lastUserLngLat) {
-        const ts = new Date().toISOString();
-        this.addPhotoMarker(window.__LL_GPS__.lastUserLngLat, photoData, ts, uid());
-        // persist the one we just added
-        this.savePhoto({ id: this.markers[this.markers.length - 1].id, lngLat: window.__LL_GPS__.lastUserLngLat, data: photoData, timestamp: ts });
-      } else {
-        try { window.showToaster?.('GPS must be active to pin a photo', 2500); } catch {}
-      }
-    });
-  };
-
-  // ===== Map / markers (HTML pins at close zoom)
-  PhotoSystem.addPhotoMarker = function (lngLat, photoData, timestamp, id) {
-    const el = document.createElement('div');
-    el.className = 'photo-marker';
-    el.style.backgroundImage = `url(${photoData})`;
-    const time = document.createElement('div');
-    time.className = 'photo-timestamp';
-    const displayTime = timestamp ? new Date(timestamp) : new Date();
-    time.textContent = displayTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    el.appendChild(time);
-
-    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-      .setLngLat(lngLat)
+    const el = PS.markerElement();
+    const marker = new mapboxgl.Marker({ element: el, draggable: true })
+      .setLngLat([pin.lng, pin.lat])
       .addTo(map);
 
-    const rec = { id: id || uid(), marker, data: photoData, lngLat, timestamp: timestamp || new Date().toISOString() };
-    this.markers.push(rec);
-
-    // Open modal on HTML marker click
-    el.addEventListener('click', () => {
-      const idx = this.markers.findIndex(m => m.marker.getElement() === el);
-      if (idx === -1) return;
-      this.openAt(idx);
+    marker.on('dragend', async () => {
+      const ll = marker.getLngLat();
+      const { error } = await window.supabaseClient
+        .from('pins').update({ lng: ll.lng, lat: ll.lat }).eq('id', pin.id);
+      if (error) { console.error(error); toast('Failed to save position'); }
+      else toast('Position saved');
     });
 
-    this.syncClusterSource();
-    this.handleMarkerVisibility(); // reflect current zoom
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      PS.openPinPopup(pin, marker);
+    });
+
+    PS.markers.set(pin.id, { pin, marker });
   };
 
-  PhotoSystem.openAt = function (index) {
-    if (index < 0 || index >= this.markers.length) return;
-    this.currentIndex = index;
-    document.getElementById('modalImage').src = this.markers[index].data;
-    document.getElementById('photoModal').style.display = 'block';
-  };
+  // Popup with thumbs + upload
+  PS.openPinPopup = async function (pin, marker) {
+    await window.supabaseReady;
+    const { data: photos } = await window.supabaseClient
+      .from('pin_photos').select('id,url,created_at').eq('pin_id', pin.id).order('created_at', { ascending: true });
 
-  PhotoSystem.nextPhoto = function () {
-    if (this.markers.length === 0 || this.currentIndex == null) return;
-    this.currentIndex = (this.currentIndex + 1) % this.markers.length;
-    document.getElementById('modalImage').src = this.markers[this.currentIndex].data;
-  };
+    const wrap = document.createElement('div');
+    wrap.style.width = '260px';
+    wrap.style.fontFamily = `'Barlow Condensed', Arial, sans-serif`;
+    wrap.style.color = '#1A1A1A';
 
-  PhotoSystem.prevPhoto = function () {
-    if (this.markers.length === 0 || this.currentIndex == null) return;
-    this.currentIndex = (this.currentIndex - 1 + this.markers.length) % this.markers.length;
-    document.getElementById('modalImage').src = this.markers[this.currentIndex].data;
-  };
+    const grid = (photos || []).map(p => `
+      <div class="ps-thumb" data-url="${p.url}" style="
+        width: 76px; height: 76px; background:#eee; background-image:url('${p.url}');
+        background-size:cover; background-position:center; border-radius:6px; cursor:pointer;">
+      </div>`).join('');
 
-  PhotoSystem.deleteCurrent = function () {
-    if (this.currentIndex == null) return;
-    const rec = this.markers[this.currentIndex];
-    if (!rec) return;
+    wrap.innerHTML = `
+      <div style="font-size:16px; color:#a17345; margin-bottom:6px; display:flex; align-items:center; gap:8px;">
+        <strong>Pin</strong> <span style="color:#8a8880; font-size:12px;">${pin.id.slice(0,6)}</span>
+      </div>
+      <div id="ps-grid-${pin.id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; min-height:82px; margin-bottom:8px;">
+        ${grid || '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'}
+      </div>
+      <label style="display:inline-block; background:#ff8400; color:#fff; padding:6px 10px; border-radius:4px; cursor:pointer;">
+        Upload photo
+        <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
+      </label>
+    `;
 
-    // Remove marker from map and array
-    rec.marker.remove();
-    this.markers.splice(this.currentIndex, 1);
+    const popup = new mapboxgl.Popup({ offset: 20, closeButton: true })
+      .setDOMContent(wrap)
+      .setLngLat(marker.getLngLat())
+      .addTo(map);
 
-    // Persist + update layers
-    this.rebuildLocalStorage();
-    this.syncClusterSource();
+    // enlarge on thumb click
+    wrap.querySelectorAll('.ps-thumb').forEach(div => {
+      div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
+    });
 
-    if (this.markers.length === 0) {
-      document.getElementById('photoModal').style.display = 'none';
-      this.currentIndex = null;
-      try { window.showToaster?.('Photo deleted', 2000); } catch {}
-      return;
-    }
+    // handle upload
+    const input = wrap.querySelector(`#ps-upload-${pin.id}`);
+    input.addEventListener('change', async (e) => {
+      if (!e.target.files || !e.target.files[0]) return;
+      try {
+        const blob = await compressImageToJPEG(e.target.files[0], 1200);
+        const path = `${pin.id}/${Date.now()}.jpg`;
+        const up = await window.supabaseClient.storage.from('pin-photos')
+          .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (up.error) throw up.error;
 
-    // Show next available
-    this.currentIndex = this.currentIndex % this.markers.length;
-    document.getElementById('modalImage').src = this.markers[this.currentIndex].data;
-    try { window.showToaster?.('Photo deleted', 2000); } catch {}
-  };
+        const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
+        const url = pub?.data?.publicUrl;
+        if (!url) throw new Error('No public URL');
 
-  // ===== Storage
-  PhotoSystem.savePhoto = function (obj) {
-    const photos = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
-    photos.push(obj);
-    localStorage.setItem('mapPhotos', JSON.stringify(photos));
-  };
+        const { error: insErr } = await window.supabaseClient
+          .from('pin_photos').insert({ pin_id: pin.id, url });
+        if (insErr) throw insErr;
 
-  PhotoSystem.rebuildLocalStorage = function () {
-    const rebuilt = this.markers.map(m => ({
-      id: m.id,
-      lngLat: m.lngLat,
-      data: m.data,
-      timestamp: m.timestamp
-    }));
-    localStorage.setItem('mapPhotos', JSON.stringify(rebuilt));
-  };
+        // Add thumb to grid
+        const g = wrap.querySelector(`#ps-grid-${pin.id}`);
+        g.querySelector('div[style*="No photos yet"]')?.remove();
+        const thumb = document.createElement('div');
+        thumb.className = 'ps-thumb';
+        thumb.setAttribute('data-url', url);
+        thumb.style.cssText = 'width:76px;height:76px;background:#eee;background-image:url("'+url+'");background-size:cover;background-position:center;border-radius:6px;cursor:pointer;';
+        thumb.addEventListener('click', () => PS.showViewer(url));
+        g.appendChild(thumb);
 
-  PhotoSystem.loadSavedPhotos = function () {
-    const saved = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
-    let mutated = false;
-    saved.forEach(photo => {
-      if (!photo.id) { photo.id = uid(); mutated = true; } // back-compat id
-      if (photo.lngLat && photo.data) {
-        this.addPhotoMarker(photo.lngLat, photo.data, photo.timestamp, photo.id);
+        toast('Photo uploaded');
+      } catch (err) {
+        console.error(err);
+        toast('Upload failed');
+      } finally {
+        e.target.value = '';
       }
     });
-    if (mutated) localStorage.setItem('mapPhotos', JSON.stringify(saved));
-    this.syncClusterSource();
   };
 
-  // ===== Clustering (Mapbox source/layers)
-  PhotoSystem.ensureClusterLayers = function () {
-    if (!window.map) return;
-
-    const addAll = () => {
-      if (map.getSource(this.clusterSourceId)) { this._clusterReady = true; return; }
-
-      map.addSource(this.clusterSourceId, {
-        type: 'geojson',
-        cluster: true,
-        clusterRadius: 40,              // pixels
-        clusterMaxZoom: this.clusterMaxZoom,
-        data: { type: 'FeatureCollection', features: [] }
-      });
-
-      // Cluster circles
-      map.addLayer({
-        id: this.clusterLayerId,
-        type: 'circle',
-        source: this.clusterSourceId,
-        filter: ['has', 'point_count'],
-        paint: {
-          'circle-color': [
-            'step', ['get', 'point_count'],
-            '#ffad66', 5,
-            '#ff8a33', 10,
-            '#ff6a00'
-          ],
-          'circle-radius': [
-            'step', ['get', 'point_count'],
-            16, 5, 20, 10, 24
-          ],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#ffffff',
-          'circle-opacity': 0.9
-        }
-      });
-
-      // Cluster counts
-      map.addLayer({
-        id: this.clusterCountLayerId,
-        type: 'symbol',
-        source: this.clusterSourceId,
-        filter: ['has', 'point_count'],
-        layout: {
-          'text-field': ['get', 'point_count_abbreviated'],
-          'text-size': 12
-        },
-        paint: { 'text-color': '#1a1a1a' }
-      });
-
-      // Single (unclustered) points
-      map.addLayer({
-        id: this.unclusteredLayerId,
-        type: 'circle',
-        source: this.clusterSourceId,
-        filter: ['!', ['has', 'point_count']],
-        paint: {
-          'circle-color': '#ff8400',
-          'circle-radius': 8,
-          'circle-stroke-color': '#fff',
-          'circle-stroke-width': 2
-        }
-      });
-
-      // Click cluster -> zoom in
-      map.on('click', this.clusterLayerId, (e) => {
-        const features = map.queryRenderedFeatures(e.point, { layers: [this.clusterLayerId] });
-        const clusterId = features[0].properties.cluster_id;
-        map.getSource(this.clusterSourceId).getClusterExpansionZoom(clusterId, (err, zoom) => {
-          if (err) return;
-          map.easeTo({ center: features[0].geometry.coordinates, zoom });
-        });
-      });
-
-      // Click unclustered -> open modal for that photo
-      map.on('click', this.unclusteredLayerId, (e) => {
-        const f = e.features && e.features[0];
-        if (!f) return;
-        const id = f.properties.id;
-        const idx = this.markers.findIndex(m => m.id === id);
-        if (idx !== -1) this.openAt(idx);
-      });
-
-      // Toggle HTML markers vs layers based on zoom
-      map.on('zoom', () => this.handleMarkerVisibility());
-
-      this._clusterReady = true;
-      this.syncClusterSource();
-      this.handleMarkerVisibility();
-    };
-
-    if (map.isStyleLoaded()) addAll();
-    else map.on('load', addAll);
+  // Simple full-screen viewer (one global)
+  PS.ensureViewer = function () {
+    if (document.getElementById('pinViewer')) return;
+    const html = `
+      <div id="pinViewer" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:10000;">
+        <img id="pinViewerImg" style="max-width:90%; max-height:90%; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); box-shadow:0 6px 24px rgba(0,0,0,.4);" />
+        <button id="pinViewerClose" style="position:absolute; top:20px; right:20px; background:#f44336; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer;">×</button>
+      </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    document.getElementById('pinViewerClose').addEventListener('click', () => {
+      document.getElementById('pinViewer').style.display = 'none';
+    });
+  };
+  PS.showViewer = function (url) {
+    PS.ensureViewer();
+    document.getElementById('pinViewerImg').src = url;
+    document.getElementById('pinViewer').style.display = 'block';
   };
 
-  PhotoSystem.syncClusterSource = function () {
-    if (!this._clusterReady || !map.getSource(this.clusterSourceId)) return;
-    const fc = {
-      type: 'FeatureCollection',
-      features: this.markers.map(m => ({
-        type: 'Feature',
-        properties: { id: m.id },
-        geometry: { type: 'Point', coordinates: m.lngLat }
-      }))
-    };
-    map.getSource(this.clusterSourceId).setData(fc);
+  // Load & realtime
+  PS.loadPins = async function () {
+    await window.supabaseReady;
+    const { data, error } = await window.supabaseClient
+      .from('pins').select('id,lng,lat').order('created_at', { ascending: true });
+    if (error) { console.error(error); return; }
+    (data || []).forEach(p => PS.addMarker(p));
   };
 
-  PhotoSystem.handleMarkerVisibility = function () {
-    if (!window.map) return;
-    const z = map.getZoom();
-    const showHtml = z > this.clusterMaxZoom + 0.3; // small hysteresis
+  PS.subscribe = function () {
+    const ch = window.supabaseClient
+      .channel('pins-rt')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins' }, (payload) => {
+        PS.addMarker(payload.new);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pins' }, (payload) => {
+        const rec = PS.markers.get(payload.new.id);
+        if (rec) rec.marker.setLngLat([payload.new.lng, payload.new.lat]);
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pins' }, (payload) => {
+        const rec = PS.markers.get(payload.old.id);
+        if (rec) { rec.marker.remove(); PS.markers.delete(payload.old.id); }
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') console.log('✅ Pins realtime subscribed');
+      });
+  };
 
-    // HTML markers (thumbnails) at close zoom
-    this.markers.forEach(m => { m.marker.getElement().style.display = showHtml ? 'block' : 'none'; });
-
-    // Layer visibility for clusters / unclustered points when zoomed out
-    if (map.getLayer(this.unclusteredLayerId)) {
-      map.setLayoutProperty(this.unclusteredLayerId, 'visibility', showHtml ? 'none' : 'visible');
-    }
-    if (map.getLayer(this.clusterLayerId)) {
-      map.setLayoutProperty(this.clusterLayerId, 'visibility', showHtml ? 'none' : 'visible');
-    }
-    if (map.getLayer(this.clusterCountLayerId)) {
-      map.setLayoutProperty(this.clusterCountLayerId, 'visibility', showHtml ? 'none' : 'visible');
+  // Boot
+  const boot = async () => {
+    // Wait for Supabase + map
+    await window.supabaseReady;
+    if (!window.map) {
+      const i = setInterval(() => {
+        if (window.map) { clearInterval(i); PS.addAddPinButton(); PS.loadPins(); PS.subscribe(); }
+      }, 200);
+    } else {
+      PS.addAddPinButton();
+      PS.loadPins();
+      PS.subscribe();
     }
   };
-
-  // ===== Boot (show FAB immediately if GPS is already active)
-  if (window.__LL_GPS__?.lastUserLngLat) {
-    const cam = document.getElementById('cameraButton');
-    if (cam) cam.style.display = 'block';
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
   }
 })();
 </script>
@@ -4082,11 +3916,7 @@ NS.emit('gps-stop');
 
 
 
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  window.__LL_PHOTOS__?.init?.();
-});
-</script>
+
 
 </body>
 </html>
