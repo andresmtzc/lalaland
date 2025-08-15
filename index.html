@@ -3254,7 +3254,7 @@ const observer = new MutationObserver(() => {
 
   // Config
   NS.lotCenter = NS.lotCenter || [-100.15994, 25.461823];
-  NS.maxDistanceMeters = NS.maxDistanceMeters || 1000;
+  NS.maxDistanceMeters = NS.maxDistanceMeters || 1000; // set higher while testing if you want
 
   // State
   NS.gpsWatchId = null;
@@ -3266,8 +3266,10 @@ const observer = new MutationObserver(() => {
   NS.farWarned = false;
 
   // Utils
-  const safeToaster = (msg, duration) => {
-    try { if (typeof window.showToaster === 'function') window.showToaster(msg, duration); } catch {}
+  const safeToaster = (msg, duration = 3000) => {
+    try {
+      if (typeof window.showToaster === 'function') window.showToaster(msg, duration);
+    } catch {}
   };
 
   const distanceMeters = (a, b) => {
@@ -3279,6 +3281,7 @@ const observer = new MutationObserver(() => {
     return 2 * R * Math.atan2(Math.sqrt(A), Math.sqrt(1 - A));
   };
 
+  // Draw the arrow image once
   function ensureUserHeadingIcon() {
     if (!window.map) return;
     try {
@@ -3288,15 +3291,64 @@ const observer = new MutationObserver(() => {
       c.width = c.height = size;
       const ctx = c.getContext('2d');
       ctx.translate(size/2, size/2);
-      // Bigger triangle so it's obvious
+      // Triangle arrow
       ctx.beginPath();
       ctx.moveTo(0, -26); ctx.lineTo(12, 12); ctx.lineTo(-12, 12); ctx.closePath();
-      ctx.fillStyle = '#000'; ctx.fill();
-      ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
+      ctx.fillStyle = '#000';  // arrow fill (blue)
+      ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; // white stroke for contrast
+      ctx.stroke();
       map.addImage('ll-user-arrow', c, { pixelRatio: 2 });
     } catch {}
   }
 
+  // Make/refresh heading layer with a viewport offset from the dot
+  function ensureHeadingLayerWithOffset() {
+    if (!window.map) return;
+
+    ensureUserHeadingIcon();
+
+    if (!map.getLayer('ll-user-heading')) {
+      map.addLayer({
+        id: 'll-user-heading',
+        type: 'symbol',
+        source: 'll-user-location',
+        layout: {
+          'icon-image': 'll-user-arrow',
+          'icon-size': 1.2,
+          'icon-rotate': ['get', 'heading'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-anchor': 'center'
+        },
+        paint: {
+          // keep arrow above the dot in screen pixels regardless of map bearing
+          'icon-translate': [0, -20],
+          'icon-translate-anchor': 'viewport'
+        },
+        filter: ['==', ['get', 'role'], 'heading']
+      });
+    } else {
+      map.setLayoutProperty('ll-user-heading', 'icon-size', 1.2);
+      map.setLayoutProperty('ll-user-heading', 'icon-allow-overlap', true);
+      map.setLayoutProperty('ll-user-heading', 'icon-ignore-placement', true);
+      map.setPaintProperty('ll-user-heading', 'icon-translate', [0, -20]);
+      map.setPaintProperty('ll-user-heading', 'icon-translate-anchor', 'viewport');
+    }
+  }
+
+  function bringUserLayersToFront() {
+    if (!map) return;
+    try {
+      // Move layers to top (call without beforeId to push to top)
+      ['ll-user-accuracy', 'll-user-dot', 'll-user-heading'].forEach(id => {
+        if (map.getLayer(id)) map.moveLayer(id);
+      });
+    } catch {}
+  }
+
+  // Ensure source + dot + accuracy ring exist
   function ensureUserLocationLayers() {
     if (!window.map) return;
 
@@ -3306,6 +3358,7 @@ const observer = new MutationObserver(() => {
         data: { type: 'FeatureCollection', features: [] }
       });
     }
+
     if (!map.getLayer('ll-user-accuracy')) {
       map.addLayer({
         id: 'll-user-accuracy',
@@ -3324,6 +3377,7 @@ const observer = new MutationObserver(() => {
         filter: ['==', ['get', 'role'], 'accuracy']
       });
     }
+
     if (!map.getLayer('ll-user-dot')) {
       map.addLayer({
         id: 'll-user-dot',
@@ -3331,7 +3385,7 @@ const observer = new MutationObserver(() => {
         source: 'll-user-location',
         paint: {
           'circle-radius': 6,
-          'circle-color': '#1a73e8',
+          'circle-color': '#1a73e8', // blue dot fill
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2
         },
@@ -3339,45 +3393,17 @@ const observer = new MutationObserver(() => {
       });
     }
 
-    ensureUserHeadingIcon();
-
-    if (!map.getLayer('ll-user-heading')) {
-      map.addLayer({
-        id: 'll-user-heading',
-        type: 'symbol',
-        source: 'll-user-location',
-        layout: {
-          'icon-image': 'll-user-arrow',
-          'icon-size': 1.1,
-          'icon-rotate': ['get', 'heading'],
-          'icon-rotation-alignment': 'map',
-          'icon-allow-overlap': true,
-          'icon-anchor': 'center',
-          'icon-translate': [0, -14],
-          'icon-translate-anchor': 'map'
-        },
-        filter: ['==', ['get', 'role'], 'heading']
-      });
-    }
-
+    ensureHeadingLayerWithOffset();
     bringUserLayersToFront();
   }
 
-  function bringUserLayersToFront() {
-    if (!map) return;
-    try {
-      const ids = ['ll-user-accuracy', 'll-user-dot', 'll-user-heading'];
-      const top = (map.getStyle().layers || []).slice(-1)[0]?.id;
-      ids.forEach(id => { if (map.getLayer(id) && top) map.moveLayer(id, top); });
-    } catch {}
-  }
-
+  // Push position + accuracy + heading into the GeoJSON source
   function updateUserLocation(lng, lat, accuracyMeters = 10) {
     const src = map && map.getSource('ll-user-location');
     if (!src) return;
 
     const acc = Math.max(accuracyMeters, 5);
-    const heading = Number.isFinite(NS.userHeading) ? NS.userHeading : 0; // show arrow even without permission
+    const heading = Number.isFinite(NS.userHeading) ? NS.userHeading : 0;
 
     const features = [
       { type: 'Feature', properties: { role: 'point' }, geometry: { type: 'Point', coordinates: [lng, lat] } },
@@ -3396,20 +3422,24 @@ const observer = new MutationObserver(() => {
         geometry: { type: 'Point', coordinates: [lng, lat] }
       }
     ];
+
     src.setData({ type: 'FeatureCollection', features });
     bringUserLayersToFront();
   }
 
+  // Listen for device orientation (heading)
   async function ensureHeadingListener() {
     if (NS.headingListenerAttached) return;
 
     const onOrientation = (e) => {
       if (typeof e?.webkitCompassHeading === 'number') {
-        NS.userHeading = e.webkitCompassHeading;                 // iOS
+        // iOS Safari
+        NS.userHeading = e.webkitCompassHeading;
       } else if (typeof e?.alpha === 'number') {
-        NS.userHeading = (360 - e.alpha + 360) % 360;            // Android/others
+        // Android / others
+        NS.userHeading = (360 - e.alpha + 360) % 360;
       } else {
-        return;
+        return; // nothing useful
       }
       if (NS.lastUserLngLat) {
         updateUserLocation(NS.lastUserLngLat[0], NS.lastUserLngLat[1]);
@@ -3419,22 +3449,24 @@ const observer = new MutationObserver(() => {
     const DOE = window.DeviceOrientationEvent;
     if (DOE && typeof DOE.requestPermission === 'function') {
       try {
-        const res = await DOE.requestPermission();               // call from user gesture
+        // Request inside a user gesture (we call from the GPS button click)
+        const res = await DOE.requestPermission();
         if (res === 'granted') {
           window.addEventListener('deviceorientation', onOrientation, true);
           NS.headingListenerAttached = true;
         } else {
-          safeToaster('Para ver la dirección, permite “Movimiento y orientación”.', 5000);
+          safeToaster('Para ver la dirección, permite “Movimiento y orientación” en tu navegador.', 5000);
         }
       } catch {}
     } else {
+      // Android / desktop (depends on site permission for motion sensors)
       window.addEventListener('deviceorientationabsolute', onOrientation, true);
       window.addEventListener('deviceorientation', onOrientation, true);
       NS.headingListenerAttached = true;
     }
   }
 
-  function stopGPS(reasonMsg, duration) {
+  function stopGPS(reasonMsg, duration = 3000) {
     if (NS.gpsWatchId != null) {
       try { navigator.geolocation.clearWatch(NS.gpsWatchId); } catch {}
       NS.gpsWatchId = null;
@@ -3445,15 +3477,16 @@ const observer = new MutationObserver(() => {
   }
 
   function startGPS() {
-    if (!('geolocation' in navigator)) { safeToaster('Geolocation not supported.'); return; }
-    if (!window.map) { safeToaster('Map is not ready.'); return; }
+    if (!('geolocation' in navigator)) { safeToaster('Geolocation not supported.', 5000); return; }
+    if (!window.map) { safeToaster('Map is not ready.', 5000); return; }
 
     ensureUserLocationLayers();
-    ensureHeadingListener(); // non-blocking
+    ensureHeadingListener(); // don’t await (keeps it within click gesture)
 
-    if (NS.gpsWatchId != null) { safeToaster('GPS already on.'); return; }
+    if (NS.gpsWatchId != null) { safeToaster('GPS already on.', 3000); return; }
 
-    safeToaster('GPS on — updating dot in real time.');
+    // Immediate feedback
+    safeToaster('GPS on — updating dot in real time.', 3000);
     NS.hasInitialFly = false;
 
     NS.gpsWatchId = navigator.geolocation.watchPosition(
@@ -3470,7 +3503,7 @@ const observer = new MutationObserver(() => {
           } catch {}
         }
 
-        // Far-away logic with grace period
+        // Far-away logic with a short grace period
         const dist = distanceMeters(NS.lastUserLngLat, NS.lotCenter);
         if (dist > NS.maxDistanceMeters) {
           if (!NS.farWarned) {
@@ -3497,8 +3530,8 @@ const observer = new MutationObserver(() => {
     );
   }
 
-  // === Bind UI immediately or on DOM ready (fixes missing click handler) ===
-  function bindUI() {
+  // Wire the GPS button + modal observer (idempotent)
+  document.addEventListener('DOMContentLoaded', () => {
     const btn = document.getElementById('gpsButton');
     if (btn && !btn.__llBound) {
       btn.__llBound = true;
@@ -3516,14 +3549,7 @@ const observer = new MutationObserver(() => {
       });
       obs.observe(modal, { attributes: true, attributeFilter: ['class'] });
     }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', bindUI, { once: true });
-  } else {
-    // DOM is already ready — bind now
-    bindUI();
-  }
+  });
 
   // Auto-stop on tab hide
   document.addEventListener('visibilitychange', () => {
@@ -3531,6 +3557,7 @@ const observer = new MutationObserver(() => {
   });
 })();
 </script>
+
 
 
 
