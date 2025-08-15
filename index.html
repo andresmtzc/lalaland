@@ -1204,7 +1204,7 @@ body.fonts-loaded .side-length-label {
   position: absolute;
   bottom: 20px;
   right: 20px;
-  z-index: 1000;
+  z-index: 10001;
 }
 
 #takePhotoBtn {
@@ -3535,10 +3535,8 @@ const observer = new MutationObserver(() => {
   });
 
 function startGPS() {
-  // Always show startup notification
   safeToaster('Activating GPS...', 2000);
 
-  // 1. Check prerequisites
   if (!navigator.geolocation) {
     safeToaster('Geolocation not supported on this device', 5000);
     return;
@@ -3548,94 +3546,84 @@ function startGPS() {
     return;
   }
 
-  // 2. Initialize UI elements
+  // ✅ Ensure the camera button exists, then show it
+  let camBtn = document.getElementById('cameraButton');
+  if (!camBtn && window.__LL_PHOTOS__?.createCameraButton) {
+    window.__LL_PHOTOS__.createCameraButton();
+    camBtn = document.getElementById('cameraButton');
+  }
+  if (camBtn) camBtn.style.display = 'block';
+
   ensureUserLocationLayers();
   ensureHeadingListener();
 
-  // 3. Clear previous instance if exists
   if (NS.gpsWatchId !== null) {
     navigator.geolocation.clearWatch(NS.gpsWatchId);
   }
 
-  // 4. Start new GPS session
   NS.gpsWatchId = navigator.geolocation.watchPosition(
     (pos) => {
       const { latitude, longitude, accuracy, heading } = pos.coords;
       NS.lastUserLngLat = [longitude, latitude];
 
-      // Use GPS heading if compass unavailable
       if (heading && !NS.userHeading) {
         NS.userHeading = smoothHeading(heading);
       }
 
       updateUserLocation(longitude, latitude, accuracy);
 
-      // Initial zoom to user
       if (!NS.hasInitialFly) {
         NS.hasInitialFly = true;
-        map.flyTo({
-          center: [longitude, latitude],
-          zoom: 17,
-          speed: 1.2,
-          curve: 1.5
-        });
+        map.flyTo({ center: [longitude, latitude], zoom: 17, speed: 1.2, curve: 1.5 });
         safeToaster('GPS active - tracking your location', 3000);
       }
+
+      // (Optional) ensure visible once we actually get a fix:
+      const btn = document.getElementById('cameraButton');
+      if (btn) btn.style.display = 'block';
     },
     (err) => {
       let errorMsg = 'GPS error';
       switch(err.code) {
-        case err.PERMISSION_DENIED:
-          errorMsg = 'Please enable location permissions';
-          break;
-        case err.POSITION_UNAVAILABLE:
-          errorMsg = 'Location signal lost';
-          break;
-        case err.TIMEOUT:
-          errorMsg = 'GPS timeout - try moving outdoors';
-          break;
+        case err.PERMISSION_DENIED:  errorMsg = 'Please enable location permissions'; break;
+        case err.POSITION_UNAVAILABLE: errorMsg = 'Location signal lost'; break;
+        case err.TIMEOUT:             errorMsg = 'GPS timeout - try moving outdoors'; break;
       }
       stopGPS(errorMsg);
     },
-    { 
-      enableHighAccuracy: true,
-      maximumAge: 2000,
-      timeout: 10000 
-    }
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
   );
 
-  // Confirm activation
-  NS.gpsWatchId !== null && safeToaster('GPS activated successfully', 2000);
+  safeToaster('GPS activated successfully', 2000);
 }
 
+
 function stopGPS(reason) {
-  // 1. Stop GPS tracking
   if (NS.gpsWatchId) {
     navigator.geolocation.clearWatch(NS.gpsWatchId);
     NS.gpsWatchId = null;
   }
 
-  // 2. Clear the dot/accuracy circle (if layers exist)
   if (map?.getSource('ll-user-location')) {
-    map.getSource('ll-user-location').setData({ 
-      type: 'FeatureCollection', 
-      features: [] 
-    });
+    map.getSource('ll-user-location').setData({ type: 'FeatureCollection', features: [] });
   }
 
-  // 3. Remove the heading arrow (if it exists)
   if (NS.headingMarker) {
     NS.headingMarker.remove();
-    NS.headingMarker = null; // ← Critical! Prevents ghost markers
+    NS.headingMarker = null;
   }
 
-  // 4. Reset all tracking states
   NS.lastUserLngLat = null;
   NS.userHeading = null;
   NS.lastSmoothedHeading = null;
 
+  // ✅ Hide the camera button
+  const camBtn = document.getElementById('cameraButton');
+  if (camBtn) camBtn.style.display = 'none';
+
   safeToaster(reason || 'GPS stopped');
 }
+
 
 })();
 </script>
