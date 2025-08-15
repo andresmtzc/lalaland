@@ -3620,38 +3620,47 @@ NS.emit('gps-stop');
 </script>
 
 
+
 <script>
 (() => {
   'use strict';
-  
-  // ===== Photo System =====
+
   const PhotoSystem = (window.__LL_PHOTOS__ = window.__LL_PHOTOS__ || {});
-  
-  // Configuration
-  PhotoSystem.markers = [];                // [{ marker, data, lngLat, timestamp }]
-  PhotoSystem.layerId = 'user-photos';
-  PhotoSystem.maxPhotoSize = 800;          // Max width/height in pixels
-  PhotoSystem.currentIndex = null;         // index of the photo currently opened in modal
-  
-  // Initialize when Mapbox GL is ready
-  PhotoSystem.init = function() {
+
+  // ----- Config
+  PhotoSystem.markers = [];                 // [{ id, marker, data, lngLat:[lng,lat], timestamp }]
+  PhotoSystem.maxPhotoSize = 800;
+  PhotoSystem.currentIndex = null;
+  PhotoSystem.clusterSourceId = 'll-photo-points';
+  PhotoSystem.clusterLayerId = 'll-photo-clusters';
+  PhotoSystem.clusterCountLayerId = 'll-photo-cluster-count';
+  PhotoSystem.unclusteredLayerId = 'll-photo-unclustered';
+  PhotoSystem.clusterMaxZoom = 17;          // cluster until this zoom
+  PhotoSystem._clusterReady = false;
+
+  // Small util
+  const uid = () => (Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+  // ===== Init
+  PhotoSystem.init = function () {
     this.createCameraButton();
     this.createPhotoModal();
+    this.ensureClusterLayers();   // safe to call multiple times
     this.loadSavedPhotos();
-    
-    // show immediately if GPS is already active
+    this.handleMarkerVisibility(); // set initial visibility
+
+    // show camera FAB if GPS is already running
     const cam = document.getElementById('cameraButton');
     if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUserLngLat)) {
       cam.style.display = 'block';
     }
 
-    // GPS event listeners
+    // GPS events
     if (window.__LL_GPS__) {
       window.__LL_GPS__.on('gps-start', () => {
         const el = document.getElementById('cameraButton');
         if (el) el.style.display = 'block';
       });
-      
       window.__LL_GPS__.on('gps-stop', () => {
         const el = document.getElementById('cameraButton');
         if (el) el.style.display = 'none';
@@ -3659,260 +3668,408 @@ NS.emit('gps-stop');
     }
   };
 
-  PhotoSystem.createCameraButton = function() {
-    // Only create once
+  // ===== UI pieces
+  PhotoSystem.createCameraButton = function () {
     if (document.getElementById('cameraButton')) return;
-    
     const html = `
       <div id="cameraButton" style="display:none;">
         <button id="takePhotoBtn">📸</button>
         <input type="file" id="fileUpload" accept="image/*" capture="environment" hidden>
-      </div>
-    `;
+      </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
-    
-    // Event listeners
-    document.getElementById('takePhotoBtn').addEventListener('click', () => {
-      this.activateCamera();
-    });
-    
+    document.getElementById('takePhotoBtn').addEventListener('click', () => this.activateCamera());
     document.getElementById('fileUpload').addEventListener('change', (e) => {
       if (e.target.files.length) this.processImageFile(e.target.files[0]);
     });
   };
 
-  PhotoSystem.createPhotoModal = function() {
+  PhotoSystem.createPhotoModal = function () {
     if (document.getElementById('photoModal')) return;
-    
     const html = `
-      <div id="photoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:10000;">
-        <img id="modalImage" style="max-width:90%; max-height:90%; margin:auto; display:block; position:relative; top:50%; transform:translateY(-50%);" />
-        <button id="closeModal" style="position:absolute; top:20px; right:20px; background:#f44336; color:white; border:none; border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer;">×</button>
-        <button id="deletePhoto" title="Delete this photo" style="position:absolute; top:20px; left:20px; background:#ff8400; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:18px; cursor:pointer;">🗑️</button>
-      </div>
-    `;
+      <div id="photoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:10000;">
+        <img id="modalImage" style="max-width:90%; max-height:90%; margin:auto; display:block; position:relative; top:50%; transform:translateY(-50%); box-shadow:0 6px 24px rgba(0,0,0,.4);" />
+        <button id="closeModal"  style="position:absolute; top:20px; right:20px;  background:#f44336; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer;">×</button>
+        <button id="deletePhoto" style="position:absolute; top:20px; left:20px;   background:#ff8400; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:18px; cursor:pointer;" title="Delete">🗑️</button>
+        <button id="prevPhoto"  style="position:absolute; left:20px;  top:50%; transform:translateY(-50%); background:#ffffff22; color:#fff; border:none; border-radius:50%; width:44px; height:44px; font-size:20px; cursor:pointer;">‹</button>
+        <button id="nextPhoto"  style="position:absolute; right:20px; top:50%; transform:translateY(-50%); background:#ffffff22; color:#fff; border:none; border-radius:50%; width:44px; height:44px; font-size:20px; cursor:pointer;">›</button>
+      </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
-    
+
     document.getElementById('closeModal').addEventListener('click', () => {
       document.getElementById('photoModal').style.display = 'none';
-      PhotoSystem.currentIndex = null;
+      this.currentIndex = null;
     });
+    document.getElementById('deletePhoto').addEventListener('click', () => this.deleteCurrent());
+    document.getElementById('prevPhoto').addEventListener('click', () => this.prevPhoto());
+    document.getElementById('nextPhoto').addEventListener('click', () => this.nextPhoto());
 
-    document.getElementById('deletePhoto').addEventListener('click', () => {
-      PhotoSystem.deleteCurrent();
+    // Keyboard nav
+    window.addEventListener('keydown', (e) => {
+      const open = document.getElementById('photoModal').style.display === 'block';
+      if (!open) return;
+      if (e.key === 'ArrowLeft') this.prevPhoto();
+      if (e.key === 'ArrowRight') this.nextPhoto();
+      if (e.key === 'Escape') document.getElementById('closeModal').click();
     });
   };
 
-  PhotoSystem.activateCamera = function() {
-    // Fallback to file input if no camera access
-    if (!navigator.mediaDevices?.getUserMedia) {
-      document.getElementById('fileUpload').click();
-      return;
-    }
-    
-    const preview = document.createElement('div');
-    preview.style.cssText = `
-      position: fixed;
-      inset: 0;
-      background: black;
-      z-index: 9999;
-    `;
+  // ===== Camera / file input
+  PhotoSystem.activateCamera = function () {
+  // If no camera support, fall back to the global file picker
+  if (!navigator.mediaDevices?.getUserMedia) {
+    document.getElementById('fileUpload').click();
+    return;
+  }
 
-    const video = document.createElement('video');
-    video.style.cssText = 'width:100%; height:100%; object-fit:contain;';
+  // Overlay
+  const preview = document.createElement('div');
+  preview.style.cssText = 'position:fixed; inset:0; background:black; z-index:9999;';
 
-    const captureBtn = document.createElement('button');
-    captureBtn.textContent = 'Capture';
-    captureBtn.style.cssText = `
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 12px 24px;
-      background: #4285F4;
-      color: white;
-      border: none;
-      border-radius: 50px;
-      font-size: 16px;
-      cursor: pointer;
-    `;
+  // Live video
+  const video = document.createElement('video');
+  video.style.cssText = 'width:100%; height:100%; object-fit:contain;';
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = `
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      padding: 8px 16px;
-      background: #f44336;
-      color: white;
-      border: none;
-      border-radius: 50px;
-      cursor: pointer;
-    `;
+  // Top-right cancel
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = 'position:absolute; top:20px; right:20px; padding:8px 16px; background:#f44336; color:#fff; border:none; border-radius:50px; cursor:pointer;';
 
-    preview.appendChild(video);
-    preview.appendChild(captureBtn);
-    preview.appendChild(cancelBtn);
-    document.body.appendChild(preview);
+  // Bottom control bar (centered)
+  const controls = document.createElement('div');
+  controls.style.cssText = 'position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:12px;';
 
-    navigator.mediaDevices.getUserMedia({ 
-      video: { facingMode: 'environment' },
-      audio: false 
-    }).then(stream => {
+  // Capture button
+  const captureBtn = document.createElement('button');
+  captureBtn.textContent = 'Capture';
+  captureBtn.style.cssText = 'padding:12px 24px; background:#4285F4; color:#fff; border:none; border-radius:50px; font-size:16px; cursor:pointer;';
+
+  // Upload button
+  const uploadBtn = document.createElement('button');
+  uploadBtn.textContent = 'Upload';
+  uploadBtn.style.cssText = 'padding:12px 24px; background:#ff8400; color:#fff; border:none; border-radius:50px; font-size:16px; cursor:pointer;';
+
+  // Hidden file input scoped to this overlay (avoids double listeners)
+  const overlayFile = document.createElement('input');
+  overlayFile.type = 'file';
+  overlayFile.accept = 'image/*';
+
+  // Assemble
+  controls.appendChild(captureBtn);
+  controls.appendChild(uploadBtn);
+  preview.appendChild(video);
+  preview.appendChild(cancelBtn);
+  preview.appendChild(controls);
+  preview.appendChild(overlayFile);
+  document.body.appendChild(preview);
+
+  let activeStream = null;
+
+  // Camera stream
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+    .then(stream => {
+      activeStream = stream;
       video.srcObject = stream;
       video.play();
 
+      // Capture from camera
       captureBtn.addEventListener('click', () => {
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         canvas.getContext('2d').drawImage(video, 0, 0);
-        
-        canvas.toBlob(blob => {
-          this.processImageFile(blob);
-          preview.remove();
-          stream.getTracks().forEach(track => track.stop());
+        canvas.toBlob(async (blob) => {
+          await this.processImageFile(blob);
+          cleanup();
         }, 'image/jpeg', 0.8);
       });
 
-      cancelBtn.addEventListener('click', () => {
-        preview.remove();
-        stream.getTracks().forEach(track => track.stop());
+      // Open file picker
+      uploadBtn.addEventListener('click', () => overlayFile.click());
+
+      // Handle chosen file (and close preview)
+      overlayFile.addEventListener('change', async (e) => {
+        if (e.target.files && e.target.files[0]) {
+          await this.processImageFile(e.target.files[0]);
+          cleanup();
+        }
       });
-    }).catch(() => {
-      preview.remove();
+
+      // Cancel
+      cancelBtn.addEventListener('click', () => cleanup());
+    })
+    .catch(() => {
+      // If camera fails, remove overlay and fall back to global picker
+      document.body.removeChild(preview);
       document.getElementById('fileUpload').click();
     });
-  };
 
-  PhotoSystem.processImageFile = function(file) {
+  function cleanup() {
+    try {
+      if (activeStream) activeStream.getTracks().forEach(t => t.stop());
+    } catch {}
+    if (preview.parentNode) preview.parentNode.removeChild(preview);
+  }
+};
+
+  PhotoSystem.processImageFile = function (file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        const img = new Image();
-        img.src = e.target.result;
-        
+        const img = new Image(); img.src = e.target.result;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          
+          let { width, height } = img;
           if (width > height) {
-            if (width > this.maxPhotoSize) {
-              height *= this.maxPhotoSize / width;
-              width = this.maxPhotoSize;
-            }
+            if (width > this.maxPhotoSize) { height *= this.maxPhotoSize / width; width = this.maxPhotoSize; }
           } else {
-            if (height > this.maxPhotoSize) {
-              width *= this.maxPhotoSize / height;
-              height = this.maxPhotoSize;
-            }
+            if (height > this.maxPhotoSize) { width *= this.maxPhotoSize / height; height = this.maxPhotoSize; }
           }
-          
-          canvas.width = width;
-          canvas.height = height;
+          canvas.width = width; canvas.height = height;
           canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-          
-          const photoData = canvas.toDataURL('image/jpeg', 0.8);
-          resolve(photoData);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
         };
       };
       reader.readAsDataURL(file);
     }).then(photoData => {
       if (window.__LL_GPS__?.lastUserLngLat) {
         const ts = new Date().toISOString();
-        this.addPhotoMarker(window.__LL_GPS__.lastUserLngLat, photoData, ts);
-        this.savePhoto(photoData, ts);
+        this.addPhotoMarker(window.__LL_GPS__.lastUserLngLat, photoData, ts, uid());
+        this.savePhoto({ id: this.markers[this.markers.length - 1].id, lngLat: window.__LL_GPS__.lastUserLngLat, data: photoData, timestamp: ts });
       }
     });
   };
 
-  // lngLat: [lng, lat], photoData: base64, timestamp: ISO string (optional)
-  PhotoSystem.addPhotoMarker = function(lngLat, photoData, timestamp) {
+  // ===== Map / markers
+  PhotoSystem.addPhotoMarker = function (lngLat, photoData, timestamp, id) {
     const el = document.createElement('div');
     el.className = 'photo-marker';
     el.style.backgroundImage = `url(${photoData})`;
-    
     const time = document.createElement('div');
     time.className = 'photo-timestamp';
     const displayTime = timestamp ? new Date(timestamp) : new Date();
     time.textContent = displayTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     el.appendChild(time);
-    
-    const marker = new mapboxgl.Marker({
-      element: el,
-      anchor: 'center'
-    }).setLngLat(lngLat).addTo(map);
 
-    // Open modal + remember which marker was clicked (compute live index)
+    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+      .setLngLat(lngLat)
+      .addTo(map);
+
+    const rec = { id: id || uid(), marker, data: photoData, lngLat, timestamp: timestamp || new Date().toISOString() };
+    this.markers.push(rec);
+
+    // Open modal on HTML marker click
     el.addEventListener('click', () => {
       const idx = this.markers.findIndex(m => m.marker.getElement() === el);
       if (idx === -1) return;
-      this.currentIndex = idx;
-      document.getElementById('modalImage').src = photoData;
-      document.getElementById('photoModal').style.display = 'block';
+      this.openAt(idx);
     });
-    
-    this.markers.push({ marker, data: photoData, lngLat, timestamp: timestamp || new Date().toISOString() });
+
+    this.syncClusterSource();
+    this.handleMarkerVisibility(); // in case zoom context changed
   };
 
-  PhotoSystem.savePhoto = function(photoData, timestamp) {
-    const photos = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
-    photos.push({
-      lngLat: window.__LL_GPS__?.lastUserLngLat,
-      data: photoData,
-      timestamp: timestamp || new Date().toISOString()
-    });
-    localStorage.setItem('mapPhotos', JSON.stringify(photos));
+  PhotoSystem.openAt = function (index) {
+    if (index < 0 || index >= this.markers.length) return;
+    this.currentIndex = index;
+    document.getElementById('modalImage').src = this.markers[index].data;
+    document.getElementById('photoModal').style.display = 'block';
   };
 
-  PhotoSystem.rebuildLocalStorage = function() {
-    const rebuilt = this.markers.map(m => ({
-      lngLat: m.lngLat,
-      data: m.data,
-      timestamp: m.timestamp || new Date().toISOString()
-    }));
-    localStorage.setItem('mapPhotos', JSON.stringify(rebuilt));
+  PhotoSystem.nextPhoto = function () {
+    if (this.markers.length === 0 || this.currentIndex == null) return;
+    this.currentIndex = (this.currentIndex + 1) % this.markers.length;
+    document.getElementById('modalImage').src = this.markers[this.currentIndex].data;
   };
 
-  // Delete the photo currently shown in the modal
-  PhotoSystem.deleteCurrent = function() {
+  PhotoSystem.prevPhoto = function () {
+    if (this.markers.length === 0 || this.currentIndex == null) return;
+    this.currentIndex = (this.currentIndex - 1 + this.markers.length) % this.markers.length;
+    document.getElementById('modalImage').src = this.markers[this.currentIndex].data;
+  };
+
+  PhotoSystem.deleteCurrent = function () {
     if (this.currentIndex == null) return;
     const rec = this.markers[this.currentIndex];
     if (!rec) return;
 
-    // Remove marker from map & array
+    // Remove marker from map and array
     rec.marker.remove();
     this.markers.splice(this.currentIndex, 1);
 
-    // Persist new list
+    // Persist
     this.rebuildLocalStorage();
+    this.syncClusterSource();
 
-    // Close modal and reset index
-    const modal = document.getElementById('photoModal');
-    if (modal) modal.style.display = 'none';
-    this.currentIndex = null;
+    if (this.markers.length === 0) {
+      document.getElementById('photoModal').style.display = 'none';
+      this.currentIndex = null;
+      try { window.showToaster?.('Photo deleted', 2000); } catch {}
+      return;
+    }
 
-    // Optional toast
+    // Show next available
+    this.currentIndex = this.currentIndex % this.markers.length;
+    document.getElementById('modalImage').src = this.markers[this.currentIndex].data;
     try { window.showToaster?.('Photo deleted', 2000); } catch {}
   };
 
-  PhotoSystem.loadSavedPhotos = function() {
-    const saved = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
-    saved.forEach(photo => {
-      if (photo.lngLat && photo.data) {
-        this.addPhotoMarker(photo.lngLat, photo.data, photo.timestamp);
-      }
-    });
+  // ===== Storage
+  PhotoSystem.savePhoto = function (obj) {
+    const photos = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
+    photos.push(obj);
+    localStorage.setItem('mapPhotos', JSON.stringify(photos));
   };
 
+  PhotoSystem.rebuildLocalStorage = function () {
+    const rebuilt = this.markers.map(m => ({
+      id: m.id,
+      lngLat: m.lngLat,
+      data: m.data,
+      timestamp: m.timestamp
+    }));
+    localStorage.setItem('mapPhotos', JSON.stringify(rebuilt));
+  };
+
+  PhotoSystem.loadSavedPhotos = function () {
+    const saved = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
+    let mutated = false;
+    saved.forEach(photo => {
+      // Back-compat: add missing ids
+      if (!photo.id) { photo.id = uid(); mutated = true; }
+      if (photo.lngLat && photo.data) {
+        this.addPhotoMarker(photo.lngLat, photo.data, photo.timestamp, photo.id);
+      }
+    });
+    if (mutated) localStorage.setItem('mapPhotos', JSON.stringify(saved));
+    this.syncClusterSource();
+  };
+
+  // ===== Clustering (Mapbox source/layers)
+  PhotoSystem.ensureClusterLayers = function () {
+    if (!window.map) return;
+    const addAll = () => {
+      if (map.getSource(this.clusterSourceId)) { this._clusterReady = true; return; }
+
+      map.addSource(this.clusterSourceId, {
+        type: 'geojson',
+        cluster: true,
+        clusterRadius: 40,              // pixels
+        clusterMaxZoom: this.clusterMaxZoom,
+        data: { type: 'FeatureCollection', features: [] }
+      });
+
+      // Cluster circles
+      map.addLayer({
+        id: this.clusterLayerId,
+        type: 'circle',
+        source: this.clusterSourceId,
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': '#ff8400',
+          'circle-radius': [
+            'step', ['get', 'point_count'],
+            16, 10, 20, 25, 28
+          ],
+          'circle-opacity': 0.85
+        }
+      });
+
+      // Cluster counts
+      map.addLayer({
+        id: this.clusterCountLayerId,
+        type: 'symbol',
+        source: this.clusterSourceId,
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': ['get', 'point_count_abbreviated'],
+          'text-size': 12
+        },
+        paint: { 'text-color': '#ffffff' }
+      });
+
+      // Single (unclustered) points
+      map.addLayer({
+        id: this.unclusteredLayerId,
+        type: 'circle',
+        source: this.clusterSourceId,
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': '#ff8400',
+          'circle-radius': 8,
+          'circle-stroke-color': '#fff',
+          'circle-stroke-width': 2
+        }
+      });
+
+      // Click cluster -> zoom in
+      map.on('click', this.clusterLayerId, (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: [this.clusterLayerId] });
+        const clusterId = features[0].properties.cluster_id;
+        map.getSource(this.clusterSourceId).getClusterExpansionZoom(clusterId, (err, zoom) => {
+          if (err) return;
+          map.easeTo({ center: features[0].geometry.coordinates, zoom });
+        });
+      });
+
+      // Click unclustered -> open modal for that photo
+      map.on('click', this.unclusteredLayerId, (e) => {
+        const f = e.features && e.features[0];
+        if (!f) return;
+        const id = f.properties.id;
+        const idx = this.markers.findIndex(m => m.id === id);
+        if (idx !== -1) this.openAt(idx);
+      });
+
+      // Toggle HTML markers vs layers based on zoom
+      map.on('zoom', () => this.handleMarkerVisibility());
+
+      this._clusterReady = true;
+      this.syncClusterSource();
+      this.handleMarkerVisibility();
+    };
+
+    if (map.isStyleLoaded()) addAll();
+    else map.on('load', addAll);
+  };
+
+  PhotoSystem.syncClusterSource = function () {
+    if (!this._clusterReady || !map.getSource(this.clusterSourceId)) return;
+    const fc = {
+      type: 'FeatureCollection',
+      features: this.markers.map(m => ({
+        type: 'Feature',
+        properties: { id: m.id },
+        geometry: { type: 'Point', coordinates: m.lngLat }
+      }))
+    };
+    map.getSource(this.clusterSourceId).setData(fc);
+  };
+
+  PhotoSystem.handleMarkerVisibility = function () {
+    if (!window.map) return;
+    const z = map.getZoom();
+    const showHtml = z > this.clusterMaxZoom + 0.3; // small hysteresis
+    // HTML markers
+    this.markers.forEach(m => { m.marker.getElement().style.display = showHtml ? 'block' : 'none'; });
+    // Layer for unclustered points (only when hiding HTML markers)
+    if (map.getLayer(this.unclusteredLayerId)) {
+      map.setLayoutProperty(this.unclusteredLayerId, 'visibility', showHtml ? 'none' : 'visible');
+    }
+    // Clusters are visible only when hiding HTML markers
+    if (map.getLayer(this.clusterLayerId)) {
+      map.setLayoutProperty(this.clusterLayerId, 'visibility', showHtml ? 'none' : 'visible');
+    }
+    if (map.getLayer(this.clusterCountLayerId)) {
+      map.setLayoutProperty(this.clusterCountLayerId, 'visibility', showHtml ? 'none' : 'visible');
+    }
+  };
+
+  // ===== Boot (in case init is called before map ready, we re-call ensureClusterLayers later)
   // Show FAB immediately if GPS is already active
   if (window.__LL_GPS__?.lastUserLngLat) {
     const cam = document.getElementById('cameraButton');
     if (cam) cam.style.display = 'block';
   }
-
 })();
 </script>
 
