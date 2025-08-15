@@ -1226,6 +1226,12 @@ body.fonts-loaded .side-length-label {
   width:40px; height:40px; font-size:20px; cursor:pointer;
 }
 
+/* Hide back/expand controls only in PIN mode */
+#lotModal.pin-mode #backButton,
+#lotModal.pin-mode .plus-button,
+#lotModal.pin-mode .bottom-plus-button {
+  display: none !important;
+}
 
 
   </style>
@@ -2512,6 +2518,18 @@ async function showDetailViewForLot(index) {
   const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
   const detailData = lot.detailData || {};
 
+  // ✅ ensure lot detail view is NOT in pin-mode
+const modalEl = document.getElementById('lotModal');
+modalEl.classList.remove('pin-mode');
+
+// ✅ clear any inline hiding left from pin mode
+const bottomPlusEl = document.querySelector('.bottom-plus-button');
+if (bottomPlusEl) bottomPlusEl.style.display = '';
+const plusBtnEl = document.querySelector('.plus-button');
+if (plusBtnEl) plusBtnEl.style.display = '';
+const backBtnEl = document.getElementById('backButton');
+if (backBtnEl) backBtnEl.style.display = '';
+
   // Create container for detail view
   const detailContainer = document.createElement('div');
   detailContainer.className = 'detail-container';
@@ -3056,6 +3074,11 @@ modalInfo.addEventListener('wheel', (e) => {
 function openModal(lot = null, baseIndex = 0) {
   const wasHidden = !modal.classList.contains('show');
 
+// 🛡️ If we're in PIN mode, ignore any list-opening calls
+if (document.getElementById('lotModal')?.classList.contains('pin-mode')) {
+  return;
+}
+
   // 🧹 Reset modal state (your existing code)
   headerLotNumber.style.display = 'none';
   document.querySelector('.modal-content-wrapper').classList.remove('show-details');
@@ -3139,23 +3162,60 @@ function openModal(lot = null, baseIndex = 0) {
 
 function closeModal() {
   const modal = document.getElementById('lotModal');
+  if (!modal) return;
+
+  const wrapper = document.querySelector('.modal-content-wrapper');
+  const modalInfo = document.getElementById('modalInfo');
+  const customScrollbar = document.getElementById('customScrollbar');
+  const lotDetails = document.getElementById('lotDetails');
+  const backButton = document.getElementById('backButton');
+  const headerLotNumber = document.getElementById('headerLotNumber');
   const plusIcon = document.querySelector('.plus-button .plus-icon');
   const minusIcon = document.querySelector('.plus-button .minus-icon');
+  const plusBtn = document.querySelector('.plus-button');
+  const bottomPlus = document.querySelector('.bottom-plus-button');
 
+  // --- 1) Kill special modes / embeds
+  modal.classList.remove('pin-mode', 'expanded');
+  hideCalendlyEmbed();                       // blanks iframe + hides container
+  isDetailOpen = false;
 
-isDetailOpen = false;
-removeSideLengthLabels(); // already present — keep it
-
-  // Reset expanded state and icons
-  modal.classList.remove('expanded');
-  plusIcon.style.display = 'block';
-  minusIcon.style.display = 'none';
-
-
-  // Remove side length labels
+  // --- 2) Clear lot side labels & map hover
   removeSideLengthLabels();
+  if (typeof hoveredId !== 'undefined' && hoveredId !== null && map && map.getSource('lots-final')) {
+    try { map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false }); } catch {}
+    hoveredId = null;
+  }
 
-  // Restore original view before modal opened
+  // --- 3) Reset panes (detail vs list) & content
+  if (wrapper) wrapper.classList.remove('show-details');
+  if (lotDetails) {
+    lotDetails.classList.remove('active');
+    lotDetails.style.display = 'block';
+    lotDetails.innerHTML = '';
+  }
+  if (modalInfo) {
+    modalInfo.style.display = '';
+    modalInfo.style.opacity = '1';
+    // Optional: reset scroll position so list starts clean
+    modalInfo.scrollTop = 0;
+  }
+  if (customScrollbar) customScrollbar.style.display = '';
+
+  // --- 4) Reset controls visibility & header
+  if (backButton) backButton.style.display = 'none';
+  if (headerLotNumber) headerLotNumber.style.display = 'none';
+  if (plusBtn) plusBtn.style.display = 'none';
+  if (bottomPlus) bottomPlus.style.display = 'none';
+  if (plusIcon) plusIcon.style.display = 'block';
+  if (minusIcon) minusIcon.style.display = 'none';
+
+  // --- 5) Reset internal scroll/animation flags (if you use them)
+  try { scrollHandlerAttached = true; } catch {}
+  try { clampCooldown = false; } catch {}
+  try { animatedFeaturedLots?.clear?.(); } catch {}
+
+  // --- 6) Restore map view (undo panBy offset + preModalView fly)
   if (preModalView && map) {
     map.flyTo({
       center: preModalView.center,
@@ -3166,7 +3226,7 @@ removeSideLengthLabels(); // already present — keep it
       curve: 1.5
     });
 
-    // After the flyTo animation ends, apply panBy to compensate for the modal shift
+    // After fly, undo the modal offset pan
     map.once('moveend', () => {
       if (lastOffset) {
         map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
@@ -3176,15 +3236,16 @@ removeSideLengthLabels(); // already present — keep it
 
     preModalView = null;
   } else if (map && lastOffset) {
-    // fallback if no preModalView is saved
+    // Fallback: just undo the offset
     map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
     lastOffset = [0, 0];
   }
 
-  // Close modal
+  // --- 7) Close modal (let CSS transition run)
   modal.classList.remove('show');
-  setTimeout(() => modal.style.display = 'none', 300);
+  setTimeout(() => { modal.style.display = 'none'; }, 300);
 }
+
 
 function handlePlusButton() {
   const modal = document.getElementById('lotModal');
@@ -3309,6 +3370,23 @@ const observer = new MutationObserver(() => {
     });
   });
 });
+
+
+function hideCalendlyEmbed() {
+  // Hide the embedded Calendly pane
+  const wrap = document.getElementById('calendlyEmbed');
+  if (wrap) wrap.style.display = 'none';
+
+  // Blank the iframe so it fully resets next time
+  const iframe = document.getElementById('calendly-iframe');
+  if (iframe) iframe.src = 'about:blank';
+
+  // Close Calendly popup widget if it's open
+  if (window.Calendly && typeof window.Calendly.closePopupWidget === 'function') {
+    try { window.Calendly.closePopupWidget(); } catch {}
+  }
+}
+
 </script>
 
 
@@ -3789,121 +3867,137 @@ NS.emit('gps-stop');
   };
 
   // ---- Open in your lot modal (same as before)
-  PS.openPinInModal = async function (pin) {
-    await window.supabaseReady;
+PS.openPinInModal = async function (pin) {
+  await window.supabaseReady;
 
-    const modal = document.getElementById('lotModal');
-    const wrapper = document.querySelector('.modal-content-wrapper');
-    const lotDetails = document.getElementById('lotDetails');
-    const backButton = document.getElementById('backButton');
+  const modal = document.getElementById('lotModal');
+  const wrapper = document.querySelector('.modal-content-wrapper');
+  const lotDetails = document.getElementById('lotDetails');
+  const backButton = document.getElementById('backButton');
 
-    if (!modal.classList.contains('show')) {
-      try {
-        if (window.map) {
-          window.preModalView = {
-            center: map.getCenter().toArray(),
-            zoom: map.getZoom(),
-            bearing: map.getBearing(),
-            pitch: map.getPitch()
-          };
-        }
-        modal.classList.add('show');
-        modal.style.display = 'block';
-        if (typeof window.adjustMapForModal === 'function') adjustMapForModal();
-      } catch {}
-    }
 
-    lotDetails.innerHTML = '';
-    wrapper.classList.add('show-details');
-    lotDetails.classList.add('active');
-    backButton.style.display = 'flex';
-    const plusBtn = document.querySelector('.plus-button');
-    if (plusBtn) plusBtn.style.display = 'flex';
-    try { window.isDetailOpen = true; } catch {}
-
-    const { data: photos } = await window.supabaseClient
-      .from('pin_photos')
-      .select('id,url,created_at')
-      .eq('pin_id', pin.id)
-      .order('created_at', { ascending: true });
-
-    const shortId = pin.id.slice(0, 6);
-    const coords = `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`;
-
-    const container = document.createElement('div');
-    container.style.padding = '16px';
-    container.innerHTML = `
-      <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:10px;">
-        <div style="font-size:18px; color:#a17345; font-weight:700;">Pin</div>
-        <div style="font-size:12px; color:#8a8880;">${shortId}</div>
-      </div>
-      <div style="font-size:13px; color:#8a8880; margin-bottom:12px;">${coords}</div>
-      <div id="ps-grid-${pin.id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; min-height:82px; margin-bottom:12px;">
-        ${
-          (photos && photos.length)
-            ? photos.map(p => `
-                <div class="ps-thumb" data-url="${p.url}" style="
-                  width:100%; aspect-ratio:1/1; background:#eee;
-                  background-image:url('${p.url}');
-                  background-size:cover; background-position:center;
-                  border-radius:6px; cursor:pointer;"></div>
-              `).join('')
-            : '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'
-        }
-      </div>
-      <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:4px; cursor:pointer; font-weight:600;">
-        Upload photo
-        <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
-      </label>
-    `;
-    lotDetails.appendChild(container);
-
-    container.querySelectorAll('.ps-thumb').forEach(div => {
-      div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
-    });
-
-    const input = container.querySelector(`#ps-upload-${pin.id}`);
-    input.addEventListener('change', async (e) => {
-      if (!e.target.files || !e.target.files[0]) return;
-      try {
-        const blob = await compressImageToJPEG(e.target.files[0], 1200);
-        const path = `${pin.id}/${Date.now()}.jpg`;
-        const up = await window.supabaseClient.storage.from('pin-photos')
-          .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (up.error) throw up.error;
-
-        const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
-        const url = pub?.data?.publicUrl;
-        if (!url) throw new Error('No public URL');
-
-        const { error: insErr } = await window.supabaseClient
-          .from('pin_photos').insert({ pin_id: pin.id, url });
-        if (insErr) throw insErr;
-
-        const g = container.querySelector(`#ps-grid-${pin.id}`);
-        g.querySelector('div[style*="No photos yet"]')?.remove();
-        const thumb = document.createElement('div');
-        thumb.className = 'ps-thumb';
-        thumb.setAttribute('data-url', url);
-        thumb.style.cssText = `
-          width:100%; aspect-ratio:1/1; background:#eee;
-          background-image:url("${url}");
-          background-size:cover; background-position:center;
-          border-radius:6px; cursor:pointer;`;
-        thumb.addEventListener('click', () => PS.showViewer(url));
-        g.appendChild(thumb);
-
-        toast('Photo uploaded');
-      } catch (err) {
-        console.error(err);
-        toast('Upload failed');
-      } finally {
-        e.target.value = '';
+  // Ensure modal is open (and remember pre-view for closing)
+  if (!modal.classList.contains('show')) {
+    try {
+      if (window.map) {
+        window.preModalView = {
+          center: map.getCenter().toArray(),
+          zoom: map.getZoom(),
+          bearing: map.getBearing(),
+          pitch: map.getPitch()
+        };
       }
-    });
+      modal.classList.add('show');
+      modal.style.display = 'block';
+      if (typeof window.adjustMapForModal === 'function') adjustMapForModal();
+    } catch (e) {
+      console.warn('Could not open modal:', e);
+    }
+  }
 
- 
-  };
+  // 🔒 PIN MODE: hide Back / Expand (+/-) / Bottom chevron
+  modal.classList.add('pin-mode');
+  // (also hard-hide in case other logic toggles them)
+  if (backButton) backButton.style.display = 'none';
+  const plusBtn = document.querySelector('.plus-button');
+  if (plusBtn) plusBtn.style.display = 'none';
+  const bottomPlus = document.querySelector('.bottom-plus-button');
+  if (bottomPlus) bottomPlus.style.display = 'none';
+
+  // Switch modal into details view
+  lotDetails.innerHTML = '';
+  wrapper.classList.add('show-details');
+  lotDetails.classList.add('active');
+  try { window.isDetailOpen = true; } catch {}
+
+  // Load photos for this pin
+  const { data: photos } = await window.supabaseClient
+    .from('pin_photos')
+    .select('id,url,created_at')
+    .eq('pin_id', pin.id)
+    .order('created_at', { ascending: true });
+
+  const shortId = pin.id.slice(0, 6);
+  const coords = `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`;
+
+  // Build UI
+  const container = document.createElement('div');
+  container.style.padding = '16px';
+  container.innerHTML = `
+    <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:10px;">
+      <div style="font-size:18px; color:#a17345; font-weight:700;">Pin</div>
+      <div style="font-size:12px; color:#8a8880;">${shortId}</div>
+    </div>
+    <div style="font-size:13px; color:#8a8880; margin-bottom:12px;">${coords}</div>
+    <div id="ps-grid-${pin.id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; min-height:82px; margin-bottom:12px;">
+      ${
+        (photos && photos.length)
+          ? photos.map(p => `
+              <div class="ps-thumb" data-url="${p.url}" style="
+                width:100%; aspect-ratio:1/1; background:#eee;
+                background-image:url('${p.url}');
+                background-size:cover; background-position:center;
+                border-radius:6px; cursor:pointer;"></div>
+            `).join('')
+          : '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'
+      }
+    </div>
+    <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:4px; cursor:pointer; font-weight:600;">
+      Upload photo
+      <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
+    </label>
+  `;
+  lotDetails.appendChild(container);
+
+  // Click to view photo
+  container.querySelectorAll('.ps-thumb').forEach(div => {
+    div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
+  });
+
+  // Upload handler
+  const input = container.querySelector(`#ps-upload-${pin.id}`);
+  input.addEventListener('change', async (e) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    try {
+      const blob = await compressImageToJPEG(e.target.files[0], 1200);
+      const path = `${pin.id}/${Date.now()}.jpg`;
+
+      const up = await window.supabaseClient.storage.from('pin-photos')
+        .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+      if (up.error) throw up.error;
+
+      const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
+      const url = pub?.data?.publicUrl;
+      if (!url) throw new Error('No public URL');
+
+      const { error: insErr } = await window.supabaseClient
+        .from('pin_photos').insert({ pin_id: pin.id, url });
+      if (insErr) throw insErr;
+
+      const g = container.querySelector(`#ps-grid-${pin.id}`);
+      g.querySelector('div[style*="No photos yet"]')?.remove();
+
+      const thumb = document.createElement('div');
+      thumb.className = 'ps-thumb';
+      thumb.setAttribute('data-url', url);
+      thumb.style.cssText = `
+        width:100%; aspect-ratio:1/1; background:#eee;
+        background-image:url("${url}");
+        background-size:cover; background-position:center;
+        border-radius:6px; cursor:pointer;`;
+      thumb.addEventListener('click', () => PS.showViewer(url));
+      g.appendChild(thumb);
+
+      toast('Photo uploaded');
+    } catch (err) {
+      console.error(err);
+      toast('Upload failed');
+    } finally {
+      e.target.value = '';
+    }
+  });
+};
+
 
   PS.ensureViewer = function () {
     if (document.getElementById('pinViewer')) return;
@@ -3972,7 +4066,7 @@ NS.emit('gps-stop');
 
   
 
-
+ 
 
 </body>
 </html>
