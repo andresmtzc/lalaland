@@ -3484,18 +3484,31 @@ const observer = new MutationObserver(() => {
   }
 
 function stopGPS(reason) {
-  if (NS.gpsWatchId) navigator.geolocation.clearWatch(NS.gpsWatchId);
-  NS.gpsWatchId = null;
-  
-  // Clear the dot and heading arrow
-  const src = map?.getSource('ll-user-location');
-  if (src) src.setData({ type: 'FeatureCollection', features: [] });
-  
-  if (NS.headingMarker) {
-    NS.headingMarker.remove(); 
-    NS.headingMarker = null;
+  // 1. Stop GPS tracking
+  if (NS.gpsWatchId) {
+    navigator.geolocation.clearWatch(NS.gpsWatchId);
+    NS.gpsWatchId = null;
   }
-  
+
+  // 2. Clear the dot/accuracy circle (if layers exist)
+  if (map?.getSource('ll-user-location')) {
+    map.getSource('ll-user-location').setData({ 
+      type: 'FeatureCollection', 
+      features: [] 
+    });
+  }
+
+  // 3. Remove the heading arrow (if it exists)
+  if (NS.headingMarker) {
+    NS.headingMarker.remove();
+    NS.headingMarker = null; // ← Critical! Prevents ghost markers
+  }
+
+  // 4. Reset all tracking states
+  NS.lastUserLngLat = null;
+  NS.userHeading = null;
+  NS.lastSmoothedHeading = null;
+
   safeToaster(reason || 'GPS stopped');
 }
 
