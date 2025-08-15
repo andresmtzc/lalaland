@@ -1508,6 +1508,7 @@ map = new mapboxgl.Map({
           addCustomImage(map);
           addFeaturedLotsLayer(map);
 
+map.once('idle', () => window.__LL_PINS__?._revealMarkers());  
 
 
           // ===== NEW INTERACTION HANDLERS =====
@@ -1517,6 +1518,9 @@ map.on('moveend', () => {
   if (!isDetailOpen && currentLabeledLot) {
     removeSideLengthLabels();
   }
+
+
+
 });
 
 
@@ -2035,6 +2039,10 @@ function animateLots(map, cb) {
         addSoldXs(map, soldInGroup, fadeDurationXs); // ⬅ match fade timing
       } 
     }, i * delay);
+
+
+
+
   });
 
   // Add final lots layer (initially transparent but visible)
@@ -2064,7 +2072,15 @@ function animateLots(map, cb) {
       "fill-color": "#000",      // any color
       "fill-opacity": 0          // invisible
     }
+
+    
   });
+
+
+
+
+
+
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
@@ -2260,6 +2276,9 @@ map.addLayer({
 
   startPolygonPulse(map);
 }
+
+
+
 
 // Animate each polygon's opacity independently
 function startPolygonPulse(map) {
@@ -3629,26 +3648,22 @@ NS.emit('gps-stop');
   PS.markers = new Map();    // id -> { pin, marker }
   PS.addMode = false;
   PS._mapClickHandler = null;
+  PS._isVisible = false; // start hidden
 
-  // Small helpers
   const toast = (m, t=2500) => { try{ window.showToaster?.(m, t);}catch{} };
   const uid = () => (Date.now().toString(36) + Math.random().toString(36).slice(2));
 
-  // Compress to JPEG ~800px
   async function compressImageToJPEG(fileOrBlob, maxSize = 1000) {
-    const file = fileOrBlob;
     const dataURL = await new Promise((res) => {
       const fr = new FileReader();
       fr.onload = () => res(fr.result);
-      fr.readAsDataURL(file);
+      fr.readAsDataURL(fileOrBlob);
     });
-
     const img = await new Promise((res) => {
       const i = new Image();
       i.onload = () => res(i);
       i.src = dataURL;
     });
-
     let { width, height } = img;
     if (width > height && width > maxSize) {
       height = Math.round(height * (maxSize / width));
@@ -3657,7 +3672,6 @@ NS.emit('gps-stop');
       width = Math.round(width * (maxSize / height));
       height = maxSize;
     }
-
     const canvas = document.createElement('canvas');
     canvas.width = width; canvas.height = height;
     const ctx = canvas.getContext('2d');
@@ -3665,43 +3679,37 @@ NS.emit('gps-stop');
     return await new Promise((res) => canvas.toBlob(b => res(b), 'image/jpeg', 0.85));
   }
 
-  // UI: add “Add Pin” button (stacked above GPS / Reset)
   PS.addAddPinButton = function () {
     if (document.getElementById('addPinBtn')) return;
-
     const btn = document.createElement('button');
     btn.id = 'addPinBtn';
-    btn.className = 'gps-button';        // reuse your round button style
+    btn.className = 'gps-button';
     btn.title = 'Add point';
-    btn.style.bottom = '200px';          // Reset=80, GPS=140, this=200
+    btn.style.bottom = '200px';
+ 
     btn.innerHTML = `
       <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="12" y1="5" x2="12" y2="19"></line>
         <line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>
-    `;
+      </svg>`;
     btn.addEventListener('click', () => PS.toggleAddMode());
     document.body.appendChild(btn);
   };
 
   PS.toggleAddMode = function () {
+    if (!PS._isVisible) return;
     PS.addMode = !PS.addMode;
     const btn = document.getElementById('addPinBtn');
     if (!btn) return;
-
     btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,.35)' : '';
     map.getCanvas().style.cursor = PS.addMode ? 'crosshair' : '';
-
-    // attach/detach map click handler
     if (PS.addMode && !PS._mapClickHandler) {
       PS._mapClickHandler = (e) => {
-        // ignore clicks on UI
         const t = e.originalEvent?.target;
         if (t && (t.closest('#lotModal') || t.closest('.mapboxgl-ctrl') || t.closest('button') || t.closest('a'))) return;
-
         PS.createPinAt(e.lngLat).finally(() => {
           PS.addMode = false;
-          PS.toggleAddMode(); // turn it off and cleanup visuals
+          PS.toggleAddMode();
         });
       };
       map.on('click', PS._mapClickHandler);
@@ -3712,147 +3720,127 @@ NS.emit('gps-stop');
     }
   };
 
-  // Create pin in DB, then marker
   PS.createPinAt = async function (lngLat) {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
       .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat }).select().single();
-
     if (error) { console.error(error); toast('Could not create pin'); return; }
     PS.addMarker(data);
     toast('Pin added');
   };
 
-  // Build a draggable orange dot
   PS.markerElement = function () {
     const el = document.createElement('div');
     el.style.width = '14px';
     el.style.height = '14px';
     el.style.borderRadius = '50%';
     el.style.background = '#ff8400';
-    el.style.border = '2px solid #fff';
-    el.style.boxShadow = '0 2px 6px rgba(0,0,0,.3)';
+    el.style.border = 'none';
+    el.style.boxShadow = 'none';
     el.style.cursor = 'pointer';
     return el;
   };
 
   PS.addMarker = function (pin) {
-    // If it exists, just sync position
     if (PS.markers.has(pin.id)) {
       PS.markers.get(pin.id).marker.setLngLat([pin.lng, pin.lat]);
       PS.markers.get(pin.id).pin = pin;
       return;
     }
-
     const el = PS.markerElement();
     const marker = new mapboxgl.Marker({ element: el, draggable: true })
-      .setLngLat([pin.lng, pin.lat])
-      .addTo(map);
-
+      .setLngLat([pin.lng, pin.lat]);
+    if (PS._isVisible && window.map) marker.addTo(map);
     marker.on('dragend', async () => {
       const ll = marker.getLngLat();
       const { error } = await window.supabaseClient
         .from('pins').update({ lng: ll.lng, lat: ll.lat }).eq('id', pin.id);
-      if (error) { console.error(error); toast('Failed to save position'); }
-      else toast('Position saved');
+      if (error) toast('Failed to save position'); else toast('Position saved');
     });
-
-    el.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      PS.openPinPopup(pin, marker);
-    });
-
+    el.addEventListener('click', (ev) => { ev.stopPropagation(); PS.openPinPopup(pin, marker); });
     PS.markers.set(pin.id, { pin, marker });
   };
 
-  // Popup with thumbs + upload
+  PS._revealMarkers = function () {
+    if (PS._isVisible) return;
+    PS._isVisible = true;
+    const btn = document.getElementById('addPinBtn');
+    if (btn) {
+      btn.style.display = 'flex';
+      btn.style.opacity = '0';
+      btn.style.transition = 'opacity 300ms ease';
+      requestAnimationFrame(() => { btn.style.opacity = '1'; });
+    }
+    PS.markers.forEach(({ marker }) => {
+      const el = marker.getElement();
+      if (!el.parentNode) marker.addTo(map);
+      el.style.display = 'block';
+      el.style.opacity = '0';
+      el.style.transition = 'opacity 300ms ease';
+      requestAnimationFrame(() => { el.style.opacity = '1'; });
+    });
+  };
+
   PS.openPinPopup = async function (pin, marker) {
     await window.supabaseReady;
     const { data: photos } = await window.supabaseClient
       .from('pin_photos').select('id,url,created_at').eq('pin_id', pin.id).order('created_at', { ascending: true });
-
     const wrap = document.createElement('div');
     wrap.style.width = '260px';
     wrap.style.fontFamily = `'Barlow Condensed', Arial, sans-serif`;
     wrap.style.color = '#1A1A1A';
-
     const grid = (photos || []).map(p => `
-      <div class="ps-thumb" data-url="${p.url}" style="
-        width: 76px; height: 76px; background:#eee; background-image:url('${p.url}');
-        background-size:cover; background-position:center; border-radius:6px; cursor:pointer;">
-      </div>`).join('');
-
+      <div class="ps-thumb" data-url="${p.url}" style="width:76px;height:76px;background-image:url('${p.url}');background-size:cover;background-position:center;border-radius:6px;cursor:pointer;"></div>`).join('');
     wrap.innerHTML = `
-      <div style="font-size:16px; color:#a17345; margin-bottom:6px; display:flex; align-items:center; gap:8px;">
+      <div style="font-size:16px; color:#a17345; margin-bottom:6px;">
         <strong>Pin</strong> <span style="color:#8a8880; font-size:12px;">${pin.id.slice(0,6)}</span>
       </div>
       <div id="ps-grid-${pin.id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; min-height:82px; margin-bottom:8px;">
         ${grid || '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'}
       </div>
       <label style="display:inline-block; background:#ff8400; color:#fff; padding:6px 10px; border-radius:4px; cursor:pointer;">
-        Upload photo
-        <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
-      </label>
-    `;
-
+        Upload photo<input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
+      </label>`;
     const popup = new mapboxgl.Popup({ offset: 20, closeButton: true })
-      .setDOMContent(wrap)
-      .setLngLat(marker.getLngLat())
-      .addTo(map);
-
-    // enlarge on thumb click
+      .setDOMContent(wrap).setLngLat(marker.getLngLat()).addTo(map);
     wrap.querySelectorAll('.ps-thumb').forEach(div => {
       div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
     });
-
-    // handle upload
-    const input = wrap.querySelector(`#ps-upload-${pin.id}`);
-    input.addEventListener('change', async (e) => {
+    wrap.querySelector(`#ps-upload-${pin.id}`).addEventListener('change', async (e) => {
       if (!e.target.files || !e.target.files[0]) return;
       try {
         const blob = await compressImageToJPEG(e.target.files[0], 1200);
         const path = `${pin.id}/${Date.now()}.jpg`;
-        const up = await window.supabaseClient.storage.from('pin-photos')
-          .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        const up = await window.supabaseClient.storage.from('pin-photos').upload(path, blob, { contentType: 'image/jpeg' });
         if (up.error) throw up.error;
-
         const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
         const url = pub?.data?.publicUrl;
         if (!url) throw new Error('No public URL');
-
         const { error: insErr } = await window.supabaseClient
           .from('pin_photos').insert({ pin_id: pin.id, url });
         if (insErr) throw insErr;
-
-        // Add thumb to grid
         const g = wrap.querySelector(`#ps-grid-${pin.id}`);
         g.querySelector('div[style*="No photos yet"]')?.remove();
         const thumb = document.createElement('div');
         thumb.className = 'ps-thumb';
         thumb.setAttribute('data-url', url);
-        thumb.style.cssText = 'width:76px;height:76px;background:#eee;background-image:url("'+url+'");background-size:cover;background-position:center;border-radius:6px;cursor:pointer;';
+        thumb.style.cssText = `width:76px;height:76px;background-image:url("${url}");background-size:cover;background-position:center;border-radius:6px;cursor:pointer;`;
         thumb.addEventListener('click', () => PS.showViewer(url));
         g.appendChild(thumb);
-
         toast('Photo uploaded');
       } catch (err) {
-        console.error(err);
         toast('Upload failed');
-      } finally {
-        e.target.value = '';
-      }
+      } finally { e.target.value = ''; }
     });
   };
 
-  // Simple full-screen viewer (one global)
   PS.ensureViewer = function () {
     if (document.getElementById('pinViewer')) return;
-    const html = `
-      <div id="pinViewer" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:10000;">
-        <img id="pinViewerImg" style="max-width:90%; max-height:90%; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); box-shadow:0 6px 24px rgba(0,0,0,.4);" />
-        <button id="pinViewerClose" style="position:absolute; top:20px; right:20px; background:#f44336; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer;">×</button>
-      </div>`;
-    document.body.insertAdjacentHTML('beforeend', html);
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="pinViewer" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;">
+        <img id="pinViewerImg" style="max-width:90%;max-height:90%;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);" />
+        <button id="pinViewerClose" style="position:absolute;top:20px;right:20px;background:#f44336;color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;">×</button>
+      </div>`);
     document.getElementById('pinViewerClose').addEventListener('click', () => {
       document.getElementById('pinViewer').style.display = 'none';
     });
@@ -3863,21 +3851,18 @@ NS.emit('gps-stop');
     document.getElementById('pinViewer').style.display = 'block';
   };
 
-  // Load & realtime
   PS.loadPins = async function () {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
       .from('pins').select('id,lng,lat').order('created_at', { ascending: true });
-    if (error) { console.error(error); return; }
+    if (error) return;
     (data || []).forEach(p => PS.addMarker(p));
   };
 
   PS.subscribe = function () {
-    const ch = window.supabaseClient
+    window.supabaseClient
       .channel('pins-rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins' }, (payload) => {
-        PS.addMarker(payload.new);
-      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins' }, (payload) => PS.addMarker(payload.new))
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pins' }, (payload) => {
         const rec = PS.markers.get(payload.new.id);
         if (rec) rec.marker.setLngLat([payload.new.lng, payload.new.lat]);
@@ -3886,14 +3871,10 @@ NS.emit('gps-stop');
         const rec = PS.markers.get(payload.old.id);
         if (rec) { rec.marker.remove(); PS.markers.delete(payload.old.id); }
       })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') console.log('✅ Pins realtime subscribed');
-      });
+      .subscribe();
   };
 
-  // Boot
   const boot = async () => {
-    // Wait for Supabase + map
     await window.supabaseReady;
     if (!window.map) {
       const i = setInterval(() => {
@@ -3904,6 +3885,7 @@ NS.emit('gps-stop');
       PS.loadPins();
       PS.subscribe();
     }
+    map.once('idle', () => PS._revealMarkers());
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
@@ -3913,8 +3895,7 @@ NS.emit('gps-stop');
 })();
 </script>
 
-
-
+  
 
 
 
