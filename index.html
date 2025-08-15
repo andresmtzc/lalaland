@@ -3447,32 +3447,77 @@ const observer = new MutationObserver(() => {
   });
 
 function startGPS() {
-  // Debug
-  console.log("Starting GPS...");
-  safeToaster("GPS activated", 3000);
+  // Always show startup notification
+  safeToaster('Activating GPS...', 2000);
 
+  // 1. Check prerequisites
   if (!navigator.geolocation) {
-    safeToaster("Geolocation not supported", 5000);
+    safeToaster('Geolocation not supported on this device', 5000);
     return;
   }
   if (!window.map) {
-    safeToaster("Map not loaded", 5000);
+    safeToaster('Please wait - map is still loading', 5000);
     return;
   }
 
+  // 2. Initialize UI elements
   ensureUserLocationLayers();
   ensureHeadingListener();
 
-  if (NS.gpsWatchId != null) {
-    safeToaster("GPS already active", 3000);
-    return;
+  // 3. Clear previous instance if exists
+  if (NS.gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(NS.gpsWatchId);
   }
 
+  // 4. Start new GPS session
   NS.gpsWatchId = navigator.geolocation.watchPosition(
-    (pos) => { /* ... existing success handler ... */ },
-    (err) => { /* ... existing error handler ... */ },
-    { enableHighAccuracy: true }
+    (pos) => {
+      const { latitude, longitude, accuracy, heading } = pos.coords;
+      NS.lastUserLngLat = [longitude, latitude];
+
+      // Use GPS heading if compass unavailable
+      if (heading && !NS.userHeading) {
+        NS.userHeading = smoothHeading(heading);
+      }
+
+      updateUserLocation(longitude, latitude, accuracy);
+
+      // Initial zoom to user
+      if (!NS.hasInitialFly) {
+        NS.hasInitialFly = true;
+        map.flyTo({
+          center: [longitude, latitude],
+          zoom: 17,
+          speed: 1.2,
+          curve: 1.5
+        });
+        safeToaster('GPS active - tracking your location', 3000);
+      }
+    },
+    (err) => {
+      let errorMsg = 'GPS error';
+      switch(err.code) {
+        case err.PERMISSION_DENIED:
+          errorMsg = 'Please enable location permissions';
+          break;
+        case err.POSITION_UNAVAILABLE:
+          errorMsg = 'Location signal lost';
+          break;
+        case err.TIMEOUT:
+          errorMsg = 'GPS timeout - try moving outdoors';
+          break;
+      }
+      stopGPS(errorMsg);
+    },
+    { 
+      enableHighAccuracy: true,
+      maximumAge: 2000,
+      timeout: 10000 
+    }
   );
+
+  // Confirm activation
+  NS.gpsWatchId !== null && safeToaster('GPS activated successfully', 2000);
 }
 
 function stopGPS(reason) {
