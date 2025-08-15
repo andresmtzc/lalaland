@@ -3254,8 +3254,8 @@ const observer = new MutationObserver(() => {
   const NS = (window.__LL_GPS__ = window.__LL_GPS__ || {});
 
   // Config
-  NS.lotCenter = NS.lotCenter || [-100.15994, 25.461823];
-  NS.maxDistanceMeters = NS.maxDistanceMeters || 1000; // set higher while testing if you want
+  NS.lotCenter = NS.lotCenter || [-100.15994, 25.461823];  // Default center if not set
+  NS.maxDistanceMeters = NS.maxDistanceMeters || 1000;     // Auto-off if too far
 
   // State
   NS.gpsWatchId = null;
@@ -3265,94 +3265,30 @@ const observer = new MutationObserver(() => {
   NS.headingListenerAttached = false;
   NS.farAwayTimer = null;
   NS.farWarned = false;
+  NS.headingMarker = null;
+  NS.isHeadingUpMode = false;  // Toggle for map rotation (like Google Maps)
 
   // Utils
   const safeToaster = (msg, duration = 3000) => {
-    try {
-      if (typeof window.showToaster === 'function') window.showToaster(msg, duration);
-    } catch {}
+    try { if (typeof window.showToaster === 'function') window.showToaster(msg, duration); } catch {}
   };
 
+  // Accurate haversine distance calculation
   const distanceMeters = (a, b) => {
     const [lng1, lat1] = a, [lng2, lat2] = b;
-    const R = 6371000, toRad = d => d * Math.PI / 180;
-    const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
-    const A = Math.sin(dLat/2)**2 +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
-    return 2 * R * Math.atan2(Math.sqrt(A), Math.sqrt(1 - A));
+    const R = 6371000, φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lng2 - lng1) * Math.PI / 180;
+    const a_ = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a_), Math.sqrt(1 - a_));
   };
 
-  // Draw the arrow image once
-  function ensureUserHeadingIcon() {
-    if (!window.map) return;
-    try {
-      if (map.hasImage('ll-user-arrow')) return;
-      const size = 64;
-      const c = document.createElement('canvas');
-      c.width = c.height = size;
-      const ctx = c.getContext('2d');
-      ctx.translate(size/2, size/2);
-      // Triangle arrow
-      ctx.beginPath();
-      ctx.moveTo(0, -26); ctx.lineTo(12, 12); ctx.lineTo(-12, 12); ctx.closePath();
-      ctx.fillStyle = '#000';  // arrow fill (blue)
-      ctx.fill();
-      ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; // white stroke for contrast
-      ctx.stroke();
-      map.addImage('ll-user-arrow', c, { pixelRatio: 2 });
-    } catch {}
-  }
-
-  // Make/refresh heading layer with a viewport offset from the dot
-  function ensureHeadingLayerWithOffset() {
-    if (!window.map) return;
-
-    ensureUserHeadingIcon();
-
-    if (!map.getLayer('ll-user-heading')) {
-      map.addLayer({
-        id: 'll-user-heading',
-        type: 'symbol',
-        source: 'll-user-location',
-        layout: {
-          'icon-image': 'll-user-arrow',
-          'icon-size': 1.2,
-          'icon-rotate': ['get', 'heading'],
-          'icon-rotation-alignment': 'map',
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-          'icon-anchor': 'center'
-        },
-        paint: {
-          // keep arrow above the dot in screen pixels regardless of map bearing
-          'icon-translate': [0, -20],
-          'icon-translate-anchor': 'viewport'
-        },
-        filter: ['==', ['get', 'role'], 'heading']
-      });
-    } else {
-      map.setLayoutProperty('ll-user-heading', 'icon-size', 1.2);
-      map.setLayoutProperty('ll-user-heading', 'icon-allow-overlap', true);
-      map.setLayoutProperty('ll-user-heading', 'icon-ignore-placement', true);
-      map.setPaintProperty('ll-user-heading', 'icon-translate', [0, -20]);
-      map.setPaintProperty('ll-user-heading', 'icon-translate-anchor', 'viewport');
-    }
-  }
-
-  function bringUserLayersToFront() {
-    if (!map) return;
-    try {
-      // Move layers to top (call without beforeId to push to top)
-      ['ll-user-accuracy', 'll-user-dot', 'll-user-heading'].forEach(id => {
-        if (map.getLayer(id)) map.moveLayer(id);
-      });
-    } catch {}
-  }
-
-  // Ensure source + dot + accuracy ring exist
+  // ===== Core Functions =====
   function ensureUserLocationLayers() {
     if (!window.map) return;
 
+    // Source for user location (dot + accuracy circle)
     if (!map.getSource('ll-user-location')) {
       map.addSource('ll-user-location', {
         type: 'geojson',
@@ -3360,14 +3296,14 @@ const observer = new MutationObserver(() => {
       });
     }
 
+    // Accuracy ring (translucent blue)
     if (!map.getLayer('ll-user-accuracy')) {
       map.addLayer({
         id: 'll-user-accuracy',
         type: 'circle',
         source: 'll-user-location',
         paint: {
-          'circle-radius': [
-            'interpolate', ['linear'], ['zoom'],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'],
             15, ['coalesce', ['get', 'accRadiusZ15'], 2],
             22, ['coalesce', ['get', 'accRadiusZ22'], 500]
           ],
@@ -3379,180 +3315,262 @@ const observer = new MutationObserver(() => {
       });
     }
 
+    // User position dot (blue with white border)
     if (!map.getLayer('ll-user-dot')) {
       map.addLayer({
         id: 'll-user-dot',
         type: 'circle',
         source: 'll-user-location',
         paint: {
-          'circle-radius': 6,
-          'circle-color': '#1a73e8', // blue dot fill
-          'circle-stroke-color': '#ffffff',
+          'circle-radius': 8,
+          'circle-color': '#4285F4',     // Google Maps blue
+          'circle-stroke-color': '#FFFFFF',
           'circle-stroke-width': 2
         },
         filter: ['==', ['get', 'role'], 'point']
       });
     }
 
-    ensureHeadingLayerWithOffset();
-    bringUserLayersToFront();
+    ensureHeadingMarker(); // Add the arrow DOM element
   }
 
-  // Push position + accuracy + heading into the GeoJSON source
+  // Creates a Google Maps-style arrow (triangle with subtle shadow)
+  function ensureHeadingMarker() {
+    if (!window.map || NS.headingMarker) return;
+
+    const el = document.createElement('div');
+    el.style.width = '40px';
+    el.style.height = '40px';
+    el.style.pointerEvents = 'none';
+    el.style.zIndex = '1000';  // Force above map layers
+    el.innerHTML = `
+      <svg viewBox="0 0 40 40" width="40" height="40">
+        <path d="M20 4 L32 32 L8 32 Z" fill="#4285F4" stroke="#FFFFFF" stroke-width="2" />
+        <circle cx="20" cy="20" r="15" fill="#4285F4" opacity="0.1" />
+      </svg>
+    `;
+
+    NS.headingMarker = new mapboxgl.Marker({
+      element: el,
+      offset: [0, -20],  // Position above the dot
+      anchor: 'center'
+    })
+      .setRotationAlignment('map')
+      .setPitchAlignment('map')
+      .setLngLat(NS.lotCenter)
+      .addTo(map);
+  }
+
+  // Updates the dot + accuracy ring, and rotates the arrow
   function updateUserLocation(lng, lat, accuracyMeters = 10) {
-    const src = map && map.getSource('ll-user-location');
+    const src = map?.getSource('ll-user-location');
     if (!src) return;
 
     const acc = Math.max(accuracyMeters, 5);
-    const heading = Number.isFinite(NS.userHeading) ? NS.userHeading : 0;
+    src.setData({
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', properties: { role: 'point' }, geometry: { type: 'Point', coordinates: [lng, lat] } },
+        {
+          type: 'Feature',
+          properties: {
+            role: 'accuracy',
+            accRadiusZ15: Math.min(12, Math.max(2, acc / 6)),
+            accRadiusZ22: Math.min(600, Math.max(50, acc * 6))
+          },
+          geometry: { type: 'Point', coordinates: [lng, lat] }
+        }
+      ]
+    });
 
-    const features = [
-      { type: 'Feature', properties: { role: 'point' }, geometry: { type: 'Point', coordinates: [lng, lat] } },
-      {
-        type: 'Feature',
-        properties: {
-          role: 'accuracy',
-          accRadiusZ15: Math.min(12, Math.max(2, acc / 6)),
-          accRadiusZ22: Math.min(600, Math.max(50, acc * 6))
-        },
-        geometry: { type: 'Point', coordinates: [lng, lat] }
-      },
-      {
-        type: 'Feature',
-        properties: { role: 'heading', heading },
-        geometry: { type: 'Point', coordinates: [lng, lat] }
-      }
-    ];
+    // Rotate the arrow (fallback to 0° if no heading)
+    const heading = NS.userHeading ?? 0;
+    if (NS.headingMarker) {
+      NS.headingMarker.setLngLat([lng, lat]);
+      NS.headingMarker.setRotation(heading);
+    }
 
-    src.setData({ type: 'FeatureCollection', features });
-    bringUserLayersToFront();
+    // Rotate map if in "heading-up" mode (like Google Maps navigation)
+    if (NS.isHeadingUpMode && typeof heading === 'number') {
+      map.setBearing(-heading);
+    }
   }
 
-  // Listen for device orientation (heading)
+  // Handles compass/device orientation (critical for arrow rotation)
   async function ensureHeadingListener() {
     if (NS.headingListenerAttached) return;
 
     const onOrientation = (e) => {
+      // iOS Safari (most reliable)
       if (typeof e?.webkitCompassHeading === 'number') {
-        // iOS Safari
         NS.userHeading = e.webkitCompassHeading;
-      } else if (typeof e?.alpha === 'number') {
-        // Android / others
-        NS.userHeading = (360 - e.alpha + 360) % 360;
-      } else {
-        return; // nothing useful
       }
+      // Android/other devices
+      else if (typeof e?.alpha === 'number') {
+        const alpha = e.alpha;  // 0° = North, 90° = East
+        const beta = e.beta;    // Tilt front/back
+        const gamma = e.gamma;  // Tilt left/right
+        
+        // Adjust for device orientation (simplified)
+        NS.userHeading = (360 - alpha) % 360;
+      }
+      else {
+        return; // No compass data
+      }
+
+      // Update arrow rotation if position is known
       if (NS.lastUserLngLat) {
         updateUserLocation(NS.lastUserLngLat[0], NS.lastUserLngLat[1]);
       }
     };
 
-    const DOE = window.DeviceOrientationEvent;
-    if (DOE && typeof DOE.requestPermission === 'function') {
+    // iOS 13+ requires permission
+    if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
       try {
-        // Request inside a user gesture (we call from the GPS button click)
-        const res = await DOE.requestPermission();
-        if (res === 'granted') {
+        const permission = await DeviceOrientationEvent.requestPermission();
+        if (permission === 'granted') {
           window.addEventListener('deviceorientation', onOrientation, true);
           NS.headingListenerAttached = true;
         } else {
-          safeToaster('Para ver la dirección, permite “Movimiento y orientación” en tu navegador.', 5000);
+          safeToaster('Enable "Motion & Orientation" for compass direction', 5000);
         }
-      } catch {}
-    } else {
-      // Android / desktop (depends on site permission for motion sensors)
+      } catch (err) {
+        console.error('Orientation permission error:', err);
+      }
+    }
+    // Android/other browsers
+    else {
       window.addEventListener('deviceorientationabsolute', onOrientation, true);
       window.addEventListener('deviceorientation', onOrientation, true);
       NS.headingListenerAttached = true;
     }
   }
 
-  function stopGPS(reasonMsg, duration = 3000) {
-    if (NS.gpsWatchId != null) {
-      try { navigator.geolocation.clearWatch(NS.gpsWatchId); } catch {}
-      NS.gpsWatchId = null;
+  // Toggles map rotation (North-up vs. Heading-up)
+  function toggleHeadingUpMode() {
+    NS.isHeadingUpMode = !NS.isHeadingUpMode;
+    if (NS.isHeadingUpMode && NS.userHeading) {
+      map.setBearing(-NS.userHeading);
+      safeToaster('Heading-up mode: Map follows your direction', 2000);
+    } else {
+      map.setBearing(0);
+      safeToaster('North-up mode: Fixed orientation', 2000);
     }
-    if (NS.farAwayTimer) { clearTimeout(NS.farAwayTimer); NS.farAwayTimer = null; }
-    NS.farWarned = false;
-    safeToaster(reasonMsg || 'GPS off.', duration);
   }
 
+  // Stops GPS tracking
+  function stopGPS(reasonMsg, duration = 3000) {
+    if (NS.gpsWatchId != null) {
+      navigator.geolocation.clearWatch(NS.gpsWatchId);
+      NS.gpsWatchId = null;
+    }
+    if (NS.farAwayTimer) clearTimeout(NS.farAwayTimer);
+    NS.farWarned = false;
+    safeToaster(reasonMsg || 'GPS stopped', duration);
+  }
+
+  // Starts GPS + compass tracking
   function startGPS() {
-    if (!('geolocation' in navigator)) { safeToaster('Geolocation not supported.', 5000); return; }
-    if (!window.map) { safeToaster('Map is not ready.', 5000); return; }
+    if (!navigator.geolocation) {
+      safeToaster('Geolocation not supported', 5000);
+      return;
+    }
+    if (!window.map) {
+      safeToaster('Map not loaded', 5000);
+      return;
+    }
 
     ensureUserLocationLayers();
-    ensureHeadingListener(); // don’t await (keeps it within click gesture)
+    ensureHeadingListener();  // Don't await (runs in background)
 
-    if (NS.gpsWatchId != null) { safeToaster('GPS already on.', 3000); return; }
+    if (NS.gpsWatchId != null) {
+      safeToaster('GPS already active', 3000);
+      return;
+    }
 
-    // Immediate feedback
-    safeToaster('GPS on — updating dot in real time.', 3000);
+    safeToaster('GPS active — tracking your location', 3000);
     NS.hasInitialFly = false;
 
     NS.gpsWatchId = navigator.geolocation.watchPosition(
       (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
+        const { latitude, longitude, accuracy, heading } = pos.coords;
         NS.lastUserLngLat = [longitude, latitude];
+
+        // Use GPS heading if compass isn't available
+        if (heading && !NS.userHeading) {
+          NS.userHeading = heading;
+        }
 
         updateUserLocation(longitude, latitude, accuracy);
 
+        // Auto-zoom to user on first fix
         if (!NS.hasInitialFly) {
           NS.hasInitialFly = true;
-          try {
-            map.flyTo({ center: [longitude, latitude], zoom: 17, speed: 1.2, curve: 1.5 });
-          } catch {}
+          map.flyTo({
+            center: [longitude, latitude],
+            zoom: 17,
+            speed: 1.2,
+            curve: 1.5
+          });
         }
 
-        // Far-away logic with a short grace period
+        // Auto-off if too far from lot
         const dist = distanceMeters(NS.lastUserLngLat, NS.lotCenter);
         if (dist > NS.maxDistanceMeters) {
           if (!NS.farWarned) {
             NS.farWarned = true;
-            safeToaster('You are not currently near lot — turning off GPS…', 5000);
+            safeToaster('You’re far from the lot — GPS will turn off', 5000);
           }
           if (NS.farAwayTimer) clearTimeout(NS.farAwayTimer);
           NS.farAwayTimer = setTimeout(() => {
-            stopGPS('You are not currently near lot — turning off GPS.', 5000);
+            stopGPS('Left lot area — GPS stopped', 5000);
           }, 3000);
         } else {
-          if (NS.farAwayTimer) { clearTimeout(NS.farAwayTimer); NS.farAwayTimer = null; }
+          if (NS.farAwayTimer) clearTimeout(NS.farAwayTimer);
           NS.farWarned = false;
         }
       },
       (err) => {
-        let msg = 'Error getting location.';
-        if (err && err.code === err.PERMISSION_DENIED) msg = 'Location permission denied.';
-        if (err && err.code === err.POSITION_UNAVAILABLE) msg = 'Location unavailable.';
-        if (err && err.code === err.TIMEOUT) msg = 'Location timeout.';
+        let msg = 'Location error';
+        if (err.code === err.PERMISSION_DENIED) msg = 'Location permission denied';
+        if (err.code === err.POSITION_UNAVAILABLE) msg = 'Location unavailable';
+        if (err.code === err.TIMEOUT) msg = 'Location timeout';
         stopGPS(msg, 5000);
       },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
     );
   }
 
-  // Wire the GPS button + modal observer (idempotent)
+  // ===== UI Setup =====
   document.addEventListener('DOMContentLoaded', () => {
-    const btn = document.getElementById('gpsButton');
-    if (btn && !btn.__llBound) {
-      btn.__llBound = true;
-      btn.addEventListener('click', () => {
+    // GPS toggle button
+    const gpsBtn = document.getElementById('gpsButton');
+    if (gpsBtn && !gpsBtn.__llBound) {
+      gpsBtn.__llBound = true;
+      gpsBtn.addEventListener('click', () => {
         if (NS.gpsWatchId == null) startGPS();
         else stopGPS();
       });
     }
 
+    // Heading-up mode toggle button (optional)
+    const headingToggleBtn = document.getElementById('headingToggleBtn');
+    if (headingToggleBtn && !headingToggleBtn.__llBound) {
+      headingToggleBtn.__llBound = true;
+      headingToggleBtn.addEventListener('click', toggleHeadingUpMode);
+    }
+
+    // Auto-stop when modal closes
     const modal = document.getElementById('lotModal');
     if (modal && !modal.__llObs) {
       modal.__llObs = true;
-      const obs = new MutationObserver(() => {
+      new MutationObserver(() => {
         if (!modal.classList.contains('show')) stopGPS();
-      });
-      obs.observe(modal, { attributes: true, attributeFilter: ['class'] });
+      }).observe(modal, { attributes: true, attributeFilter: ['class'] });
     }
   });
 
-  // Auto-stop on tab hide
+  // Auto-stop on tab switch
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopGPS();
   });
