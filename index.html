@@ -3620,7 +3620,6 @@ NS.emit('gps-stop');
 </script>
 
 
-
 <script>
 (() => {
   'use strict';
@@ -3629,34 +3628,36 @@ NS.emit('gps-stop');
   const PhotoSystem = (window.__LL_PHOTOS__ = window.__LL_PHOTOS__ || {});
   
   // Configuration
-  PhotoSystem.markers = [];
+  PhotoSystem.markers = [];                // [{ marker, data, lngLat, timestamp }]
   PhotoSystem.layerId = 'user-photos';
-  PhotoSystem.maxPhotoSize = 800; // Max width/height in pixels
+  PhotoSystem.maxPhotoSize = 800;          // Max width/height in pixels
+  PhotoSystem.currentIndex = null;         // index of the photo currently opened in modal
   
   // Initialize when Mapbox GL is ready
-PhotoSystem.init = function() {
-  // These will now use the CSS from your stylesheet
-  this.createCameraButton();
-  this.createPhotoModal();
-  this.loadSavedPhotos();
-  
-  // show immediately if GPS is already active
-const cam = document.getElementById('cameraButton');
-if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUserLngLat)) {
-  cam.style.display = 'block';
-}
-
-  // GPS event listeners
-  if (window.__LL_GPS__) {
-    window.__LL_GPS__.on('gps-start', () => {
-      document.getElementById('cameraButton').style.display = 'block';
-    });
+  PhotoSystem.init = function() {
+    this.createCameraButton();
+    this.createPhotoModal();
+    this.loadSavedPhotos();
     
-    window.__LL_GPS__.on('gps-stop', () => {
-      document.getElementById('cameraButton').style.display = 'none';
-    });
-  }
-};
+    // show immediately if GPS is already active
+    const cam = document.getElementById('cameraButton');
+    if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUserLngLat)) {
+      cam.style.display = 'block';
+    }
+
+    // GPS event listeners
+    if (window.__LL_GPS__) {
+      window.__LL_GPS__.on('gps-start', () => {
+        const el = document.getElementById('cameraButton');
+        if (el) el.style.display = 'block';
+      });
+      
+      window.__LL_GPS__.on('gps-stop', () => {
+        const el = document.getElementById('cameraButton');
+        if (el) el.style.display = 'none';
+      });
+    }
+  };
 
   PhotoSystem.createCameraButton = function() {
     // Only create once
@@ -3684,15 +3685,21 @@ if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUser
     if (document.getElementById('photoModal')) return;
     
     const html = `
-      <div id="photoModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:10000;">
-        <img id="modalImage" style="max-width:90%; max-height:90%; margin:auto; display:block; position:relative; top:50%; transform:translateY(-50%);">
-        <button id="closeModal" style="position:absolute; top:20px; right:20px; background:#f44336; color:white; border:none; border-radius:50%; width:40px; height:40px; font-size:20px;">×</button>
+      <div id="photoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:10000;">
+        <img id="modalImage" style="max-width:90%; max-height:90%; margin:auto; display:block; position:relative; top:50%; transform:translateY(-50%);" />
+        <button id="closeModal" style="position:absolute; top:20px; right:20px; background:#f44336; color:white; border:none; border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer;">×</button>
+        <button id="deletePhoto" title="Delete this photo" style="position:absolute; top:20px; left:20px; background:#ff8400; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:18px; cursor:pointer;">🗑️</button>
       </div>
     `;
     document.body.insertAdjacentHTML('beforeend', html);
     
     document.getElementById('closeModal').addEventListener('click', () => {
       document.getElementById('photoModal').style.display = 'none';
+      PhotoSystem.currentIndex = null;
+    });
+
+    document.getElementById('deletePhoto').addEventListener('click', () => {
+      PhotoSystem.deleteCurrent();
     });
   };
 
@@ -3706,10 +3713,7 @@ if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUser
     const preview = document.createElement('div');
     preview.style.cssText = `
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      inset: 0;
       background: black;
       z-index: 9999;
     `;
@@ -3730,6 +3734,7 @@ if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUser
       border: none;
       border-radius: 50px;
       font-size: 16px;
+      cursor: pointer;
     `;
 
     const cancelBtn = document.createElement('button');
@@ -3743,6 +3748,7 @@ if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUser
       color: white;
       border: none;
       border-radius: 50px;
+      cursor: pointer;
     `;
 
     preview.appendChild(video);
@@ -3815,63 +3821,102 @@ if (cam && (window.__LL_GPS__?.gpsWatchId != null || window.__LL_GPS__?.lastUser
       reader.readAsDataURL(file);
     }).then(photoData => {
       if (window.__LL_GPS__?.lastUserLngLat) {
-        this.addPhotoMarker(window.__LL_GPS__.lastUserLngLat, photoData);
-        this.savePhoto(photoData);
+        const ts = new Date().toISOString();
+        this.addPhotoMarker(window.__LL_GPS__.lastUserLngLat, photoData, ts);
+        this.savePhoto(photoData, ts);
       }
     });
   };
 
-  PhotoSystem.addPhotoMarker = function(lngLat, photoData) {
+  // lngLat: [lng, lat], photoData: base64, timestamp: ISO string (optional)
+  PhotoSystem.addPhotoMarker = function(lngLat, photoData, timestamp) {
     const el = document.createElement('div');
     el.className = 'photo-marker';
     el.style.backgroundImage = `url(${photoData})`;
     
     const time = document.createElement('div');
     time.className = 'photo-timestamp';
-    time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const displayTime = timestamp ? new Date(timestamp) : new Date();
+    time.textContent = displayTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     el.appendChild(time);
     
     const marker = new mapboxgl.Marker({
       element: el,
       anchor: 'center'
     }).setLngLat(lngLat).addTo(map);
-    
+
+    // Open modal + remember which marker was clicked (compute live index)
     el.addEventListener('click', () => {
+      const idx = this.markers.findIndex(m => m.marker.getElement() === el);
+      if (idx === -1) return;
+      this.currentIndex = idx;
       document.getElementById('modalImage').src = photoData;
       document.getElementById('photoModal').style.display = 'block';
     });
     
-    this.markers.push({ marker, data: photoData });
+    this.markers.push({ marker, data: photoData, lngLat, timestamp: timestamp || new Date().toISOString() });
   };
 
-  PhotoSystem.savePhoto = function(photoData) {
+  PhotoSystem.savePhoto = function(photoData, timestamp) {
     const photos = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
     photos.push({
       lngLat: window.__LL_GPS__?.lastUserLngLat,
       data: photoData,
-      timestamp: new Date().toISOString()
+      timestamp: timestamp || new Date().toISOString()
     });
     localStorage.setItem('mapPhotos', JSON.stringify(photos));
+  };
+
+  PhotoSystem.rebuildLocalStorage = function() {
+    const rebuilt = this.markers.map(m => ({
+      lngLat: m.lngLat,
+      data: m.data,
+      timestamp: m.timestamp || new Date().toISOString()
+    }));
+    localStorage.setItem('mapPhotos', JSON.stringify(rebuilt));
+  };
+
+  // Delete the photo currently shown in the modal
+  PhotoSystem.deleteCurrent = function() {
+    if (this.currentIndex == null) return;
+    const rec = this.markers[this.currentIndex];
+    if (!rec) return;
+
+    // Remove marker from map & array
+    rec.marker.remove();
+    this.markers.splice(this.currentIndex, 1);
+
+    // Persist new list
+    this.rebuildLocalStorage();
+
+    // Close modal and reset index
+    const modal = document.getElementById('photoModal');
+    if (modal) modal.style.display = 'none';
+    this.currentIndex = null;
+
+    // Optional toast
+    try { window.showToaster?.('Photo deleted', 2000); } catch {}
   };
 
   PhotoSystem.loadSavedPhotos = function() {
     const saved = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
     saved.forEach(photo => {
-      if (photo.lngLat) {
-        this.addPhotoMarker(photo.lngLat, photo.data);
+      if (photo.lngLat && photo.data) {
+        this.addPhotoMarker(photo.lngLat, photo.data, photo.timestamp);
       }
     });
   };
 
-// Show FAB immediately if GPS is already active
-if (window.__LL_GPS__?.lastUserLngLat) {
-  const cam = document.getElementById('cameraButton');
-  if (cam) cam.style.display = 'block';
-}
-
+  // Show FAB immediately if GPS is already active
+  if (window.__LL_GPS__?.lastUserLngLat) {
+    const cam = document.getElementById('cameraButton');
+    if (cam) cam.style.display = 'block';
+  }
 
 })();
 </script>
+
+
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
