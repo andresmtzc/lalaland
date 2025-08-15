@@ -3640,18 +3640,19 @@ NS.emit('gps-stop');
 
 
 
+
 <script>
 (() => {
   'use strict';
 
   const PS = (window.__LL_PINS__ = window.__LL_PINS__ || {});
-  PS.markers = new Map();    // id -> { pin, marker }
+  PS.markers = new Map();      // id -> { pin, marker }
   PS.addMode = false;
   PS._mapClickHandler = null;
-  PS._isVisible = false; // start hidden
+  PS._isVisible = false;       // markers start hidden (button is now always visible)
 
   const toast = (m, t=2500) => { try{ window.showToaster?.(m, t);}catch{} };
-  const uid = () => (Date.now().toString(36) + Math.random().toString(36).slice(2));
+  const $ = (s) => document.querySelector(s);
 
   async function compressImageToJPEG(fileOrBlob, maxSize = 1000) {
     const dataURL = await new Promise((res) => {
@@ -3679,6 +3680,7 @@ NS.emit('gps-stop');
     return await new Promise((res) => canvas.toBlob(b => res(b), 'image/jpeg', 0.85));
   }
 
+  // ---- Add Pin button (ALWAYS visible now)
   PS.addAddPinButton = function () {
     if (document.getElementById('addPinBtn')) return;
     const btn = document.createElement('button');
@@ -3686,22 +3688,21 @@ NS.emit('gps-stop');
     btn.className = 'gps-button';
     btn.title = 'Add point';
     btn.style.bottom = '200px';
- 
     btn.innerHTML = `
       <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="12" y1="5" x2="12" y2="19"></line>
         <line x1="5" y1="12" x2="19" y2="12"></line>
       </svg>`;
     btn.addEventListener('click', () => PS.toggleAddMode());
-    document.body.appendChild(btn);
+    document.body.appendChild(btn); // ← no hiding
   };
 
+  // ---- Toggle add mode (no gating on _isVisible)
   PS.toggleAddMode = function () {
-    if (!PS._isVisible) return;
+    if (!window.map) { toast('Map is still loading…'); return; }
     PS.addMode = !PS.addMode;
     const btn = document.getElementById('addPinBtn');
-    if (!btn) return;
-    btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,.35)' : '';
+    if (btn) btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,.35)' : '';
     map.getCanvas().style.cursor = PS.addMode ? 'crosshair' : '';
     if (PS.addMode && !PS._mapClickHandler) {
       PS._mapClickHandler = (e) => {
@@ -3720,6 +3721,7 @@ NS.emit('gps-stop');
     }
   };
 
+  // ---- DB create
   PS.createPinAt = async function (lngLat) {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
@@ -3729,10 +3731,11 @@ NS.emit('gps-stop');
     toast('Pin added');
   };
 
+  // ---- HTML marker (size here)
   PS.markerElement = function () {
     const el = document.createElement('div');
-    el.style.width = '14px';
-    el.style.height = '14px';
+    el.style.width = '12px';
+    el.style.height = '12px';
     el.style.borderRadius = '50%';
     el.style.background = '#ff8400';
     el.style.border = 'none';
@@ -3741,6 +3744,7 @@ NS.emit('gps-stop');
     return el;
   };
 
+  // ---- Add marker + click => open modal (not a Popup)
   PS.addMarker = function (pin) {
     if (PS.markers.has(pin.id)) {
       PS.markers.get(pin.id).marker.setLngLat([pin.lng, pin.lat]);
@@ -3750,27 +3754,30 @@ NS.emit('gps-stop');
     const el = PS.markerElement();
     const marker = new mapboxgl.Marker({ element: el, draggable: true })
       .setLngLat([pin.lng, pin.lat]);
+
+    // Keep your reveal behavior for markers:
     if (PS._isVisible && window.map) marker.addTo(map);
+
     marker.on('dragend', async () => {
       const ll = marker.getLngLat();
       const { error } = await window.supabaseClient
         .from('pins').update({ lng: ll.lng, lat: ll.lat }).eq('id', pin.id);
       if (error) toast('Failed to save position'); else toast('Position saved');
     });
-    el.addEventListener('click', (ev) => { ev.stopPropagation(); PS.openPinPopup(pin, marker); });
+
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      PS.openPinInModal(pin);
+    });
+
     PS.markers.set(pin.id, { pin, marker });
   };
 
+  // ---- Reveal markers (kept for fade-in animation)
   PS._revealMarkers = function () {
     if (PS._isVisible) return;
     PS._isVisible = true;
-    const btn = document.getElementById('addPinBtn');
-    if (btn) {
-      btn.style.display = 'flex';
-      btn.style.opacity = '0';
-      btn.style.transition = 'opacity 300ms ease';
-      requestAnimationFrame(() => { btn.style.opacity = '1'; });
-    }
+
     PS.markers.forEach(({ marker }) => {
       const el = marker.getElement();
       if (!el.parentNode) marker.addTo(map);
@@ -3781,64 +3788,128 @@ NS.emit('gps-stop');
     });
   };
 
-  PS.openPinPopup = async function (pin, marker) {
+  // ---- Open in your lot modal (same as before)
+  PS.openPinInModal = async function (pin) {
     await window.supabaseReady;
+
+    const modal = document.getElementById('lotModal');
+    const wrapper = document.querySelector('.modal-content-wrapper');
+    const lotDetails = document.getElementById('lotDetails');
+    const backButton = document.getElementById('backButton');
+
+    if (!modal.classList.contains('show')) {
+      try {
+        if (window.map) {
+          window.preModalView = {
+            center: map.getCenter().toArray(),
+            zoom: map.getZoom(),
+            bearing: map.getBearing(),
+            pitch: map.getPitch()
+          };
+        }
+        modal.classList.add('show');
+        modal.style.display = 'block';
+        if (typeof window.adjustMapForModal === 'function') adjustMapForModal();
+      } catch {}
+    }
+
+    lotDetails.innerHTML = '';
+    wrapper.classList.add('show-details');
+    lotDetails.classList.add('active');
+    backButton.style.display = 'flex';
+    const plusBtn = document.querySelector('.plus-button');
+    if (plusBtn) plusBtn.style.display = 'flex';
+    try { window.isDetailOpen = true; } catch {}
+
     const { data: photos } = await window.supabaseClient
-      .from('pin_photos').select('id,url,created_at').eq('pin_id', pin.id).order('created_at', { ascending: true });
-    const wrap = document.createElement('div');
-    wrap.style.width = '260px';
-    wrap.style.fontFamily = `'Barlow Condensed', Arial, sans-serif`;
-    wrap.style.color = '#1A1A1A';
-    const grid = (photos || []).map(p => `
-      <div class="ps-thumb" data-url="${p.url}" style="width:76px;height:76px;background-image:url('${p.url}');background-size:cover;background-position:center;border-radius:6px;cursor:pointer;"></div>`).join('');
-    wrap.innerHTML = `
-      <div style="font-size:16px; color:#a17345; margin-bottom:6px;">
-        <strong>Pin</strong> <span style="color:#8a8880; font-size:12px;">${pin.id.slice(0,6)}</span>
+      .from('pin_photos')
+      .select('id,url,created_at')
+      .eq('pin_id', pin.id)
+      .order('created_at', { ascending: true });
+
+    const shortId = pin.id.slice(0, 6);
+    const coords = `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`;
+
+    const container = document.createElement('div');
+    container.style.padding = '16px';
+    container.innerHTML = `
+      <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:10px;">
+        <div style="font-size:18px; color:#a17345; font-weight:700;">Pin</div>
+        <div style="font-size:12px; color:#8a8880;">${shortId}</div>
       </div>
-      <div id="ps-grid-${pin.id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; min-height:82px; margin-bottom:8px;">
-        ${grid || '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'}
+      <div style="font-size:13px; color:#8a8880; margin-bottom:12px;">${coords}</div>
+      <div id="ps-grid-${pin.id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; min-height:82px; margin-bottom:12px;">
+        ${
+          (photos && photos.length)
+            ? photos.map(p => `
+                <div class="ps-thumb" data-url="${p.url}" style="
+                  width:100%; aspect-ratio:1/1; background:#eee;
+                  background-image:url('${p.url}');
+                  background-size:cover; background-position:center;
+                  border-radius:6px; cursor:pointer;"></div>
+              `).join('')
+            : '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'
+        }
       </div>
-      <label style="display:inline-block; background:#ff8400; color:#fff; padding:6px 10px; border-radius:4px; cursor:pointer;">
-        Upload photo<input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
-      </label>`;
-    const popup = new mapboxgl.Popup({ offset: 20, closeButton: true })
-      .setDOMContent(wrap).setLngLat(marker.getLngLat()).addTo(map);
-    wrap.querySelectorAll('.ps-thumb').forEach(div => {
+      <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:4px; cursor:pointer; font-weight:600;">
+        Upload photo
+        <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
+      </label>
+    `;
+    lotDetails.appendChild(container);
+
+    container.querySelectorAll('.ps-thumb').forEach(div => {
       div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
     });
-    wrap.querySelector(`#ps-upload-${pin.id}`).addEventListener('change', async (e) => {
+
+    const input = container.querySelector(`#ps-upload-${pin.id}`);
+    input.addEventListener('change', async (e) => {
       if (!e.target.files || !e.target.files[0]) return;
       try {
         const blob = await compressImageToJPEG(e.target.files[0], 1200);
         const path = `${pin.id}/${Date.now()}.jpg`;
-        const up = await window.supabaseClient.storage.from('pin-photos').upload(path, blob, { contentType: 'image/jpeg' });
+        const up = await window.supabaseClient.storage.from('pin-photos')
+          .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
         if (up.error) throw up.error;
+
         const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
         const url = pub?.data?.publicUrl;
         if (!url) throw new Error('No public URL');
+
         const { error: insErr } = await window.supabaseClient
           .from('pin_photos').insert({ pin_id: pin.id, url });
         if (insErr) throw insErr;
-        const g = wrap.querySelector(`#ps-grid-${pin.id}`);
+
+        const g = container.querySelector(`#ps-grid-${pin.id}`);
         g.querySelector('div[style*="No photos yet"]')?.remove();
         const thumb = document.createElement('div');
         thumb.className = 'ps-thumb';
         thumb.setAttribute('data-url', url);
-        thumb.style.cssText = `width:76px;height:76px;background-image:url("${url}");background-size:cover;background-position:center;border-radius:6px;cursor:pointer;`;
+        thumb.style.cssText = `
+          width:100%; aspect-ratio:1/1; background:#eee;
+          background-image:url("${url}");
+          background-size:cover; background-position:center;
+          border-radius:6px; cursor:pointer;`;
         thumb.addEventListener('click', () => PS.showViewer(url));
         g.appendChild(thumb);
+
         toast('Photo uploaded');
       } catch (err) {
+        console.error(err);
         toast('Upload failed');
-      } finally { e.target.value = ''; }
+      } finally {
+        e.target.value = '';
+      }
     });
+
+ 
   };
 
   PS.ensureViewer = function () {
     if (document.getElementById('pinViewer')) return;
     document.body.insertAdjacentHTML('beforeend', `
       <div id="pinViewer" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;">
-        <img id="pinViewerImg" style="max-width:90%;max-height:90%;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);" />
+        <img id="pinViewerImg" style="max-width:90%;max-height:90%;position:absolute;top:50%;left:50%;transform:translate(-50%, -50%);" />
         <button id="pinViewerClose" style="position:absolute;top:20px;right:20px;background:#f44336;color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;">×</button>
       </div>`);
     document.getElementById('pinViewerClose').addEventListener('click', () => {
@@ -3851,6 +3922,7 @@ NS.emit('gps-stop');
     document.getElementById('pinViewer').style.display = 'block';
   };
 
+  // ---- Load + realtime
   PS.loadPins = async function () {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
@@ -3874,6 +3946,7 @@ NS.emit('gps-stop');
       .subscribe();
   };
 
+  // ---- Boot
   const boot = async () => {
     await window.supabaseReady;
     if (!window.map) {
@@ -3885,8 +3958,10 @@ NS.emit('gps-stop');
       PS.loadPins();
       PS.subscribe();
     }
-
+    // keep marker fade-in after map idle
+    map.once('idle', () => PS._revealMarkers());
   };
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
   } else {
