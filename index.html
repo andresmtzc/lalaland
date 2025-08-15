@@ -3266,20 +3266,17 @@ const observer = new MutationObserver(() => {
   NS.farAwayTimer = null;
   NS.farWarned = false;
   NS.headingMarker = null;
-  NS.isHeadingUpMode = false;
   
-  // Smoothing (critical for Android)
-  NS.headingSmoothingFactor = 0.15; // Lower = smoother but laggier (0.1-0.3 works best)
+  // Smoothing (for Android)
+  NS.headingSmoothingFactor = 0.15;
   NS.lastSmoothedHeading = null;
-  NS.lastHeadingTimestamp = 0;
-  NS.minHeadingUpdateInterval = 100; // ms (discard updates faster than this)
 
   // Utils
   const safeToaster = (msg, duration = 3000) => {
     try { if (typeof window.showToaster === 'function') window.showToaster(msg, duration); } catch {}
   };
 
-  // Better distance calculation
+  // Distance calculation
   const distanceMeters = (a, b) => {
     const [lng1, lat1] = a, [lng2, lat2] = b;
     const R = 6371000, φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
@@ -3289,26 +3286,14 @@ const observer = new MutationObserver(() => {
     return R * 2 * Math.atan2(Math.sqrt(a_), Math.sqrt(1 - a_));
   };
 
-  // Smooth heading (like Google Maps)
+  // Smooth heading
   const smoothHeading = (newHeading) => {
-    const now = Date.now();
-    
-    // Ignore updates too close together
-    if (now - NS.lastHeadingTimestamp < NS.minHeadingUpdateInterval) {
-      return NS.lastSmoothedHeading;
-    }
-    NS.lastHeadingTimestamp = now;
-
-    // First reading
     if (NS.lastSmoothedHeading === null) {
       NS.lastSmoothedHeading = newHeading;
-    } 
-    // Smooth transition (handles 0°/360° wrap)
-    else {
+    } else {
       const diff = ((newHeading - NS.lastSmoothedHeading + 540) % 360) - 180;
       NS.lastSmoothedHeading = (NS.lastSmoothedHeading + diff * NS.headingSmoothingFactor) % 360;
     }
-    
     return NS.lastSmoothedHeading;
   };
 
@@ -3316,7 +3301,6 @@ const observer = new MutationObserver(() => {
   function ensureUserLocationLayers() {
     if (!window.map) return;
 
-    // Source
     if (!map.getSource('ll-user-location')) {
       map.addSource('ll-user-location', {
         type: 'geojson',
@@ -3324,7 +3308,6 @@ const observer = new MutationObserver(() => {
       });
     }
 
-    // Accuracy ring
     if (!map.getLayer('ll-user-accuracy')) {
       map.addLayer({
         id: 'll-user-accuracy',
@@ -3343,7 +3326,6 @@ const observer = new MutationObserver(() => {
       });
     }
 
-    // User dot
     if (!map.getLayer('ll-user-dot')) {
       map.addLayer({
         id: 'll-user-dot',
@@ -3362,7 +3344,7 @@ const observer = new MutationObserver(() => {
     ensureHeadingMarker();
   }
 
-  // Google Maps-style cone (wide part forward)
+  // Google Maps-style cone (wide part forward, pointy end at dot)
   function ensureHeadingMarker() {
     if (!window.map || NS.headingMarker) return;
 
@@ -3373,20 +3355,18 @@ const observer = new MutationObserver(() => {
     el.style.zIndex = '1000';
     el.innerHTML = `
       <svg viewBox="0 0 40 40" width="40" height="40">
-        <!-- Cone pointing BACKWARD (wide part forward) -->
+        <!-- Wide part faces forward, pointy end at dot -->
         <path d="M20 36 L8 8 L32 8 Z" 
               fill="#4285F4" 
               stroke="#FFFFFF" 
-              stroke-width="2"
+              stroke-width="1.5"
               opacity="0.9" />
-        <!-- Optional "light" effect -->
-        <path d="M15 12 L25 12 L20 20 Z" fill="#FFFFFF" opacity="0.2" />
       </svg>
     `;
 
     NS.headingMarker = new mapboxgl.Marker({
       element: el,
-      offset: [0, -20],
+      offset: [0, -20],  // Positioned above the dot
       anchor: 'center'
     })
       .setRotationAlignment('map')
@@ -3395,39 +3375,29 @@ const observer = new MutationObserver(() => {
       .addTo(map);
   }
 
-  // Handle compass data (with Android optimizations)
+  // Handle compass data
   async function ensureHeadingListener() {
     if (NS.headingListenerAttached) return;
 
     const onOrientation = (e) => {
-      // 1. Get raw heading
       let rawHeading;
       if (typeof e?.webkitCompassHeading === 'number') {
         rawHeading = e.webkitCompassHeading; // iOS
       } 
       else if (typeof e?.alpha === 'number') {
-        // Android: Compensate for device tilt (basic)
-        const betaRad = e.beta * Math.PI / 180;
-        rawHeading = (360 - e.alpha) % 360;
-        if (Math.abs(e.beta) > 30 || Math.abs(e.gamma) > 30) {
-          // Discard if device is tilted too much (reduces noise)
-          return;
-        }
+        rawHeading = (360 - e.alpha) % 360; // Android
       }
       else {
         return;
       }
 
-      // 2. Apply smoothing
       NS.userHeading = smoothHeading(rawHeading);
 
-      // 3. Update UI
       if (NS.lastUserLngLat) {
         updateUserLocation(NS.lastUserLngLat[0], NS.lastUserLngLat[1]);
       }
     };
 
-    // Android prefers 'deviceorientationabsolute'
     if ('ondeviceorientationabsolute' in window) {
       window.addEventListener('deviceorientationabsolute', onOrientation, true);
     } else {
@@ -3436,12 +3406,11 @@ const observer = new MutationObserver(() => {
     NS.headingListenerAttached = true;
   }
 
-  // Update cone direction (rotated 180° from device heading)
+  // Update cone direction (no 180° offset needed!)
   function updateUserLocation(lng, lat, accuracyMeters = 10) {
     const src = map?.getSource('ll-user-location');
     if (!src) return;
 
-    // Update dot/accuracy
     src.setData({
       type: 'FeatureCollection',
       features: [
@@ -3458,22 +3427,15 @@ const observer = new MutationObserver(() => {
       ]
     });
 
-    // Rotate cone (wide part faces forward)
-    const heading = NS.userHeading !== null ? (NS.userHeading + 180) % 360 : 0;
+    // Directly use the heading (cone SVG is already correctly oriented)
     if (NS.headingMarker) {
       NS.headingMarker.setLngLat([lng, lat]);
-      NS.headingMarker.setRotation(heading);
-    }
-
-    // Optional: Rotate map in heading-up mode
-    if (NS.isHeadingUpMode && NS.userHeading !== null) {
-      map.setBearing(-NS.userHeading);
+      NS.headingMarker.setRotation(NS.userHeading || 0);
     }
   }
 
   // ===== UI Controls =====
   document.addEventListener('DOMContentLoaded', () => {
-    // GPS toggle button
     const gpsBtn = document.getElementById('gpsButton');
     if (gpsBtn && !gpsBtn.__llBound) {
       gpsBtn.__llBound = true;
@@ -3482,25 +3444,8 @@ const observer = new MutationObserver(() => {
         else stopGPS();
       });
     }
-
-    // Optional: Heading-up mode toggle
-    const headingToggleBtn = document.getElementById('headingToggleBtn');
-    if (headingToggleBtn && !headingToggleBtn.__llBound) {
-      headingToggleBtn.__llBound = true;
-      headingToggleBtn.addEventListener('click', () => {
-        NS.isHeadingUpMode = !NS.isHeadingUpMode;
-        if (NS.isHeadingUpMode && NS.userHeading !== null) {
-          map.setBearing(-NS.userHeading);
-          safeToaster('Map rotates with your direction', 2000);
-        } else {
-          map.setBearing(0);
-          safeToaster('North-up mode', 2000);
-        }
-      });
-    }
   });
 
-  // Start/stop GPS
   function startGPS() {
     if (!navigator.geolocation) {
       safeToaster('Geolocation not supported', 5000);
@@ -3519,14 +3464,13 @@ const observer = new MutationObserver(() => {
         const { latitude, longitude, accuracy, heading } = pos.coords;
         NS.lastUserLngLat = [longitude, latitude];
 
-        // Use GPS heading if compass unavailable
-        if (heading && !NS.headingListenerAttached) {
+        // Fallback to GPS heading if compass unavailable
+        if (heading && !NS.userHeading) {
           NS.userHeading = smoothHeading(heading);
         }
 
         updateUserLocation(longitude, latitude, accuracy);
 
-        // Initial zoom
         if (!NS.hasInitialFly) {
           NS.hasInitialFly = true;
           map.flyTo({ center: [longitude, latitude], zoom: 17 });
