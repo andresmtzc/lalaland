@@ -3628,6 +3628,7 @@ NS.emit('gps-stop');
   const PhotoSystem = (window.__LL_PHOTOS__ = window.__LL_PHOTOS__ || {});
 
   // ----- Config
+  PhotoSystem._inited = false;
   PhotoSystem.markers = [];                 // [{ id, marker, data, lngLat:[lng,lat], timestamp }]
   PhotoSystem.maxPhotoSize = 800;
   PhotoSystem.currentIndex = null;
@@ -3638,16 +3639,18 @@ NS.emit('gps-stop');
   PhotoSystem.clusterMaxZoom = 17;          // cluster until this zoom
   PhotoSystem._clusterReady = false;
 
-  // Small util
   const uid = () => (Date.now().toString(36) + Math.random().toString(36).slice(2));
 
   // ===== Init
   PhotoSystem.init = function () {
+    if (this._inited) return;      // prevent double init
+    this._inited = true;
+
     this.createCameraButton();
     this.createPhotoModal();
-    this.ensureClusterLayers();   // safe to call multiple times
+    this.ensureClusterLayers();     // safe to call multiple times
     this.loadSavedPhotos();
-    this.handleMarkerVisibility(); // set initial visibility
+    this.handleMarkerVisibility();  // set initial visibility
 
     // show camera FAB if GPS is already running
     const cam = document.getElementById('cameraButton');
@@ -3713,103 +3716,96 @@ NS.emit('gps-stop');
     });
   };
 
-  // ===== Camera / file input
+  // ===== Camera / file input (with Upload next to Capture)
   PhotoSystem.activateCamera = function () {
-  // If no camera support, fall back to the global file picker
-  if (!navigator.mediaDevices?.getUserMedia) {
-    document.getElementById('fileUpload').click();
-    return;
-  }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      document.getElementById('fileUpload').click(); // fallback
+      return;
+    }
 
-  // Overlay
-  const preview = document.createElement('div');
-  preview.style.cssText = 'position:fixed; inset:0; background:black; z-index:9999;';
+    // Overlay
+    const preview = document.createElement('div');
+    preview.style.cssText = 'position:fixed; inset:0; background:black; z-index:9999;';
 
-  // Live video
-  const video = document.createElement('video');
-  video.style.cssText = 'width:100%; height:100%; object-fit:contain;';
+    // Live video
+    const video = document.createElement('video');
+    video.style.cssText = 'width:100%; height:100%; object-fit:contain;';
 
-  // Top-right cancel
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = 'position:absolute; top:20px; right:20px; padding:8px 16px; background:#f44336; color:#fff; border:none; border-radius:50px; cursor:pointer;';
+    // Top-right cancel
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'position:absolute; top:20px; right:20px; padding:8px 16px; background:#f44336; color:#fff; border:none; border-radius:50px; cursor:pointer;';
 
-  // Bottom control bar (centered)
-  const controls = document.createElement('div');
-  controls.style.cssText = 'position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:12px;';
+    // Bottom control bar (centered)
+    const controls = document.createElement('div');
+    controls.style.cssText = 'position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:12px;';
 
-  // Capture button
-  const captureBtn = document.createElement('button');
-  captureBtn.textContent = 'Capture';
-  captureBtn.style.cssText = 'padding:12px 24px; background:#4285F4; color:#fff; border:none; border-radius:50px; font-size:16px; cursor:pointer;';
+    // Capture
+    const captureBtn = document.createElement('button');
+    captureBtn.textContent = 'Capture';
+    captureBtn.style.cssText = 'padding:12px 24px; background:#4285F4; color:#fff; border:none; border-radius:50px; font-size:16px; cursor:pointer;';
 
-  // Upload button
-  const uploadBtn = document.createElement('button');
-  uploadBtn.textContent = 'Upload';
-  uploadBtn.style.cssText = 'padding:12px 24px; background:#ff8400; color:#fff; border:none; border-radius:50px; font-size:16px; cursor:pointer;';
+    // Upload
+    const uploadBtn = document.createElement('button');
+    uploadBtn.textContent = 'Upload';
+    uploadBtn.style.cssText = 'padding:12px 24px; background:#ff8400; color:#fff; border:none; border-radius:50px; font-size:16px; cursor:pointer;';
 
-  // Hidden file input scoped to this overlay (avoids double listeners)
-  const overlayFile = document.createElement('input');
-  overlayFile.type = 'file';
-  overlayFile.accept = 'image/*';
+    // Hidden file input scoped to this overlay
+    const overlayFile = document.createElement('input');
+    overlayFile.type = 'file';
+    overlayFile.accept = 'image/*';
 
-  // Assemble
-  controls.appendChild(captureBtn);
-  controls.appendChild(uploadBtn);
-  preview.appendChild(video);
-  preview.appendChild(cancelBtn);
-  preview.appendChild(controls);
-  preview.appendChild(overlayFile);
-  document.body.appendChild(preview);
+    // Assemble
+    controls.appendChild(captureBtn);
+    controls.appendChild(uploadBtn);
+    preview.appendChild(video);
+    preview.appendChild(cancelBtn);
+    preview.appendChild(controls);
+    preview.appendChild(overlayFile);
+    document.body.appendChild(preview);
 
-  let activeStream = null;
+    let activeStream = null;
 
-  // Camera stream
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-    .then(stream => {
-      activeStream = stream;
-      video.srcObject = stream;
-      video.play();
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then(stream => {
+        activeStream = stream;
+        video.srcObject = stream;
+        video.play();
 
-      // Capture from camera
-      captureBtn.addEventListener('click', () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext('2d').drawImage(video, 0, 0);
-        canvas.toBlob(async (blob) => {
-          await this.processImageFile(blob);
-          cleanup();
-        }, 'image/jpeg', 0.8);
+        // Capture from camera
+        captureBtn.addEventListener('click', () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.getContext('2d').drawImage(video, 0, 0);
+          canvas.toBlob(async (blob) => {
+            await this.processImageFile(blob);
+            cleanup();
+          }, 'image/jpeg', 0.8);
+        });
+
+        // Upload flow
+        uploadBtn.addEventListener('click', () => overlayFile.click());
+        overlayFile.addEventListener('change', async (e) => {
+          if (e.target.files && e.target.files[0]) {
+            await this.processImageFile(e.target.files[0]);
+            cleanup();
+          }
+        });
+
+        cancelBtn.addEventListener('click', () => cleanup());
+      })
+      .catch(() => {
+        // camera failed -> fallback to global picker
+        document.body.removeChild(preview);
+        document.getElementById('fileUpload').click();
       });
 
-      // Open file picker
-      uploadBtn.addEventListener('click', () => overlayFile.click());
-
-      // Handle chosen file (and close preview)
-      overlayFile.addEventListener('change', async (e) => {
-        if (e.target.files && e.target.files[0]) {
-          await this.processImageFile(e.target.files[0]);
-          cleanup();
-        }
-      });
-
-      // Cancel
-      cancelBtn.addEventListener('click', () => cleanup());
-    })
-    .catch(() => {
-      // If camera fails, remove overlay and fall back to global picker
-      document.body.removeChild(preview);
-      document.getElementById('fileUpload').click();
-    });
-
-  function cleanup() {
-    try {
-      if (activeStream) activeStream.getTracks().forEach(t => t.stop());
-    } catch {}
-    if (preview.parentNode) preview.parentNode.removeChild(preview);
-  }
-};
+    function cleanup() {
+      try { if (activeStream) activeStream.getTracks().forEach(t => t.stop()); } catch {}
+      if (preview.parentNode) preview.parentNode.removeChild(preview);
+    }
+  };
 
   PhotoSystem.processImageFile = function (file) {
     return new Promise((resolve) => {
@@ -3834,12 +3830,15 @@ NS.emit('gps-stop');
       if (window.__LL_GPS__?.lastUserLngLat) {
         const ts = new Date().toISOString();
         this.addPhotoMarker(window.__LL_GPS__.lastUserLngLat, photoData, ts, uid());
+        // persist the one we just added
         this.savePhoto({ id: this.markers[this.markers.length - 1].id, lngLat: window.__LL_GPS__.lastUserLngLat, data: photoData, timestamp: ts });
+      } else {
+        try { window.showToaster?.('GPS must be active to pin a photo', 2500); } catch {}
       }
     });
   };
 
-  // ===== Map / markers
+  // ===== Map / markers (HTML pins at close zoom)
   PhotoSystem.addPhotoMarker = function (lngLat, photoData, timestamp, id) {
     const el = document.createElement('div');
     el.className = 'photo-marker';
@@ -3865,7 +3864,7 @@ NS.emit('gps-stop');
     });
 
     this.syncClusterSource();
-    this.handleMarkerVisibility(); // in case zoom context changed
+    this.handleMarkerVisibility(); // reflect current zoom
   };
 
   PhotoSystem.openAt = function (index) {
@@ -3896,7 +3895,7 @@ NS.emit('gps-stop');
     rec.marker.remove();
     this.markers.splice(this.currentIndex, 1);
 
-    // Persist
+    // Persist + update layers
     this.rebuildLocalStorage();
     this.syncClusterSource();
 
@@ -3934,8 +3933,7 @@ NS.emit('gps-stop');
     const saved = JSON.parse(localStorage.getItem('mapPhotos') || '[]');
     let mutated = false;
     saved.forEach(photo => {
-      // Back-compat: add missing ids
-      if (!photo.id) { photo.id = uid(); mutated = true; }
+      if (!photo.id) { photo.id = uid(); mutated = true; } // back-compat id
       if (photo.lngLat && photo.data) {
         this.addPhotoMarker(photo.lngLat, photo.data, photo.timestamp, photo.id);
       }
@@ -3947,6 +3945,7 @@ NS.emit('gps-stop');
   // ===== Clustering (Mapbox source/layers)
   PhotoSystem.ensureClusterLayers = function () {
     if (!window.map) return;
+
     const addAll = () => {
       if (map.getSource(this.clusterSourceId)) { this._clusterReady = true; return; }
 
@@ -3965,12 +3964,19 @@ NS.emit('gps-stop');
         source: this.clusterSourceId,
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': '#ff8400',
+          'circle-color': [
+            'step', ['get', 'point_count'],
+            '#ffad66', 5,
+            '#ff8a33', 10,
+            '#ff6a00'
+          ],
           'circle-radius': [
             'step', ['get', 'point_count'],
-            16, 10, 20, 25, 28
+            16, 5, 20, 10, 24
           ],
-          'circle-opacity': 0.85
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+          'circle-opacity': 0.9
         }
       });
 
@@ -3984,7 +3990,7 @@ NS.emit('gps-stop');
           'text-field': ['get', 'point_count_abbreviated'],
           'text-size': 12
         },
-        paint: { 'text-color': '#ffffff' }
+        paint: { 'text-color': '#1a1a1a' }
       });
 
       // Single (unclustered) points
@@ -4049,13 +4055,14 @@ NS.emit('gps-stop');
     if (!window.map) return;
     const z = map.getZoom();
     const showHtml = z > this.clusterMaxZoom + 0.3; // small hysteresis
-    // HTML markers
+
+    // HTML markers (thumbnails) at close zoom
     this.markers.forEach(m => { m.marker.getElement().style.display = showHtml ? 'block' : 'none'; });
-    // Layer for unclustered points (only when hiding HTML markers)
+
+    // Layer visibility for clusters / unclustered points when zoomed out
     if (map.getLayer(this.unclusteredLayerId)) {
       map.setLayoutProperty(this.unclusteredLayerId, 'visibility', showHtml ? 'none' : 'visible');
     }
-    // Clusters are visible only when hiding HTML markers
     if (map.getLayer(this.clusterLayerId)) {
       map.setLayoutProperty(this.clusterLayerId, 'visibility', showHtml ? 'none' : 'visible');
     }
@@ -4064,14 +4071,14 @@ NS.emit('gps-stop');
     }
   };
 
-  // ===== Boot (in case init is called before map ready, we re-call ensureClusterLayers later)
-  // Show FAB immediately if GPS is already active
+  // ===== Boot (show FAB immediately if GPS is already active)
   if (window.__LL_GPS__?.lastUserLngLat) {
     const cam = document.getElementById('cameraButton');
     if (cam) cam.style.display = 'block';
   }
 })();
 </script>
+
 
 
 
