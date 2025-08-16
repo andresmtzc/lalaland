@@ -3459,19 +3459,61 @@ async function initAuth() {
     window.location.reload();
   });
 
-  document.getElementById('request-otp')?.addEventListener('click', async () => {
-    const email = document.getElementById('auth-email').value.trim();
-    if (!email) return;
+  const emailInput  = document.getElementById('auth-email');
+  const requestBtn  = document.getElementById('request-otp');
 
-    const { error } = await window.supabaseClient.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.href }
-    });
-    if (error) { alert('Error sending OTP: ' + error.message); return; }
+  // ✅ Validación en vivo: solo habilita el botón si el email está en editors
+  let liveCheckTimer = null;
+  emailInput?.addEventListener('input', () => {
+    if (!requestBtn) return;
+    requestBtn.disabled = true;
+    requestBtn.title = 'Verificando correo…';
+    clearTimeout(liveCheckTimer);
+    liveCheckTimer = setTimeout(async () => {
+      const email = emailInput.value.trim();
+      if (!email) { requestBtn.disabled = true; requestBtn.title = ''; return; }
+      const ok = await isEmailAuthorized(email);
+      requestBtn.disabled = !ok;
+      requestBtn.title = ok ? '' : 'Este correo no está autorizado';
+    }, 350);
+  });
 
-    document.getElementById('otp-email-display').textContent = email;
-    document.getElementById('auth-step-email').style.display = 'none';
-    document.getElementById('auth-step-otp').style.display = 'block';
+  // ✅ Click: verifica en servidor ANTES de enviar OTP
+  requestBtn?.addEventListener('click', async () => {
+    const email = emailInput.value.trim();
+    if (!email) { alert('Ingresa un correo.'); return; }
+
+    // Bloquea UI durante verificación
+    requestBtn.disabled = true;
+    const prevText = requestBtn.textContent;
+    requestBtn.textContent = 'Verificando…';
+
+    try {
+      const ok = await isEmailAuthorized(email);
+      if (!ok) {
+        alert('Este correo no está autorizado como editor.');
+        requestBtn.textContent = prevText;
+        // permanece deshabilitado hasta que el email sea válido
+        return;
+      }
+
+      // ✅ Solo si está autorizado, dispara el OTP
+      const { error } = await window.supabaseClient.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: window.location.href }
+      });
+      if (error) { alert('Error sending OTP: ' + error.message); return; }
+
+      document.getElementById('otp-email-display').textContent = email;
+      document.getElementById('auth-step-email').style.display = 'none';
+      document.getElementById('auth-step-otp').style.display = 'block';
+    } finally {
+      // No re-habilites si el correo NO está autorizado
+      const ok = await isEmailAuthorized(email);
+      requestBtn.disabled = !ok;
+      requestBtn.textContent = prevText;
+      requestBtn.title = ok ? '' : 'Este correo no está autorizado';
+    }
   });
 
   document.getElementById('verify-otp')?.addEventListener('click', async () => {
@@ -3482,10 +3524,11 @@ async function initAuth() {
     if (error) { alert('Invalid code: ' + error.message); return; }
 
     currentUser = data.user;
-    // Only allow if in editors table
+
+    // Doble verificación: si no está en editors, cerrar sesión
     if (!(await isUserEditor())) {
       await window.supabaseClient.auth.signOut();
-      alert('This email is not authorized as an editor');
+      alert('Este correo no está autorizado como editor');
       hideAuthModal();
       updateAuthUI();
       return;
@@ -3496,7 +3539,7 @@ async function initAuth() {
 
   document.getElementById('auth-cancel')?.addEventListener('click', hideAuthModal);
 
-  // Initial state + subscribe to changes
+  // Estado inicial + suscripción
   await checkAuthStatus();
   window.supabaseClient.auth.onAuthStateChange(async () => { await checkAuthStatus(); });
 }
@@ -3504,6 +3547,18 @@ async function initAuth() {
 document.addEventListener('DOMContentLoaded', initAuth);
 </script>
 
+<script>
+async function isEmailAuthorized(email) {
+  await window.supabaseReady; // asegura cliente listo
+  if (!email) return false;
+  const { data, error } = await window.supabaseClient
+    .from('editors')
+    .select('email')
+    .eq('email', email)
+    .maybeSingle();
+  return !!(data && !error);
+}
+</script>
 
 
 <script>
