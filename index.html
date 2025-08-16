@@ -1226,6 +1226,35 @@ body.fonts-loaded .side-length-label {
 #lotModal.pin-mode .custom-scrollbar {
   display: none !important;
 }
+
+.auth-controls {
+  display: none;               /* hide by default to avoid flashes */
+  position: absolute;
+  right: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  gap: 8px;
+}
+.auth-btn {
+  width: 32px; height: 32px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:50%; background:none; border:none; cursor:pointer;
+  transition: all .3s ease;
+}
+.auth-btn:hover { background: rgba(255,255,255,0.1); }
+.auth-btn svg { transition: fill .3s ease; }
+.auth-btn:hover svg { fill: #ff8400; }
+
+/* Auth modal inputs/buttons */
+#auth-modal input { background:#333; color:#fff; border:1px solid #555; border-radius:4px; }
+#auth-modal button { cursor:pointer; transition: opacity .2s; }
+#auth-modal button:hover { opacity:.9; }
+#auth-modal #auth-cancel:hover { color:#fff; }
+
+#lotModal.info-mode .auth-controls {
+  display: flex;
+}
+
   </style>
 </head>
 
@@ -1257,6 +1286,21 @@ body.fonts-loaded .side-length-label {
     <div class="header-title">
       LOTES VENTA — SANTTE 2<span class="header-lot-number" id="headerLotNumber"></span>
     </div>
+
+<!-- AUTH controls -->
+<div class="auth-controls" id="authControls">
+  <button id="modal-login-btn" class="header-control auth-btn" title="Login">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#888" aria-hidden="true">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V9h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+    </svg>
+  </button>
+  <button id="modal-logout-btn" class="header-control auth-btn" title="Logout">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#888" aria-hidden="true">
+      <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+    </svg>
+  </button>
+</div>
+
     <div class="header-control close-x" onclick="closeModal()">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
         <path d="M4 4 L12 12 M12 4 L4 12" fill="none"/>
@@ -1274,6 +1318,9 @@ body.fonts-loaded .side-length-label {
         style="display: none;"/>
 </svg>
 </div>
+
+
+
   </div>
   <div class="modal-divider"></div>
   <div class="modal-content-wrapper">
@@ -1302,6 +1349,28 @@ body.fonts-loaded .side-length-label {
   </svg>
   </div>
 </div>
+
+<!-- AUTH MODAL -->
+<div id="auth-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:10000;">
+  <div style="max-width:400px; margin:100px auto; background:#1a1a1a; padding:20px; border-radius:8px; color:white;">
+    <h2 style="color:#ff8400; margin-bottom:20px;">Editor Login</h2>
+
+    <div id="auth-step-email">
+      <p>Ingresa tu email autorizado para recibir un código:</p>
+      <input type="email" id="auth-email" placeholder="tucorreo@dominio.com" style="width:100%; padding:10px; margin:10px 0;">
+      <button id="request-otp" style="background:#ff8400; color:white; border:none; padding:10px 20px; border-radius:4px;">Enviar código</button>
+    </div>
+
+    <div id="auth-step-otp" style="display:none;">
+      <p>Escribe el código de 6 dígitos enviado a <span id="otp-email-display" style="font-weight:bold;"></span>:</p>
+      <input type="text" id="auth-otp" maxlength="6" inputmode="numeric" style="width:100%; padding:10px; margin:10px 0;">
+      <button id="verify-otp" style="background:#ff8400; color:white; border:none; padding:10px 20px; border-radius:4px;">Verificar</button>
+    </div>
+
+    <button id="auth-cancel" style="margin-top:20px; background:none; color:#aaa; border:none;">Cancelar</button>
+  </div>
+</div>
+
 
 <!-- Whatsapp button -->
 <a href="https://wa.me/5218185261819" target="_blank" class="whatsapp-button"
@@ -3047,7 +3116,7 @@ if (document.getElementById('lotModal')?.classList.contains('pin-mode')) {
   lotDetails.classList.remove('active');
   backButton.style.display = 'none';
   document.querySelector('.plus-button').style.display = 'none';
-  modal.classList.remove('expanded');
+  modal.classList.remove('info-mode','expanded');
   scrollHandlerAttached = true;
   document.getElementById('calendlyEmbed').style.display = 'none';
   document.getElementById('lotDetails').style.display = 'block';
@@ -3137,8 +3206,10 @@ function closeModal() {
   const plusBtn = document.querySelector('.plus-button');
   const bottomPlus = document.querySelector('.bottom-plus-button');
 
+  
+
   // --- 1) Kill special modes / embeds
-  modal.classList.remove('pin-mode', 'expanded');
+  modal.classList.remove('info-mode', 'pin-mode', 'expanded');
   hideCalendlyEmbed();                       // blanks iframe + hides container
   isDetailOpen = false;
 
@@ -3274,16 +3345,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Open lot modal in "info mode" (replace list content)
 infoBtn.addEventListener('click', () => {
-  infoMode = true;        // tell openModal to skip list rendering
-  openModal();            // reuse the same modal
+  infoMode = true;              // existing line
+  openModal();                  // existing line
 
-  // Force expanded mode
+  // Mark this instance of the modal as “info-mode”
+  modal.classList.add('info-mode');   // <-- add this
+
+  // Force expanded mode (your existing behavior)
   modal.classList.add('expanded');
 
   const modalInfo = document.getElementById('modalInfo');
   const customScrollbar = document.getElementById('customScrollbar');
 
-  // Replace list with your static info content
   modalInfo.innerHTML = `
     <div style="padding:20px; color:#8a8880;">
       <h2 style="color:#a17345; margin-bottom:10px;">Sobre Santte 2</h2>
@@ -3291,8 +3364,6 @@ infoBtn.addEventListener('click', () => {
       <p>Para más información contáctanos por WhatsApp o visita nuestras oficinas.</p>
     </div>
   `;
-
-  // Hide scrollbar for static content
   customScrollbar.style.display = 'none';
 });
 
