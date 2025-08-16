@@ -1255,6 +1255,103 @@ body.fonts-loaded .side-length-label {
   display: flex;
 }
 
+/* Dark overlay, covers screen */
+#auth-modal {
+  position: fixed;
+  inset: 0;
+  display: none;       /* hidden by default */
+
+  z-index: 10005;
+}
+
+/* Centered box */
+.auth-box {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate3d(-50%, -50%, 0);
+  will-change: transform;
+  max-width: 400px;
+  width: 90%;
+  background: #1a1a1a;
+  padding: 20px;
+  border-radius: 8px;
+  color: #fff;
+}
+
+#auth-modal h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  text-align: center;
+  color: #ff8400;
+}
+
+#auth-modal label {
+  font-size: 14px;
+  display: block;
+  margin-bottom: 6px;
+  color: #ddd;
+}
+
+#auth-modal input {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #2a2a2a;
+  color: #fff;
+  font-size: 14px;
+}
+
+#auth-modal input:focus {
+  border-color: #ff8400;
+  outline: none;
+
+}
+
+#auth-modal button {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+#auth-modal button.primary {
+  background: #ff8400;
+  color: #fff;
+}
+
+#auth-modal button.primary:hover {
+  background: #e67400;
+}
+
+#auth-modal button.secondary {
+  background: #333;
+  color: #fff;
+  margin-top: 8px;
+}
+
+#auth-modal button.secondary:hover {
+  background: #444;
+}
+
+/* Fade-in animation */
+@keyframes fadeInUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+#auth-modal input,
+#auth-modal button {
+  width: 100%;
+  box-sizing: border-box;  /* make padding & border included in the width */
+}
+
   </style>
 </head>
 
@@ -1351,25 +1448,19 @@ body.fonts-loaded .side-length-label {
 </div>
 
 <!-- AUTH MODAL -->
-<div id="auth-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:10000;">
-  <div style="max-width:400px; margin:100px auto; background:#1a1a1a; padding:20px; border-radius:8px; color:white;">
-    <h2 style="color:#ff8400; margin-bottom:20px;">Editor Login</h2>
+<div id="auth-modal">
+  <div class="auth-box">
+    <h2>Login para Administrador</h2>
 
     <div id="auth-step-email">
-      <p>Ingresa tu email autorizado para recibir un código:</p>
-      <input type="email" id="auth-email" placeholder="tucorreo@dominio.com" style="width:100%; padding:10px; margin:10px 0;">
-      <button id="request-otp" style="background:#ff8400; color:white; border:none; padding:10px 20px; border-radius:4px;">Enviar código</button>
+      <label for="auth-email">Email</label>
+      <input type="email" id="auth-email" placeholder="tu@correo.com">
+      <button class="primary" id="request-otp">Enviar link</button>
+      <button class="secondary" id="auth-cancel">Cancelar</button>
     </div>
-
-    <div id="auth-step-otp" style="display:none;">
-      <p>Escribe el código de 6 dígitos enviado a <span id="otp-email-display" style="font-weight:bold;"></span>:</p>
-      <input type="text" id="auth-otp" maxlength="6" inputmode="numeric" style="width:100%; padding:10px; margin:10px 0;">
-      <button id="verify-otp" style="background:#ff8400; color:white; border:none; padding:10px 20px; border-radius:4px;">Verificar</button>
-    </div>
-
-    <button id="auth-cancel" style="margin-top:20px; background:none; color:#aaa; border:none;">Cancelar</button>
   </div>
 </div>
+
 
 
 <!-- Whatsapp button -->
@@ -1525,6 +1616,138 @@ ctaobserver.observe(ctaToaster, {
     document.head.appendChild(supabaseScript);
   });
 </script>
+
+<script>
+// ===== AUTH (Supabase — Magic Link only) ===== ADMIN LOGIN
+(() => {
+  // Helpers
+  const $ = (s, r = document) => r.querySelector(s);
+  const toast = (m) => { try { window.showToaster?.(m); } catch {} };
+
+  // Header controls (only appear where your .auth-controls exists in the DOM)
+  const controls  = $('.auth-controls');
+  const btnLogin  = $('#modal-login-btn');
+  const btnLogout = $('#modal-logout-btn');
+
+  // Auth modal (email → send magic link)
+  const authModal = $('#auth-modal');
+  const emailInp  = $('#auth-email');
+  const sendBtn   = $('#request-otp');
+  const cancelBtn = $('#auth-cancel');
+
+  // Optional simple allowlist — leave empty to allow any email
+  const ALLOWED_EMAILS = [
+    // "you@example.com",
+    // "teammate@lalaland.mx",
+  ];
+
+  // Show/hide the mini buttons (do NOT force the container's display;
+  // your CSS controls when .auth-controls appears in that specific header)
+  function updateButtons(loggedIn) {
+    if (!btnLogin || !btnLogout) return;
+    btnLogin.style.display  = loggedIn ? 'none' : 'flex';
+    btnLogout.style.display = loggedIn ? 'flex' : 'none';
+  }
+
+  function showAuthModal() {
+    if (!authModal) return;
+    emailInp && (emailInp.value = '');
+    authModal.style.display = 'block';
+    // small delay to ensure focus after display
+    setTimeout(() => emailInp?.focus(), 0);
+  }
+  function hideAuthModal() {
+    if (!authModal) return;
+    authModal.style.display = 'none';
+  }
+
+  // Wire basic UI events (if the controls exist on this page/header)
+  btnLogin  && btnLogin.addEventListener('click', showAuthModal);
+  btnLogout && btnLogout.addEventListener('click', async () => {
+    try {
+      await window.supabaseClient?.auth.signOut();
+      updateButtons(false);
+      toast('Sesión cerrada.');
+    } catch (e) {
+      console.error(e);
+      toast('Error al cerrar sesión.');
+    }
+  });
+  cancelBtn && cancelBtn.addEventListener('click', hideAuthModal);
+
+  // Send magic link
+  sendBtn && sendBtn.addEventListener('click', async () => {
+    const email = (emailInp.value || '').trim().toLowerCase();
+    if (!email) { toast('Escribe tu email.'); return; }
+    if (ALLOWED_EMAILS.length && !ALLOWED_EMAILS.includes(email)) {
+      toast('Email no autorizado.'); return;
+    }
+    try {
+      const { error } = await window.supabaseClient.auth.signInWithOtp({
+        email,
+        // Supabase will append the access_token etc. in the hash on return
+        options: { emailRedirectTo: window.location.origin }
+      });
+      if (error) throw error;
+      hideAuthModal();
+      toast('Te enviamos un link de acceso. Revisa tu correo.');
+    } catch (e) {
+      console.error(e);
+      toast('Este correo no está autorizado.');
+    }
+  });
+
+  // Detect if we just came back from a magic-link redirect
+  let cameFromMagicLink = false;
+  try {
+    // Supabase returns hash like: #access_token=...&token_type=bearer&type=magiclink...
+    if (typeof location.hash === 'string' && /access_token=/.test(location.hash)) {
+      cameFromMagicLink = true;
+      // Clean URL hash so refreshes don't re-trigger this path
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  } catch {}
+
+  // Wait for Supabase to be ready, then sync UI with session
+  const onReady = async () => {
+    try {
+      const { data: { session } = { session: null } } =
+        (await window.supabaseClient.auth.getSession()) || {};
+      updateButtons(!!(session && session.user));
+    } catch (e) {
+      console.warn('getSession failed:', e);
+    }
+
+    // React to auth changes
+    window.supabaseClient.auth.onAuthStateChange((event, session) => {
+      const loggedIn = !!(session && session.user);
+      updateButtons(loggedIn);
+
+      // Show toast ONLY when an actual login just happened via magic link,
+      // not on page refresh or token refresh
+      if (event === 'SIGNED_IN' && cameFromMagicLink) {
+        toast('Has iniciado sesión.');
+        cameFromMagicLink = false; // prevent double toasts
+      }
+    });
+  };
+
+  if (window.supabaseReady && typeof window.supabaseReady.then === 'function') {
+    window.supabaseReady.then(onReady);
+  } else {
+    // fallback: poll until supabaseClient exists
+    const iv = setInterval(() => {
+      if (window.supabaseClient) {
+        clearInterval(iv);
+        onReady();
+      }
+    }, 200);
+  }
+})();
+
+</script>
+
+ 
 
 <script> 
 // MAP INITIALIZE
