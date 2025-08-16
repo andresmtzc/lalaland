@@ -20,9 +20,10 @@
 
   <style>
     html, body { margin:0; padding:0; font-family: 'Barlow Condensed', Arial, sans-serif; 
-      height: 100dvh;     
+      height: auto;
+      min-height: 100dvh;     
     }
-    #map { height:100%; }
+    #map { height:100dvh; }
 
   .mapboxgl-ctrl.mapboxgl-ctrl-attrib {
   position: absolute;
@@ -1655,7 +1656,6 @@ ctaobserver.observe(ctaToaster, {
     if (!authModal) return;
     emailInp && (emailInp.value = '');
     authModal.style.display = 'block';
-    // small delay to ensure focus after display
     setTimeout(() => emailInp?.focus(), 0);
   }
   function hideAuthModal() {
@@ -1679,39 +1679,63 @@ ctaobserver.observe(ctaToaster, {
 
   // Send magic link
   sendBtn && sendBtn.addEventListener('click', async () => {
-    const email = (emailInp.value || '').trim().toLowerCase();
+    const email = (emailInp?.value || '').trim().toLowerCase();
     if (!email) { toast('Escribe tu email.'); return; }
     if (ALLOWED_EMAILS.length && !ALLOWED_EMAILS.includes(email)) {
       toast('Email no autorizado.'); return;
     }
     try {
+      await window.supabaseReady;
+      // Send user back to the same page (keep path; drop hash unless you want to keep it)
+      const redirectTo = window.location.href.split('#')[0];
       const { error } = await window.supabaseClient.auth.signInWithOtp({
         email,
-        // Supabase will append the access_token etc. in the hash on return
-        options: { emailRedirectTo: window.location.origin }
+        options: { emailRedirectTo: redirectTo } // magic link
       });
       if (error) throw error;
       hideAuthModal();
       toast('Te enviamos un link de acceso. Revisa tu correo.');
     } catch (e) {
       console.error(e);
-      toast('Este correo no está autorizado.');
+      toast('No pudimos enviar el link.');
     }
   });
 
   // Detect if we just came back from a magic-link redirect
   let cameFromMagicLink = false;
-  try {
-    // Supabase returns hash like: #access_token=...&token_type=bearer&type=magiclink...
-    if (typeof location.hash === 'string' && /access_token=/.test(location.hash)) {
-      cameFromMagicLink = true;
-      // Clean URL hash so refreshes don't re-trigger this path
-      history.replaceState(null, '', location.pathname + location.search);
+
+  async function processMagicLinkIfPresent() {
+    await window.supabaseReady;
+
+    const { search, hash } = window.location;
+    const hasCode = /\bcode=/.test(search);
+    const hasAccessToken = /access_token=/.test(hash);
+
+    try {
+      if (hasCode) {
+        // PKCE flow: exchange ?code= for a session
+        await window.supabaseClient.auth.exchangeCodeForSession(window.location.href);
+        cameFromMagicLink = true;
+      } else if (hasAccessToken) {
+        // Hash flow: Supabase v2 handles this automatically on first getSession/onAuthStateChange,
+        // but mark that we came from a magic link so we can show a toast when SIGNED_IN fires.
+        cameFromMagicLink = true;
+      }
+    } catch (e) {
+      console.warn('Magic link exchange failed:', e);
+    } finally {
+      // Clean the URL so refreshes don't re-trigger
+      try {
+        const clean = window.location.pathname + window.location.search.replace(/\?code=[^&]+&?/, '').replace(/&$/, '');
+        history.replaceState(null, '', clean || '/');
+      } catch {}
     }
-  } catch {}
+  }
 
   // Wait for Supabase to be ready, then sync UI with session
   const onReady = async () => {
+    await processMagicLinkIfPresent();
+
     try {
       const { data: { session } = { session: null } } =
         (await window.supabaseClient.auth.getSession()) || {};
@@ -1725,11 +1749,30 @@ ctaobserver.observe(ctaToaster, {
       const loggedIn = !!(session && session.user);
       updateButtons(loggedIn);
 
-      // Show toast ONLY when an actual login just happened via magic link,
-      // not on page refresh or token refresh
+      // Show toast ONLY when an actual login just happened (not on refresh)
       if (event === 'SIGNED_IN' && cameFromMagicLink) {
         toast('Has iniciado sesión.');
         cameFromMagicLink = false; // prevent double toasts
+      }
+    });
+
+    // If the magic link opened in *another* tab, keep this tab in sync
+    window.addEventListener('storage', async (ev) => {
+      if (ev.key && ev.key.includes('-auth-token')) {
+        try {
+          const { data: { session } } = await window.supabaseClient.auth.getSession();
+          updateButtons(!!session?.user);
+        } catch {}
+      }
+    });
+
+    // Also re-check when tab becomes visible (covers some mobile webviews)
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          const { data: { session } } = await window.supabaseClient.auth.getSession();
+          updateButtons(!!session?.user);
+        } catch {}
       }
     });
   };
@@ -1746,7 +1789,6 @@ ctaobserver.observe(ctaToaster, {
     }, 200);
   }
 })();
-
 </script>
 
  
