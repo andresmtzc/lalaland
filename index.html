@@ -1453,16 +1453,24 @@ body.fonts-loaded .side-length-label {
 <!-- AUTH MODAL -->
 <div id="auth-modal">
   <div class="auth-box">
-    <h2>Login para Administrador</h2>
+    <h2>Iniciar sesión</h2>
 
     <div id="auth-step-email">
-      <label for="auth-email">Email</label>
+      <label for="auth-email">Correo electrónico</label>
       <input type="email" id="auth-email" placeholder="tu@correo.com">
-      <button class="primary" id="request-otp">Enviar link</button>
+      <button class="primary" id="request-otp">Enviar código</button>
+      <button class="secondary" id="auth-cancel">Cancelar</button>
+    </div>
+
+    <div id="auth-step-otp" style="display:none;">
+      <label for="auth-otp">Código enviado a <span id="otp-email-display"></span></label>
+      <input type="text" id="auth-otp" maxlength="6" placeholder="123456">
+      <button class="primary" id="verify-otp">Verificar</button>
       <button class="secondary" id="auth-cancel">Cancelar</button>
     </div>
   </div>
 </div>
+
 
 
 
@@ -1621,175 +1629,128 @@ ctaobserver.observe(ctaToaster, {
 </script>
 
 <script>
-// ===== AUTH (Supabase — Magic Link only) ===== ADMIN LOGIN
+// ===== AUTH (Supabase OTP) =====
 (() => {
-  // Helpers
-  const $ = (s, r = document) => r.querySelector(s);
-  const toast = (m) => { try { window.showToaster?.(m); } catch {} };
-
-  // Header controls (only appear where your .auth-controls exists in the DOM)
-  const controls  = $('.auth-controls');
+  const $ = (s) => document.querySelector(s);
+  const controls = $('.auth-controls');
   const btnLogin  = $('#modal-login-btn');
   const btnLogout = $('#modal-logout-btn');
 
-  // Auth modal (email → send magic link)
-  const authModal = $('#auth-modal');
+  const modal     = $('#auth-modal');
+  const stepEmail = $('#auth-step-email');
+  const stepOtp   = $('#auth-step-otp');
   const emailInp  = $('#auth-email');
-  const sendBtn   = $('#request-otp');
+  const otpInp    = $('#auth-otp');
+  const otpEmail  = $('#otp-email-display');
+
+  const reqBtn    = $('#request-otp');
+  const verifyBtn = $('#verify-otp');
   const cancelBtn = $('#auth-cancel');
 
-  // Optional simple allowlist — leave empty to allow any email
+  // Optional: allowlist
   const ALLOWED_EMAILS = [
     // "you@example.com",
-    // "teammate@lalaland.mx",
   ];
 
-  // Show/hide the mini buttons (do NOT force the container's display;
-  // your CSS controls when .auth-controls appears in that specific header)
-  function updateButtons(loggedIn) {
-    if (!btnLogin || !btnLogout) return;
+  let pendingEmail = '';
+
+  function showAuthModal() {
+    stepEmail.style.display = 'block';
+    stepOtp.style.display = 'none';
+    emailInp.value = '';
+    otpInp.value = '';
+    modal.style.display = 'block';
+  }
+  function hideAuthModal() { modal.style.display = 'none'; }
+
+  function updateAuthUI(session) {
+    // Show container once state is known
+    if (controls && controls.style.display === 'none') controls.style.display = 'flex';
+
+    const loggedIn = !!(session && session.user);
     btnLogin.style.display  = loggedIn ? 'none' : 'flex';
     btnLogout.style.display = loggedIn ? 'flex' : 'none';
   }
 
-  function showAuthModal() {
-    if (!authModal) return;
-    emailInp && (emailInp.value = '');
-    authModal.style.display = 'block';
-    setTimeout(() => emailInp?.focus(), 0);
-  }
-  function hideAuthModal() {
-    if (!authModal) return;
-    authModal.style.display = 'none';
-  }
-
-  // Wire basic UI events (if the controls exist on this page/header)
-  btnLogin  && btnLogin.addEventListener('click', showAuthModal);
-  btnLogout && btnLogout.addEventListener('click', async () => {
+  // Bind UI handlers
+  if (btnLogin)  btnLogin.addEventListener('click', showAuthModal);
+  if (btnLogout) btnLogout.addEventListener('click', async () => {
     try {
-      await window.supabaseClient?.auth.signOut();
-      updateButtons(false);
-      toast('Sesión cerrada.');
+      await window.supabaseClient.auth.signOut();
+      showToaster?.('Sesión cerrada.');
     } catch (e) {
       console.error(e);
-      toast('Error al cerrar sesión.');
+      showToaster?.('Error al cerrar sesión.');
     }
   });
-  cancelBtn && cancelBtn.addEventListener('click', hideAuthModal);
+  cancelBtn?.addEventListener('click', hideAuthModal);
 
-  // Send magic link
-  sendBtn && sendBtn.addEventListener('click', async () => {
-    const email = (emailInp?.value || '').trim().toLowerCase();
-    if (!email) { toast('Escribe tu email.'); return; }
+  reqBtn?.addEventListener('click', async () => {
+    const email = (emailInp.value || '').trim().toLowerCase();
+
+    if (!email) { showToaster?.('Escribe tu email.'); return; }
     if (ALLOWED_EMAILS.length && !ALLOWED_EMAILS.includes(email)) {
-      toast('Email no autorizado.'); return;
+      showToaster?.('Email no autorizado.'); return;
     }
+
     try {
-      await window.supabaseReady;
-      // Send user back to the same page (keep path; drop hash unless you want to keep it)
-      const redirectTo = window.location.href.split('#')[0];
       const { error } = await window.supabaseClient.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: redirectTo } // magic link
+        options: { emailRedirectTo: window.location.origin }
       });
       if (error) throw error;
-      hideAuthModal();
-      toast('Te enviamos un link de acceso. Revisa tu correo.');
+
+      pendingEmail = email;
+      otpEmail.textContent = email;
+      stepEmail.style.display = 'none';
+      stepOtp.style.display = 'block';
+      otpInp.focus();
+      showToaster?.('Código enviado. Revisa tu correo.');
     } catch (e) {
       console.error(e);
-      toast('No pudimos enviar el link.');
+      showToaster?.('No pudimos enviar el código.');
     }
   });
 
-  // Detect if we just came back from a magic-link redirect
-  let cameFromMagicLink = false;
-
-  async function processMagicLinkIfPresent() {
-    await window.supabaseReady;
-
-    const { search, hash } = window.location;
-    const hasCode = /\bcode=/.test(search);
-    const hasAccessToken = /access_token=/.test(hash);
+  verifyBtn?.addEventListener('click', async () => {
+    const token = (otpInp.value || '').trim();
+    if (token.length !== 6) { showToaster?.('El código debe tener 6 dígitos.'); return; }
 
     try {
-      if (hasCode) {
-        // PKCE flow: exchange ?code= for a session
-        await window.supabaseClient.auth.exchangeCodeForSession(window.location.href);
-        cameFromMagicLink = true;
-      } else if (hasAccessToken) {
-        // Hash flow: Supabase v2 handles this automatically on first getSession/onAuthStateChange,
-        // but mark that we came from a magic link so we can show a toast when SIGNED_IN fires.
-        cameFromMagicLink = true;
-      }
+      const { data, error } = await window.supabaseClient.auth.verifyOtp({
+        email: pendingEmail,
+        token,
+        type: 'email'
+      });
+      if (error) throw error;
+
+      hideAuthModal();
+      showToaster?.('¡Verificado!');
+      // Session change handled below
     } catch (e) {
-      console.warn('Magic link exchange failed:', e);
-    } finally {
-      // Clean the URL so refreshes don't re-trigger
-      try {
-        const clean = window.location.pathname + window.location.search.replace(/\?code=[^&]+&?/, '').replace(/&$/, '');
-        history.replaceState(null, '', clean || '/');
-      } catch {}
+      console.error(e);
+      showToaster?.('Código inválido o vencido.');
     }
-  }
+  });
 
-  // Wait for Supabase to be ready, then sync UI with session
-  const onReady = async () => {
-    await processMagicLinkIfPresent();
-
+  // Wait for Supabase, then wire session listeners
+  window.supabaseReady.then(async () => {
     try {
-      const { data: { session } = { session: null } } =
-        (await window.supabaseClient.auth.getSession()) || {};
-      updateButtons(!!(session && session.user));
+      const { data: { session } } = await window.supabaseClient.auth.getSession();
+      updateAuthUI(session);
     } catch (e) {
       console.warn('getSession failed:', e);
+      controls.style.display = 'flex';
     }
 
-    // React to auth changes
-    window.supabaseClient.auth.onAuthStateChange((event, session) => {
-      const loggedIn = !!(session && session.user);
-      updateButtons(loggedIn);
-
-      // Show toast ONLY when an actual login just happened (not on refresh)
-      if (event === 'SIGNED_IN' && cameFromMagicLink) {
-        toast('Has iniciado sesión.');
-        cameFromMagicLink = false; // prevent double toasts
-      }
+    // Keep UI in sync — no toast on refresh, only UI update
+    window.supabaseClient.auth.onAuthStateChange((_event, session) => {
+      updateAuthUI(session);
     });
-
-    // If the magic link opened in *another* tab, keep this tab in sync
-    window.addEventListener('storage', async (ev) => {
-      if (ev.key && ev.key.includes('-auth-token')) {
-        try {
-          const { data: { session } } = await window.supabaseClient.auth.getSession();
-          updateButtons(!!session?.user);
-        } catch {}
-      }
-    });
-
-    // Also re-check when tab becomes visible (covers some mobile webviews)
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') {
-        try {
-          const { data: { session } } = await window.supabaseClient.auth.getSession();
-          updateButtons(!!session?.user);
-        } catch {}
-      }
-    });
-  };
-
-  if (window.supabaseReady && typeof window.supabaseReady.then === 'function') {
-    window.supabaseReady.then(onReady);
-  } else {
-    // fallback: poll until supabaseClient exists
-    const iv = setInterval(() => {
-      if (window.supabaseClient) {
-        clearInterval(iv);
-        onReady();
-      }
-    }, 200);
-  }
+  });
 })();
 </script>
+
 
  
 
