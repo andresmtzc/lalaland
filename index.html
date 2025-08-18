@@ -1629,48 +1629,52 @@ ctaobserver.observe(ctaToaster, {
 </script>
 
 <script>
-// ===== AUTH (Supabase — Email OTP with 'editors' allowlist) =====
+// ===== AUTH (Supabase OTP) =====
 (() => {
-  const $ = (s) => document.querySelector(s);
+  const $  = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
   const toast = (m) => { try { window.showToaster?.(m); } catch {} };
 
-  // Header controls (only where .auth-controls exists)
+  // Header controls (only where that header includes .auth-controls)
   const btnLogin  = $('#modal-login-btn');
   const btnLogout = $('#modal-logout-btn');
 
-  // Auth modal nodes (email → OTP)
+  // Modal + steps
   const modal     = $('#auth-modal');
   const stepEmail = $('#auth-step-email');
   const stepOtp   = $('#auth-step-otp');
   const emailInp  = $('#auth-email');
   const otpInp    = $('#auth-otp');
   const otpEmail  = $('#otp-email-display');
+
   const reqBtn    = $('#request-otp');
   const verifyBtn = $('#verify-otp');
-  const cancelBtn = $('#auth-cancel');
+  const cancelBtns = $$('#auth-cancel'); // support cancel buttons in both steps
 
   let pendingEmail = '';
-  let signedInJustNow = false;  // prevents toast on page refresh
 
-  function showModal() {
+  function showAuthModal() {
     if (!modal) return;
-    stepEmail && (stepEmail.style.display = 'block');
-    stepOtp   && (stepOtp.style.display   = 'none');
-    if (emailInp) emailInp.value = '';
-    if (otpInp)   otpInp.value   = '';
+    // reset to email step
+    if (stepEmail) stepEmail.style.display = 'block';
+    if (stepOtp)   stepOtp.style.display   = 'none';
+    if (emailInp)  emailInp.value = '';
+    if (otpInp)    otpInp.value   = '';
     modal.style.display = 'block';
     setTimeout(() => emailInp?.focus(), 0);
   }
-  function showOtpStep(email) {
-    pendingEmail = email;
-    if (otpEmail) otpEmail.textContent = email;
-    stepEmail && (stepEmail.style.display = 'none');
-    stepOtp   && (stepOtp.style.display   = 'block');
-    setTimeout(() => otpInp?.focus(), 0);
-  }
-  function hideModal() {
+
+  function hideAuthModal() {
     if (!modal) return;
     modal.style.display = 'none';
+  }
+
+  function resetModalState() {
+    pendingEmail = '';
+    if (emailInp) emailInp.value = '';
+    if (otpInp)   otpInp.value   = '';
+    if (stepEmail) stepEmail.style.display = 'block';
+    if (stepOtp)   stepOtp.style.display   = 'none';
   }
 
   function updateButtons(loggedIn) {
@@ -1678,8 +1682,9 @@ ctaobserver.observe(ctaToaster, {
     if (btnLogout) btnLogout.style.display = loggedIn ? 'flex' : 'none';
   }
 
-  // UI bindings (only if the elements exist in this header/modal)
-  btnLogin  && btnLogin.addEventListener('click', showModal);
+  // --- UI bindings ---
+  btnLogin && btnLogin.addEventListener('click', showAuthModal);
+
   btnLogout && btnLogout.addEventListener('click', async () => {
     try {
       await window.supabaseClient?.auth.signOut();
@@ -1690,77 +1695,80 @@ ctaobserver.observe(ctaToaster, {
       toast('Error al cerrar sesión.');
     }
   });
-  cancelBtn && cancelBtn.addEventListener('click', hideModal);
 
-  // Request OTP (after checking editors table)
+  // Cancel buttons (both steps)
+  cancelBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      resetModalState();
+      hideAuthModal();
+    });
+  });
+
+  // Close on ESC
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal?.style.display === 'block') {
+      resetModalState();
+      hideAuthModal();
+    }
+  });
+
+  // Click backdrop to close (only if clicking outside the inner box)
+  modal && modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      resetModalState();
+      hideAuthModal();
+    }
+  });
+
+  // --- Send OTP ---
   reqBtn && reqBtn.addEventListener('click', async () => {
     const email = (emailInp?.value || '').trim().toLowerCase();
     if (!email) { toast('Escribe tu email.'); return; }
 
     try {
-      await window.supabaseReady;
-
-      // 1) Check allowlist in 'editors' table
-      const { data: editor, error: editorErr } = await window.supabaseClient
-        .from('editors')
-        .select('id')
-        .eq('email', email)
-        .single();
-
-      if (editorErr || !editor) {
-        toast('Este correo no está autorizado.');
-        return;
-      }
-
-      // 2) Send 6-digit OTP (email)
       const { error } = await window.supabaseClient.auth.signInWithOtp({
         email,
-        options: {
-          shouldCreateUser: false,          // don't auto-create unknown users
-          emailRedirectTo: window.location.origin
-        }
+        options: { emailRedirectTo: window.location.origin }
       });
       if (error) throw error;
 
+      pendingEmail = email;
+      if (otpEmail) otpEmail.textContent = email; // shows “Código enviado a …”
+      if (stepEmail) stepEmail.style.display = 'none';
+      if (stepOtp)   stepOtp.style.display   = 'block';
+      setTimeout(() => otpInp?.focus(), 0);
       toast('Código enviado. Revisa tu correo.');
-      showOtpStep(email);
     } catch (e) {
       console.error(e);
       toast('No pudimos enviar el código.');
     }
   });
 
-  // Verify OTP
+  // --- Verify OTP ---
   verifyBtn && verifyBtn.addEventListener('click', async () => {
     const token = (otpInp?.value || '').trim();
     if (token.length !== 6) { toast('El código debe tener 6 dígitos.'); return; }
 
     try {
-      await window.supabaseReady;
-
-      const { data, error } = await window.supabaseClient.auth.verifyOtp({
+      const { error } = await window.supabaseClient.auth.verifyOtp({
         email: pendingEmail,
         token,
-        type: 'email' // 6-digit code via email
+        type: 'email'
       });
       if (error) throw error;
 
-      signedInJustNow = true;
-      hideModal();
-      // UI will flip in auth state listener below
+      resetModalState();
+      hideAuthModal();
+      toast('Has iniciado sesión.');
+      // UI will also update via auth state listener below
     } catch (e) {
       console.error(e);
       toast('Código inválido o vencido.');
     }
   });
 
-  // Also allow pressing Enter in OTP field
-  otpInp && otpInp.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') verifyBtn?.click();
-  });
-
-  // Initialize + react to auth state (no toast on refresh)
-  const onReady = async () => {
+  // --- Initialize auth state (no toast on page refresh) ---
+  const initAuth = async () => {
     try {
       const { data: { session } = { session: null } } =
         await window.supabaseClient.auth.getSession();
@@ -1769,26 +1777,25 @@ ctaobserver.observe(ctaToaster, {
       console.warn('getSession failed:', e);
     }
 
-    window.supabaseClient.auth.onAuthStateChange((event, session) => {
-      const loggedIn = !!(session && session.user);
-      updateButtons(loggedIn);
-
-      if (event === 'SIGNED_IN' && signedInJustNow) {
-        toast('Has iniciado sesión.');
-        signedInJustNow = false;
-      }
+    window.supabaseClient.auth.onAuthStateChange((_event, session) => {
+      updateButtons(!!(session && session.user));
+      // No toast here—only in explicit login/logout actions above
     });
   };
 
   if (window.supabaseReady && typeof window.supabaseReady.then === 'function') {
-    window.supabaseReady.then(onReady);
+    window.supabaseReady.then(initAuth);
   } else {
     const iv = setInterval(() => {
-      if (window.supabaseClient) { clearInterval(iv); onReady(); }
+      if (window.supabaseClient) {
+        clearInterval(iv);
+        initAuth();
+      }
     }, 200);
   }
 })();
 </script>
+
 
 
 
