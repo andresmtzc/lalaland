@@ -3716,9 +3716,6 @@ function hideCalendlyEmbed() {
 
 
 
-
-
-
 <script>
 (() => {
   'use strict';
@@ -3727,10 +3724,15 @@ function hideCalendlyEmbed() {
   PS.markers = new Map();      // id -> { pin, marker }
   PS.addMode = false;
   PS._mapClickHandler = null;
-  PS._isVisible = false;       // markers start hidden (button is now always visible)
+  PS._isVisible = false;       // markers start hidden
 
   const toast = (m, t=2500) => { try{ window.showToaster?.(m, t);}catch{} };
   const $ = (s) => document.querySelector(s);
+
+  // simple debounce
+  const debounce = (fn, wait=400) => {
+    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+  };
 
   async function compressImageToJPEG(fileOrBlob, maxSize = 1000) {
     const dataURL = await new Promise((res) => {
@@ -3758,7 +3760,7 @@ function hideCalendlyEmbed() {
     return await new Promise((res) => canvas.toBlob(b => res(b), 'image/jpeg', 0.85));
   }
 
-  // ---- Add Pin button (ALWAYS visible now)
+  // ---- Add Pin button (always visible)
   PS.addAddPinButton = function () {
     if (document.getElementById('addPinBtn')) return;
     const btn = document.createElement('button');
@@ -3772,10 +3774,10 @@ function hideCalendlyEmbed() {
         <line x1="5" y1="12" x2="19" y2="12"></line>
       </svg>`;
     btn.addEventListener('click', () => PS.toggleAddMode());
-    document.body.appendChild(btn); // ← no hiding
+    document.body.appendChild(btn);
   };
 
-  // ---- Toggle add mode (no gating on _isVisible)
+  // ---- Toggle add mode
   PS.toggleAddMode = function () {
     if (!window.map) { toast('Map is still loading…'); return; }
     PS.addMode = !PS.addMode;
@@ -3803,37 +3805,76 @@ function hideCalendlyEmbed() {
   PS.createPinAt = async function (lngLat) {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
-      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat }).select().single();
+      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat, heading: 0 }).select().single();
     if (error) { console.error(error); toast('Could not create pin'); return; }
     PS.addMarker(data);
     toast('Pin added');
   };
 
-  // ---- HTML marker (size here)
-  PS.markerElement = function () {
-    const el = document.createElement('div');
-    el.style.width = '12px';
-    el.style.height = '12px';
-    el.style.borderRadius = '50%';
-    el.style.background = '#ff8400';
-    el.style.border = 'none';
-    el.style.boxShadow = 'none';
-    el.style.cursor = 'pointer';
-    return el;
+  // ---- Marker element: center dot + cone that rotates around center
+  // 0° points north; rotate clockwise.
+  PS.coneMarkerElement = function () {
+    const wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    wrap.style.width = '70px';
+    wrap.style.height = '70px';
+    wrap.style.pointerEvents = 'auto'; // clickable
+    // no extra translate: we want the marker's center to be the dot
+
+    // Cone SVG with apex exactly at the center (35,35).
+    // Wide end points upward initially (north), so 0° aligns with map north.
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('viewBox','0 0 70 70');
+    svg.setAttribute('width','70');
+    svg.setAttribute('height','70');
+    svg.style.position = 'absolute';
+    svg.style.left = '0';
+    svg.style.top = '0';
+    svg.style.pointerEvents = 'none';
+
+    // Adjust the two far vertices to change cone width (here ~120° opening).
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d','M35 35 L15 5 L55 5 Z'); // apex at 35,35; wide edge near top
+    path.setAttribute('fill','#1a73e8');
+    path.setAttribute('opacity','0.55');
+    path.setAttribute('stroke','none');
+    svg.appendChild(path);
+    wrap.appendChild(svg);
+
+    // Center dot
+    const dot = document.createElement('div');
+    dot.style.position = 'absolute';
+    dot.style.left = '50%';
+    dot.style.top = '50%';
+    dot.style.transform = 'translate(-50%, -50%)';
+    dot.style.width = '12px';
+    dot.style.height = '12px';
+    dot.style.borderRadius = '50%';
+    dot.style.background = '#ff8400';
+    dot.style.cursor = 'pointer';
+    wrap.appendChild(dot);
+
+    return wrap;
   };
 
-  // ---- Add marker + click => open modal (not a Popup)
+  // ---- Add marker + click => open modal (no Popup)
   PS.addMarker = function (pin) {
-    if (PS.markers.has(pin.id)) {
-      PS.markers.get(pin.id).marker.setLngLat([pin.lng, pin.lat]);
-      PS.markers.get(pin.id).pin = pin;
+    const existing = PS.markers.get(pin.id);
+    const heading = (typeof pin.heading === 'number') ? (pin.heading % 360 + 360) % 360 : 0;
+
+    if (existing) {
+      existing.marker.setLngLat([pin.lng, pin.lat]).setRotation(heading);
+      existing.pin = { ...existing.pin, ...pin, heading };
       return;
     }
-    const el = PS.markerElement();
-    const marker = new mapboxgl.Marker({ element: el, draggable: true })
-      .setLngLat([pin.lng, pin.lat]);
 
-    // Keep your reveal behavior for markers:
+    const el = PS.coneMarkerElement();
+    const marker = new mapboxgl.Marker({ element: el, draggable: true })
+      .setLngLat([pin.lng, pin.lat])
+      .setRotationAlignment('map')   // rotate in map coords
+      .setPitchAlignment('map')
+      .setRotation(heading);         // 0° north
+
     if (PS._isVisible && window.map) marker.addTo(map);
 
     marker.on('dragend', async () => {
@@ -3843,164 +3884,201 @@ function hideCalendlyEmbed() {
       if (error) toast('Failed to save position'); else toast('Position saved');
     });
 
+    // open modal on click
     el.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      PS.openPinInModal(pin);
+      PS.openPinInModal(PS.markers.get(pin.id)?.pin || pin);
     });
 
-    PS.markers.set(pin.id, { pin, marker });
+    PS.markers.set(pin.id, { pin: { ...pin, heading }, marker });
   };
 
-  // ---- Reveal markers (kept for fade-in animation)
-PS._revealMarkers = function () {
-  if (PS._isVisible) return;
-  PS._isVisible = true;
-
-  PS.markers.forEach(({ marker }) => {
-    const el = marker.getElement();
-    if (!el.parentNode) marker.addTo(map);
-    el.style.display = 'block';
-    el.style.opacity = '0'; // Start transparent
-    el.style.transition = 'opacity 600ms ease'; // Slower fade-in
-    setTimeout(() => { 
-      el.style.opacity = '1'; // Fade in after a delay
-    }, 900); // Small delay before starting fade
-  });
-};
-
-  // ---- Open in your lot modal (same as before)
-PS.openPinInModal = async function (pin) {
-  await window.supabaseReady;
-document.getElementById('lotModal').classList.add('pin-mode');
-
-  const modal = document.getElementById('lotModal');
-  const wrapper = document.querySelector('.modal-content-wrapper');
-  const lotDetails = document.getElementById('lotDetails');
-  const backButton = document.getElementById('backButton');
-
-
-  // Ensure modal is open (and remember pre-view for closing)
-  if (!modal.classList.contains('show')) {
-    try {
-      if (window.map) {
-        window.preModalView = {
-          center: map.getCenter().toArray(),
-          zoom: map.getZoom(),
-          bearing: map.getBearing(),
-          pitch: map.getPitch()
-        };
-      }
-      modal.classList.add('show');
-      modal.style.display = 'block';
-      if (typeof window.adjustMapForModal === 'function') adjustMapForModal();
-    } catch (e) {
-      console.warn('Could not open modal:', e);
+  // programmatic setter (rotate + persist)
+  PS.setPinHeading = async function (pinId, newHeading, { persist = true } = {}) {
+    const rec = PS.markers.get(pinId);
+    if (!rec) return;
+    const h = (Math.round(newHeading) % 360 + 360) % 360;
+    rec.marker.setRotation(h);
+    rec.pin.heading = h;
+    if (persist) {
+      await window.supabaseReady;
+      const { error } = await window.supabaseClient
+        .from('pins').update({ heading: h }).eq('id', pinId);
+      if (error) console.warn('Failed to save heading', error);
     }
-  }
+  };
 
-  // 🔒 PIN MODE: hide Back / Expand (+/-) / Bottom chevron
-  modal.classList.add('pin-mode');
-  // (also hard-hide in case other logic toggles them)
-  if (backButton) backButton.style.display = 'none';
-  const plusBtn = document.querySelector('.plus-button');
-  if (plusBtn) plusBtn.style.display = 'none';
-  const bottomPlus = document.querySelector('.bottom-plus-button');
-  if (bottomPlus) bottomPlus.style.display = 'none';
+  // ---- Reveal markers (fade-in)
+  PS._revealMarkers = function () {
+    if (PS._isVisible) return;
+    PS._isVisible = true;
 
-  // Switch modal into details view
-  lotDetails.innerHTML = '';
-  wrapper.classList.add('show-details');
-  lotDetails.classList.add('active');
-  try { window.isDetailOpen = true; } catch {}
+    PS.markers.forEach(({ marker }) => {
+      const el = marker.getElement();
+      if (!el.parentNode) marker.addTo(map);
+      el.style.display = 'block';
+      el.style.opacity = '0';
+      el.style.transition = 'opacity 600ms ease';
+      setTimeout(() => { el.style.opacity = '1'; }, 900);
+    });
+  };
 
-  // Load photos for this pin
-  const { data: photos } = await window.supabaseClient
-    .from('pin_photos')
-    .select('id,url,created_at')
-    .eq('pin_id', pin.id)
-    .order('created_at', { ascending: true });
+  // ---- Modal with heading controls (slider + numeric; no +15° button)
+  PS.openPinInModal = async function (pin) {
+    await window.supabaseReady;
+    document.getElementById('lotModal').classList.add('pin-mode');
 
-  const shortId = pin.id.slice(0, 6);
-  const coords = `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`;
+    const modal = document.getElementById('lotModal');
+    const wrapper = document.querySelector('.modal-content-wrapper');
+    const lotDetails = document.getElementById('lotDetails');
+    const backButton = document.getElementById('backButton');
 
-  // Build UI
-  const container = document.createElement('div');
-  container.style.padding = '16px';
-  container.innerHTML = `
-    <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:10px;">
-      <div style="font-size:18px; color:#a17345; font-weight:700;">Pin</div>
-      <div style="font-size:12px; color:#8a8880;">${shortId}</div>
-    </div>
-    <div style="font-size:13px; color:#8a8880; margin-bottom:12px;">${coords}</div>
-    <div id="ps-grid-${pin.id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; min-height:82px; margin-bottom:12px;">
-      ${
-        (photos && photos.length)
-          ? photos.map(p => `
-              <div class="ps-thumb" data-url="${p.url}" style="
-                width:100%; aspect-ratio:1/1; background:#eee;
-                background-image:url('${p.url}');
-                background-size:cover; background-position:center;
-                border-radius:6px; cursor:pointer;"></div>
-            `).join('')
-          : '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'
+    if (!modal.classList.contains('show')) {
+      try {
+        if (window.map) {
+          window.preModalView = {
+            center: map.getCenter().toArray(),
+            zoom: map.getZoom(),
+            bearing: map.getBearing(),
+            pitch: map.getPitch()
+          };
+        }
+        modal.classList.add('show');
+        modal.style.display = 'block';
+        if (typeof window.adjustMapForModal === 'function') adjustMapForModal();
+      } catch (e) {
+        console.warn('Could not open modal:', e);
       }
-    </div>
-    <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:4px; cursor:pointer; font-weight:600;">
-      Upload photo
-      <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
-    </label>
-  `;
-  lotDetails.appendChild(container);
-
-  // Click to view photo
-  container.querySelectorAll('.ps-thumb').forEach(div => {
-    div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
-  });
-
-  // Upload handler
-  const input = container.querySelector(`#ps-upload-${pin.id}`);
-  input.addEventListener('change', async (e) => {
-    if (!e.target.files || !e.target.files[0]) return;
-    try {
-      const blob = await compressImageToJPEG(e.target.files[0], 1200);
-      const path = `${pin.id}/${Date.now()}.jpg`;
-
-      const up = await window.supabaseClient.storage.from('pin-photos')
-        .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-      if (up.error) throw up.error;
-
-      const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
-      const url = pub?.data?.publicUrl;
-      if (!url) throw new Error('No public URL');
-
-      const { error: insErr } = await window.supabaseClient
-        .from('pin_photos').insert({ pin_id: pin.id, url });
-      if (insErr) throw insErr;
-
-      const g = container.querySelector(`#ps-grid-${pin.id}`);
-      g.querySelector('div[style*="No photos yet"]')?.remove();
-
-      const thumb = document.createElement('div');
-      thumb.className = 'ps-thumb';
-      thumb.setAttribute('data-url', url);
-      thumb.style.cssText = `
-        width:100%; aspect-ratio:1/1; background:#eee;
-        background-image:url("${url}");
-        background-size:cover; background-position:center;
-        border-radius:6px; cursor:pointer;`;
-      thumb.addEventListener('click', () => PS.showViewer(url));
-      g.appendChild(thumb);
-
-      toast('Photo uploaded');
-    } catch (err) {
-      console.error(err);
-      toast('Upload failed');
-    } finally {
-      e.target.value = '';
     }
-  });
-};
 
+    modal.classList.add('pin-mode');
+    if (backButton) backButton.style.display = 'none';
+    const plusBtn = document.querySelector('.plus-button');
+    if (plusBtn) plusBtn.style.display = 'none';
+    const bottomPlus = document.querySelector('.bottom-plus-button');
+    if (bottomPlus) bottomPlus.style.display = 'none';
+
+    lotDetails.innerHTML = '';
+    wrapper.classList.add('show-details');
+    lotDetails.classList.add('active');
+    try { window.isDetailOpen = true; } catch {}
+
+    // Load photos
+    const { data: photos } = await window.supabaseClient
+      .from('pin_photos')
+      .select('id,url,created_at')
+      .eq('pin_id', pin.id)
+      .order('created_at', { ascending: true });
+
+    const shortId = pin.id.slice(0, 6);
+    const coords = `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`;
+    const currentHeading = (typeof pin.heading === 'number') ? pin.heading : 0;
+
+    const container = document.createElement('div');
+    container.style.padding = '16px';
+    container.innerHTML = `
+      <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:10px;">
+        <div style="font-size:18px; color:#a17345; font-weight:700;">Pin</div>
+        <div style="font-size:12px; color:#8a8880;">${shortId}</div>
+      </div>
+      <div style="font-size:13px; color:#8a8880; margin-bottom:12px;">${coords}</div>
+
+      <!-- Heading control -->
+      <div style="display:flex; align-items:center; gap:10px; margin:8px 0 14px;">
+        <div style="font-size:12px; color:#8a8880; min-width:70px;">Heading</div>
+        <input id="ps-heading-${pin.id}" type="range" min="0" max="359" step="1" value="${currentHeading}" style="flex:1;">
+        <input id="ps-heading-num-${pin.id}" type="number" min="0" max="359" step="1" value="${currentHeading}" style="width:64px; padding:4px 6px; border:1px solid #ddd; border-radius:6px;">
+      </div>
+
+      <div id="ps-grid-${pin.id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; min-height:82px; margin-bottom:12px;">
+        ${
+          (photos && photos.length)
+            ? photos.map(p => `
+                <div class="ps-thumb" data-url="${p.url}" style="
+                  width:100%; aspect-ratio:1/1; background:#eee;
+                  background-image:url('${p.url}');
+                  background-size:cover; background-position:center;
+                  border-radius:6px; cursor:pointer;"></div>
+              `).join('')
+            : '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'
+        }
+      </div>
+      <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:4px; cursor:pointer; font-weight:600;">
+        Upload photo
+        <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
+      </label>
+    `;
+    lotDetails.appendChild(container);
+
+    // Heading UI wiring (live preview + debounced save)
+    const range = container.querySelector(`#ps-heading-${pin.id}`);
+    const num   = container.querySelector(`#ps-heading-num-${pin.id}`);
+    const syncPair = (v) => { range.value = v; num.value = v; };
+    const updateLive = (v) => PS.setPinHeading(pin.id, Number(v), { persist:false });
+    const saveDebounced = debounce(async (v) => {
+      await PS.setPinHeading(pin.id, Number(v), { persist:true });
+      const rec = PS.markers.get(pin.id); if (rec) rec.pin.heading = Number(v);
+    }, 400);
+
+    range.addEventListener('input',  (e) => { syncPair(e.target.value); updateLive(e.target.value); });
+    range.addEventListener('change', (e) => saveDebounced(e.target.value));
+    num.addEventListener('input',    (e) => {
+      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
+      syncPair(v); updateLive(v);
+    });
+    num.addEventListener('change',   (e) => {
+      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
+      syncPair(v); saveDebounced(v);
+    });
+
+    // Photo viewer
+    container.querySelectorAll('.ps-thumb').forEach(div => {
+      div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
+    });
+
+    // Upload handler
+    const input = container.querySelector(`#ps-upload-${pin.id}`);
+    input.addEventListener('change', async (e) => {
+      if (!e.target.files || !e.target.files[0]) return;
+      try {
+        const blob = await compressImageToJPEG(e.target.files[0], 1200);
+        const path = `${pin.id}/${Date.now()}.jpg`;
+
+        const up = await window.supabaseClient.storage.from('pin-photos')
+          .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (up.error) throw up.error;
+
+        const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
+        const url = pub?.data?.publicUrl;
+        if (!url) throw new Error('No public URL');
+
+        const { error: insErr } = await window.supabaseClient
+          .from('pin_photos').insert({ pin_id: pin.id, url });
+        if (insErr) throw insErr;
+
+        const g = container.querySelector(`#ps-grid-${pin.id}`);
+        g.querySelector('div[style*="No photos yet"]')?.remove();
+
+        const thumb = document.createElement('div');
+        thumb.className = 'ps-thumb';
+        thumb.setAttribute('data-url', url);
+        thumb.style.cssText = `
+          width:100%; aspect-ratio:1/1; background:#eee;
+          background-image:url("${url}");
+          background-size:cover; background-position:center;
+          border-radius:6px; cursor:pointer;`;
+        thumb.addEventListener('click', () => PS.showViewer(url));
+        g.appendChild(thumb);
+
+        toast('Photo uploaded');
+      } catch (err) {
+        console.error(err);
+        toast('Upload failed');
+      } finally {
+        e.target.value = '';
+      }
+    });
+  };
 
   PS.ensureViewer = function () {
     if (document.getElementById('pinViewer')) return;
@@ -4023,7 +4101,7 @@ document.getElementById('lotModal').classList.add('pin-mode');
   PS.loadPins = async function () {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
-      .from('pins').select('id,lng,lat').order('created_at', { ascending: true });
+      .from('pins').select('id,lng,lat,heading').order('created_at', { ascending: true });
     if (error) return;
     (data || []).forEach(p => PS.addMarker(p));
   };
@@ -4034,7 +4112,11 @@ document.getElementById('lotModal').classList.add('pin-mode');
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins' }, (payload) => PS.addMarker(payload.new))
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pins' }, (payload) => {
         const rec = PS.markers.get(payload.new.id);
-        if (rec) rec.marker.setLngLat([payload.new.lng, payload.new.lat]);
+        if (!rec) return;
+        const { lng, lat, heading } = payload.new;
+        if (typeof lng === 'number' && typeof lat === 'number') rec.marker.setLngLat([lng, lat]);
+        if (typeof heading === 'number') rec.marker.setRotation((heading % 360 + 360) % 360);
+        rec.pin = { ...rec.pin, ...payload.new };
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pins' }, (payload) => {
         const rec = PS.markers.get(payload.old.id);
@@ -4055,7 +4137,6 @@ document.getElementById('lotModal').classList.add('pin-mode');
       PS.loadPins();
       PS.subscribe();
     }
-    // keep marker fade-in after map idle
     map.once('idle', () => PS._revealMarkers());
   };
 
@@ -4066,6 +4147,8 @@ document.getElementById('lotModal').classList.add('pin-mode');
   }
 })();
 </script>
+
+
 
   <script>
 (() => {
