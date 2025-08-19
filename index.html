@@ -1355,6 +1355,15 @@ body.fonts-loaded .side-length-label {
   box-sizing: border-box;  /* make padding & border included in the width */
 }
 
+
+
+  #lotModal #lotDetails {
+    border-radius: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important; /* optional: full-bleed photo */
+  }  
+ 
+
   </style>
 </head>
 
@@ -3908,7 +3917,7 @@ function hideCalendlyEmbed() {
         if (t && (t.closest('#lotModal') || t.closest('.mapboxgl-ctrl') || t.closest('button') || t.closest('a'))) return;
         PS.createPinAt(e.lngLat).finally(() => {
           PS.addMode = false;
-          PS.toggleAddMode();
+          PS.toggleAddMode(); 
         });
       };
       map.on('click', PS._mapClickHandler);
@@ -4069,176 +4078,202 @@ function hideCalendlyEmbed() {
   };
 
   // ---- Open in your lot modal (with heading controls + DELETE button)
-  PS.openPinInModal = async function (pin) {
-    await window.supabaseReady;
-    document.getElementById('lotModal').classList.add('pin-mode');
+  // ---- Open in modal (full-width photo, no thumbnails)
+// ---- Open in modal (full-width photo, controls overlayed above photo)
+PS.openPinInModal = async function (pin) {
+  await window.supabaseReady;
+  document.getElementById('lotModal').classList.add('pin-mode');
 
-    const modal = document.getElementById('lotModal');
-    const wrapper = document.querySelector('.modal-content-wrapper');
-    const lotDetails = document.getElementById('lotDetails');
-    const backButton = document.getElementById('backButton');
+  const modal = document.getElementById('lotModal');
+  const wrapper = document.querySelector('.modal-content-wrapper');
+  const lotDetails = document.getElementById('lotDetails');
+  const backButton = document.getElementById('backButton');
 
-    if (!modal.classList.contains('show')) {
-      try {
-        if (window.map) {
-          window.preModalView = {
-            center: map.getCenter().toArray(),
-            zoom: map.getZoom(),
-            bearing: map.getBearing(),
-            pitch: map.getPitch()
-          };
-        }
-        modal.classList.add('show');
-        modal.style.display = 'block';
-        if (typeof window.adjustMapForModal === 'function') adjustMapForModal();
-      } catch (e) {
-        console.warn('Could not open modal:', e);
+  if (!modal.classList.contains('show')) {
+    try {
+      if (window.map) {
+        window.preModalView = {
+          center: map.getCenter().toArray(),
+          zoom: map.getZoom(),
+          bearing: map.getBearing(),
+          pitch: map.getPitch()
+        };
       }
+      modal.classList.add('show');
+      modal.style.display = 'block';
+      if (typeof window.adjustMapForModal === 'function') adjustMapForModal();
+    } catch (e) {
+      console.warn('Could not open modal:', e);
     }
+  }
 
-    modal.classList.add('pin-mode');
-    if (backButton) backButton.style.display = 'none';
-    const plusBtn = document.querySelector('.plus-button');
-    if (plusBtn) plusBtn.style.display = 'none';
-    const bottomPlus = document.querySelector('.bottom-plus-button');
-    if (bottomPlus) bottomPlus.style.display = 'none';
+  modal.classList.add('pin-mode');
+  if (backButton) backButton.style.display = 'none';
+  document.querySelector('.plus-button')?.style && (document.querySelector('.plus-button').style.display = 'none');
+  document.querySelector('.bottom-plus-button')?.style && (document.querySelector('.bottom-plus-button').style.display = 'none');
 
-    lotDetails.innerHTML = '';
-    wrapper.classList.add('show-details');
-    lotDetails.classList.add('active');
-    try { window.isDetailOpen = true; } catch {}
+  // Optional: make the content truly edge-to-edge
+  lotDetails.style.padding = '0';
+  wrapper.style.padding = '0';
 
-    const { data: photos } = await window.supabaseClient
-      .from('pin_photos')
-      .select('id,url,created_at')
-      .eq('pin_id', pin.id)
-      .order('created_at', { ascending: true });
+  lotDetails.innerHTML = '';
+  wrapper.classList.add('show-details');
+  lotDetails.classList.add('active');
+  try { window.isDetailOpen = true; } catch {}
 
-    const shortId = pin.id.slice(0, 6);
-    const coords = `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`;
-    const currentHeading = (typeof pin.heading === 'number') ? pin.heading : 0;
+  // fetch photos (latest shown)
+  const { data: photos } = await window.supabaseClient
+    .from('pin_photos')
+    .select('id,url,created_at')
+    .eq('pin_id', pin.id)
+    .order('created_at', { ascending: true });
 
-    const container = document.createElement('div');
-    container.style.padding = '16px';
-    container.innerHTML = `
-      <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:10px;">
-        <div style="font-size:18px; color:#a17345; font-weight:700;">Pin</div>
-        <div style="font-size:12px; color:#8a8880;">${shortId}</div>
-      </div>
-      <div style="font-size:13px; color:#8a8880; margin-bottom:12px;">${coords}</div>
+  const latest = (photos && photos.length) ? photos[photos.length - 1] : null;
+  const currentHeading = (typeof pin.heading === 'number') ? pin.heading : 0;
 
-      <div style="display:flex; align-items:center; gap:10px; margin:8px 0 14px;">
-        <div style="font-size:12px; color:#8a8880; min-width:70px;">Heading</div>
-        <input id="ps-heading-${pin.id}" type="range" min="0" max="359" step="1" value="${currentHeading}" style="flex:1;">
-        <input id="ps-heading-num-${pin.id}" type="number" min="0" max="359" step="1" value="${currentHeading}" style="width:64px; padding:4px 6px; border:1px solid #ddd; border-radius:6px;">
-      </div>
-
-      <div id="ps-grid-${pin.id}" style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; min-height:82px; margin-bottom:12px;">
-        ${
-          (photos && photos.length)
-            ? photos.map(p => `
-                <div class="ps-thumb" data-url="${p.url}" style="
-                  width:100%; aspect-ratio:1/1; background:#eee;
-                  background-image:url('${p.url}');
-                  background-size:cover; background-position:center;
-                  border-radius:6px; cursor:pointer;"></div>
-              `).join('')
-            : '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'
-        }
-      </div>
-
-      <div style="display:flex; gap:10px; align-items:center;">
-        <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">
-          Upload photo
-          <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
-        </label>
-        <button id="ps-delete-${pin.id}" type="button"
-          style="background:#f44336;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">
-          Delete pin
-        </button>
-      </div>
-    `;
-    lotDetails.appendChild(container);
-
-    // Delete pin handler
-    const delBtn = container.querySelector(`#ps-delete-${pin.id}`);
-    delBtn.addEventListener('click', async () => {
-      if (!confirm('Delete this pin?')) return;
-      const ok = await PS.deletePin(pin.id);
-      if (ok) {
-        try { modal.classList.remove('show'); modal.style.display = 'none'; } catch {}
+  // Build UI: photo + overlay controls
+  const container = document.createElement('div');
+  container.style.padding = '0';
+  container.innerHTML = `
+    <div id="ps-photo-wrap-${pin.id}" style="
+      position:relative;      /* <-- enables absolute overlay */
+      width:100%;
+      margin:0;
+      border-radius:0 !important;
+      overflow:hidden;
+      background:none;">
+      ${
+        latest
+          ? `<img id="ps-photo-${pin.id}" src="${latest.url}" alt=""
+                 style="display:block;width:100%;height:auto;border-radius:0;cursor:pointer;">`
+          : `<div id="ps-photo-empty-${pin.id}" style="padding:48px 0;text-align:center;color:#8a8880;">No photo yet.</div>`
       }
-    });
 
-    // Heading UI wiring (live preview + debounced save)
-    const range = container.querySelector(`#ps-heading-${pin.id}`);
-    const num   = container.querySelector(`#ps-heading-num-${pin.id}`);
-    const syncPair = (v) => { range.value = v; num.value = v; };
-    const updateLive = (v) => PS.setPinHeading(pin.id, Number(v), { persist:false });
-    const saveDebounced = debounce(async (v) => {
+      <!-- Overlay bar (z-index above photo) -->
+      <div class="ps-overlay" style="
+        position:absolute;
+        left:0; right:0; bottom:0;
+        z-index:2;                 /* <-- above photo */
+        padding:12px;
+        pointer-events:none;       /* container ignores clicks... */
+        background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.35) 40%, rgba(0,0,0,.45) 100%);
+      ">
+        <div class="ps-overlay-card" style="
+          display:flex; flex-direction:column; gap:10px;
+          pointer-events:auto;     /* ...but inner card is interactive */
+          background: rgba(0,0,0,0.40);
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+          border-radius:10px;
+          padding:10px;
+        ">
+
+          <!-- Heading control (on top of photo) -->
+          <div style="display:flex; align-items:center; gap:10px; color:#fff;">
+            <div style="font-size:12px; opacity:.85; min-width:70px;">Heading</div>
+            <input id="ps-heading-${pin.id}" type="range" min="0" max="359" step="1"
+                   value="${currentHeading}" style="flex:1;">
+            <input id="ps-heading-num-${pin.id}" type="number" min="0" max="359" step="1"
+                   value="${currentHeading}"
+                   style="width:64px; padding:4px 6px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#111;">
+          </div>
+
+          <!-- Actions (Upload / Delete) -->
+          <div style="display:flex; gap:10px; align-items:center;">
+            <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">
+              Upload photo
+              <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
+            </label>
+            <button id="ps-delete-${pin.id}" type="button"
+              style="background:#f44336;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">
+              Delete pin
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  `;
+  lotDetails.appendChild(container);
+
+  // photo click => fullscreen viewer
+  const imgEl = container.querySelector(`#ps-photo-${pin.id}`);
+  imgEl?.addEventListener('click', () => PS.showViewer(imgEl.src));
+
+  // delete pin
+  const delBtn = container.querySelector(`#ps-delete-${pin.id}`);
+  delBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this pin?')) return;
+    const ok = await PS.deletePin(pin.id);
+    if (ok) { try { modal.classList.remove('show'); modal.style.display = 'none'; } catch {} }
+  });
+
+  // heading controls
+  const range = container.querySelector(`#ps-heading-${pin.id}`);
+  const num   = container.querySelector(`#ps-heading-num-${pin.id}`);
+  const syncPair = (v) => { range.value = v; num.value = v; };
+  const updateLive = (v) => PS.setPinHeading(pin.id, Number(v), { persist:false });
+  const saveDebounced = ((fn)=>{ let t; return (v)=>{ clearTimeout(t); t=setTimeout(()=>fn(v),300); }; })
+    (async (v) => {
       await PS.setPinHeading(pin.id, Number(v), { persist:true });
       const rec = PS.markers.get(pin.id); if (rec) rec.pin.heading = Number(v);
-    }, 300);
-
-    range.addEventListener('input',  (e) => { syncPair(e.target.value); updateLive(e.target.value); });
-    range.addEventListener('change', (e) => saveDebounced(e.target.value));
-    num.addEventListener('input',    (e) => {
-      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
-      syncPair(v); updateLive(v);
-    });
-    num.addEventListener('change',   (e) => {
-      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
-      syncPair(v); saveDebounced(v);
     });
 
-    // Click to view photo
-    container.querySelectorAll('.ps-thumb').forEach(div => {
-      div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
-    });
+  range.addEventListener('input',  (e) => { syncPair(e.target.value); updateLive(e.target.value); });
+  range.addEventListener('change', (e) => saveDebounced(e.target.value));
+  num.addEventListener('input',    (e) => {
+    const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
+    syncPair(v); updateLive(v);
+  });
+  num.addEventListener('change',   (e) => {
+    const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
+    syncPair(v); saveDebounced(v);
+  });
 
-    // Upload handler
-    const input = container.querySelector(`#ps-upload-${pin.id}`);
-    input.addEventListener('change', async (e) => {
-      if (!e.target.files || !e.target.files[0]) return;
-      try {
-        const blob = await compressImageToJPEG(e.target.files[0], 1200);
-        const path = `${pin.id}/${Date.now()}.jpg`;
+  // upload: replace full-width image (no thumbnails)
+  const input = container.querySelector(`#ps-upload-${pin.id}`);
+  input.addEventListener('change', async (e) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    try {
+      const blob = await compressImageToJPEG(e.target.files[0], 1200);
+      const path = `${pin.id}/${Date.now()}.jpg`;
 
-        const up = await window.supabaseClient.storage.from('pin-photos')
-          .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (up.error) throw up.error;
+      const up = await window.supabaseClient.storage.from('pin-photos')
+        .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+      if (up.error) throw up.error;
 
-        const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
-        const url = pub?.data?.publicUrl;
-        if (!url) throw new Error('No public URL');
+      const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
+      const url = pub?.data?.publicUrl;
+      if (!url) throw new Error('No public URL');
 
-        const { error: insErr } = await window.supabaseClient
-          .from('pin_photos').insert({ pin_id: pin.id, url });
-        if (insErr) throw insErr;
+      const { error: insErr } = await window.supabaseClient
+        .from('pin_photos').insert({ pin_id: pin.id, url });
+      if (insErr) throw insErr;
 
-        const g = container.querySelector(`#ps-grid-${pin.id}`);
-        g.querySelector('div[style*="No photos yet"]')?.remove();
-
-        const thumb = document.createElement('div');
-        thumb.className = 'ps-thumb';
-        thumb.setAttribute('data-url', url);
-        thumb.style.cssText = `
-          width:100%; aspect-ratio:1/1; background:#eee;
-          background-image:url("${url}");
-          background-size:cover; background-position:center;
-          border-radius:6px; cursor:pointer;`;
-        thumb.addEventListener('click', () => PS.showViewer(url));
-        g.appendChild(thumb);
-
-        toast('Photo uploaded');
-      } catch (err) {
-        console.error(err);
-        toast('Upload failed');
-      } finally {
-        e.target.value = '';
+      const wrap = container.querySelector(`#ps-photo-wrap-${pin.id}`);
+      let img = container.querySelector(`#ps-photo-${pin.id}`);
+      if (!img) {
+        wrap.insertAdjacentHTML('afterbegin',
+          `<img id="ps-photo-${pin.id}" src="${url}" alt="" style="display:block;width:100%;height:auto;border-radius:0;cursor:pointer;">`);
+        img = container.querySelector(`#ps-photo-${pin.id}`);
+        img.addEventListener('click', () => PS.showViewer(img.src));
+        document.getElementById(`ps-photo-empty-${pin.id}`)?.remove();
+      } else {
+        img.src = url;
       }
-    });
-  };
+
+      try { window.showToaster?.('Photo uploaded'); } catch {}
+    } catch (err) {
+      console.error(err);
+      try { window.showToaster?.('Upload failed'); } catch {}
+    } finally {
+      e.target.value = '';
+    }
+  });
+};
+
+
+
 
   // ---- Simple full-screen viewer
   PS.ensureViewer = function () {
