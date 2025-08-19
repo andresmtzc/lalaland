@@ -4066,5 +4066,325 @@ document.getElementById('lotModal').classList.add('pin-mode');
   }
 })();
 </script>
+
+  <script>
+(() => {
+  'use strict';
+
+  // ===== Namespace =====
+  const NS = (window.__LL_GPS__ = window.__LL_GPS__ || {});
+
+  // ---- simple event bus
+  NS._listeners = {};
+  NS.on = function (evt, cb) { (NS._listeners[evt] ||= []).push(cb); };
+  NS.emit = function (evt, payload) { (NS._listeners[evt] || []).forEach(fn => { try { fn(payload); } catch {} }); };
+
+  // Config
+  NS.lotCenter = NS.lotCenter || [-100.15994, 25.461823];
+  NS.maxDistanceMeters = NS.maxDistanceMeters || 1000;
+
+  // State
+  NS.gpsWatchId = null;
+  NS.lastUserLngLat = null;
+  NS.hasInitialFly = false;
+  NS.userHeading = null;
+  NS.headingListenerAttached = false;
+  NS.farAwayTimer = null;
+  NS.farWarned = false;
+  NS.headingMarker = null;
+  NS._onOrientation = null;
+  
+  // Smoothing (for Android)
+  NS.headingSmoothingFactor = 0.15;
+  NS.lastSmoothedHeading = null;
+
+  // Utils
+  const safeToaster = (msg, duration = 3000) => {
+    try { if (typeof window.showToaster === 'function') window.showToaster(msg, duration); } catch {}
+  };
+
+  // Distance calculation
+  const distanceMeters = (a, b) => {
+    const [lng1, lat1] = a, [lng2, lat2] = b;
+    const R = 6371000, φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lng2 - lng1) * Math.PI / 180;
+    const a_ = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a_), Math.sqrt(1 - a_));
+  };
+
+  // Smooth heading
+  const smoothHeading = (newHeading) => {
+    if (NS.lastSmoothedHeading === null) {
+      NS.lastSmoothedHeading = newHeading;
+    } else {
+      const diff = ((newHeading - NS.lastSmoothedHeading + 540) % 360) - 180;
+      NS.lastSmoothedHeading = (NS.lastSmoothedHeading + diff * NS.headingSmoothingFactor) % 360;
+    }
+    return NS.lastSmoothedHeading;
+  };
+
+  // ===== Core Functions =====
+  function ensureUserLocationLayers() {
+    if (!window.map) return;
+
+    if (!map.getSource('ll-user-location')) {
+      map.addSource('ll-user-location', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+      });
+    }
+
+    if (!map.getLayer('ll-user-accuracy')) {
+      map.addLayer({
+        id: 'll-user-accuracy',
+        type: 'circle',
+        source: 'll-user-location',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'],
+            15, ['coalesce', ['get', 'accRadiusZ15'], 2],
+            22, ['coalesce', ['get', 'accRadiusZ22'], 500]
+          ],
+          'circle-color': '#1a73e826',
+          'circle-stroke-color': '#1a73e8',
+          'circle-stroke-width': 1
+        },
+        filter: ['==', ['get', 'role'], 'accuracy']
+      });
+    }
+
+    if (!map.getLayer('ll-user-dot')) {
+      map.addLayer({
+        id: 'll-user-dot',
+        type: 'circle',
+        source: 'll-user-location',
+        paint: {
+          'circle-radius': 8,
+          'circle-color': '#4285F4',
+          'circle-stroke-color': '#FFFFFF',
+          'circle-stroke-width': 2
+        },
+        filter: ['==', ['get', 'role'], 'point']
+      });
+    }
+
+    ensureHeadingMarker();
+  }
+
+  // Google Maps-style cone (wide part forward, pointy end at dot)
+  function ensureHeadingMarker() {
+    if (!window.map || NS.headingMarker) return;
+
+    const el = document.createElement('div');
+    el.style.width = '70px';
+    el.style.height = '50px';
+    el.style.pointerEvents = 'none';
+    el.style.zIndex = '1000';
+    el.innerHTML = `
+      <svg viewBox="0 0 70 50" width="70" height="50">
+        <!-- Solid wide cone (140° opening) -->
+        <path d="M35 45 L5 5 L65 5 Z" 
+              fill="#1a73e8" 
+              opacity="0.6"
+              stroke="none"/>
+      </svg>
+    `;
+
+    NS.headingMarker = new mapboxgl.Marker({
+      element: el,
+      offset: [0, -25],
+      anchor: 'center'
+    })
+      .setRotationAlignment('map')
+      .setPitchAlignment('map')
+      .setLngLat(NS.lotCenter)
+      .addTo(map);
+  }
+
+  // Handle compass data (with iOS permission)
+  async function ensureHeadingListener() {
+    if (NS.headingListenerAttached) return;
+
+    NS._onOrientation = (e) => {
+      let rawHeading;
+      if (typeof e?.webkitCompassHeading === 'number') {
+        rawHeading = e.webkitCompassHeading; // iOS (true north)
+      } else if (typeof e?.alpha === 'number') {
+        rawHeading = (360 - e.alpha) % 360;   // Android
+      } else {
+        return;
+      }
+
+      NS.userHeading = smoothHeading(rawHeading);
+      if (NS.lastUserLngLat) updateUserLocation(NS.lastUserLngLat[0], NS.lastUserLngLat[1]);
+    };
+
+    try {
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+        safeToaster('Tip: enable HTTPS to access compass on iOS', 3500);
+      }
+
+      if (window.DeviceOrientationEvent &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const response = await DeviceOrientationEvent.requestPermission();
+        if (response === 'granted') {
+          window.addEventListener('deviceorientation', NS._onOrientation, true);
+        } else {
+          safeToaster('Compass permission denied', 4000);
+          return;
+        }
+      } else if ('ondeviceorientationabsolute' in window) {
+        window.addEventListener('deviceorientationabsolute', NS._onOrientation, true);
+      } else {
+        window.addEventListener('deviceorientation', NS._onOrientation, true);
+      }
+
+      NS.headingListenerAttached = true;
+    } catch (err) {
+      console.warn('Heading listener setup failed:', err);
+      safeToaster('Unable to access compass data', 4000);
+    }
+  }
+
+  function removeHeadingListener() {
+    if (!NS.headingListenerAttached) return;
+    try {
+      window.removeEventListener('deviceorientation', NS._onOrientation, true);
+      window.removeEventListener('deviceorientationabsolute', NS._onOrientation, true);
+    } catch {}
+    NS._onOrientation = null;
+    NS.headingListenerAttached = false;
+  }
+
+  // Update cone direction
+  function updateUserLocation(lng, lat, accuracyMeters = 10) {
+    const src = map?.getSource('ll-user-location');
+    if (!src) return;
+
+    src.setData({
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', properties: { role: 'point' }, geometry: { type: 'Point', coordinates: [lng, lat] } },
+        {
+          type: 'Feature',
+          properties: {
+            role: 'accuracy',
+            accRadiusZ15: Math.min(12, Math.max(2, accuracyMeters / 6)),
+            accRadiusZ22: Math.min(600, Math.max(50, accuracyMeters * 6))
+          },
+          geometry: { type: 'Point', coordinates: [lng, lat] }
+        }
+      ]
+    });
+
+    if (NS.headingMarker) {
+      NS.headingMarker.setLngLat([lng, lat]);
+      NS.headingMarker.setRotation(NS.userHeading || 0);
+    }
+  }
+
+  // ===== UI Controls =====
+  document.addEventListener('DOMContentLoaded', () => {
+    const gpsBtn = document.getElementById('gpsButton');
+    if (gpsBtn && !gpsBtn.__llBound) {
+      gpsBtn.__llBound = true;
+      gpsBtn.addEventListener('click', () => {
+        if (NS.gpsWatchId == null) startGPS();
+        else stopGPS();
+      });
+    }
+  });
+
+  function startGPS() {
+    safeToaster('Activating GPS...', 2000);
+
+    if (!navigator.geolocation) {
+      safeToaster('Geolocation not supported on this device', 5000);
+      return;
+    }
+    if (!window.map) {
+      safeToaster('Please wait - map is still loading', 5000);
+      return;
+    }
+
+    ensureUserLocationLayers();
+    ensureHeadingListener();
+
+    document.getElementById('cameraButton')?.style && (document.getElementById('cameraButton').style.display = 'block');
+
+    if (NS.gpsWatchId !== null) {
+      navigator.geolocation.clearWatch(NS.gpsWatchId);
+    }
+
+    NS.gpsWatchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy, heading } = pos.coords;
+        NS.lastUserLngLat = [longitude, latitude];
+
+        if (!NS._notifiedStart) { NS._notifiedStart = true; NS.emit('gps-start'); }
+
+        if (heading && !NS.userHeading) {
+          NS.userHeading = smoothHeading(heading);
+        }
+
+        updateUserLocation(longitude, latitude, accuracy);
+
+        if (!NS.hasInitialFly) {
+          NS.hasInitialFly = true;
+          map.flyTo({
+            center: [longitude, latitude],
+            zoom: 17,
+            speed: 1.2,
+            curve: 1.5
+          });
+          safeToaster('GPS active - tracking your location', 3000);
+        }
+      },
+      (err) => {
+        let errorMsg = 'GPS error';
+        switch(err.code) {
+          case err.PERMISSION_DENIED: errorMsg = 'Please enable location permissions'; break;
+          case err.POSITION_UNAVAILABLE: errorMsg = 'Location signal lost'; break;
+          case err.TIMEOUT: errorMsg = 'GPS timeout - try moving outdoors'; break;
+        }
+        stopGPS(errorMsg);
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+    );
+
+    NS.gpsWatchId !== null && safeToaster('GPS activated successfully', 2000);
+  }
+
+  function stopGPS(reason) {
+    if (NS.gpsWatchId) {
+      navigator.geolocation.clearWatch(NS.gpsWatchId);
+      NS.gpsWatchId = null;
+    }
+
+    removeHeadingListener();
+
+    if (map?.getSource('ll-user-location')) {
+      map.getSource('ll-user-location').setData({ type:'FeatureCollection', features:[] });
+    }
+
+    if (NS.headingMarker) {
+      NS.headingMarker.remove();
+      NS.headingMarker = null;
+    }
+
+    document.getElementById('cameraButton')?.style && (document.getElementById('cameraButton').style.display = 'none');
+
+    NS.lastUserLngLat = null;
+    NS.userHeading = null;
+    NS.lastSmoothedHeading = null;
+
+    safeToaster(reason || 'GPS stopped');
+    NS._notifiedStart = false;
+    NS.emit('gps-stop');
+  }
+
+})();
+</script>
+
 </body>
 </html>
