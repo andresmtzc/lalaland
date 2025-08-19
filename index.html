@@ -3716,6 +3716,7 @@ function hideCalendlyEmbed() {
 
 
 
+
 <script>
 (() => {
   'use strict';
@@ -3724,15 +3725,18 @@ function hideCalendlyEmbed() {
   PS.markers = new Map();      // id -> { pin, marker }
   PS.addMode = false;
   PS._mapClickHandler = null;
-  PS._isVisible = false;       // markers start hidden
+  PS._isVisible = false;       // markers start hidden (button is now always visible)
+
+  // === Cone config (meters + degrees) ===
+  PS.coneRadiusMeters = 30;    // how far the cone extends on the map
+  PS.coneFovDegrees   = 45;   // field-of-view width 
+
+  // GeoJSON store for all cone triangles
+  PS._coneFC = { type: 'FeatureCollection', features: [] };
 
   const toast = (m, t=2500) => { try{ window.showToaster?.(m, t);}catch{} };
   const $ = (s) => document.querySelector(s);
-
-  // simple debounce
-  const debounce = (fn, wait=400) => {
-    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
-  };
+  const debounce = (fn, wait=400) => { let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), wait); }; };
 
   async function compressImageToJPEG(fileOrBlob, maxSize = 1000) {
     const dataURL = await new Promise((res) => {
@@ -3760,7 +3764,104 @@ function hideCalendlyEmbed() {
     return await new Promise((res) => canvas.toBlob(b => res(b), 'image/jpeg', 0.85));
   }
 
-  // ---- Add Pin button (always visible)
+  // ======== GEO UTILS: destination point (lng,lat + meters + bearing°) ========
+  function destination(lng, lat, distMeters, bearingDeg) {
+    // WGS84 sphere approximation
+    const R = 6371000; // meters
+    const δ = distMeters / R;
+    const θ = (bearingDeg * Math.PI) / 180;
+    const φ1 = (lat * Math.PI) / 180;
+    const λ1 = (lng * Math.PI) / 180;
+
+    const sinφ1 = Math.sin(φ1), cosφ1 = Math.cos(φ1);
+    const sinδ = Math.sin(δ),   cosδ = Math.cos(δ);
+    const sinφ2 = sinφ1 * cosδ + cosφ1 * sinδ * Math.cos(θ);
+    const φ2 = Math.asin(sinφ2);
+    const y = Math.sin(θ) * sinδ * cosφ1;
+    const x = cosδ - sinφ1 * sinφ2;
+    const λ2 = λ1 + Math.atan2(y, x);
+
+    return [ ((λ2 * 180) / Math.PI + 540) % 360 - 180, (φ2 * 180) / Math.PI ];
+  }
+
+  // Build/Upsert a triangular cone polygon for a pin
+  function _buildConeFeature(pin) {
+    const heading = ((pin.heading ?? 0) % 360 + 360) % 360;
+    const half = PS.coneFovDegrees / 2;
+    const leftBrg  = heading - half;
+    const rightBrg = heading + half;
+
+    const pLeft  = destination(pin.lng, pin.lat, PS.coneRadiusMeters, leftBrg);
+    const pRight = destination(pin.lng, pin.lat, PS.coneRadiusMeters, rightBrg);
+
+    return {
+      type: 'Feature',
+      properties: { role: 'cone', pin_id: pin.id, heading },
+      geometry: {
+        type: 'Polygon',
+        // Triangle: apex at pin, base edge at radius (left->right)
+        coordinates: [[
+          [pin.lng, pin.lat],
+          pLeft,
+          pRight,
+          [pin.lng, pin.lat]
+        ]]
+      }
+    };
+  }
+
+  function _ensureConeLayer() {
+    if (!window.map) return;
+    if (!map.getSource('ps-cones')) {
+      map.addSource('ps-cones', { type: 'geojson', data: PS._coneFC });
+    }
+    if (!map.getLayer('ps-cones-fill')) {
+      map.addLayer({
+        id: 'ps-cones-fill',
+        type: 'fill',
+        source: 'ps-cones',
+        paint: {
+          'fill-color': '#1a73e8',
+          'fill-opacity': 0.45
+        },
+        filter: ['==', ['get', 'role'], 'cone']
+      });
+    }
+    if (!map.getLayer('ps-cones-outline')) {
+      map.addLayer({
+        id: 'ps-cones-outline',
+        type: 'line',
+        source: 'ps-cones',
+        paint: {
+          'line-color': '#1a73e8',
+          'line-width': 1
+        },
+        filter: ['==', ['get', 'role'], 'cone']
+      });
+    }
+  }
+
+  function _syncConesSource() {
+    const src = map?.getSource('ps-cones');
+    if (src) src.setData(PS._coneFC);
+  }
+
+  function _upsertConeForPin(pin) {
+    // replace existing feature for this pin, or add a new one
+    const idx = PS._coneFC.features.findIndex(f => f.properties?.pin_id === pin.id);
+    const feat = _buildConeFeature(pin);
+    if (idx >= 0) PS._coneFC.features[idx] = feat;
+    else PS._coneFC.features.push(feat);
+    _syncConesSource();
+  }
+
+  function _removeConeForPinId(pinId) {
+    const before = PS._coneFC.features.length;
+    PS._coneFC.features = PS._coneFC.features.filter(f => f.properties?.pin_id !== pinId);
+    if (PS._coneFC.features.length !== before) _syncConesSource();
+  }
+
+  // ---- Add Pin button (ALWAYS visible now)
   PS.addAddPinButton = function () {
     if (document.getElementById('addPinBtn')) return;
     const btn = document.createElement('button');
@@ -3774,10 +3875,10 @@ function hideCalendlyEmbed() {
         <line x1="5" y1="12" x2="19" y2="12"></line>
       </svg>`;
     btn.addEventListener('click', () => PS.toggleAddMode());
-    document.body.appendChild(btn);
+    document.body.appendChild(btn); // ← no hiding
   };
 
-  // ---- Toggle add mode
+  // ---- Toggle add mode (no gating on _isVisible)
   PS.toggleAddMode = function () {
     if (!window.map) { toast('Map is still loading…'); return; }
     PS.addMode = !PS.addMode;
@@ -3808,73 +3909,37 @@ function hideCalendlyEmbed() {
       .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat, heading: 0 }).select().single();
     if (error) { console.error(error); toast('Could not create pin'); return; }
     PS.addMarker(data);
+    _upsertConeForPin(data);
     toast('Pin added');
   };
 
-  // ---- Marker element: center dot + cone that rotates around center
-  // 0° points north; rotate clockwise.
-  PS.coneMarkerElement = function () {
-    const wrap = document.createElement('div');
-    wrap.style.position = 'relative';
-    wrap.style.width = '70px';
-    wrap.style.height = '70px';
-    wrap.style.pointerEvents = 'auto'; // clickable
-    // no extra translate: we want the marker's center to be the dot
-
-    // Cone SVG with apex exactly at the center (35,35).
-    // Wide end points upward initially (north), so 0° aligns with map north.
-    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('viewBox','0 0 70 70');
-    svg.setAttribute('width','70');
-    svg.setAttribute('height','70');
-    svg.style.position = 'absolute';
-    svg.style.left = '0';
-    svg.style.top = '0';
-    svg.style.pointerEvents = 'none';
-
-    // Adjust the two far vertices to change cone width (here ~120° opening).
-    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d','M35 35 L15 5 L55 5 Z'); // apex at 35,35; wide edge near top
-    path.setAttribute('fill','#1a73e8');
-    path.setAttribute('opacity','0.55');
-    path.setAttribute('stroke','none');
-    svg.appendChild(path);
-    wrap.appendChild(svg);
-
-    // Center dot
-    const dot = document.createElement('div');
-    dot.style.position = 'absolute';
-    dot.style.left = '50%';
-    dot.style.top = '50%';
-    dot.style.transform = 'translate(-50%, -50%)';
-    dot.style.width = '12px';
-    dot.style.height = '12px';
-    dot.style.borderRadius = '50%';
-    dot.style.background = '#ff8400';
-    dot.style.cursor = 'pointer';
-    wrap.appendChild(dot);
-
-    return wrap;
+  // ---- HTML marker (12px dot, same as your original working one)
+  PS.markerElement = function () {
+    const el = document.createElement('div');
+    el.style.width = '12px';
+    el.style.height = '12px';
+    el.style.borderRadius = '50%';
+    el.style.background = '#ff8400';
+    el.style.border = 'none';
+    el.style.boxShadow = 'none';
+    el.style.cursor = 'pointer';
+    return el;
   };
 
-  // ---- Add marker + click => open modal (no Popup)
+  // ---- Add marker + click => open modal (not a Popup)
   PS.addMarker = function (pin) {
-    const existing = PS.markers.get(pin.id);
-    const heading = (typeof pin.heading === 'number') ? (pin.heading % 360 + 360) % 360 : 0;
-
-    if (existing) {
-      existing.marker.setLngLat([pin.lng, pin.lat]).setRotation(heading);
-      existing.pin = { ...existing.pin, ...pin, heading };
+    if (PS.markers.has(pin.id)) {
+      // update position; heading is handled by cone layer
+      PS.markers.get(pin.id).marker.setLngLat([pin.lng, pin.lat]);
+      PS.markers.get(pin.id).pin = pin;
+      _upsertConeForPin(pin);
       return;
     }
-
-    const el = PS.coneMarkerElement();
+    const el = PS.markerElement();
     const marker = new mapboxgl.Marker({ element: el, draggable: true })
-      .setLngLat([pin.lng, pin.lat])
-      .setRotationAlignment('map')   // rotate in map coords
-      .setPitchAlignment('map')
-      .setRotation(heading);         // 0° north
+      .setLngLat([pin.lng, pin.lat]);
 
+    // Keep your reveal behavior for markers:
     if (PS._isVisible && window.map) marker.addTo(map);
 
     marker.on('dragend', async () => {
@@ -3882,24 +3947,31 @@ function hideCalendlyEmbed() {
       const { error } = await window.supabaseClient
         .from('pins').update({ lng: ll.lng, lat: ll.lat }).eq('id', pin.id);
       if (error) toast('Failed to save position'); else toast('Position saved');
+      // also move the cone
+      const rec = PS.markers.get(pin.id);
+      if (rec) {
+        rec.pin.lng = ll.lng; rec.pin.lat = ll.lat;
+        _upsertConeForPin(rec.pin);
+      }
     });
 
-    // open modal on click
     el.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      PS.openPinInModal(PS.markers.get(pin.id)?.pin || pin);
+      PS.openPinInModal(pin);
     });
 
-    PS.markers.set(pin.id, { pin: { ...pin, heading }, marker });
+    PS.markers.set(pin.id, { pin, marker });
+    // add/refresh cone
+    _upsertConeForPin(pin);
   };
 
-  // programmatic setter (rotate + persist)
+  // programmatic setter (update heading + persist + refresh cone)
   PS.setPinHeading = async function (pinId, newHeading, { persist = true } = {}) {
     const rec = PS.markers.get(pinId);
     if (!rec) return;
     const h = (Math.round(newHeading) % 360 + 360) % 360;
-    rec.marker.setRotation(h);
     rec.pin.heading = h;
+    _upsertConeForPin(rec.pin); // redraw cone polygon
     if (persist) {
       await window.supabaseReady;
       const { error } = await window.supabaseClient
@@ -3908,7 +3980,7 @@ function hideCalendlyEmbed() {
     }
   };
 
-  // ---- Reveal markers (fade-in)
+  // ---- Reveal markers (kept for fade-in animation)
   PS._revealMarkers = function () {
     if (PS._isVisible) return;
     PS._isVisible = true;
@@ -3917,13 +3989,15 @@ function hideCalendlyEmbed() {
       const el = marker.getElement();
       if (!el.parentNode) marker.addTo(map);
       el.style.display = 'block';
-      el.style.opacity = '0';
-      el.style.transition = 'opacity 600ms ease';
-      setTimeout(() => { el.style.opacity = '1'; }, 900);
+      el.style.opacity = '0'; // Start transparent
+      el.style.transition = 'opacity 600ms ease'; // Slower fade-in
+      setTimeout(() => { 
+        el.style.opacity = '1'; // Fade in after a delay
+      }, 900); // Small delay before starting fade
     });
   };
 
-  // ---- Modal with heading controls (slider + numeric; no +15° button)
+  // ---- Open in your lot modal (same as before, with heading controls)
   PS.openPinInModal = async function (pin) {
     await window.supabaseReady;
     document.getElementById('lotModal').classList.add('pin-mode');
@@ -3933,6 +4007,7 @@ function hideCalendlyEmbed() {
     const lotDetails = document.getElementById('lotDetails');
     const backButton = document.getElementById('backButton');
 
+    // Ensure modal is open (and remember pre-view for closing)
     if (!modal.classList.contains('show')) {
       try {
         if (window.map) {
@@ -3951,6 +4026,7 @@ function hideCalendlyEmbed() {
       }
     }
 
+    // 🔒 PIN MODE: hide Back / Expand (+/-) / Bottom chevron
     modal.classList.add('pin-mode');
     if (backButton) backButton.style.display = 'none';
     const plusBtn = document.querySelector('.plus-button');
@@ -3958,12 +4034,13 @@ function hideCalendlyEmbed() {
     const bottomPlus = document.querySelector('.bottom-plus-button');
     if (bottomPlus) bottomPlus.style.display = 'none';
 
+    // Switch modal into details view
     lotDetails.innerHTML = '';
     wrapper.classList.add('show-details');
     lotDetails.classList.add('active');
     try { window.isDetailOpen = true; } catch {}
 
-    // Load photos
+    // Load photos for this pin
     const { data: photos } = await window.supabaseClient
       .from('pin_photos')
       .select('id,url,created_at')
@@ -3974,6 +4051,7 @@ function hideCalendlyEmbed() {
     const coords = `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`;
     const currentHeading = (typeof pin.heading === 'number') ? pin.heading : 0;
 
+    // Build UI
     const container = document.createElement('div');
     container.style.padding = '16px';
     container.innerHTML = `
@@ -4018,7 +4096,7 @@ function hideCalendlyEmbed() {
     const saveDebounced = debounce(async (v) => {
       await PS.setPinHeading(pin.id, Number(v), { persist:true });
       const rec = PS.markers.get(pin.id); if (rec) rec.pin.heading = Number(v);
-    }, 400);
+    }, 300);
 
     range.addEventListener('input',  (e) => { syncPair(e.target.value); updateLive(e.target.value); });
     range.addEventListener('change', (e) => saveDebounced(e.target.value));
@@ -4031,7 +4109,7 @@ function hideCalendlyEmbed() {
       syncPair(v); saveDebounced(v);
     });
 
-    // Photo viewer
+    // Click to view photo
     container.querySelectorAll('.ps-thumb').forEach(div => {
       div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
     });
@@ -4080,6 +4158,7 @@ function hideCalendlyEmbed() {
     });
   };
 
+  // ---- Simple full-screen viewer (unchanged)
   PS.ensureViewer = function () {
     if (document.getElementById('pinViewer')) return;
     document.body.insertAdjacentHTML('beforeend', `
@@ -4103,24 +4182,41 @@ function hideCalendlyEmbed() {
     const { data, error } = await window.supabaseClient
       .from('pins').select('id,lng,lat,heading').order('created_at', { ascending: true });
     if (error) return;
-    (data || []).forEach(p => PS.addMarker(p));
+
+    // ensure cones layer exists before adding features
+    _ensureConeLayer();
+
+    (data || []).forEach(p => {
+      PS.addMarker(p);
+      _upsertConeForPin(p);
+    });
   };
 
   PS.subscribe = function () {
     window.supabaseClient
       .channel('pins-rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins' }, (payload) => PS.addMarker(payload.new))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins' }, (payload) => {
+        PS.addMarker(payload.new);
+        _upsertConeForPin(payload.new);
+      })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pins' }, (payload) => {
         const rec = PS.markers.get(payload.new.id);
         if (!rec) return;
         const { lng, lat, heading } = payload.new;
-        if (typeof lng === 'number' && typeof lat === 'number') rec.marker.setLngLat([lng, lat]);
-        if (typeof heading === 'number') rec.marker.setRotation((heading % 360 + 360) % 360);
+        if (typeof lng === 'number' && typeof lat === 'number') {
+          rec.marker.setLngLat([lng, lat]);
+          rec.pin.lng = lng; rec.pin.lat = lat;
+        }
+        if (typeof heading === 'number') {
+          rec.pin.heading = ((heading % 360) + 360) % 360;
+        }
+        _upsertConeForPin(rec.pin);
         rec.pin = { ...rec.pin, ...payload.new };
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pins' }, (payload) => {
         const rec = PS.markers.get(payload.old.id);
         if (rec) { rec.marker.remove(); PS.markers.delete(payload.old.id); }
+        _removeConeForPinId(payload.old.id);
       })
       .subscribe();
   };
@@ -4137,7 +4233,8 @@ function hideCalendlyEmbed() {
       PS.loadPins();
       PS.subscribe();
     }
-    map.once('idle', () => PS._revealMarkers());
+    // keep marker fade-in after map idle
+    map.once('idle', () => { PS._revealMarkers(); _ensureConeLayer(); _syncConesSource(); });
   };
 
   if (document.readyState === 'loading') {
@@ -4147,6 +4244,7 @@ function hideCalendlyEmbed() {
   }
 })();
 </script>
+
 
 
 
