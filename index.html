@@ -3732,7 +3732,7 @@ function hideCalendlyEmbed() {
   PS._coneFillOpacity = 0.30;  // final fill opacity when visible
   PS._coneLineOpacity = 0;     // final line opacity when visible
   PS.coneRadiusMeters = 30;    // cone length (meters)
-  PS.coneFovDegrees   = 60;   // cone width (degrees)
+  PS.coneFovDegrees   = 60;    // cone width (degrees)
 
   // GeoJSON store for all cone triangles
   PS._coneFC = { type: 'FeatureCollection', features: [] };
@@ -3900,7 +3900,7 @@ function hideCalendlyEmbed() {
     if (!window.map) { toast('Map is still loading…'); return; }
     PS.addMode = !PS.addMode;
     const btn = document.getElementById('addPinBtn');
-    if (btn) btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,.35)' : '';
+    if (btn) btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,1)' : '';
     map.getCanvas().style.cursor = PS.addMode ? 'crosshair' : '';
     if (PS.addMode && !PS._mapClickHandler) {
       PS._mapClickHandler = (e) => {
@@ -3927,6 +3927,28 @@ function hideCalendlyEmbed() {
     if (error) { console.error(error); toast('Could not create pin'); return; }
     PS.addMarker(data);
     toast('Pin added');
+  };
+
+  // ---- Delete pin (DB + local cleanup + cone)
+  PS.deletePin = async function (pinId) {
+    try {
+      await window.supabaseReady;
+      const { error } = await window.supabaseClient
+        .from('pins').delete().eq('id', pinId);
+      if (error) { console.error(error); toast('Failed to delete pin'); return false; }
+
+      // Optimistic local cleanup (RT delete will also do this)
+      const rec = PS.markers.get(pinId);
+      if (rec) { rec.marker.remove(); PS.markers.delete(pinId); }
+      _removeConeForPinId(pinId);
+
+      toast('Pin deleted');
+      return true;
+    } catch (e) {
+      console.error(e);
+      toast('Delete failed');
+      return false;
+    }
   };
 
   // ---- HTML marker (12px dot)
@@ -4046,7 +4068,7 @@ function hideCalendlyEmbed() {
     });
   };
 
-  // ---- Open in your lot modal (with heading controls)
+  // ---- Open in your lot modal (with heading controls + DELETE button)
   PS.openPinInModal = async function (pin) {
     await window.supabaseReady;
     document.getElementById('lotModal').classList.add('pin-mode');
@@ -4124,13 +4146,31 @@ function hideCalendlyEmbed() {
             : '<div style="grid-column:1/-1; color:#8a8880">No photos yet.</div>'
         }
       </div>
-      <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">
-        Upload photo
-        <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
-      </label>
+
+      <div style="display:flex; gap:10px; align-items:center;">
+        <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">
+          Upload photo
+          <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
+        </label>
+        <button id="ps-delete-${pin.id}" type="button"
+          style="background:#f44336;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">
+          Delete pin
+        </button>
+      </div>
     `;
     lotDetails.appendChild(container);
 
+    // Delete pin handler
+    const delBtn = container.querySelector(`#ps-delete-${pin.id}`);
+    delBtn.addEventListener('click', async () => {
+      if (!confirm('Delete this pin?')) return;
+      const ok = await PS.deletePin(pin.id);
+      if (ok) {
+        try { modal.classList.remove('show'); modal.style.display = 'none'; } catch {}
+      }
+    });
+
+    // Heading UI wiring (live preview + debounced save)
     const range = container.querySelector(`#ps-heading-${pin.id}`);
     const num   = container.querySelector(`#ps-heading-num-${pin.id}`);
     const syncPair = (v) => { range.value = v; num.value = v; };
@@ -4151,10 +4191,12 @@ function hideCalendlyEmbed() {
       syncPair(v); saveDebounced(v);
     });
 
+    // Click to view photo
     container.querySelectorAll('.ps-thumb').forEach(div => {
       div.addEventListener('click', () => PS.showViewer(div.getAttribute('data-url')));
     });
 
+    // Upload handler
     const input = container.querySelector(`#ps-upload-${pin.id}`);
     input.addEventListener('change', async (e) => {
       if (!e.target.files || !e.target.files[0]) return;
@@ -4277,8 +4319,9 @@ function hideCalendlyEmbed() {
   } else {
     boot();
   }
-})();
+})(); 
 </script>
+
 
 
   
