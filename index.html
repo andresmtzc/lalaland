@@ -4118,6 +4118,11 @@ function hideCalendlyEmbed() {
 // ---- Open in modal (full-width photo, controls overlayed above photo)
 PS.openPinInModal = async function (pin) {
   await window.supabaseReady;
+  
+  // Check if user is authenticated
+  const { data: { session } } = await window.supabaseClient.auth.getSession();
+  const isAuthenticated = !!(session && session.user);
+  
   document.getElementById('lotModal').classList.add('pin-mode');
 
   const modal = document.getElementById('lotModal');
@@ -4167,12 +4172,38 @@ PS.openPinInModal = async function (pin) {
   const latest = (photos && photos.length) ? photos[photos.length - 1] : null;
   const currentHeading = (typeof pin.heading === 'number') ? pin.heading : 0;
 
-  // Build UI: photo + overlay controls
+  // Build UI: Only show photo when not authenticated, show controls when authenticated
   const container = document.createElement('div');
   container.style.padding = '0';
+  
+  // Only show controls if authenticated
+  const authControlsHtml = isAuthenticated ? `
+    <!-- Heading control (on top of photo) -->
+    <div style="display:flex; align-items:center; gap:10px; color:#fff;">
+      <div style="font-size:12px; opacity:.85; min-width:70px;">Heading</div>
+      <input id="ps-heading-${pin.id}" type="range" min="0" max="359" step="1"
+             value="${currentHeading}" style="flex:1;">
+      <input id="ps-heading-num-${pin.id}" type="number" min="0" max="359" step="1"
+             value="${currentHeading}"
+             style="width:64px; padding:4px 6px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#111;">
+    </div>
+
+    <!-- Actions (Upload / Delete) -->
+    <div style="display:flex; gap:10px; align-items:center;">
+      <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">
+        Upload photo
+        <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
+      </label>
+      <button id="ps-delete-${pin.id}" type="button"
+        style="background:#f44336;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">
+        Delete pin
+      </button>
+    </div>
+  ` : '';
+
   container.innerHTML = `
     <div id="ps-photo-wrap-${pin.id}" style="
-      position:relative;      /* <-- enables absolute overlay */
+      position:relative;
       width:100%;
       margin:0;
       border-radius:0 !important;
@@ -4182,130 +4213,115 @@ PS.openPinInModal = async function (pin) {
         latest
           ? `<img id="ps-photo-${pin.id}" src="${latest.url}" alt=""
                  style="display:block;width:100%;height:auto;border-radius:0;cursor:pointer;">`
-          : `<div id="ps-photo-empty-${pin.id}" style="padding:48px 0;text-align:center;color:#8a8880;">No photo yet.</div>`
+          : isAuthenticated 
+            ? `<div id="ps-photo-empty-${pin.id}" style="padding:48px 0;text-align:center;color:#8a8880;">No photo yet.</div>`
+            : `<div id="ps-photo-empty-${pin.id}" style="padding:48px 0;text-align:center;color:#8a8880;">No photo available.</div>`
       }
 
-      <!-- Overlay bar (z-index above photo) -->
+      <!-- Only show overlay with controls if authenticated -->
+      ${isAuthenticated ? `
       <div class="ps-overlay" style="
         position:absolute;
         left:0; right:0; bottom:0;
-        z-index:2;                 /* <-- above photo */
+        z-index:2;                 
         padding:12px;
-        pointer-events:none;       /* container ignores clicks... */
+        pointer-events:none;       
         background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.35) 40%, rgba(0,0,0,.45) 100%);
       ">
         <div class="ps-overlay-card" style="
           display:flex; flex-direction:column; gap:10px;
-          pointer-events:auto;     /* ...but inner card is interactive */
+          pointer-events:auto;     
           background: rgba(0,0,0,0.40);
           backdrop-filter: blur(4px);
           -webkit-backdrop-filter: blur(4px);
           border-radius:10px;
           padding:10px;
         ">
-
-          <!-- Heading control (on top of photo) -->
-          <div style="display:flex; align-items:center; gap:10px; color:#fff;">
-            <div style="font-size:12px; opacity:.85; min-width:70px;">Heading</div>
-            <input id="ps-heading-${pin.id}" type="range" min="0" max="359" step="1"
-                   value="${currentHeading}" style="flex:1;">
-            <input id="ps-heading-num-${pin.id}" type="number" min="0" max="359" step="1"
-                   value="${currentHeading}"
-                   style="width:64px; padding:4px 6px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#111;">
-          </div>
-
-          <!-- Actions (Upload / Delete) -->
-          <div style="display:flex; gap:10px; align-items:center;">
-            <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">
-              Upload photo
-              <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
-            </label>
-            <button id="ps-delete-${pin.id}" type="button"
-              style="background:#f44336;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">
-              Delete pin
-            </button>
-          </div>
-
+          ${authControlsHtml}
         </div>
       </div>
+      ` : ''}
     </div>
   `;
   lotDetails.appendChild(container);
 
-  // photo click => fullscreen viewer
+  // photo click => fullscreen viewer (available for all users)
   const imgEl = container.querySelector(`#ps-photo-${pin.id}`);
   imgEl?.addEventListener('click', () => PS.showViewer(imgEl.src));
 
-  // delete pin
-  const delBtn = container.querySelector(`#ps-delete-${pin.id}`);
-  delBtn.addEventListener('click', async () => {
-    if (!confirm('Delete this pin?')) return;
-    const ok = await PS.deletePin(pin.id);
-    if (ok) { try { modal.classList.remove('show'); modal.style.display = 'none'; } catch {} }
-  });
-
-  // heading controls
-  const range = container.querySelector(`#ps-heading-${pin.id}`);
-  const num   = container.querySelector(`#ps-heading-num-${pin.id}`);
-  const syncPair = (v) => { range.value = v; num.value = v; };
-  const updateLive = (v) => PS.setPinHeading(pin.id, Number(v), { persist:false });
-  const saveDebounced = ((fn)=>{ let t; return (v)=>{ clearTimeout(t); t=setTimeout(()=>fn(v),300); }; })
-    (async (v) => {
-      await PS.setPinHeading(pin.id, Number(v), { persist:true });
-      const rec = PS.markers.get(pin.id); if (rec) rec.pin.heading = Number(v);
+  // Only set up event handlers if authenticated
+  if (isAuthenticated) {
+    // delete pin
+    const delBtn = container.querySelector(`#ps-delete-${pin.id}`);
+    delBtn.addEventListener('click', async () => {
+      if (!confirm('Delete this pin?')) return;
+      const ok = await PS.deletePin(pin.id);
+      if (ok) { try { modal.classList.remove('show'); modal.style.display = 'none'; } catch {} }
     });
 
-  range.addEventListener('input',  (e) => { syncPair(e.target.value); updateLive(e.target.value); });
-  range.addEventListener('change', (e) => saveDebounced(e.target.value));
-  num.addEventListener('input',    (e) => {
-    const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
-    syncPair(v); updateLive(v);
-  });
-  num.addEventListener('change',   (e) => {
-    const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
-    syncPair(v); saveDebounced(v);
-  });
+    // heading controls
+    const range = container.querySelector(`#ps-heading-${pin.id}`);
+    const num   = container.querySelector(`#ps-heading-num-${pin.id}`);
+    const syncPair = (v) => { range.value = v; num.value = v; };
+    const updateLive = (v) => PS.setPinHeading(pin.id, Number(v), { persist:false });
+    const saveDebounced = ((fn)=>{ let t; return (v)=>{ clearTimeout(t); t=setTimeout(()=>fn(v),300); }; })
+      (async (v) => {
+        await PS.setPinHeading(pin.id, Number(v), { persist:true });
+        const rec = PS.markers.get(pin.id); if (rec) rec.pin.heading = Number(v);
+      });
 
-  // upload: replace full-width image (no thumbnails)
-  const input = container.querySelector(`#ps-upload-${pin.id}`);
-  input.addEventListener('change', async (e) => {
-    if (!e.target.files || !e.target.files[0]) return;
-    try {
-      const blob = await compressImageToJPEG(e.target.files[0], 1200);
-      const path = `${pin.id}/${Date.now()}.jpg`;
+    range.addEventListener('input',  (e) => { syncPair(e.target.value); updateLive(e.target.value); });
+    range.addEventListener('change', (e) => saveDebounced(e.target.value));
+    num.addEventListener('input',    (e) => {
+      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
+      syncPair(v); updateLive(v);
+    });
+    num.addEventListener('change',   (e) => {
+      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
+      syncPair(v); saveDebounced(v);
+    });
 
-      const up = await window.supabaseClient.storage.from('pin-photos')
-        .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-      if (up.error) throw up.error;
+    // upload: replace full-width image (no thumbnails)
+    const input = container.querySelector(`#ps-upload-${pin.id}`);
+    input.addEventListener('change', async (e) => {
+      if (!e.target.files || !e.target.files[0]) return;
+      try {
+        const blob = await compressImageToJPEG(e.target.files[0], 1200);
+        const path = `${pin.id}/${Date.now()}.jpg`;
 
-      const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
-      const url = pub?.data?.publicUrl;
-      if (!url) throw new Error('No public URL');
+        const up = await window.supabaseClient.storage.from('pin-photos')
+          .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (up.error) throw up.error;
 
-      const { error: insErr } = await window.supabaseClient
-        .from('pin_photos').insert({ pin_id: pin.id, url });
-      if (insErr) throw insErr;
+        const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
+        const url = pub?.data?.publicUrl;
+        if (!url) throw new Error('No public URL');
 
-      const wrap = container.querySelector(`#ps-photo-wrap-${pin.id}`);
-      let img = container.querySelector(`#ps-photo-${pin.id}`);
-      if (!img) {
-        wrap.insertAdjacentHTML('afterbegin',
-          `<img id="ps-photo-${pin.id}" src="${url}" alt="" style="display:block;width:100%;height:auto;border-radius:0;cursor:pointer;">`);
-        img = container.querySelector(`#ps-photo-${pin.id}`);
-        img.addEventListener('click', () => PS.showViewer(img.src));
-        document.getElementById(`ps-photo-empty-${pin.id}`)?.remove();
-      } else {
-        img.src = url;
+        const { error: insErr } = await window.supabaseClient
+          .from('pin_photos').insert({ pin_id: pin.id, url });
+        if (insErr) throw insErr;
+
+        const wrap = container.querySelector(`#ps-photo-wrap-${pin.id}`);
+        let img = container.querySelector(`#ps-photo-${pin.id}`);
+        if (!img) {
+          wrap.insertAdjacentHTML('afterbegin',
+            `<img id="ps-photo-${pin.id}" src="${url}" alt="" style="display:block;width:100%;height:auto;border-radius:0;cursor:pointer;">`);
+          img = container.querySelector(`#ps-photo-${pin.id}`);
+          img.addEventListener('click', () => PS.showViewer(img.src));
+          document.getElementById(`ps-photo-empty-${pin.id}`)?.remove();
+        } else {
+          img.src = url;
+        }
+
+        try { window.showToaster?.('Photo uploaded'); } catch {}
+      } catch (err) {
+        console.error(err);
+        try { window.showToaster?.('Upload failed'); } catch {}
+      } finally {
+        e.target.value = '';
       }
-
-      try { window.showToaster?.('Photo uploaded'); } catch {}
-    } catch (err) {
-      console.error(err);
-      try { window.showToaster?.('Upload failed'); } catch {}
-    } finally {
-      e.target.value = '';
-    }
-  });
+    });
+  }
 };
 
 
