@@ -1388,7 +1388,7 @@ body.fonts-loaded .side-length-label {
 }
   </style>
 </head>
-
+ 
 <body>
 <div id="map"></div>
 <div id="toaster" class="hidden">Loaded most recent aerial image (March 2025)</div>
@@ -1523,7 +1523,7 @@ body.fonts-loaded .side-length-label {
 </svg>
 </button>
 
-<button id="gpsButton" class="gps-button hide-button" title="Enable GPS">
+<button id="gpsButton" class="gps-button" title="Enable GPS">
  <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="9" />
     <line x1="12" y1="2" x2="12" y2="5" />
@@ -1546,7 +1546,7 @@ body.fonts-loaded .side-length-label {
 </button>
 
 <!-- AVAILABILITY BUTTON -->
-<button id="cycleAvailabilityBtn" class="gps-button hide-button" title="Cycle Availability" style="bottom: 260px;">
+<button id="cycleAvailabilityBtn" class="gps-button" title="Cycle Availability" style="bottom: 260px;">
   <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M23 4L23 10 17 10"></path>
     <path d="M1 20L1 14 7 14"></path>
@@ -3928,7 +3928,7 @@ function hideCalendlyEmbed() {
     if (document.getElementById('addPinBtn')) return;
     const btn = document.createElement('button');
     btn.id = 'addPinBtn';
-    btn.className = 'gps-button hide-button';
+    btn.className = 'gps-button';
     btn.title = 'Add point';
     btn.style.bottom = '200px';
     btn.innerHTML = `
@@ -4984,12 +4984,15 @@ function refreshFeaturedLayer() {
 </script>
  
 
+
 <script>
-// Add this function to check auth status and toggle buttons HIDE BUTTONS AUTH
+// Function to check authentication status and toggle buttons visibility
 function toggleAuthButtons(isAuthenticated) {
   const cycleAvailabilityBtn = document.getElementById('cycleAvailabilityBtn');
   const addPinBtn = document.getElementById('addPinBtn');
   const gpsButton = document.getElementById('gpsButton');
+
+  console.log('Toggle buttons - Authenticated:', isAuthenticated);
   
   if (cycleAvailabilityBtn) {
     cycleAvailabilityBtn.classList.toggle('hide-button', !isAuthenticated);
@@ -5002,36 +5005,39 @@ function toggleAuthButtons(isAuthenticated) {
   }
 }
 
-// Update the auth state change listener to call this function
-window.supabaseClient.auth.onAuthStateChange((_event, session) => {
-  const isAuthenticated = !!(session && session.user);
-  updateButtons(isAuthenticated);
-  toggleAuthButtons(isAuthenticated);
-});
-
-// Also call it during initial auth check
-const initAuth = async () => {
-  try {
-    const { data: { session } = { session: null } } =
-      await window.supabaseClient.auth.getSession();
-    const isAuthenticated = !!(session && session.user);
-    updateButtons(isAuthenticated);
-    toggleAuthButtons(isAuthenticated);
-  } catch (e) {
-    console.warn('getSession failed:', e);
-    toggleAuthButtons(false);
-  }
-};
-
 // Hide buttons immediately on page load
 document.addEventListener('DOMContentLoaded', function() {
-  const cycleAvailabilityBtn = document.getElementById('cycleAvailabilityBtn');
-  const gpsButton = document.getElementById('gpsButton');
+  console.log('DOM loaded - hiding buttons by default');
+  toggleAuthButtons(false);
   
-  if (cycleAvailabilityBtn) cycleAvailabilityBtn.classList.add('hide-button');
-  if (gpsButton) gpsButton.classList.add('hide-button');
+  // Check auth status once Supabase is likely ready
+  const checkAuth = setInterval(function() {
+    if (window.supabaseClient && typeof window.supabaseClient.auth.getSession === 'function') {
+      clearInterval(checkAuth);
+      window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
+        const isAuthenticated = !!(session && session.user);
+        console.log('Initial auth check - Authenticated:', isAuthenticated);
+        toggleAuthButtons(isAuthenticated);
+      });
+    }
+  }, 100);
 });
+ 
+// Listen for auth changes once Supabase is ready
+const setupAuthListener = setInterval(function() {
+  if (window.supabaseClient && typeof window.supabaseClient.auth.onAuthStateChange === 'function') {
+    clearInterval(setupAuthListener);
+    window.supabaseClient.auth.onAuthStateChange((_event, session) => {
+      const isAuthenticated = !!(session && session.user);
+      console.log('Auth state changed - Authenticated:', isAuthenticated);
+      toggleAuthButtons(isAuthenticated);
+    });
+  }
+}, 100);
 </script>
+
+
+
 
 
 </body>
