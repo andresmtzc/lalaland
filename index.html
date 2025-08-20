@@ -3159,69 +3159,78 @@ function scrollToBaseIndex(baseIndex, smooth = true) {
 
 const animatedFeaturedLots = new Set();
 
+let highlightTimeout;
+
 function highlightCenter(isClamping = false) {
-  const rows = [...modalInfo.querySelectorAll('.info-row')];
-  const containerRect = modalInfo.getBoundingClientRect();
-  const centerY = containerRect.top + containerRect.height / 2;
-  const tolerance = containerRect.height * 0.1;
+  // Clear any previous timeout to avoid overlapping calls
+  clearTimeout(highlightTimeout);
 
-  let closestRow = null;
-  let minDistance = Infinity;
+  // Use timeout to delay the execution, ensuring the layout is stable
+  highlightTimeout = setTimeout(() => {
+    const rows = [...modalInfo.querySelectorAll('.info-row')];
+    const containerRect = modalInfo.getBoundingClientRect();
+    const centerY = containerRect.top + containerRect.height / 2;
+    const tolerance = containerRect.height * 0.1;
 
-  // Clear previous active states
-  rows.forEach(row => {
-    row.classList.remove('active');
-    row.classList.remove('active-center');
-  });
+    let closestRow = null;
+    let minDistance = Infinity;
 
-  // Find closest row to center
-  rows.forEach(row => {
-    const rect = row.getBoundingClientRect();
-    const rowCenter = (rect.top + rect.bottom) / 2;
-    const dist = Math.abs(rowCenter - centerY);
+    // Clear previous active states
+    rows.forEach(row => {
+      row.classList.remove('active');
+      row.classList.remove('active-center');
+    });
 
-    if (dist < minDistance) {
-      minDistance = dist;
-      closestRow = row;
-    }
-  });
+    // Find the closest row to the center
+    rows.forEach(row => {
+      const rect = row.getBoundingClientRect();
+      const rowCenter = (rect.top + rect.bottom) / 2;
+      const dist = Math.abs(rowCenter - centerY);
 
-  // If we found a row close enough to center
-  if (closestRow && minDistance <= tolerance) {
-    // Mark as active (for styling) and active-center (for click handling)
-    closestRow.classList.add('active');
-    closestRow.classList.add('active-center');
-
-    // Handle featured lot animation
-    if (closestRow.classList.contains('info-row--featured')) {
-      const index = closestRow.dataset.index;
-
-      if (!animatedFeaturedLots.has(index)) {
-        void closestRow.offsetWidth; // Trigger reflow
-        closestRow.classList.add('animate-featured');
-        animatedFeaturedLots.add(index);
-      } else {
-        closestRow.classList.add('animate-featured');
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestRow = row;
       }
-    }
+    });
 
-    // Sync polygon hover with centered row
-    const baseIndex = parseInt(closestRow.dataset.baseIndex, 10);
-    if (!isNaN(baseIndex)) {
-      const lot = baseLots[baseIndex];
-      if (lot && window.map && lotData) {
-        const mapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
-        if (mapIndex !== -1) {
-          if (hoveredId !== null && hoveredId !== mapIndex) {
-            map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+    // If we found a row close enough to center, apply active states
+    if (closestRow && minDistance <= tolerance) {
+      // Mark as active (for styling) and active-center (for click handling)
+      closestRow.classList.add('active');
+      closestRow.classList.add('active-center');
+
+      // Handle featured lot animation
+      if (closestRow.classList.contains('info-row--featured')) {
+        const index = closestRow.dataset.index;
+
+        if (!animatedFeaturedLots.has(index)) {
+          void closestRow.offsetWidth; // Trigger reflow
+          closestRow.classList.add('animate-featured');
+          animatedFeaturedLots.add(index);
+        } else {
+          closestRow.classList.add('animate-featured');
+        }
+      }
+
+      // Sync polygon hover with the centered row
+      const baseIndex = parseInt(closestRow.dataset.baseIndex, 10);
+      if (!isNaN(baseIndex)) {
+        const lot = baseLots[baseIndex];
+        if (lot && window.map && lotData) {
+          const mapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
+          if (mapIndex !== -1) {
+            if (hoveredId !== null && hoveredId !== mapIndex) {
+              map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+            }
+            map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
+            hoveredId = mapIndex;
           }
-          map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
-          hoveredId = mapIndex;
         }
       }
     }
-  }
+  }, 150); // Delay to ensure layout is stabilized
 }
+
 
 function clampScroll() {
   if (baseLots.length === 0 || lots.length === 0 || clampCooldown) return;
@@ -5022,7 +5031,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }, 100);
 });
- 
+  
 // Listen for auth changes once Supabase is ready
 const setupAuthListener = setInterval(function() {
   if (window.supabaseClient && typeof window.supabaseClient.auth.onAuthStateChange === 'function') {
