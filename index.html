@@ -1363,6 +1363,25 @@ body.fonts-loaded .side-length-label {
     padding: 0 !important; /* optional: full-bleed photo */
   }  
  
+ /* Add to your existing CSS */
+#cycleAvailabilityBtn.sold {
+  background-color: #f44336;
+}
+#cycleAvailabilityBtn.sold svg {
+  stroke: white;
+}
+#cycleAvailabilityBtn.featured {
+  background-color: #ff8400;
+}
+#cycleAvailabilityBtn.featured svg {
+  stroke: white;
+}
+#cycleAvailabilityBtn.available {
+  background-color: #fff;
+}
+#cycleAvailabilityBtn.available svg {
+  stroke: #333;
+}
 
   </style>
 </head>
@@ -1523,6 +1542,17 @@ body.fonts-loaded .side-length-label {
   </svg>
 </button>
 
+<!-- AVAILABILITY BUTTON -->
+<button id="cycleAvailabilityBtn" class="gps-button" title="Cycle Availability" style="bottom: 260px;">
+  <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M23 4L23 10 17 10"></path>
+    <path d="M1 20L1 14 7 14"></path>
+    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10"></path>
+    <path d="M20.49 15a9 9 0 01-14.85 3.36L1 14"></path>
+  </svg>
+</button>
+
+
 <script>
   const btn = document.querySelector('.whatsapp-button');
 
@@ -1609,8 +1639,9 @@ ctaobserver.observe(ctaToaster, {
                   const lot = lotData[updatedIndex];
 
                   // Update local lot data
-                  lot.availability = (payload.new?.availability ?? '').toLowerCase();
-                  lot.featured = lot.availability === 'featured';
+const raw = payload.new?.availability ?? lot.availability ?? 'Available';
+lot.availability = raw;                              // "Available" | "Sold" | "Featured"
+lot.featured = raw.toLowerCase() === 'featured';
                   lot.rSize = payload.new?.rSize ?? lot.rSize;
                   lot.millones = payload.new?.millones ?? lot.millones;
 
@@ -2171,9 +2202,9 @@ function parseLots(text) {
       data.forEach(row => {
         const lot = lotData.find(l => l.name === row.lot_name);
         if (lot) {
-          const value = (row.availability ?? '').toLowerCase();
-          lot.featured = value === 'featured';
-          lot.availability = value === 'sold' ? 'sold' : 'available';
+const raw = row.availability ?? 'Available';        // preserve title case if you want it in DB
+lot.availability = raw;                             // e.g. "Available", "Sold", "Featured"
+lot.featured = raw.toLowerCase() === 'featured';    // keep a boolean too (for legacy paths)
           lot.rSize = row.rSize;
           lot.millones = row.millones;
         }
@@ -2854,15 +2885,14 @@ if (backBtnEl) backBtnEl.style.display = '';
   headerSection.className = 'detail-header';
 
   // Tag row with LALALAND SELECTION and nickname
-  headerSection.innerHTML = `
-    <div class="tag-row">
-      ${lot.availability === 'Featured' ? '<div class="featured-tag">SELECCIÓN LALALAND</div>' : ''}
-      <div class="nickname">${detailData.nickname || 'Lot ' + lot.number}</div>
-    </div>
-    ${detailData.subtitle ? `
-      <div class="subtitle-row">${detailData.subtitle}</div>
-    ` : ''}
-  `;
+const state = (lot.availability ?? '').toString().toLowerCase();
+headerSection.innerHTML = `
+  <div class="tag-row">
+    ${state === 'featured' ? '<div class="featured-tag">SELECCIÓN LALALAND</div>' : ''}
+    <div class="nickname">${detailData.nickname || 'Lot ' + lot.number}</div>
+  </div>
+  ${detailData.subtitle ? `<div class="subtitle-row">${detailData.subtitle}</div>` : ''}
+`;
   detailContainer.appendChild(headerSection);
 
   // ===== PRICE/SIZE ROW =====
@@ -3021,8 +3051,9 @@ function render() {
     row.dataset.index = i;
     row.dataset.baseIndex = lot.clone ? -1 : baseLots.findIndex(l => l.number === lot.number);
 
-    const isFeatured = lot.availability === 'Featured';
-    const isSold = lot.availability === 'Sold';
+const state = (lot.availability ?? '').toString();
+const isFeatured = state.toLowerCase() === 'featured';
+const isSold     = state.toLowerCase() === 'sold';
 
     if (isFeatured) row.classList.add('info-row--featured');
 
@@ -4357,6 +4388,257 @@ PS.openPinInModal = async function (pin) {
 })(); 
 </script>
 
+ 
+
+<script>
+// CYCLE AVAILABILITY — standalone + persistent selection
+(() => {
+  const btn = document.getElementById('cycleAvailabilityBtn');
+  if (!btn) return;
+
+  const ORDER = ['Available', 'Sold', 'Featured'];
+  let selectedLotName = null; // persists selection inside this block
+
+  const $modalInfo = document.getElementById('modalInfo');
+  const $lotModal  = document.getElementById('lotModal');
+
+  // --- utils ---
+  const normalize = v => (v || '').toString().trim().toLowerCase();
+const nextState = cur => {
+  const i = ORDER.findIndex(v => v.toLowerCase() === normalize(cur));
+  return ORDER[(i + 1) % ORDER.length];
+};
+ 
+  // Which lot is currently "selected" (detail view or centered row)
+  function getSelectedLot() {
+    // detail view path
+    if (window.isDetailOpen && typeof window.currentLotIndex === 'number' && window.currentLotIndex >= 0) {
+      const mapLot = lotData[window.currentLotIndex];
+      if (!mapLot) return null;
+      const n = extractLotNumber(mapLot.name);
+      const baseIdx = baseLots.findIndex(b => b.number === n);
+      return { lotName: mapLot.name, number: n, baseIndex: baseIdx };
+    }
+    // list-centered path
+    const centered = document.querySelector('.info-row.active-center');
+    if (!centered) return null;
+    const baseIndex = parseInt(centered.dataset.baseIndex, 10);
+    if (isNaN(baseIndex) || baseIndex < 0) return null;
+    const base = baseLots[baseIndex];
+    if (!base) return null;
+    const mapIdx = lotData.findIndex(l => extractLotNumber(l.name) === base.number);
+    if (mapIdx === -1) return null;
+    return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
+  }
+
+  // Visual re-apply: map hover + list active row + button color
+  function setSelectedLotByName(lotName, { scroll = false } = {}) {
+    if (!lotName) return;
+    selectedLotName = lotName;
+
+    // Map hover
+    const mapIndex = lotData.findIndex(l => l.name === lotName);
+    if (mapIndex !== -1 && map?.getSource('lots-final')) {
+      if (window.hoveredId !== null && window.hoveredId !== mapIndex) {
+        try { map.setFeatureState({ source:'lots-final', id: window.hoveredId }, { hover:false }); } catch {}
+      }
+      try { map.setFeatureState({ source:'lots-final', id: mapIndex }, { hover:true }); } catch {}
+      window.hoveredId = mapIndex;
+    }
+
+    // List center/highlight
+    const num = extractLotNumber(lotName);
+    const baseIndex = baseLots.findIndex(b => b.number === num);
+    if (baseIndex !== -1) {
+      if (scroll) {
+        // use your existing helper if present
+        if (typeof scrollToBaseIndex === 'function') scrollToBaseIndex(baseIndex, true);
+      } else {
+        const actualIndex = baseIndex + (window.cloneCount ?? 5);
+        const row = document.querySelector(`.info-row[data-index="${actualIndex}"]`);
+        if (row) {
+          document.querySelectorAll('.info-row').forEach(r => r.classList.remove('active','active-center'));
+          row.classList.add('active','active-center');
+        }
+      }
+    }
+
+    // Button color reflects current state
+    const lot = lotData[mapIndex];
+    const state = normalize(lot?.availability || 'available');
+    btn.classList.remove('sold','featured');
+    if (state === 'sold') btn.classList.add('sold');
+    if (state === 'featured') btn.classList.add('featured');
+  }
+
+  // Keep button color synced when UI changes
+  function syncButtonToCurrentSelection() {
+    const sel = getSelectedLot();
+    const name = sel?.lotName ?? selectedLotName;
+    if (!name) { btn.classList.remove('sold','featured'); return; }
+    setSelectedLotByName(name, { scroll:false });
+  }
+
+  // --- local data updates (optimistic) ---
+function applyAvailabilityLocal(lotName, state) {
+  const norm = (state ?? '').toString().toLowerCase();
+
+  const idx = lotData.findIndex(l => l.name === lotName);
+  if (idx !== -1) {
+    lotData[idx].availability = state;            // keep whatever casing you want to store
+    lotData[idx].featured = (norm === 'featured'); // boolean stays correct
+  }
+
+  const num = extractLotNumber(lotName);
+  const bi = baseLots.findIndex(b => b.number === num);
+  if (bi !== -1) baseLots[bi].availability = state;
+
+  lots.forEach(l => { if (l.number === num) l.availability = state; });
+}
+
+  // --- layers refresh ---
+function refreshFeaturedLayer() {
+  const src = map.getSource('featured-lots');
+  const feats = lotData
+    .filter(l => (l.featured === true) || ((l.availability ?? '').toString().toLowerCase() === 'featured'))
+    .map(featuredPolygonFeature);
+
+  if (src) {
+    src.setData({ type: 'FeatureCollection', features: feats });
+  } else {
+    addFeaturedLotsLayer(map);
+  }
+}
+
+  function refreshSoldLayer() {
+    const srcId = 'sold-x';
+    const layerId = 'sold-x-layer';
+    const soldLots = lotData.filter(l => normalize(l.availability) === 'sold');
+    const features = soldLots.flatMap(makeXFeatures);
+
+    if (!map.getSource(srcId)) {
+      map.addSource(srcId, { type: 'geojson', data: { type:'FeatureCollection', features }});
+      map.addLayer({
+        id: layerId, type:'line', source: srcId,
+        paint: { 'line-color':'white', 'line-width':1, 'line-opacity':1 }
+      });
+    } else {
+      map.getSource(srcId).setData({ type:'FeatureCollection', features });
+    }
+  }
+
+  function refreshVisuals() {
+    refreshFeaturedLayer();
+    refreshSoldLayer();
+    if (typeof render === 'function') render();
+  }
+
+  // --- auth guard ---
+  async function ensureLoggedIn() {
+    const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
+    return !!(session && session.user);
+  }
+
+  // --- main action ---
+  async function cycleSelectedLotAvailability() {
+    if (!window.supabaseClient) { window.showToaster?.('Supabase no está listo.'); return; }
+    if (!(await ensureLoggedIn())) { document.getElementById('modal-login-btn')?.click(); return; }
+
+    const sel = getSelectedLot();
+    if (!sel) { window.showToaster?.('Selecciona un lote primero.'); return; }
+
+    const i = lotData.findIndex(l => l.name === sel.lotName);
+    if (i === -1) return;
+
+    const current = normalize(lotData[i].availability || 'available');
+    const next = nextState(current);
+
+    // remember selection and do optimistic update
+    selectedLotName = sel.lotName;
+    applyAvailabilityLocal(sel.lotName, next);
+    // button feedback
+    btn.classList.remove('sold','featured');
+    if (next === 'sold') btn.classList.add('sold');
+    if (next === 'featured') btn.classList.add('featured');
+
+    try {
+      const { error } = await window.supabaseClient
+        .from('lots')
+        .update({ availability: next })
+        .eq('lot_name', sel.lotName);
+      if (error) throw error;
+
+      const LABELS = { available:'disponible', sold:'vendido', featured:'destacado' };
+      window.showToaster?.(`Estado actualizado a "${LABELS[next] || next}".`);
+ 
+      refreshVisuals();
+      // ✅ keep same lot selected after DOM/layers refresh
+      setSelectedLotByName(selectedLotName, { scroll:false });
+    } catch (e) {
+      console.error(e);
+      window.showToaster?.('No se pudo guardar. Revirtiendo…');
+  
+      // revert
+      applyAvailabilityLocal(sel.lotName, current);
+      btn.classList.remove('sold','featured');
+      if (current === 'sold') btn.classList.add('sold');
+      if (current === 'featured') btn.classList.add('featured');
+
+      refreshVisuals();
+      setSelectedLotByName(selectedLotName, { scroll:false });
+    }
+  }
+
+  // --- wiring ---
+  btn.addEventListener('click', cycleSelectedLotAvailability);
+
+  // Keep button/selection in sync on modal changes & scroll
+  const obs = new MutationObserver(() => syncButtonToCurrentSelection());
+  if ($lotModal) obs.observe($lotModal, { attributes:true, attributeFilter:['class','style'] });
+
+  $modalInfo?.addEventListener('scroll', () => {
+    clearTimeout(window.__syncBtnTO);
+    window.__syncBtnTO = setTimeout(syncButtonToCurrentSelection, 120);
+  });
+
+  // Patch highlightCenter to remember selection automatically
+  const origHighlightCenter = window.highlightCenter;
+  if (typeof origHighlightCenter === 'function') {
+    window.highlightCenter = function(...args) {
+      const r = origHighlightCenter.apply(this, args);
+      const sel = getSelectedLot();
+      if (sel?.lotName) selectedLotName = sel.lotName;
+      syncButtonToCurrentSelection();
+      return r;
+    };
+  }
+
+  // Patch showDetailViewForLot to capture selection when opening detail
+  const origShowDetail = window.showDetailViewForLot;
+  if (typeof origShowDetail === 'function') {
+    window.showDetailViewForLot = async function(index, ...rest) {
+      const res = await origShowDetail.apply(this, [index, ...rest]);
+      try {
+        const lot = lots[index];
+        const mapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
+        if (mapData?.name) selectedLotName = mapData.name;
+        syncButtonToCurrentSelection();
+      } catch {}
+      return res;
+    };
+  }
+ 
+  // Patch render so selection is restored after list re-render
+  const origRender = window.render;
+  if (typeof origRender === 'function') {
+    window.render = function(...args) {
+      const res = origRender.apply(this, args);
+      if (selectedLotName) setSelectedLotByName(selectedLotName, { scroll:false });
+      return res;
+    };
+  }
+})();
+</script>
 
 
   
