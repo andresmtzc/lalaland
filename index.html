@@ -1671,12 +1671,19 @@ lot.featured = raw.toLowerCase() === 'featured';
   });
 </script>
 
+
+
+
 <script>
 // ===== AUTH (Supabase OTP) =====
 (() => {
   const $  = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const toast = (m) => { try { window.showToaster?.(m); } catch {} };
+
+  // ⬇️ Keep toaster behavior exactly as before (one-arg showToaster)
+  const toast = (m) => {
+    try { window.showToaster?.(m); } catch { /* no-op to match previous behavior */ }
+  };
 
   // Header controls (only where that header includes .auth-controls)
   const btnLogin  = $('#modal-login-btn');
@@ -1690,8 +1697,8 @@ lot.featured = raw.toLowerCase() === 'featured';
   const otpInp    = $('#auth-otp');
   const otpEmail  = $('#otp-email-display');
 
-  const reqBtn    = $('#request-otp');
-  const verifyBtn = $('#verify-otp');
+  const reqBtn     = $('#request-otp');
+  const verifyBtn  = $('#verify-otp');
   const cancelBtns = $$('#auth-cancel'); // support cancel buttons in both steps
 
   let pendingEmail = '';
@@ -1741,6 +1748,7 @@ lot.featured = raw.toLowerCase() === 'featured';
 
   // Cancel buttons (both steps)
   cancelBtns.forEach(btn => {
+    btn.type = 'button';
     btn.addEventListener('click', () => {
       resetModalState();
       hideAuthModal();
@@ -1763,10 +1771,38 @@ lot.featured = raw.toLowerCase() === 'featured';
     }
   });
 
-  // --- Send OTP ---
+  // ======================
+  // ALLOWLIST CHECK (editors.email)
+  // ======================
+  async function isEmailAllowed(email) {
+    const { data, error } = await window.supabaseClient
+      .from('editors')
+      .select('id') // minimal; don't expose lot_table
+      .eq('email', email.trim().toLowerCase())
+      .maybeSingle();
+
+    if (error) {
+      console.error('Allowlist check failed:', error);
+      return false; // fail closed
+    }
+    return !!data; // true if found
+  }
+
+  // --- Send OTP (guarded by allowlist) ---
   reqBtn && reqBtn.addEventListener('click', async () => {
     const email = (emailInp?.value || '').trim().toLowerCase();
     if (!email) { toast('Escribe tu email.'); return; }
+
+    // Basic email format guard
+    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!looksLikeEmail) { toast('Ingresa un correo válido.'); return; }
+
+    // Allowlist guard against public.editors(email)
+    const allowed = await isEmailAllowed(email);
+    if (!allowed) {
+      toast('Este correo no está autorizado.');
+      return;
+    }
 
     try {
       const { error } = await window.supabaseClient.auth.signInWithOtp({
@@ -1776,7 +1812,7 @@ lot.featured = raw.toLowerCase() === 'featured';
       if (error) throw error;
 
       pendingEmail = email;
-      if (otpEmail) otpEmail.textContent = email; // shows “Código enviado a …”
+      if (otpEmail) otpEmail.textContent = email; // “Código enviado a …”
       if (stepEmail) stepEmail.style.display = 'none';
       if (stepOtp)   stepOtp.style.display   = 'block';
       setTimeout(() => otpInp?.focus(), 0);
@@ -1838,8 +1874,6 @@ lot.featured = raw.toLowerCase() === 'featured';
   }
 })();
 </script>
-
-
 
 
  
@@ -3676,6 +3710,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Open lot modal in "info mode" (replace list content)
 infoBtn.addEventListener('click', () => {
   infoMode = true;              // existing line
+  document.getElementById('lotModal')?.classList.remove('pin-mode');
   openModal();                  // existing line
 
   // Mark this instance of the modal as “info-mode”
@@ -3696,6 +3731,9 @@ infoBtn.addEventListener('click', () => {
   `;
   customScrollbar.style.display = 'none';
 });
+
+
+
 
  
   // Hide/show floating buttons while modal is expanded (mobile)
