@@ -3196,65 +3196,61 @@ const animatedFeaturedLots = new Set();
 
 
 function highlightCenter(isClamping = false) {
-    const rows = [...modalInfo.querySelectorAll('.info-row')];
-    const containerRect = modalInfo.getBoundingClientRect();
-    const centerY = containerRect.top + containerRect.height / 2;
+  const rows = [...modalInfo.querySelectorAll('.info-row')];
+  const containerRect = modalInfo.getBoundingClientRect();
+  const centerY = containerRect.top + containerRect.height / 2;
+  const tolerance = containerRect.height * 0.1;
+  let closestRow = null;
+  let minDistance = Infinity;
+
+  rows.forEach(row => {
+    const rect = row.getBoundingClientRect();
+    const rowCenter = (rect.top + rect.bottom) / 2;
+    const dist = Math.abs(rowCenter - centerY);
     
-    let closestRow = null;
-    let minDistance = Infinity;
-
-    // Clear previous active states
-    rows.forEach(row => {
-        row.classList.remove('active');
-        row.classList.remove('active-center');
-    });
-
-    // Find the closest row to the center
-    rows.forEach(row => {
-        const rect = row.getBoundingClientRect();
-        const rowCenter = (rect.top + rect.bottom) / 2;
-        const dist = Math.abs(rowCenter - centerY);
-
-        if (dist < minDistance) {
-            minDistance = dist;
-            closestRow = row;
-        }
-    });
-
-    // NO TOLERANCE CHECK - always highlight closest row (like Function 1)
-    if (closestRow) {
-        closestRow.classList.add('active');
-        closestRow.classList.add('active-center');
-
-        // Handle featured lot animation
-        if (closestRow.classList.contains('info-row--featured')) {
-            const index = closestRow.dataset.index;
-            if (!animatedFeaturedLots.has(index)) {
-                void closestRow.offsetWidth;
-                closestRow.classList.add('animate-featured');
-                animatedFeaturedLots.add(index);
-            } else {
-                closestRow.classList.add('animate-featured');
-            }
-        }
-
-        // Sync polygon hover with the centered row
-        const baseIndex = parseInt(closestRow.dataset.baseIndex, 10);
-        if (!isNaN(baseIndex)) {
-            const lot = baseLots[baseIndex];
-            if (lot && window.map && lotData) {
-                const mapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
-                if (mapIndex !== -1) {
-                    if (hoveredId !== null && hoveredId !== mapIndex) {
-                        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-                    }
-                    map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
-                    hoveredId = mapIndex;
-                }
-            }
-        }
+      row.classList.remove('active');
+      row.classList.remove('active-center');
+    
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestRow = row;
     }
+  });
+
+  if (closestRow && minDistance <= tolerance) {
+    closestRow.classList.add('active');
+    closestRow.classList.add('active-center');
+
+    if (closestRow.classList.contains('info-row--featured')) {
+      const index = closestRow.dataset.index;
+      if (!animatedFeaturedLots.has(index)) {
+        void closestRow.offsetWidth;
+        closestRow.classList.add('animate-featured');
+        animatedFeaturedLots.add(index);
+      } else {
+        closestRow.classList.add('animate-featured');
+      }
+    }
+
+    // === ADDED: Map sync logic ===
+    const baseIndex = parseInt(closestRow.dataset.baseIndex, 10);
+    if (!isNaN(baseIndex)) {
+      const lot = baseLots[baseIndex];
+      if (lot && window.map && lotData) {
+        const mapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
+        if (mapIndex !== -1) {
+          if (hoveredId !== null && hoveredId !== mapIndex) {
+            map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+          }
+          map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
+          hoveredId = mapIndex;
+        }
+      }
+    }
+    // === END ADDED ===
+  }
 }
+  
 
 
 
@@ -3548,6 +3544,8 @@ function openModal(lot = null, baseIndex = 0) {
 
 
 function closeModal() {
+
+  
   const modal = document.getElementById('lotModal');
   if (!modal) return;
 
