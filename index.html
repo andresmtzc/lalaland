@@ -1480,7 +1480,7 @@ body.fonts-loaded .side-length-label {
 <!-- Unit controls (left) -->
 <div class="unit-controls" id="unitControls">
   <button class="unit-btn" data-mode="num" title="Lote #">#</button>
-  <button class="unit-btn" data-mode="area" title="m²">m<sup>2</sup></button>
+ <!-- <button class="unit-btn" data-mode="area" title="m²">m<sup>2</sup></button> -->
   <button class="unit-btn" data-mode="price" title="Precio">$</button>
 </div>
 
@@ -3612,29 +3612,148 @@ function openModal(lot = null, baseIndex = 0) {
   }
 }
 
-  (() => {
+
+
+
+//LOT UNIT CONTROLS SORTING
+//LOT UNIT CONTROLS SORTING
+(() => {
   const modal = document.getElementById('lotModal');
   const unitControls = document.getElementById('unitControls');
   if (!modal || !unitControls) return;
 
-  let currentMode = modal.dataset.mode || 'num';  // Default to 'num' (Lot Number)
+  let currentMode = modal.dataset.mode || 'num';
   const btns = Array.from(unitControls.querySelectorAll('.unit-btn'));
+  
+  // Store the original complete list to restore from
+  let originalBaseLots = [];
 
-  // Set the default active mode and apply 'active' class to the Lot Number button
-  function setMode(mode) {
+  // Function to get the complete list (fetch if needed)
+  async function getCompleteLotList() {
+    if (originalBaseLots.length === 0) {
+      try {
+        await window.supabaseReady;
+        const { data, error } = await window.supabaseClient
+          .from('lots')
+          .select('lot_name, rSize, millones, availability, nickname, subtitle, image')
+          .order('lot_name', { ascending: true });
+        
+        if (!error && data) {
+          originalBaseLots = data.map(lot => ({
+            number: extractLotNumber(lot.lot_name),
+            size: lot.rSize,
+            price: lot.millones,
+            availability: lot.availability,
+            detailData: {
+              nickname: lot.nickname,
+              subtitle: lot.subtitle,
+              image: lot.image
+            }
+          }));
+        }
+      } catch (error) {
+        console.error('Error fetching complete lot list:', error);
+      }
+    }
+    return [...originalBaseLots];
+  }
+
+  // Function to sort the lots based on mode
+  async function sortLots(mode) {
+    if (!baseLots.length) return;
+    
+    let sortedLots;
+    
+    // For lot number view, show all lots (including sold)
+    if (mode === 'num') {
+      sortedLots = await getCompleteLotList();
+      sortedLots.sort((a, b) => a.number - b.number);
+    } 
+    // For area or price, filter out sold lots
+    else {
+      // Start with the complete list and filter
+      const completeList = await getCompleteLotList();
+      sortedLots = completeList.filter(lot => {
+        const status = (lot.availability || '').toString().toLowerCase();
+        return status !== 'sold';
+      });
+      
+      if (mode === 'area') {
+        // Sort by size (largest to smallest)
+        sortedLots.sort((a, b) => {
+          const sizeA = parseFloat(a.size) || 0;
+          const sizeB = parseFloat(b.size) || 0;
+          return sizeB - sizeA;
+        });
+      } else if (mode === 'price') {
+        // Sort by price (highest to lowest)
+        sortedLots.sort((a, b) => {
+          const priceA = parseFloat(a.price) || 0;
+          const priceB = parseFloat(b.price) || 0;
+          return priceB - priceA;
+        });
+      }
+    }
+    
+    // Update the baseLots array with sorted data
+    baseLots = sortedLots;
+    
+    // Update the display
+    updateLotsArray();
+    render();
+    
+    // Scroll to the correct position (accounting for clones)
+    if (modalInfo && lots.length > 0) {
+      const rowHeight = modalInfo.scrollHeight / lots.length;
+      const bufferHeight = rowHeight * cloneCount;
+      modalInfo.scrollTop = bufferHeight;
+      
+      highlightCenter();
+      updateScrollbar();
+    }
+  }
+
+  // Function to set the display mode
+  async function setMode(mode) {
     currentMode = mode;
     modal.dataset.mode = mode;
 
-    // Toggle the active state
+    // Toggle the active button styling
     btns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-
-    updateContentForMode(mode);
-    sortList(mode);  // Apply sorting when the mode changes
+    
+    // Sort the lots based on the selected mode
+    await sortLots(mode);
   }
 
-  // Initialize the default mode
-  setMode(currentMode);
+  // Attach event listeners to each button to toggle mode
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      setMode(btn.dataset.mode);
+    });
+  });
+
+  // Initialize by setting the correct mode and highlight the default button
+  // We need to wait for the initial data to load first
+  if (isDataLoaded) {
+    // Store the original list once data is loaded
+    originalBaseLots = [...baseLots];
+    setMode(currentMode);
+  } else {
+    // Wait for data to load, then initialize
+    const checkDataLoaded = setInterval(() => {
+      if (isDataLoaded) {
+        clearInterval(checkDataLoaded);
+        originalBaseLots = [...baseLots];
+        setMode(currentMode);
+      }
+    }, 100);
+  }
 })();
+
+
+
+
+
 
 function closeModal() {
 
