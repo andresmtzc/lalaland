@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lalaland Lots Map</title>
+  <title>Lalaland</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700" rel="stylesheet">
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
@@ -2739,7 +2739,7 @@ const detailPrice = document.getElementById('detailPrice');
 const detailAvailability = document.getElementById('detailAvailability');
 const headerLotNumber = document.getElementById('headerLotNumber');
 
-const cloneCount = 5;
+let cloneCount = 5;
 let baseLots = [];
 let lots = [];
 let isDataLoaded = false;
@@ -3195,61 +3195,56 @@ const animatedFeaturedLots = new Set();
 
 
 
+
 function highlightCenter(isClamping = false) {
   const rows = [...modalInfo.querySelectorAll('.info-row')];
-  const containerRect = modalInfo.getBoundingClientRect();
-  const centerY = containerRect.top + containerRect.height / 2;
-  const tolerance = containerRect.height * 0.1;
-  let closestRow = null;
-  let minDistance = Infinity;
-
-  rows.forEach(row => {
-    const rect = row.getBoundingClientRect();
-    const rowCenter = (rect.top + rect.bottom) / 2;
-    const dist = Math.abs(rowCenter - centerY);
+  
+  // Get current scroll position to find which row is at the center
+  const scrollTop = modalInfo.scrollTop;
+  const rowHeight = modalInfo.scrollHeight / rows.length;
+  
+  // Find the index of the row at the center of the viewport
+  const centerScrollPos = scrollTop + (modalInfo.clientHeight / 2);
+  const targetCenterIndex = Math.floor(centerScrollPos / rowHeight);
+  
+  // Update classes
+  rows.forEach((row, index) => {
+    row.classList.remove('active', 'center');
     
-      row.classList.remove('active');
-      row.classList.remove('active-center');
-    
-    if (dist < minDistance) {
-      minDistance = dist;
-      closestRow = row;
-    }
-  });
+    if (index === targetCenterIndex) {
+      row.classList.add('active', 'center');
 
-  if (closestRow && minDistance <= tolerance) {
-    closestRow.classList.add('active');
-    closestRow.classList.add('active-center');
-
-    if (closestRow.classList.contains('info-row--featured')) {
-      const index = closestRow.dataset.index;
-      if (!animatedFeaturedLots.has(index)) {
-        void closestRow.offsetWidth;
-        closestRow.classList.add('animate-featured');
-        animatedFeaturedLots.add(index);
-      } else {
-        closestRow.classList.add('animate-featured');
-      }
-    }
-
-    // === ADDED: Map sync logic ===
-    const baseIndex = parseInt(closestRow.dataset.baseIndex, 10);
-    if (!isNaN(baseIndex)) {
-      const lot = baseLots[baseIndex];
-      if (lot && window.map && lotData) {
-        const mapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
-        if (mapIndex !== -1) {
-          if (hoveredId !== null && hoveredId !== mapIndex) {
-            map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-          }
-          map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
-          hoveredId = mapIndex;
+      if (row.classList.contains('info-row--featured')) {
+        const featureIndex = row.dataset.index;
+        if (!animatedFeaturedLots.has(featureIndex)) {
+          void row.offsetWidth;
+          row.classList.add('animate-featured');
+          animatedFeaturedLots.add(featureIndex);
+        } else {
+          row.classList.add('animate-featured');
         }
       }
+
+      // === Map sync logic ===
+      const baseIndex = parseInt(row.dataset.baseIndex, 10);
+      if (!isNaN(baseIndex)) {
+        const lot = baseLots[baseIndex];
+        if (lot && window.map && lotData) {
+          const mapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
+          if (mapIndex !== -1) {
+            if (hoveredId !== null && hoveredId !== mapIndex) {
+              map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+            }
+            map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
+            hoveredId = mapIndex;
+          }
+        }
+      }
+      // === END Map sync ===
     }
-    // === END ADDED ===
-  }
+  });
 }
+
   
 
 
@@ -4481,7 +4476,7 @@ const nextState = cur => {
       return { lotName: mapLot.name, number: n, baseIndex: baseIdx };
     }
     // list-centered path
-    const centered = document.querySelector('.info-row.active-center');
+    const centered = document.querySelector('.info-row.center');
     if (!centered) return null;
     const baseIndex = parseInt(centered.dataset.baseIndex, 10);
     if (isNaN(baseIndex) || baseIndex < 0) return null;
@@ -4490,7 +4485,7 @@ const nextState = cur => {
     const mapIdx = lotData.findIndex(l => extractLotNumber(l.name) === base.number);
     if (mapIdx === -1) return null;
     return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
-  }
+  } 
 
   // Visual re-apply: map hover + list active row + button color
   function setSelectedLotByName(lotName, { scroll = false } = {}) {
@@ -4518,8 +4513,8 @@ const nextState = cur => {
         const actualIndex = baseIndex + (window.cloneCount ?? 5);
         const row = document.querySelector(`.info-row[data-index="${actualIndex}"]`);
         if (row) {
-          document.querySelectorAll('.info-row').forEach(r => r.classList.remove('active','active-center'));
-          row.classList.add('active','active-center');
+          document.querySelectorAll('.info-row').forEach(r => r.classList.remove('active','center'));
+          row.classList.add('active','center');
         }
       }
     }
