@@ -3616,7 +3616,6 @@ function openModal(lot = null, baseIndex = 0) {
 
 
 //LOT UNIT CONTROLS SORTING
-//LOT UNIT CONTROLS SORTING
 (() => {
   const modal = document.getElementById('lotModal');
   const unitControls = document.getElementById('unitControls');
@@ -3625,74 +3624,52 @@ function openModal(lot = null, baseIndex = 0) {
   let currentMode = modal.dataset.mode || 'num';
   const btns = Array.from(unitControls.querySelectorAll('.unit-btn'));
   
-  // Store the original complete list to restore from
-  let originalBaseLots = [];
-
-  // Function to get the complete list (fetch if needed)
-  async function getCompleteLotList() {
-    if (originalBaseLots.length === 0) {
-      try {
-        await window.supabaseReady;
-        const { data, error } = await window.supabaseClient
-          .from('lots')
-          .select('lot_name, rSize, millones, availability, nickname, subtitle, image')
-          .order('lot_name', { ascending: true });
-        
-        if (!error && data) {
-          originalBaseLots = data.map(lot => ({
-            number: extractLotNumber(lot.lot_name),
-            size: lot.rSize,
-            price: lot.millones,
-            availability: lot.availability,
-            detailData: {
-              nickname: lot.nickname,
-              subtitle: lot.subtitle,
-              image: lot.image
-            }
-          }));
-        }
-      } catch (error) {
-        console.error('Error fetching complete lot list:', error);
-      }
-    }
-    return [...originalBaseLots];
-  }
+  // Store original unsorted list
+  let unsortedBaseLots = [];
 
   // Function to sort the lots based on mode
-  async function sortLots(mode) {
+  function sortLots(mode) {
     if (!baseLots.length) return;
+    
+    // Save original order if not already saved
+    if (unsortedBaseLots.length === 0) {
+      unsortedBaseLots = [...baseLots];
+    }
     
     let sortedLots;
     
-    // For lot number view, show all lots (including sold)
-    if (mode === 'num') {
-      sortedLots = await getCompleteLotList();
-      sortedLots.sort((a, b) => a.number - b.number);
-    } 
-    // For area or price, filter out sold lots
-    else {
-      // Start with the complete list and filter
-      const completeList = await getCompleteLotList();
-      sortedLots = completeList.filter(lot => {
-        const status = (lot.availability || '').toString().toLowerCase();
-        return status !== 'sold';
-      });
-      
-      if (mode === 'area') {
-        // Sort by size (largest to smallest)
-        sortedLots.sort((a, b) => {
+    switch(mode) {
+      case 'num':
+        // Restore original order (lot number ascending)
+        sortedLots = [...unsortedBaseLots].sort((a, b) => a.number - b.number);
+        break;
+        
+      case 'area':
+        // Sort by size (largest to smallest) - filter out sold lots
+        sortedLots = unsortedBaseLots.filter(lot => {
+          const status = (lot.availability || '').toString().toLowerCase();
+          return status !== 'sold';
+        }).sort((a, b) => {
           const sizeA = parseFloat(a.size) || 0;
           const sizeB = parseFloat(b.size) || 0;
           return sizeB - sizeA;
         });
-      } else if (mode === 'price') {
-        // Sort by price (highest to lowest)
-        sortedLots.sort((a, b) => {
+        break;
+        
+      case 'price':
+        // Sort by price (highest to lowest) - filter out sold lots
+        sortedLots = unsortedBaseLots.filter(lot => {
+          const status = (lot.availability || '').toString().toLowerCase();
+          return status !== 'sold';
+        }).sort((a, b) => {
           const priceA = parseFloat(a.price) || 0;
           const priceB = parseFloat(b.price) || 0;
           return priceB - priceA;
         });
-      }
+        break;
+        
+      default:
+        return;
     }
     
     // Update the baseLots array with sorted data
@@ -3714,7 +3691,7 @@ function openModal(lot = null, baseIndex = 0) {
   }
 
   // Function to set the display mode
-  async function setMode(mode) {
+  function setMode(mode) {
     currentMode = mode;
     modal.dataset.mode = mode;
 
@@ -3722,7 +3699,7 @@ function openModal(lot = null, baseIndex = 0) {
     btns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
     
     // Sort the lots based on the selected mode
-    await sortLots(mode);
+    sortLots(mode);
   }
 
   // Attach event listeners to each button to toggle mode
@@ -3732,22 +3709,9 @@ function openModal(lot = null, baseIndex = 0) {
     });
   });
 
-  // Initialize by setting the correct mode and highlight the default button
-  // We need to wait for the initial data to load first
-  if (isDataLoaded) {
-    // Store the original list once data is loaded
-    originalBaseLots = [...baseLots];
-    setMode(currentMode);
-  } else {
-    // Wait for data to load, then initialize
-    const checkDataLoaded = setInterval(() => {
-      if (isDataLoaded) {
-        clearInterval(checkDataLoaded);
-        originalBaseLots = [...baseLots];
-        setMode(currentMode);
-      }
-    }, 100);
-  }
+  // Initialize by setting the correct mode
+  // But don't sort on initial load - wait until user clicks a button
+  btns.forEach(b => b.classList.toggle('active', b.dataset.mode === currentMode));
 })();
 
 
@@ -5288,8 +5252,8 @@ const setupAuthListener = setInterval(function() {
   }
 }, 100);
 </script>
-
-
+ 
+ 
  
 
 
