@@ -2010,19 +2010,37 @@ map.on('moveend', () => {
             }
           });
           // ===== END NEW HANDLERS =====
-          map.on('click', (e) => {
-            // Don't close if clicking inside modal
-            if (e.originalEvent?.target.closest('#lotModal')) return;
-            
-            // Only close if clicking outside polygons
-            const features = map.queryRenderedFeatures(e.point, { 
-              layers: ['lots-final-click'] 
-            });
-            
-            if (features.length === 0) {
-              closeModal();
-            }
-          });
+map.on('click', (e) => {
+  // Don't close if clicking inside modal
+  if (e.originalEvent?.target.closest('#lotModal')) return;
+  
+  // Check if clicking on lots OR cones
+  const lotFeatures = map.queryRenderedFeatures(e.point, { 
+    layers: ['lots-final-click'] 
+  });
+  
+  const coneFeatures = map.queryRenderedFeatures(e.point, { 
+    layers: ['ps-cones-fill'] 
+  });
+  
+  // If clicking on a lot while pin modal is open
+  if (lotFeatures.length > 0 && document.getElementById('lotModal').classList.contains('pin-mode')) {
+    const feature = lotFeatures[0];
+    const lotName = feature.properties.name;
+    const lot = lotData.find(l => l.name === lotName);
+    if (lot) {
+      // Switch from pin modal to lot modal without closing
+      document.getElementById('lotModal').classList.remove('pin-mode');
+      openModal(lot); // This will handle the transition to lot view
+      return; // Exit early
+    }
+  }
+  
+  // Only close if clicking outside both lots and cones
+  if (lotFeatures.length === 0 && coneFeatures.length === 0) {
+    closeModal();
+  }
+});
 
           // Add hover outline layer after lots-final source is ready
           map.addLayer({
@@ -4075,40 +4093,61 @@ function hideCalendlyEmbed() {
   }
 
   function _ensureConeLayer() {
-    if (!window.map) return;
-    if (!map.getSource('ps-cones')) {
-      map.addSource('ps-cones', { type: 'geojson', data: PS._coneFC });
-    }
-    if (!map.getLayer('ps-cones-fill')) {
-      map.addLayer({
-        id: 'ps-cones-fill',
-        type: 'fill',
-        source: 'ps-cones',
-        paint: {
-          'fill-color': '#ff8400',
-          'fill-opacity': 0 // start hidden
-        },
-        filter: ['==', ['get', 'role'], 'cone']
-      });
-    } 
-    if (!map.getLayer('ps-cones-outline')) {
-      map.addLayer({
-        id: 'ps-cones-outline',
-        type: 'line',
-        source: 'ps-cones',
-        paint: {
-          'line-color': '#ff8400',
-          'line-width': 0, 
-          'line-opacity': 0 // start hidden
-        },
-        filter: ['==', ['get', 'role'], 'cone']
-      });
-    }
-    try {
-      map.setPaintProperty('ps-cones-fill', 'fill-opacity-transition', { duration: 250 });
-      map.setPaintProperty('ps-cones-outline', 'line-opacity-transition', { duration: 250 });
-    } catch {}
+  if (!window.map) return;
+  if (!map.getSource('ps-cones')) {
+    map.addSource('ps-cones', { type: 'geojson', data: PS._coneFC });
   }
+  if (!map.getLayer('ps-cones-fill')) {
+    map.addLayer({
+      id: 'ps-cones-fill',
+      type: 'fill',
+      source: 'ps-cones',
+      paint: {
+        'fill-color': '#ff8400',
+        'fill-opacity': 0 // start hidden
+      },
+      filter: ['==', ['get', 'role'], 'cone']
+    });
+  } 
+  if (!map.getLayer('ps-cones-outline')) {
+    map.addLayer({
+      id: 'ps-cones-outline',
+      type: 'line',
+      source: 'ps-cones',
+      paint: {
+        'line-color': '#ff8400',
+        'line-width': 0, 
+        'line-opacity': 0 // start hidden
+      },
+      filter: ['==', ['get', 'role'], 'cone']
+    });
+  }
+  
+  // Add click handler for cone layer (only once)
+  if (!map._coneClickHandlerAdded) {
+    map.on('click', 'ps-cones-fill', (e) => {
+      if (e.features.length > 0) {
+        const pinId = e.features[0].properties.pin_id;
+        const pinRec = PS.markers.get(pinId);
+        if (pinRec) {
+          // Prevent the event from bubbling to the map's click handler
+          e.preventDefault();
+          e.originalEvent.stopPropagation();
+          e.originalEvent.stopImmediatePropagation();
+          
+          PS.openPinInModal(pinRec.pin);
+        }
+      }
+    });
+    
+    map._coneClickHandlerAdded = true;
+  }
+  
+  try {
+    map.setPaintProperty('ps-cones-fill', 'fill-opacity-transition', { duration: 250 });
+    map.setPaintProperty('ps-cones-outline', 'line-opacity-transition', { duration: 250 });
+  } catch {}
+}
 
   function _syncConesSource() {
     const src = map?.getSource('ps-cones');
@@ -4269,6 +4308,10 @@ function hideCalendlyEmbed() {
       ev.stopPropagation();
       PS.openPinInModal(pin);
     });
+
+
+
+    
   };
 
   // programmatic setter (update heading + persist + refresh cone)
@@ -5253,7 +5296,7 @@ const setupAuthListener = setInterval(function() {
 }, 100);
 </script>
  
- 
+  
  
 
 
