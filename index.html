@@ -1982,16 +1982,15 @@ map = new mapboxgl.Map({
         await window.supabaseReady;
         await enrichLotsWithAvailability();
 
-        animateLots(map, () => {
-          addCustomImage(map);
-          addFeaturedLotsLayer(map);
-
-  setTimeout(() => {
+animateLots(map, () => {
+  addCustomImage(map);
+  addFeaturedLotsLayer(map, () => {
+    // This callback runs AFTER featured lots have completed initial pulse
     if (window.__LL_PINS__?._revealMarkers) {
       window.__LL_PINS__._revealMarkers();
-    }
-  }, 500); // Small delay to ensure featured lots are fully initialized
-
+    } 
+  });    
+ 
           // ===== NEW INTERACTION HANDLERS =====
           // Clear labels on any map movement
 map.on('moveend', () => {
@@ -2705,9 +2704,12 @@ function featuredPolygonFeature(lot) {
 }
 
 // Main function — still named as requested
-function addFeaturedLotsLayer(map) {
+function addFeaturedLotsLayer(map, onComplete) {
   const featuredLots = lotData.filter(lot => lot.featured);
-  if (featuredLots.length === 0) return;
+  if (featuredLots.length === 0) {
+    if (onComplete) onComplete();
+    return;
+  }
 
   const features = featuredLots.map(featuredPolygonFeature);
 
@@ -2753,15 +2755,16 @@ map.addLayer({
   }
 }, insertBefore); // will insert after lots-final
 
-  startPolygonPulse(map);
+  startPolygonPulse(map, onComplete);
 }
 
 
 
 
 // Animate each polygon's opacity independently
-function startPolygonPulse(map) {
+function startPolygonPulse(map, onComplete) {
   let t = 0;
+  let initialPulseCompleted = false;
 
   function frame() {
     t += 0.05;
@@ -2784,7 +2787,14 @@ function startPolygonPulse(map) {
       })
     };
 
-    source.setData(updated); // ⬅ update feature data with new opacities
+    source.setData(updated);
+    
+    // Check if initial pulse is complete (after ~2 seconds)
+    if (!initialPulseCompleted && t > 0.1) { // ~2 seconds at 0.05 increment
+      initialPulseCompleted = true;
+      if (onComplete) onComplete();
+    }
+    
     requestAnimationFrame(frame);
   }
 
