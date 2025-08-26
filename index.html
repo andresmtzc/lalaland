@@ -1986,64 +1986,136 @@ animateLots(map, () => {
   addCustomImage(map);
   addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
+    
+    // ===== MOVE ALL MAP INTERACTIONS HERE =====
+    // Clear labels on any map movement
+    map.on('moveend', () => {
+      // Only clear labels if we are NOT in detail view
+      if (!isDetailOpen && currentLabeledLot) {
+        removeSideLengthLabels();
+      }
+    });
+
+    // Clear labels when clicking a different lot
+    map.on('click', 'lots-final-click', (e) => {
+      if (e.features.length > 0) {
+        const newLot = lotData.find(l => l.name === e.features[0].properties.name);
+        if (currentLabeledLot && currentLabeledLot.name !== newLot.name) {
+          removeSideLengthLabels();
+        }
+      }
+    });
+
+    // Main map click handler
+    map.on('click', (e) => {
+      // Don't close if clicking inside modal
+      if (e.originalEvent?.target.closest('#lotModal')) return;
+      
+      // Check if clicking on lots OR cones
+      const lotFeatures = map.queryRenderedFeatures(e.point, { 
+        layers: ['lots-final-click'] 
+      });
+      
+      const coneFeatures = map.queryRenderedFeatures(e.point, { 
+        layers: ['ps-cones-fill'] 
+      });
+      
+      // If clicking on a lot while pin modal is open
+      if (lotFeatures.length > 0 && document.getElementById('lotModal').classList.contains('pin-mode')) {
+        const feature = lotFeatures[0];
+        const lotName = feature.properties.name;
+        const lot = lotData.find(l => l.name === lotName);
+        if (lot) {
+          // Switch from pin modal to lot modal without closing
+          document.getElementById('lotModal').classList.remove('pin-mode');
+          openModal(lot); // This will handle the transition to lot view
+          return; // Exit early
+        }
+      }
+      
+      // Only close if clicking outside both lots and cones
+      if (lotFeatures.length === 0 && coneFeatures.length === 0) {
+        closeModal();
+      }
+    });
+
+    // Add hover outline layer after lots-final source is ready
+    map.addLayer({
+      id: 'lots-hover-outline',
+      type: 'line',
+      source: 'lots-final',
+      paint: {
+        'line-color': '#fff',
+        'line-width': 3,
+        'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
+      }
+    });
+
+    console.log('Ready to open initial modal, lotData:', lotData);
+    openInitialLotModal();
+
+    map.on('mousemove', 'lots-final-click', (e) => {
+      // Don't override modal highlight
+      if (document.getElementById('lotModal').classList.contains('show')) return;
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+      }
+      if (e.features.length > 0) {
+        hoveredId = e.features[0].id;
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: true });
+      }
+    });
+
+    map.on('mouseleave', 'lots-final-click', () => {
+      if (document.getElementById('lotModal').classList.contains('show')) return;
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+      }
+      hoveredId = null;
+    });
+
+    // Click on lot: open modal (no persistent selection highlight)
+    map.on('click', 'lots-final-click', (e) => {
+      if (e.features.length === 0) return;
+
+      const feature = e.features[0];
+      const lotName = feature.properties.name;
+      const lot = lotData.find(l => l.name === lotName);
+      if (!lot) return;
+
+      // Remove previous hover
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+        hoveredId = null;
+      }
+
+      // Find index
+      const idx = lotData.findIndex(l => l.name === lot.name);
+      if (idx !== -1) {
+        map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
+        hoveredId = idx;
+        currentLotIndex = idx;
+      }
+
+      openModal(lot);
+
+      // 🟩 Scroll modal to correct lot
+      const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+      if (baseIndex !== -1) {
+        scrollToBaseIndex(baseIndex, true);
+      }
+    });
+    // ===== END MAP INTERACTIONS =====
+
+    // ===== REVEAL PINS VERY LAST =====
     if (window.__LL_PINS__?._revealMarkers) {
+      console.log('Revealing photo pins LAST after everything else');
       window.__LL_PINS__._revealMarkers();
     }
   });
-}); 
+});
  
-        // ===== NEW INTERACTION HANDLERS =====
-        // Clear labels on any map movement
-        map.on('moveend', () => {
-          // Only clear labels if we are NOT in detail view
-          if (!isDetailOpen && currentLabeledLot) {
-            removeSideLengthLabels();
-          }
-        });
-
-        // Clear labels when clicking a different lot
-        map.on('click', 'lots-final-click', (e) => {
-          if (e.features.length > 0) {
-            const newLot = lotData.find(l => l.name === e.features[0].properties.name);
-            if (currentLabeledLot && currentLabeledLot.name !== newLot.name) {
-              removeSideLengthLabels();
-            }
-          }
-        });
-
-        // Main map click handler
-        map.on('click', (e) => {
-          // Don't close if clicking inside modal
-          if (e.originalEvent?.target.closest('#lotModal')) return;
-          
-          // Check if clicking on lots OR cones
-          const lotFeatures = map.queryRenderedFeatures(e.point, { 
-            layers: ['lots-final-click'] 
-          });
-          
-          const coneFeatures = map.queryRenderedFeatures(e.point, { 
-            layers: ['ps-cones-fill'] 
-          });
-          
-          // If clicking on a lot while pin modal is open
-          if (lotFeatures.length > 0 && document.getElementById('lotModal').classList.contains('pin-mode')) {
-            const feature = lotFeatures[0];
-            const lotName = feature.properties.name;
-            const lot = lotData.find(l => l.name === lotName);
-            if (lot) {
-              // Switch from pin modal to lot modal without closing
-              document.getElementById('lotModal').classList.remove('pin-mode');
-              openModal(lot); // This will handle the transition to lot view
-              return; // Exit early
-            }
-          }
-          
-          // Only close if clicking outside both lots and cones
-          if (lotFeatures.length === 0 && coneFeatures.length === 0) {
-            closeModal();
-          }
-        });
-        // ===== END NEW HANDLERS =====
+        
 
         // Add hover outline layer after lots-final source is ready
         map.addLayer({
@@ -2757,10 +2829,10 @@ function addFeaturedLotsLayer(map, onComplete) {
       'line-width': 2,
       'line-opacity': 1
     }
-  }, 'lots-final-click'); 
-
-  // Start animation with completion callback
-  startPolygonPulse(map, onComplete);
+  }, 'lots-final-click');  
+ 
+  // Start animation with completion callback 
+  startPolygonPulse(map, onComplete); 
 }
 
 
