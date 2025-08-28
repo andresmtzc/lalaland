@@ -5401,15 +5401,73 @@ const setupAuthListener = setInterval(function() {
 </script>
  
   
+
 <script>
+  //DRIVE NAVIGATION HERE
+  // Minimal logger to prove clicks reach JS even if the button is re-rendered later
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('#driveBtn');
+    if (!btn) return;
+    console.log('[driveBtn] click captured');
+    // forward to your existing handler:
+    if (typeof onDriveClick === 'function') {
+      onDriveClick({ preventDefault: () => {}, currentTarget: btn });
+    }
+  });
 
-  //DRIVE NAVGATION HERE
 
+// ========== GLOBAL CLICK HANDLER ==========
+async function onDriveClick(e) {
+  if (e && e.preventDefault) e.preventDefault();
+
+  const btn = (e && e.currentTarget) || document.getElementById('driveBtn');
+  if (!btn) return;
+
+  // Pre-open a tab so fallback won't be popup-blocked
+  let navWin = null;
+  try { navWin = window.open('', '_blank'); } catch (_) {}
+
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.style.opacity = '0.7';
+
+  try {
+    window.toast && toast('Obteniendo tu ubicación…');
+    await window.ensureAccessToken();
+    await window.waitForMapReady();
+
+    const origin = await window.getUserLocation();
+    window.toast && toast('Calculando ruta…');
+
+    const info = await window.drawDirections(origin, window.DEST_LNG_LAT);
+    const mins = Math.round(info.duration / 60);
+    const km   = (info.distance / 1000).toFixed(1);
+    window.toast && toast(`Ruta lista: ${mins} min • ${km} km`);
+
+    if (navWin && !navWin.closed) navWin.close();   // success: close unused tab
+  } catch (err) {
+    console.error('[drive] failed:', err);
+    window.toast && toast('No pude calcular la ruta. Abriendo mapas…');
+    window.openInNativeMaps(window.DEST_LNG_LAT, navWin);  // navigate pre-opened tab
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '';
+  }
+}
+
+// OPTIONAL: event delegation so late-inserted buttons work too
+document.addEventListener('click', (e) => {
+  const btn = e.target && e.target.closest && e.target.closest('#driveBtn');
+  if (!btn) return;
+  onDriveClick({ preventDefault: () => {}, currentTarget: btn });
+});
+</script>
+
+<script>
 (() => {
   // ===== CONFIG =====
-  const DEST_LNG_LAT = [-100.315, 25.676]; // [lng, lat] — set your destination here
+  const DEST_LNG_LAT = [-100.315, 25.676]; // [lng, lat]
 
-  // Unique IDs to avoid layer/source collisions
   const IDS = {
     ROUTE_SRC: 'drive-route-src',
     ROUTE_LYR: 'drive-route-lyr',
@@ -5425,35 +5483,7 @@ const setupAuthListener = setInterval(function() {
     btn.dataset.bound = '1';
   }
 
-  // ---- Click handler ----
-  async function onDriveClick(e) {
-    e.preventDefault();
-    const btn = e.currentTarget;
-    btn.disabled = true; btn.style.opacity = '0.7';
-
-    try {
-      toast && toast('Obteniendo tu ubicación…');
-      await ensureAccessToken();
-      await waitForMapReady();
-
-      const origin = await getUserLocation();             // might throw
-      toast && toast('Calculando ruta…');
-
-      const info = await drawDirections(origin, DEST_LNG_LAT); // might throw
-      const mins = Math.round(info.duration / 60);
-      const km   = (info.distance / 1000).toFixed(1);
-      toast && toast(`Ruta lista: ${mins} min • ${km} km`);
-
-    } catch (err) {
-      console.error('[drive] failed:', err);
-      toast && toast('No pude calcular la ruta. Abriendo mapas…');
-      openInNativeMaps(DEST_LNG_LAT);
-    } finally {
-      btn.disabled = false; btn.style.opacity = '';
-    }
-  }
-
-  // ---- Ensure Mapbox token (uses your mapbox.txt if needed) ----
+  // ---- Ensure Mapbox token ----
   async function ensureAccessToken() {
     if (window.mapboxgl && mapboxgl.accessToken) return;
     const r = await fetch('https://lalaland.mx/mapbox.txt', { cache: 'no-store' });
@@ -5467,7 +5497,7 @@ const setupAuthListener = setInterval(function() {
       const tick = () => {
         if (window.map) {
           if (map.loaded && map.loaded()) return resolve(map);
-          map.once('load', () => resolve(map));
+          try { map.once('load', () => resolve(map)); } catch (_) {}
         } else {
           setTimeout(tick, 60);
         }
@@ -5517,7 +5547,6 @@ const setupAuthListener = setInterval(function() {
       }]
     };
 
-    // Add/update the route layer
     if (map.getSource(IDS.ROUTE_SRC)) {
       map.getSource(IDS.ROUTE_SRC).setData(geo);
     } else {
@@ -5527,20 +5556,14 @@ const setupAuthListener = setInterval(function() {
         type: 'line',
         source: IDS.ROUTE_SRC,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': '#1b73e8',
-          'line-width': 5,
-          'line-opacity': 0.9
-        }
+        paint: { 'line-color': '#1b73e8', 'line-width': 5, 'line-opacity': 0.9 }
       });
-      try { map.moveLayer(IDS.ROUTE_LYR); } catch(_) {}
+      try { map.moveLayer(IDS.ROUTE_LYR); } catch (_) {}
     }
 
-    // Origin & destination (circle layers)
     ensurePointLayer(IDS.ORIGIN, fromLngLat, '#0a7');
     ensurePointLayer(IDS.DEST,   toLngLat,   '#e81b4f');
 
-    // Fit to route
     const [minX, minY, maxX, maxY] = simpleBbox(route.geometry.coordinates);
     map.fitBounds([[minX, minY], [maxX, maxY]], { padding: 60, duration: 800 });
 
@@ -5566,11 +5589,11 @@ const setupAuthListener = setInterval(function() {
           'circle-stroke-color': '#fff'
         }
       });
-      try { map.moveLayer(id); } catch(_) {}
+      try { map.moveLayer(id); } catch (_) {}
     }
   }
 
-  // Compute bbox from LineString coords ([lng,lat][])
+  // Compute bbox from LineString coords
   function simpleBbox(coords) {
     let minX= Infinity, minY= Infinity, maxX= -Infinity, maxY= -Infinity;
     for (let i=0;i<coords.length;i++) {
@@ -5581,12 +5604,18 @@ const setupAuthListener = setInterval(function() {
     return [minX,minY,maxX,maxY];
   }
 
-  // Fallback deep link
-  function openInNativeMaps([lng, lat]) {
+  // Fallback deep link (accepts pre-opened window)
+  function openInNativeMaps([lng, lat], navWin) {
     const isApple = /iPad|iPhone|Macintosh/.test(navigator.userAgent);
     const google = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
     const apple  = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
-    window.open(isApple ? apple : google, '_blank');
+    const url    = isApple ? apple : google;
+
+    if (navWin && !navWin.closed) {
+      navWin.location.href = url;
+    } else {
+      window.open(url, '_blank');
+    }
   }
 
   // Bind on DOM ready (and again when map loads, just in case)
@@ -5595,7 +5624,15 @@ const setupAuthListener = setInterval(function() {
   } else {
     bindDriveBtn();
   }
-  if (window.map) { try { map.once('load', bindDriveBtn); } catch(_) {} }
+  if (window.map) { try { map.once('load', bindDriveBtn); } catch (_) {} }
+
+  // ====== EXPOSE WHAT THE GLOBAL HANDLER NEEDS ======
+  window.DEST_LNG_LAT      = DEST_LNG_LAT;
+  window.ensureAccessToken = ensureAccessToken;
+  window.waitForMapReady   = waitForMapReady;
+  window.getUserLocation   = getUserLocation;
+  window.drawDirections    = drawDirections;
+  window.openInNativeMaps  = openInNativeMaps;
 })();
 </script>
 
