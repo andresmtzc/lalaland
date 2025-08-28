@@ -5406,241 +5406,40 @@ const setupAuthListener = setInterval(function() {
   
 
 <script>
-// ---------- tiny timeout helper ----------
-function withTimeout(promise, ms, label='operation') {
-  return Promise.race([
-    promise,
-    new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout: ${label}`)), ms))
-  ]);
-}
-
-// ---------- GLOBAL CLICK HANDLER (uses helpers exposed by the IIFE) ----------
-async function onDriveClick(e) {
-  if (e && e.preventDefault) e.preventDefault();
-
-  const btn = (e && e.currentTarget) || document.getElementById('driveBtn');
-  if (!btn) return;
-
-  // Pre-open a tab (keeps user-gesture alive) and avoid a blank page
-  let navWin = null;
-  try {
-    navWin = window.open('', '_blank');
-    if (navWin && navWin.document) {
-      navWin.document.write('<!doctype html><title>Navegando…</title><body style="font-family:sans-serif;padding:16px;">Preparando ruta…</body>');
-    }
-  } catch(_) {}
-
-  if (btn.disabled) return;
-  btn.disabled = true; btn.style.opacity = '0.7';
-
-  try {
-    console.log('[drive] ensureAccessToken');
-    await withTimeout(window.ensureAccessToken(), 5000, 'access token');
-
-    console.log('[drive] waitForMapReady');
-    await withTimeout(window.waitForMapReady(), 10000, 'map load');
-
-    console.log('[drive] geolocation');
-    const origin = await withTimeout(window.getUserLocation(), 8000, 'geolocation');
-
-    console.log('[drive] directions');
-    const info = await withTimeout(window.drawDirections(origin, window.DEST_LNG_LAT), 10000, 'directions');
-
-    const mins = Math.round(info.duration / 60);
-    const km   = (info.distance / 1000).toFixed(1);
-    window.toast && toast(`Ruta lista: ${mins} min • ${km} km`);
-
-    if (navWin && !navWin.closed) navWin.close();   // success → close unused tab
-  } catch (err) {
-    console.error('[drive] failed:', err && err.message ? err.message : err);
-    window.toast && toast('No pude calcular la ruta. Abriendo mapas…');
-    window.openInNativeMaps(window.DEST_LNG_LAT, navWin);   // navigate the pre-opened tab
-  } finally {
-    btn.disabled = false; btn.style.opacity = '';
-  }
-}
-
-// ---------- Event delegation (one listener, works even if the button is inserted later) ----------
-document.addEventListener('click', (e) => {
-  const btn = e.target && e.target.closest && e.target.closest('#driveBtn');
-  if (!btn) return;
-  console.log('[driveBtn] click captured');
-  onDriveClick({ preventDefault: () => {}, currentTarget: btn });
-});
-</script>
-<script>
+  //DRIVE NAVIGATION HERE
 (() => {
-  // ===== CONFIG =====
-  const DEST_LNG_LAT = [-100.315, 25.676]; // [lng, lat] — change to your destination
+  const DEST_LNG_LAT = [-100.15994, 25.461823]; // [lng, lat] — change to your destination
 
-  const IDS = {
-    ROUTE_SRC: 'drive-route-src',
-    ROUTE_LYR: 'drive-route-lyr',
-    ORIGIN:    'drive-origin',
-    DEST:      'drive-dest'
-  };
-
-  // ---- Ensure Mapbox token ----
-  async function ensureAccessToken() {
-    if (window.mapboxgl && mapboxgl.accessToken) return;
-    // If you fetch your token remotely, ensure CORS is allowed:
-    const r = await fetch('https://lalaland.mx/mapbox.txt', { cache: 'no-store' });
-    if (r.ok) mapboxgl.accessToken = (await r.text()).trim();
-    if (!mapboxgl.accessToken) throw new Error('Missing Mapbox token');
-  }
-
-  // ---- Wait until global `map` exists and is loaded (with a hard timeout) ----
-  function waitForMapReady() {
-    return new Promise((resolve, reject) => {
-      const started = Date.now();
-      const tick = () => {
-        if (window.map) {
-          if (map.loaded && map.loaded()) return resolve(map);
-          try { map.once('load', () => resolve(map)); } catch(_) {}
-          return; // resolve on 'load'
-        }
-        if (Date.now() - started > 10000) return reject(new Error('Map never initialized'));
-        setTimeout(tick, 100);
-      };
-      tick();
-    });
-  }
-
-  // ---- Geolocation helper ----
-  function getUserLocation() {
-    return new Promise((resolve, reject) => {
-      if (!('geolocation' in navigator)) return reject(new Error('No geolocation API'));
-      navigator.geolocation.getCurrentPosition(
-        p => resolve([p.coords.longitude, p.coords.latitude]),
-        e => reject(e),
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-      );
-    });
-  }
-
-  // ---- Call Directions API and render route ----
-  async function drawDirections(fromLngLat, toLngLat, profile='mapbox/driving-traffic') {
-    const token = mapboxgl.accessToken;
-    const url = new URL(`https://api.mapbox.com/directions/v5/${profile}/${fromLngLat[0]},${fromLngLat[1]};${toLngLat[0]},${toLngLat[1]}`);
-    url.search = new URLSearchParams({
-      access_token: token,
-      alternatives: 'false',
-      geometries: 'geojson',
-      overview: 'full',
-      steps: 'true',
-      language: 'es',
-      annotations: 'distance'
-    });
-
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error(`Directions error: ${res.status}`);
-    const data = await res.json();
-    const route = data.routes && data.routes[0];
-    if (!route) throw new Error('No route found');
-
-    const geo = {
-      type: 'FeatureCollection',
-      features: [{
-        type: 'Feature',
-        properties: { distance: route.distance, duration: route.duration },
-        geometry: route.geometry
-      }]
-    };
-
-    if (map.getSource(IDS.ROUTE_SRC)) {
-      map.getSource(IDS.ROUTE_SRC).setData(geo);
-    } else {
-      map.addSource(IDS.ROUTE_SRC, { type: 'geojson', data: geo });
-      map.addLayer({
-        id: IDS.ROUTE_LYR,
-        type: 'line',
-        source: IDS.ROUTE_SRC,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#1b73e8', 'line-width': 5, 'line-opacity': 0.9 }
-      });
-      try { map.moveLayer(IDS.ROUTE_LYR); } catch(_) {}
-    }
-
-    ensurePointLayer(IDS.ORIGIN, fromLngLat, '#0a7');
-    ensurePointLayer(IDS.DEST,   toLngLat,   '#e81b4f');
-
-    const [minX, minY, maxX, maxY] = simpleBbox(route.geometry.coordinates);
-    map.fitBounds([[minX, minY], [maxX, maxY]], { padding: 60, duration: 800 });
-
-    return { distance: route.distance, duration: route.duration };
-  }
-
-  function ensurePointLayer(id, lngLat, color) {
-    const srcId = id + '-src';
-    const fc = { type:'FeatureCollection', features:[{ type:'Feature', geometry:{ type:'Point', coordinates: lngLat }, properties:{} }] };
-
-    if (map.getSource(srcId)) {
-      map.getSource(srcId).setData(fc);
-    } else {
-      map.addSource(srcId, { type:'geojson', data: fc });
-      map.addLayer({
-        id,
-        type: 'circle',
-        source: srcId,
-        paint: {
-          'circle-radius': 7,
-          'circle-color': color,
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#fff'
-        }
-      });
-      try { map.moveLayer(id); } catch(_) {}
-    }
-  }
-
-  // Compute bbox from LineString coords
-  function simpleBbox(coords) {
-    let minX= Infinity, minY= Infinity, maxX= -Infinity, maxY= -Infinity;
-    for (let i=0;i<coords.length;i++) {
-      const [x,y] = coords[i];
-      if (x<minX) minX=x; if (y<minY) minY=y;
-      if (x>maxX) maxX=x; if (y>maxY) maxY=y;
-    }
-    return [minX,minY,maxX,maxY];
-  }
-
-  // Fallback deep link (accepts pre-opened window)
-  function openInNativeMaps([lng, lat], navWin) {
+  function openInNativeMaps([lng, lat]) {
     const isApple = /iPad|iPhone|Macintosh/.test(navigator.userAgent);
-    const google = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
-    const apple  = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
-    const url    = isApple ? apple : google;
-
-    if (navWin && !navWin.closed) {
-      navWin.location.href = url;
-    } else {
-      window.open(url, '_blank');
-    }
+    // URLs for Google Maps and Apple Maps navigation
+    const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving&dir_action=navigate`;
+    const appleMapsUrl  = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
+    const url = isApple ? appleMapsUrl : googleMapsUrl;
+    window.open(url, '_blank');
   }
 
-  // (Optional) bind directly if the button is already in the DOM
+  function onDriveClick(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    openInNativeMaps(DEST_LNG_LAT);
+  }
+
+  // Attach event listener to the button
   function bindDriveBtn() {
     const btn = document.getElementById('driveBtn');
     if (!btn || btn.dataset.bound) return;
     btn.addEventListener('click', onDriveClick);
     btn.dataset.bound = '1';
   }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', bindDriveBtn);
   } else {
     bindDriveBtn();
   }
-  if (window.map) { try { map.once('load', bindDriveBtn); } catch(_) {} }
-
-  // ====== expose what the global handler needs ======
-  window.DEST_LNG_LAT      = DEST_LNG_LAT;
-  window.ensureAccessToken = ensureAccessToken;
-  window.waitForMapReady   = waitForMapReady;
-  window.getUserLocation   = getUserLocation;
-  window.drawDirections    = drawDirections;
-  window.openInNativeMaps  = openInNativeMaps;
 })();
 </script>
+
 
 
 
