@@ -1976,13 +1976,16 @@ fetch('https://lalaland.mx/mapbox.txt')
     mapboxgl.accessToken = token.trim();
     const initialZoom = window.innerWidth >= 768 ? 17 : 16.45; // desktop vs mobile
 
-    map = new mapboxgl.Map({
+    const m = new mapboxgl.Map({
       container: 'map',
       style: 'mapbox://styles/mapbox/satellite-streets-v11',
       center: [-100.15994, 25.461823],
       zoom: initialZoom
     });
  
+    window.map = m;
+    map = m;
+
     map.doubleClickZoom.disable();
 
     map.on('load', async () => {
@@ -5403,70 +5406,72 @@ const setupAuthListener = setInterval(function() {
   
 
 <script>
-  //DRIVE NAVIGATION HERE
-  // Minimal logger to prove clicks reach JS even if the button is re-rendered later
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest && e.target.closest('#driveBtn');
-    if (!btn) return;
-    console.log('[driveBtn] click captured');
-    // forward to your existing handler:
-    if (typeof onDriveClick === 'function') {
-      onDriveClick({ preventDefault: () => {}, currentTarget: btn });
-    }
-  });
+// ---------- tiny timeout helper ----------
+function withTimeout(promise, ms, label='operation') {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout: ${label}`)), ms))
+  ]);
+}
 
-
-// ========== GLOBAL CLICK HANDLER ==========
+// ---------- GLOBAL CLICK HANDLER (uses helpers exposed by the IIFE) ----------
 async function onDriveClick(e) {
   if (e && e.preventDefault) e.preventDefault();
 
   const btn = (e && e.currentTarget) || document.getElementById('driveBtn');
   if (!btn) return;
 
-  // Pre-open a tab so fallback won't be popup-blocked
+  // Pre-open a tab (keeps user-gesture alive) and avoid a blank page
   let navWin = null;
-  try { navWin = window.open('', '_blank'); } catch (_) {}
+  try {
+    navWin = window.open('', '_blank');
+    if (navWin && navWin.document) {
+      navWin.document.write('<!doctype html><title>Navegando…</title><body style="font-family:sans-serif;padding:16px;">Preparando ruta…</body>');
+    }
+  } catch(_) {}
 
   if (btn.disabled) return;
-  btn.disabled = true;
-  btn.style.opacity = '0.7';
+  btn.disabled = true; btn.style.opacity = '0.7';
 
   try {
-    window.toast && toast('Obteniendo tu ubicación…');
-    await window.ensureAccessToken();
-    await window.waitForMapReady();
+    console.log('[drive] ensureAccessToken');
+    await withTimeout(window.ensureAccessToken(), 5000, 'access token');
 
-    const origin = await window.getUserLocation();
-    window.toast && toast('Calculando ruta…');
+    console.log('[drive] waitForMapReady');
+    await withTimeout(window.waitForMapReady(), 10000, 'map load');
 
-    const info = await window.drawDirections(origin, window.DEST_LNG_LAT);
+    console.log('[drive] geolocation');
+    const origin = await withTimeout(window.getUserLocation(), 8000, 'geolocation');
+
+    console.log('[drive] directions');
+    const info = await withTimeout(window.drawDirections(origin, window.DEST_LNG_LAT), 10000, 'directions');
+
     const mins = Math.round(info.duration / 60);
     const km   = (info.distance / 1000).toFixed(1);
     window.toast && toast(`Ruta lista: ${mins} min • ${km} km`);
 
-    if (navWin && !navWin.closed) navWin.close();   // success: close unused tab
+    if (navWin && !navWin.closed) navWin.close();   // success → close unused tab
   } catch (err) {
-    console.error('[drive] failed:', err);
+    console.error('[drive] failed:', err && err.message ? err.message : err);
     window.toast && toast('No pude calcular la ruta. Abriendo mapas…');
-    window.openInNativeMaps(window.DEST_LNG_LAT, navWin);  // navigate pre-opened tab
+    window.openInNativeMaps(window.DEST_LNG_LAT, navWin);   // navigate the pre-opened tab
   } finally {
-    btn.disabled = false;
-    btn.style.opacity = '';
+    btn.disabled = false; btn.style.opacity = '';
   }
 }
 
-// OPTIONAL: event delegation so late-inserted buttons work too
+// ---------- Event delegation (one listener, works even if the button is inserted later) ----------
 document.addEventListener('click', (e) => {
   const btn = e.target && e.target.closest && e.target.closest('#driveBtn');
   if (!btn) return;
+  console.log('[driveBtn] click captured');
   onDriveClick({ preventDefault: () => {}, currentTarget: btn });
 });
 </script>
-
 <script>
 (() => {
   // ===== CONFIG =====
-  const DEST_LNG_LAT = [-100.315, 25.676]; // [lng, lat]
+  const DEST_LNG_LAT = [-100.315, 25.676]; // [lng, lat] — change to your destination
 
   const IDS = {
     ROUTE_SRC: 'drive-route-src',
@@ -5475,32 +5480,27 @@ document.addEventListener('click', (e) => {
     DEST:      'drive-dest'
   };
 
-  // ---- Bind button once DOM is ready ----
-  function bindDriveBtn() {
-    const btn = document.getElementById('driveBtn');
-    if (!btn || btn.dataset.bound) return;
-    btn.addEventListener('click', onDriveClick);
-    btn.dataset.bound = '1';
-  }
-
   // ---- Ensure Mapbox token ----
   async function ensureAccessToken() {
     if (window.mapboxgl && mapboxgl.accessToken) return;
+    // If you fetch your token remotely, ensure CORS is allowed:
     const r = await fetch('https://lalaland.mx/mapbox.txt', { cache: 'no-store' });
     if (r.ok) mapboxgl.accessToken = (await r.text()).trim();
     if (!mapboxgl.accessToken) throw new Error('Missing Mapbox token');
   }
 
-  // ---- Wait until global `map` exists and is loaded ----
+  // ---- Wait until global `map` exists and is loaded (with a hard timeout) ----
   function waitForMapReady() {
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
       const tick = () => {
         if (window.map) {
           if (map.loaded && map.loaded()) return resolve(map);
-          try { map.once('load', () => resolve(map)); } catch (_) {}
-        } else {
-          setTimeout(tick, 60);
+          try { map.once('load', () => resolve(map)); } catch(_) {}
+          return; // resolve on 'load'
         }
+        if (Date.now() - started > 10000) return reject(new Error('Map never initialized'));
+        setTimeout(tick, 100);
       };
       tick();
     });
@@ -5558,7 +5558,7 @@ document.addEventListener('click', (e) => {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': '#1b73e8', 'line-width': 5, 'line-opacity': 0.9 }
       });
-      try { map.moveLayer(IDS.ROUTE_LYR); } catch (_) {}
+      try { map.moveLayer(IDS.ROUTE_LYR); } catch(_) {}
     }
 
     ensurePointLayer(IDS.ORIGIN, fromLngLat, '#0a7');
@@ -5589,7 +5589,7 @@ document.addEventListener('click', (e) => {
           'circle-stroke-color': '#fff'
         }
       });
-      try { map.moveLayer(id); } catch (_) {}
+      try { map.moveLayer(id); } catch(_) {}
     }
   }
 
@@ -5618,15 +5618,21 @@ document.addEventListener('click', (e) => {
     }
   }
 
-  // Bind on DOM ready (and again when map loads, just in case)
+  // (Optional) bind directly if the button is already in the DOM
+  function bindDriveBtn() {
+    const btn = document.getElementById('driveBtn');
+    if (!btn || btn.dataset.bound) return;
+    btn.addEventListener('click', onDriveClick);
+    btn.dataset.bound = '1';
+  }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', bindDriveBtn);
   } else {
     bindDriveBtn();
   }
-  if (window.map) { try { map.once('load', bindDriveBtn); } catch (_) {} }
+  if (window.map) { try { map.once('load', bindDriveBtn); } catch(_) {} }
 
-  // ====== EXPOSE WHAT THE GLOBAL HANDLER NEEDS ======
+  // ====== expose what the global handler needs ======
   window.DEST_LNG_LAT      = DEST_LNG_LAT;
   window.ensureAccessToken = ensureAccessToken;
   window.waitForMapReady   = waitForMapReady;
@@ -5635,6 +5641,7 @@ document.addEventListener('click', (e) => {
   window.openInNativeMaps  = openInNativeMaps;
 })();
 </script>
+
 
 
 
