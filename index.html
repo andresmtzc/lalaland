@@ -1598,7 +1598,7 @@ body.fonts-loaded .side-length-label {
 </svg>
 </button>
 
-<button id="driveButton" class="gps-button" title="Drive" style="bottom: 200px;">
+<button id="driveBtn" class="gps-button" title="Drive" style="bottom: 200px;">
 <svg viewBox="1.2 4 21.6 16" width="24" height="24" aria-hidden="true" style="color:#333">
   <path fill="currentColor" d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
 </svg>
@@ -5401,7 +5401,202 @@ const setupAuthListener = setInterval(function() {
 </script>
  
   
- 
+<script>
+(() => {
+  // ===== CONFIG =====
+  const DEST_LNG_LAT = [-100.315, 25.676]; // [lng, lat] — set your destination here
+
+  // Unique IDs to avoid layer/source collisions
+  const IDS = {
+    ROUTE_SRC: 'drive-route-src',
+    ROUTE_LYR: 'drive-route-lyr',
+    ORIGIN:    'drive-origin',
+    DEST:      'drive-dest'
+  };
+
+  // ---- Bind button once DOM is ready ----
+  function bindDriveBtn() {
+    const btn = document.getElementById('driveButton');
+    if (!btn || btn.dataset.bound) return;
+    btn.addEventListener('click', onDriveClick);
+    btn.dataset.bound = '1';
+  }
+
+  // ---- Click handler ----
+  async function onDriveClick(e) {
+    e.preventDefault();
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.style.opacity = '0.7';
+
+    try {
+      toast && toast('Obteniendo tu ubicación…');
+      await ensureAccessToken();
+      await waitForMapReady();
+
+      const origin = await getUserLocation();             // might throw
+      toast && toast('Calculando ruta…');
+
+      const info = await drawDirections(origin, DEST_LNG_LAT); // might throw
+      const mins = Math.round(info.duration / 60);
+      const km   = (info.distance / 1000).toFixed(1);
+      toast && toast(`Ruta lista: ${mins} min • ${km} km`);
+
+    } catch (err) {
+      console.error('[drive] failed:', err);
+      toast && toast('No pude calcular la ruta. Abriendo mapas…');
+      openInNativeMaps(DEST_LNG_LAT);
+    } finally {
+      btn.disabled = false; btn.style.opacity = '';
+    }
+  }
+
+  // ---- Ensure Mapbox token (uses your mapbox.txt if needed) ----
+  async function ensureAccessToken() {
+    if (window.mapboxgl && mapboxgl.accessToken) return;
+    const r = await fetch('https://lalaland.mx/mapbox.txt', { cache: 'no-store' });
+    if (r.ok) mapboxgl.accessToken = (await r.text()).trim();
+    if (!mapboxgl.accessToken) throw new Error('Missing Mapbox token');
+  }
+
+  // ---- Wait until global `map` exists and is loaded ----
+  function waitForMapReady() {
+    return new Promise(resolve => {
+      const tick = () => {
+        if (window.map) {
+          if (map.loaded && map.loaded()) return resolve(map);
+          map.once('load', () => resolve(map));
+        } else {
+          setTimeout(tick, 60);
+        }
+      };
+      tick();
+    });
+  }
+
+  // ---- Geolocation helper ----
+  function getUserLocation() {
+    return new Promise((resolve, reject) => {
+      if (!('geolocation' in navigator)) return reject(new Error('No geolocation API'));
+      navigator.geolocation.getCurrentPosition(
+        p => resolve([p.coords.longitude, p.coords.latitude]),
+        e => reject(e),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      );
+    });
+  }
+
+  // ---- Call Directions API and render route ----
+  async function drawDirections(fromLngLat, toLngLat, profile='mapbox/driving-traffic') {
+    const token = mapboxgl.accessToken;
+    const url = new URL(`https://api.mapbox.com/directions/v5/${profile}/${fromLngLat[0]},${fromLngLat[1]};${toLngLat[0]},${toLngLat[1]}`);
+    url.search = new URLSearchParams({
+      access_token: token,
+      alternatives: 'false',
+      geometries: 'geojson',
+      overview: 'full',
+      steps: 'true',
+      language: 'es',
+      annotations: 'distance'
+    });
+
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error(`Directions error: ${res.status}`);
+    const data = await res.json();
+    const route = data.routes && data.routes[0];
+    if (!route) throw new Error('No route found');
+
+    const geo = {
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        properties: { distance: route.distance, duration: route.duration },
+        geometry: route.geometry
+      }]
+    };
+
+    // Add/update the route layer
+    if (map.getSource(IDS.ROUTE_SRC)) {
+      map.getSource(IDS.ROUTE_SRC).setData(geo);
+    } else {
+      map.addSource(IDS.ROUTE_SRC, { type: 'geojson', data: geo });
+      map.addLayer({
+        id: IDS.ROUTE_LYR,
+        type: 'line',
+        source: IDS.ROUTE_SRC,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#1b73e8',
+          'line-width': 5,
+          'line-opacity': 0.9
+        }
+      });
+      try { map.moveLayer(IDS.ROUTE_LYR); } catch(_) {}
+    }
+
+    // Origin & destination (circle layers)
+    ensurePointLayer(IDS.ORIGIN, fromLngLat, '#0a7');
+    ensurePointLayer(IDS.DEST,   toLngLat,   '#e81b4f');
+
+    // Fit to route
+    const [minX, minY, maxX, maxY] = simpleBbox(route.geometry.coordinates);
+    map.fitBounds([[minX, minY], [maxX, maxY]], { padding: 60, duration: 800 });
+
+    return { distance: route.distance, duration: route.duration };
+  }
+
+  function ensurePointLayer(id, lngLat, color) {
+    const srcId = id + '-src';
+    const fc = { type:'FeatureCollection', features:[{ type:'Feature', geometry:{ type:'Point', coordinates: lngLat }, properties:{} }] };
+
+    if (map.getSource(srcId)) {
+      map.getSource(srcId).setData(fc);
+    } else {
+      map.addSource(srcId, { type:'geojson', data: fc });
+      map.addLayer({
+        id,
+        type: 'circle',
+        source: srcId,
+        paint: {
+          'circle-radius': 7,
+          'circle-color': color,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff'
+        }
+      });
+      try { map.moveLayer(id); } catch(_) {}
+    }
+  }
+
+  // Compute bbox from LineString coords ([lng,lat][])
+  function simpleBbox(coords) {
+    let minX= Infinity, minY= Infinity, maxX= -Infinity, maxY= -Infinity;
+    for (let i=0;i<coords.length;i++) {
+      const [x,y] = coords[i];
+      if (x<minX) minX=x; if (y<minY) minY=y;
+      if (x>maxX) maxX=x; if (y>maxY) maxY=y;
+    }
+    return [minX,minY,maxX,maxY];
+  }
+
+  // Fallback deep link
+  function openInNativeMaps([lng, lat]) {
+    const isApple = /iPad|iPhone|Macintosh/.test(navigator.userAgent);
+    const google = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+    const apple  = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
+    window.open(isApple ? apple : google, '_blank');
+  }
+
+  // Bind on DOM ready (and again when map loads, just in case)
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindDriveBtn);
+  } else {
+    bindDriveBtn();
+  }
+  if (window.map) { try { map.once('load', bindDriveBtn); } catch(_) {} }
+})();
+</script>
+
+
 
 
 </body>
