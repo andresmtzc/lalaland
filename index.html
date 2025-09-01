@@ -2007,7 +2007,7 @@ animateLots(map, () => {
   if (currentZoom < 18.8 && currentLabeledLot) {
     removeSideLengthLabels();
   }
-
+ 
     });
 
     // Clear labels when clicking a different lot
@@ -2175,36 +2175,48 @@ map.on('click', 'lots-final-click', (e) => {
         });
 
         // Click on lot: open modal (no persistent selection highlight)
-        map.on('click', 'lots-final-click', (e) => {
-          if (e.features.length === 0) return;
+map.on('click', 'lots-final-click', (e) => {
+  if (e.features.length === 0) return;
 
-          const feature = e.features[0];
-          const lotName = feature.properties.name;
-          const lot = lotData.find(l => l.name === lotName);
-          if (!lot) return;
+  const feature = e.features[0];
+  const lotName = feature.properties.name;
+  const lot = lotData.find(l => l.name === lotName);
+  if (!lot) return;
 
-          // Remove previous hover
-          if (hoveredId !== null) {
-            map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-            hoveredId = null;
-          }
+  // Remove previous hover
+  if (hoveredId !== null) {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+    hoveredId = null;
+  }
 
-          // Find index
-          const idx = lotData.findIndex(l => l.name === lot.name);
-          if (idx !== -1) {
-            map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
-            hoveredId = idx;
-            currentLotIndex = idx;
-          }
+  // Find index
+  const idx = lotData.findIndex(l => l.name === lot.name);
+  if (idx !== -1) {
+    map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
+    hoveredId = idx;
+    currentLotIndex = idx;
+  }
 
-          openModal(lot);
+  // Check if we're already in detail view with a different lot
+  const isSwitchingFromDetail = isDetailOpen && currentLabeledLot && currentLabeledLot.name !== lot.name;
+  
+  openModal(lot);
 
-          // 🟩 Scroll modal to correct lot
-          const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-          if (baseIndex !== -1) {
-            scrollToBaseIndex(baseIndex, true);
-          }
-        });
+  // If switching from detail view, remove old labels immediately
+  if (isSwitchingFromDetail) {
+    removeSideLengthLabels();
+  }
+
+  // 🟩 Scroll modal to correct lot
+  const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+  if (baseIndex !== -1) {
+    scrollToBaseIndex(baseIndex, true);
+  }
+
+  // Prevent the event from bubbling to avoid duplicate handling
+  e.preventDefault();
+  e.originalEvent.stopPropagation();
+});
       }); // loadRoad callback ends
     }); // map load ends
   }); // fetch token ends
@@ -2278,14 +2290,27 @@ function updateSideLengthPositions() {
 }
 
 function removeSideLengthLabels() {
+  // Remove all side length labels from the DOM
   sideLengthLabels.forEach(label => {
+    if (label && label.parentNode) {
+      label.parentNode.removeChild(label);
+    }
+  });
+  
+  // Clear the array
+  sideLengthLabels = [];
+  currentLabeledLot = null;
+  
+  // Remove the move event listener
+  map.off('move', updateSideLengthPositions);
+  
+  // Also remove any potentially orphaned labels
+  const allLabels = document.querySelectorAll('.side-length-label');
+  allLabels.forEach(label => {
     if (label.parentNode) {
       label.parentNode.removeChild(label);
     }
   });
-  sideLengthLabels = [];
-  currentLabeledLot = null;
-  map.off('move', updateSideLengthPositions);
 }
 </script>
 
@@ -3025,7 +3050,11 @@ function setupLotClickHandlers() {
 
   allRows.forEach(row => {
     row.addEventListener('click', async (e) => {
-
+      // If we're already in detail view, don't process the click
+      if (isDetailOpen) {
+        e.stopPropagation();
+        return;
+      }
 
       const index = row.dataset.index;
       const lot = lots[index];
@@ -3063,27 +3092,26 @@ function setupLotClickHandlers() {
           const [lng, lat] = lotData[lotMapIndex].center;
           currentLotIndex = lotMapIndex;
 
-// 1. First start the map animation
-await new Promise(resolve => {
-  map.once('moveend', resolve);
+          // 1. First start the map animation
+          await new Promise(resolve => {
+            map.once('moveend', resolve);
 
-  const isDesktop = window.innerWidth >= 768;
-  const isExpanded = document.getElementById('lotModal').classList.contains('expanded');
+            const isDesktop = window.innerWidth >= 768;
+            const isExpanded = document.getElementById('lotModal').classList.contains('expanded');
 
-  const xOffset = isDesktop ?  310 : 0; // 👉 more pan on desktop
-  const yOffset = isDesktop ? 0 : 180;                       // keep vertical nudged on mobile
+            const xOffset = isDesktop ?  310 : 0; // 👉 more pan on desktop
+            const yOffset = isDesktop ? 0 : 180;  // keep vertical nudged on mobile
 
-  map.easeTo({
-    center: [lng, lat],
-    zoom: 18.8,
-    speed: 1.2,
-    curve: 1.5,
-    offset: [xOffset, yOffset]
-  });
-});
+            map.easeTo({
+              center: [lng, lat],
+              zoom: 18.8,
+              speed: 1.2,
+              curve: 1.5,
+              offset: [xOffset, yOffset]
+            });
+          });
 
-          // 2. Then add labels and show detail view
-        
+          // 2. Then show detail view for the new lot
           showDetailViewForLot(index);
         } else {
           // Fallback if map data isn't available
@@ -3094,15 +3122,22 @@ await new Promise(resolve => {
   });
 }
 
-async function showDetailViewForLot(index) {
-  // Clear previous details
-  lotDetails.innerHTML = '';
+async function showDetailViewForLot(index, isSwitchingLots = false) {
+  // Only clear previous details if we're not switching between lots
+  if (!isSwitchingLots) {
+    lotDetails.innerHTML = '';
+  }
   isDetailOpen = true;
   // Get the pre-fetched lot data
   const lot = lots[index];
   const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
   const detailData = lot.detailData || {};
 
+  // If we're switching lots, remove old labels first
+  if (isSwitchingLots && currentLabeledLot) {
+    removeSideLengthLabels();
+  }
+  
   // ✅ ensure lot detail view is NOT in pin-mode
 const modalEl = document.getElementById('lotModal');
 modalEl.classList.remove('pin-mode');
@@ -3209,7 +3244,7 @@ headerSection.innerHTML = `
   if (lotMapData) {
     const currentZoom = map.getZoom();
     if (currentZoom >= 18.8) {
-      // Remove any existing labels first
+      // Remove any existing labels first (double safety)
       if (currentLabeledLot && currentLabeledLot.name !== lotMapData.name) {
         removeSideLengthLabels();
       }
