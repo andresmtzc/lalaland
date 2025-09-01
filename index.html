@@ -2002,6 +2002,11 @@ animateLots(map, () => {
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
     // Clear labels on any map movement
     map.on('moveend', () => {
+// Clear labels on any map movement if zoom drops below 18.8
+        const currentZoom = map.getZoom();
+  if (currentZoom < 18.8 && currentLabeledLot) {
+    removeSideLengthLabels();
+  }
       // Only clear labels if we are NOT in detail view
       if (!isDetailOpen && currentLabeledLot) {
         removeSideLengthLabels();
@@ -2009,14 +2014,20 @@ animateLots(map, () => {
     });
 
     // Clear labels when clicking a different lot
-    map.on('click', 'lots-final-click', (e) => {
-      if (e.features.length > 0) {
-        const newLot = lotData.find(l => l.name === e.features[0].properties.name);
-        if (currentLabeledLot && currentLabeledLot.name !== newLot.name) {
-          removeSideLengthLabels();
-        }
+map.on('click', 'lots-final-click', (e) => {
+  if (e.features.length > 0) {
+    const newLot = lotData.find(l => l.name === e.features[0].properties.name);
+    if (currentLabeledLot && currentLabeledLot.name !== newLot.name) {
+      removeSideLengthLabels();
+      
+      // Add labels for the new lot if zoom is high enough
+      const currentZoom = map.getZoom();
+      if (currentZoom >= 18.8) {
+        addSideLengthLabels(newLot);
       }
-    });
+    }
+  }
+});
 
     // Main map click handler
     map.on('click', (e) => {
@@ -3197,10 +3208,17 @@ headerSection.innerHTML = `
     document.querySelector('.plus-button').style.display = 'flex';
     scrollHandlerAttached = false;
 
-    // Add side length labels if we have map data
-    if (lotMapData) {
+  // Add side length labels if we have map data and zoom is high enough
+  if (lotMapData) {
+    const currentZoom = map.getZoom();
+    if (currentZoom >= 18.8) {
+      // Remove any existing labels first
+      if (currentLabeledLot && currentLabeledLot.name !== lotMapData.name) {
+        removeSideLengthLabels();
+      }
       addSideLengthLabels(lotMapData);
     }
+  }
 
     // === Step 4: Add the Event Listener for the "Agendar Cita" Button ===
     document.getElementById('scheduleAppointmentBtn').addEventListener('click', function () {
@@ -3433,6 +3451,20 @@ function highlightCenter(isClamping = false) {
             }
             map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
             hoveredId = mapIndex;
+            
+            // === ADDED: Show side length labels if zoom is 18.8 or higher ===
+            const currentZoom = map.getZoom();
+            if (currentZoom >= 18.8) {
+              const lotMapData = lotData[mapIndex];
+              if (lotMapData) {
+                // Remove any existing labels first
+                if (currentLabeledLot && currentLabeledLot.name !== lotMapData.name) {
+                  removeSideLengthLabels();
+                }
+                // Add labels for the newly centered lot
+                addSideLengthLabels(lotMapData);
+              }
+            }
           }
         }
       }
