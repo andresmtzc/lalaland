@@ -2000,28 +2000,68 @@ animateLots(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
     
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
-    // Clear labels on any map movement
-    map.on('moveend', () => {
-// Clear labels on any map movement if zoom drops below 18.8
-        const currentZoom = map.getZoom();
+
+// Replace your map.on('moveend') event handler with this:
+let isUserDragging = false;
+
+map.on('dragstart', () => {
+  isUserDragging = true;
+});
+
+map.on('dragend', () => {
+  isUserDragging = false;
+  // Only remove labels if zoom drops below threshold after user dragging
+  const currentZoom = map.getZoom();
   if (currentZoom < 18.8 && currentLabeledLot) {
     removeSideLengthLabels();
   }
- 
-    });
+});
+
+map.on('moveend', () => {
+  // Only handle non-drag movements (like zoom changes)
+  if (!isUserDragging) {
+    const currentZoom = map.getZoom();
+    if (currentZoom < 18.8 && currentLabeledLot) {
+      removeSideLengthLabels();
+    }
+  }
+});
+
+// Also update your click handler to prevent label removal during drag operations:
+map.on('click', 'lots-final-click', (e) => {
+  // Don't process clicks if we're in the middle of a drag
+  if (isUserDragging) return;
+  
+  if (e.features.length > 0) {
+    const newLot = lotData.find(l => l.name === e.features[0].properties.name);
+    
+    // Always remove existing labels first
+    if (currentLabeledLot) {
+      removeSideLengthLabels();
+    }
+    
+    // Add labels for the new lot if zoom is high enough
+    const currentZoom = map.getZoom();
+    if (currentZoom >= 18.8 && newLot) {
+      addSideLengthLabels(newLot);
+    }
+  }
+});
 
     // Clear labels when clicking a different lot
 map.on('click', 'lots-final-click', (e) => {
   if (e.features.length > 0) {
     const newLot = lotData.find(l => l.name === e.features[0].properties.name);
-    if (currentLabeledLot && currentLabeledLot.name !== newLot.name) {
+    
+    // Always remove existing labels first
+    if (currentLabeledLot) {
       removeSideLengthLabels();
-      
-      // Add labels for the new lot if zoom is high enough
-      const currentZoom = map.getZoom();
-      if (currentZoom >= 18.8) {
-        addSideLengthLabels(newLot);
-      }
+    }
+    
+    // Add labels for the new lot if zoom is high enough
+    const currentZoom = map.getZoom();
+    if (currentZoom >= 18.8 && newLot) {
+      addSideLengthLabels(newLot);
     }
   }
 });
@@ -2095,36 +2135,46 @@ map.on('click', 'lots-final-click', (e) => {
     });
 
     // Click on lot: open modal (no persistent selection highlight)
-    map.on('click', 'lots-final-click', (e) => {
-      if (e.features.length === 0) return;
+// Find your map click handler for lots-final-click and replace it with this:
+map.on('click', 'lots-final-click', (e) => {
+  if (e.features.length === 0) return;
 
-      const feature = e.features[0];
-      const lotName = feature.properties.name;
-      const lot = lotData.find(l => l.name === lotName);
-      if (!lot) return;
+  const feature = e.features[0];
+  const lotName = feature.properties.name;
+  const lot = lotData.find(l => l.name === lotName);
+  if (!lot) return;
 
-      // Remove previous hover
-      if (hoveredId !== null) {
-        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-        hoveredId = null;
-      }
+  // Remove previous hover and labels
+  if (hoveredId !== null) {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+    hoveredId = null;
+  }
 
-      // Find index
-      const idx = lotData.findIndex(l => l.name === lot.name);
-      if (idx !== -1) {
-        map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
-        hoveredId = idx;
-        currentLotIndex = idx;
-      }
+  // Find index
+  const idx = lotData.findIndex(l => l.name === lot.name);
+  if (idx !== -1) {
+    map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
+    hoveredId = idx;
+    currentLotIndex = idx;
+  }
 
-      openModal(lot);
+  // Remove any existing labels before opening modal
+  removeSideLengthLabels();
+  
+  openModal(lot);
 
-      // 🟩 Scroll modal to correct lot
-      const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-      if (baseIndex !== -1) {
-        scrollToBaseIndex(baseIndex, true);
-      }
-    });
+  // 🟩 Scroll modal to correct lot
+  const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+  if (baseIndex !== -1) {
+    scrollToBaseIndex(baseIndex, true);
+  }
+  
+  // Add side length labels if zoom is high enough (just like in list selection)
+  const currentZoom = map.getZoom();
+  if (currentZoom >= 18.8) {
+    addSideLengthLabels(lot);
+  }
+});
     // ===== END MAP INTERACTIONS =====
 
     // ===== REVEAL PINS VERY LAST =====
@@ -2223,6 +2273,7 @@ map.on('click', 'lots-final-click', (e) => {
 
 // === SIDE LENGTH LABELS ===
 function addSideLengthLabels(lot) {
+  // Always remove any existing labels first
   removeSideLengthLabels();
   currentLabeledLot = lot;
 
@@ -2269,10 +2320,18 @@ function addSideLengthLabels(lot) {
 function updateSideLengthPositions() {
   if (!currentLabeledLot || sideLengthLabels.length === 0) return;
   
+  // Make sure we have the same number of labels as coordinates
   const coords = [...currentLabeledLot.coords];
   if (coords[0][0] !== coords[coords.length - 1][0] || 
       coords[0][1] !== coords[coords.length - 1][1]) {
     coords.push(coords[0]);
+  }
+  
+  // Safety check - if labels and coordinates don't match, recreate labels
+  if (sideLengthLabels.length !== coords.length - 1) {
+    removeSideLengthLabels();
+    addSideLengthLabels(currentLabeledLot);
+    return;
   }
 
   for (let i = 0; i < coords.length - 1; i++) {
@@ -3485,16 +3544,17 @@ function highlightCenter(isClamping = false) {
             hoveredId = mapIndex;
             
             // === ADDED: Show side length labels if zoom is 18.8 or higher ===
+            // BUT only if we're not already showing labels for this lot
             const currentZoom = map.getZoom();
             if (currentZoom >= 18.8) {
               const lotMapData = lotData[mapIndex];
               if (lotMapData) {
-                // Remove any existing labels first
-                if (currentLabeledLot && currentLabeledLot.name !== lotMapData.name) {
+                // Only add labels if we don't already have labels for this lot
+                // OR if we're switching to a different lot
+                if (!currentLabeledLot || currentLabeledLot.name !== lotMapData.name) {
                   removeSideLengthLabels();
+                  addSideLengthLabels(lotMapData);
                 }
-                // Add labels for the newly centered lot
-                addSideLengthLabels(lotMapData);
               }
             }
           }
