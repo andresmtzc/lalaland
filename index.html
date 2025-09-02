@@ -3512,6 +3512,10 @@ function highlightCenter(isClamping = false) {
   const centerScrollPos = scrollTop + (modalInfo.clientHeight / 2);
   const targetCenterIndex = Math.floor(centerScrollPos / rowHeight);
   
+  // Track if we're changing to a different lot
+  let changingLot = false;
+  let newLotMapIndex = -1;
+  
   // Update classes
   rows.forEach((row, index) => {
     row.classList.remove('active', 'center');
@@ -3535,26 +3539,21 @@ function highlightCenter(isClamping = false) {
       if (!isNaN(baseIndex)) {
         const lot = baseLots[baseIndex];
         if (lot && window.map && lotData) {
-          const mapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
-          if (mapIndex !== -1) {
-            if (hoveredId !== null && hoveredId !== mapIndex) {
+          newLotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
+          if (newLotMapIndex !== -1) {
+            if (hoveredId !== null && hoveredId !== newLotMapIndex) {
               map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+              changingLot = true; // We're changing to a different lot
             }
-            map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
-            hoveredId = mapIndex;
+            map.setFeatureState({ source: 'lots-final', id: newLotMapIndex }, { hover: true });
+            hoveredId = newLotMapIndex;
             
-            // === ADDED: Show side length labels if zoom is 18.8 or higher ===
-            // BUT only if we're not already showing labels for this lot
-            const currentZoom = map.getZoom();
-            if (currentZoom >= 18.8) {
-              const lotMapData = lotData[mapIndex];
-              if (lotMapData) {
-                // Only add labels if we don't already have labels for this lot
-                // OR if we're switching to a different lot
-                if (!currentLabeledLot || currentLabeledLot.name !== lotMapData.name) {
-                  removeSideLengthLabels();
-                  addSideLengthLabels(lotMapData);
-                }
+            // Always remove labels when changing to a different lot, regardless of detail view
+            if (changingLot && currentLabeledLot) {
+              // Check if we're actually switching to a different lot, not just re-highlighting the same one
+              const newLot = lotData[newLotMapIndex];
+              if (newLot && currentLabeledLot.name !== newLot.name) {
+                removeSideLengthLabels();
               }
             }
           }
@@ -3564,7 +3563,6 @@ function highlightCenter(isClamping = false) {
     }
   });
 }
-
   
 
 
