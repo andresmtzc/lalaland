@@ -2027,27 +2027,6 @@ map.on('moveend', () => {
   }
 });
 
-// Also update your click handler to prevent label removal during drag operations:
-map.on('click', 'lots-final-click', (e) => {
-  // Don't process clicks if we're in the middle of a drag
-  if (isUserDragging) return;
-  
-  if (e.features.length > 0) {
-    const newLot = lotData.find(l => l.name === e.features[0].properties.name);
-    
-    // Always remove existing labels first
-    if (currentLabeledLot) {
-      removeSideLengthLabels();
-    }
-    
-    // Add labels for the new lot if zoom is high enough
-    const currentZoom = map.getZoom();
-    if (currentZoom >= 18.8 && newLot) {
-      addSideLengthLabels(newLot);
-    }
-  }
-});
-
     // Clear labels when clicking a different lot
 map.on('click', 'lots-final-click', (e) => {
   if (e.features.length > 0) {
@@ -2134,47 +2113,52 @@ map.on('click', 'lots-final-click', (e) => {
       hoveredId = null;
     });
 
-    // Click on lot: open modal (no persistent selection highlight)
-// Find your map click handler for lots-final-click and replace it with this:
-map.on('click', 'lots-final-click', (e) => {
-  if (e.features.length === 0) return;
+    // SINGLE CLICK HANDLER - REMOVED THE DUPLICATE
+    map.on('click', 'lots-final-click', (e) => {
+      if (e.features.length === 0) return;
 
-  const feature = e.features[0];
-  const lotName = feature.properties.name;
-  const lot = lotData.find(l => l.name === lotName);
-  if (!lot) return;
+      const feature = e.features[0];
+      const lotName = feature.properties.name;
+      const lot = lotData.find(l => l.name === lotName);
+      if (!lot) return;
 
-  // Remove previous hover and labels
-  if (hoveredId !== null) {
-    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-    hoveredId = null;
-  }
 
-  // Find index
-  const idx = lotData.findIndex(l => l.name === lot.name);
-  if (idx !== -1) {
-    map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
-    hoveredId = idx;
-    currentLotIndex = idx;
-  }
+      
+      // Remove previous hover
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+        hoveredId = null;
+      }
 
-  // Remove any existing labels before opening modal
-  removeSideLengthLabels();
-  
-  openModal(lot);
+      // Find index
+      const idx = lotData.findIndex(l => l.name === lot.name);
+      if (idx !== -1) {
+        map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
+        hoveredId = idx;
+        currentLotIndex = idx;
+      }
 
-  // 🟩 Scroll modal to correct lot
-  const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-  if (baseIndex !== -1) {
-    scrollToBaseIndex(baseIndex, true);
-  }
-  
-  // Add side length labels if zoom is high enough (just like in list selection)
-  const currentZoom = map.getZoom();
-  if (currentZoom >= 18.8) {
-    addSideLengthLabels(lot);
-  }
-});
+      // Remove any existing labels
+      removeSideLengthLabels();
+      
+      openModal(lot);
+
+      // 🟩 Scroll modal to correct lot
+      const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+      if (baseIndex !== -1) {
+        scrollToBaseIndex(baseIndex, true);
+      }
+      
+      // Add side length labels if zoom is high enough
+      const currentZoom = map.getZoom();
+      if (currentZoom >= 18.8) {
+        addSideLengthLabels(lot);
+      }
+
+      // Prevent the event from bubbling to avoid duplicate handling
+      e.preventDefault();
+      e.originalEvent.stopPropagation();
+    });
     // ===== END MAP INTERACTIONS =====
 
     // ===== REVEAL PINS VERY LAST =====
@@ -2182,13 +2166,10 @@ map.on('click', 'lots-final-click', (e) => {
       console.log('Revealing photo pins LAST after everything else');
        
       window.__LL_PINS__._revealMarkers();
-
     }
   });
 });
  
-          
-
         // Add hover outline layer after lots-final source is ready
         map.addLayer({
           id: 'lots-hover-outline',
@@ -2223,50 +2204,6 @@ map.on('click', 'lots-final-click', (e) => {
           }
           hoveredId = null;
         });
-
-        // Click on lot: open modal (no persistent selection highlight)
-map.on('click', 'lots-final-click', (e) => {
-  if (e.features.length === 0) return;
-
-  const feature = e.features[0];
-  const lotName = feature.properties.name;
-  const lot = lotData.find(l => l.name === lotName);
-  if (!lot) return;
-
-  // Remove previous hover
-  if (hoveredId !== null) {
-    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-    hoveredId = null;
-  }
-
-  // Find index
-  const idx = lotData.findIndex(l => l.name === lot.name);
-  if (idx !== -1) {
-    map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
-    hoveredId = idx;
-    currentLotIndex = idx;
-  }
-
-  // Check if we're already in detail view with a different lot
-  const isSwitchingFromDetail = isDetailOpen && currentLabeledLot && currentLabeledLot.name !== lot.name;
-  
-  openModal(lot);
-
-  // If switching from detail view, remove old labels immediately
-  if (isSwitchingFromDetail) {
-    removeSideLengthLabels();
-  }
-
-  // 🟩 Scroll modal to correct lot
-  const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-  if (baseIndex !== -1) {
-    scrollToBaseIndex(baseIndex, true);
-  }
-
-  // Prevent the event from bubbling to avoid duplicate handling
-  e.preventDefault();
-  e.originalEvent.stopPropagation();
-});
       }); // loadRoad callback ends
     }); // map load ends
   }); // fetch token ends
@@ -2312,7 +2249,7 @@ function addSideLengthLabels(lot) {
       requestAnimationFrame(() => label.style.opacity = '1');
 
       sideLengthLabels.push(label);
-    }, i * 200); // ← Ajusta este valor para controlar el tiempo entre etiquetas
+    }, i * 200);
   });
   map.on('move', updateSideLengthPositions);
 }
