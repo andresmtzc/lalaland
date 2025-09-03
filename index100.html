@@ -1,0 +1,5600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lalaland</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+
+  <script>
+    // Font loading handler (runs before DOMContentLoaded)
+    document.fonts.ready.then(() => {
+      document.body.classList.add('fonts-loaded');
+    }).catch(() => {
+      document.body.classList.add('fonts-loaded'); // Fallback if fonts fail
+    });
+  </script>
+
+  <style>
+    html, body { margin:0; padding:0; font-family: 'Barlow Condensed', Arial, sans-serif; 
+      height: 100vh;
+       
+    }
+    #map { height:100vh; }
+
+  .mapboxgl-ctrl.mapboxgl-ctrl-attrib {
+  position: absolute;
+}
+
+.mapboxgl-ctrl-logo {
+  transform: scale(0.8) !important;
+  opacity:0.6;
+}
+
+.logo-wrapper {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  background-color:;
+  padding: 2px;
+  padding-bottom:0px;
+  border-radius:0px;
+  z-index: 9999;
+}
+
+.logo-wrapper path {
+  fill: #ff8400; 
+}
+
+.logo-wrapper img {
+  height: 40px;
+  width: auto;
+}
+
+#lotModal {
+  display: none;
+  position: fixed;
+  background: #fcfaf3;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  z-index: 9999;
+  opacity: 0;
+  transition: all 0.3s ease;
+  width: calc(100% - 40px);
+  border: 1px solid #d8cbbc;
+  overflow: hidden;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-30px);
+}
+
+#lotModal.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+@media (max-width: 767px) {
+  #lotModal:not(.expanded) {
+    height: 40%;
+    width: calc(100% - 40px);
+    max-width: none;
+  }
+}
+
+@media (min-width: 768px) {
+  #lotModal:not(.expanded) {
+    position: fixed;
+    top: 50%;
+    left: 30vw;
+    width: 360px;
+    height: 70%;
+    max-height: 620px;
+    transform: translate(-50%, -50%);
+  }
+  #lotModal.expanded {
+    position: fixed;
+    top: 50%;
+    left: 30vw;
+    width: 56%;
+    height: 80%;
+    max-height: 920px;
+    transform: translate(-50%, -50%);
+  }
+}
+ 
+.modal-header {
+  position: relative;
+  background: #fffdf8;
+  padding: 16px 52px;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  color: #a17345;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-title {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.header-lot-number {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ac8f5f;
+  display: none; /* Hidden by default */
+}
+
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lot-number-header {
+  font-weight: 400;
+  color: #8a8880;
+  display: none; /* Hidden by default */
+}
+
+/* Header Controls Container */
+.header-control {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.header-control:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Default SVG size for all header controls */
+.header-control svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.4s ease;
+  stroke: #888;
+  stroke-width: 1.5px;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+/* Back button specifics */
+#backButton {
+  left: 12px;
+  display: none;
+}
+
+#backButton svg {
+  width: 16px; /* Larger for back button */
+  height: 16px;
+}
+
+/* Close button specifics */
+.close-x {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Hover effects */
+.header-control:hover svg {
+  stroke: #666;
+}
+
+/* Rotation animations */
+.header-control:hover#backButton svg {
+  transform: rotate(-360deg);
+}
+
+.header-control.close-x:hover svg {
+  transform: rotate(360deg);
+}
+ 
+/* Modal divider */
+.modal-divider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 0;
+}
+
+/* Modal content wrapper */
+.modal-content-wrapper {
+  position: relative;
+  height: calc(100% - 54px);
+  overflow: hidden;
+}
+
+/* Scrollable info list */
+.modal-info {
+  display: block;
+  height: 100%;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  contain: strict;
+}
+
+.modal-info::-webkit-scrollbar {
+  display: none;
+}
+
+/* Scrollbar */
+.custom-scrollbar {
+  position: absolute;
+  right: 4px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: rgba(200, 200, 200, 0.2);
+  border-radius: 3px;
+  z-index: 10;
+}
+
+.custom-scrollthumb {
+  position: absolute;
+  width: 6px;
+  background: #c0c0c0;
+  border-radius: 3px;
+  transition: height 0.2s, background 0.2s;
+}
+
+.custom-scrollthumb:hover,
+.custom-scrollthumb.active {
+  background: #a0a0a0;
+}
+
+/* Info rows */
+.info-row {
+  flex: none;
+  height: calc(100% / 3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 24px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+  gap: 8px;
+  scroll-snap-align: center;
+  transition: background 0.3s ease, opacity 0.3s ease;
+  will-change: transform, opacity;
+}
+
+@media (min-width: 768px) {
+  .info-row {
+    height: calc(100% / 5);
+  }
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-row.active {
+  background: #f2efe4;
+  opacity: 1;
+}
+
+.lot-left {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.lot-left .lote-label {
+  font-size: 24px;
+  color: #b18d69;
+  padding-left:.5em;
+}
+
+.lot-left .lote-number {
+  font-size: 48px;
+  color: #8a8880;
+  font-weight: 400;
+}
+
+.lot-middle {
+  font-size: 24px;
+  color: #8a8880;
+  line-height: 1;
+  display: flex;
+  align-items: baseline;
+}
+
+.lot-middle--sold {
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+  display: flex;
+}
+
+.lot-price--hidden {
+  flex: 0 !important;
+  width: 0 !important;
+  opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
+}
+
+/* Featured info rows */
+.info-row--featured {
+  flex: none;
+  position: relative;
+  box-sizing: border-box;
+  margin-right: 14px;
+}
+
+.info-row--featured.animate-featured::before,
+.info-row--featured.animate-featured .border-left {
+  content: '';
+  position: absolute;
+  background: #ff8400;
+  animation: draw-vertical 0.3s forwards;
+  z-index: 2;
+}
+
+.info-row--featured.animate-featured::before {
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 0;
+  animation-delay: 0s;
+}
+
+.info-row--featured.animate-featured .border-left {
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  height: 0;
+  animation-delay: 0.6s;
+}
+
+.info-row--featured.animate-featured::after,
+.info-row--featured.animate-featured .border-top {
+  content: '';
+  position: absolute;
+  background: #ff8400;
+  animation: draw-horizontal 0.3s forwards;
+  z-index: 2;
+}
+
+.info-row--featured.animate-featured::after {
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 2px;
+  animation-delay: 0.3s;
+}
+
+.info-row--featured.animate-featured .border-top {
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 2px;
+  animation-delay: 0.9s;
+}
+
+.featured-label {
+  position: absolute;
+  top: -20px;
+  right: 12px;
+  background: #ff8400;
+  color: #fff;
+  font-size: 14px;
+  padding: 2px 6px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.info-row--featured.animate-featured .featured-label {
+  animation: label-pop 0.3s forwards;
+  animation-delay: 1.4s;
+}
+
+@keyframes draw-horizontal {
+  to { width: 100%; }
+}
+
+@keyframes draw-vertical {
+  to { height: 100%; }
+}
+
+@keyframes label-pop {
+  to { opacity: 1; }
+}
+
+.sup {
+  font-size: 60%;
+  position: relative;
+  top: -0.6em;
+  text-transform: uppercase;
+  color:#b18d69;
+}
+
+.lot-price {
+  display: flex;
+  align-items: baseline;
+  position: relative;
+  line-height: 1;
+}
+
+.price-wrapper {
+  position: relative;
+  line-height: 1;
+}
+
+.price {
+  font-size: 24px;
+  color: #8a8880;
+  line-height: 1;
+}
+
+.mdp {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  color: #b18d69;
+  line-height: 1;
+  text-align: center;
+}
+
+.arrow {
+  margin-left: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.arrow-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.arrow svg {
+  width: 16px;
+  height: 16px;
+}
+
+.info-row--featured .arrow svg {
+  animation: arrow-wiggle 0.35s ease-in-out infinite alternate;
+}
+
+@keyframes arrow-wiggle {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(3px); }
+}
+
+/* Add this new animation */
+@keyframes arrow-bounce {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(3px);
+  }
+}
+
+/* Apply to the arrow */
+.wiggle-arrow {
+  animation: arrow-bounce 0.35s ease-in-out infinite alternate;
+}
+
+.close-x {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-spinner {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #ac8f5f;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.border-left,
+.border-top,
+.featured-label {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Detailed View Styles */
+.lot-details {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fcfaf3;
+  padding: 16px;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  z-index: 5;
+  border-radius: 12px;
+}
+
+.lot-details.active {
+  transform: translateX(0);
+}
+
+.details-header {
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.details-lot-number {
+  font-size: 32px;
+  color: #8a8880;
+}
+
+.details-lot-number span {
+  font-size: 48px;
+  font-weight: 400;
+}
+
+.details-featured-label {
+  position: absolute;
+  top: -10px;
+  right: 0;
+  background: #ff8400;
+  color: white;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.details-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.details-label {
+  font-size: 18px;
+  color: #a9a698;
+}
+
+.details-value {
+  font-size: 24px;
+  color: #8a8880;
+}
+
+.modal-content-wrapper.show-details .modal-info,
+.modal-content-wrapper.show-details .custom-scrollbar {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Plus button styles */
+.plus-button {
+  right: 40px;
+  transition: all 0.3s ease;
+  display: none; /* Hidden by default */
+}
+
+/* Show plus button when details view active */
+.modal-content-wrapper.show-details .plus-button {
+  display: flex;
+}
+
+@media (max-width: 767px) {
+  #lotModal.expanded {
+    width: calc(100% - 40px);
+    height: calc(100% - 40px);
+    top: 20px !important;
+  }
+}
+
+/* Keep the content wrapper height adjusted to expanded modal size */
+#lotModal.expanded .modal-content-wrapper {
+  height: calc(100% - 54px);
+  overflow-y: auto;
+}
+
+/* Keep padded area for content, but avoid increasing padding size */
+#lotModal.expanded .lot-details {
+  padding: 16px; /* keep original padding, don't increase */
+}
+
+/* Do not change gaps in details-body */
+#lotModal.expanded .details-body {
+  gap: 24px; /* keep original gap size */
+}
+
+/* Keep padding consistent - no enlargement */
+#lotModal.expanded .details-section {
+  padding-bottom: 12px; /* keep original padding */
+}
+
+/* Keep font sizes consistent, no enlarging */
+#lotModal.expanded .details-label {
+  font-size: 18px;
+}
+
+#lotModal.expanded .details-value {
+  font-size: 24px;
+}
+
+#lotModal.expanded .details-lot-number {
+  font-size: 32px;
+}
+
+#lotModal.expanded .details-lot-number span {
+  font-size: 48px;
+}
+
+/* Plus button icons display toggles unchanged */
+#lotModal.expanded .plus-button .plus-icon {
+  display: none;
+}
+
+#lotModal.expanded .plus-button .minus-icon {
+  display: block;
+}
+
+/* Plus/Minus Button Animation */
+.plus-button path.plus-icon {
+  transition: transform 0.4s ease;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.plus-button path.minus-icon {
+  display: none;
+  transition: transform 0.4s ease;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.plus-button:hover path.plus-icon {
+  transform: rotate(360deg);
+}
+
+.plus-button:hover path.minus-icon {
+  animation: spinMinus 0.6s ease;
+}
+
+#lotModal.expanded .plus-button:hover path.minus-icon {
+  animation: spinMinus 0.6s ease;
+}
+
+@keyframes spinMinus {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(-360deg); }
+}
+
+.bottom-plus-button {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: pointer;
+  z-index: 10;
+  display: none; /* hidden by default */
+  transition: transform 0.3s ease, background 0.3s ease;
+}
+
+.bottom-plus-button:hover {
+  transform: translateX(-50%) scale(1.1);
+}
+
+.bottom-plus-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Show only when details are active */
+.modal-content-wrapper.show-details ~ .bottom-plus-button {
+  display: flex;
+}
+
+/* But hide when modal is expanded */
+#lotModal.expanded .bottom-plus-button {
+  display: none !important;
+}
+
+/* Side length labels */
+.side-length-label {
+  position: absolute;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Barlow Condensed', Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+    opacity: 0; /* Start invisible */
+  transition: opacity 0.2s ease;
+    transform-origin: center center;
+}
+
+@keyframes pop-in {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+body.fonts-loaded .side-length-label {
+  opacity: 1; /* Fade in when fonts are ready */
+}
+
+#toaster,
+#ctaToaster {
+  position: fixed;
+  width: 50%;
+  max-width: 400px;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px); /* starts above */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease, border-radius 0.3s ease;
+  z-index: 10000;
+  border-radius: 6px; /* full radius by default */
+  font-size: 14px;
+  text-align:center;
+  white-space: pre-line;
+}
+
+#toaster {
+  background: #323232;
+  color: white;
+  padding: 12px 12px;
+}
+
+#ctaToaster {
+  background: #25d366;
+  color: white;
+  padding: 12px 16px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    text-decoration: none;
+      pointer-events: none; /* ✅ allow interaction */
+      transition: opacity 0.4s ease, transform 0.4s ease, filter 0.3s ease-in;
+}
+
+/* When showing: fade in, slide into place, square top edges */
+#toaster.show,
+#ctaToaster.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0); /* slide down into view */
+  border-radius: 0 0 6px 6px; /* only round bottom corners */
+}
+
+#ctaToaster:hover {
+  filter: brightness(1.1);
+}
+
+.whatsapp-button {
+  position: fixed;
+  bottom: 5px;
+  right: 5px;
+  z-index: 9999;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #25d366;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  animation: none;
+  transition: transform 0.2s ease;
+}
+
+.whatsapp-button:hover {
+  transform: scale(1.1);
+}
+
+.whatsapp-button img {
+  width: 60%;
+  height: 60%;
+}
+
+.whatsapp-button.bounce {
+  animation: bounce 0.6s ease;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-15px);
+  }
+  60% {
+    transform: translateY(-8px);
+  }
+}
+
+.map-reset-button {
+  position: fixed;
+  bottom: 80px;
+  right: 11px;
+  width: 48px;
+  height: 48px;
+  border: none;
+  outline: none;
+  background-color: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 9999;
+  transition: opacity 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.map-reset-button.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.map-reset-button:hover {
+  transform: scale(1.1);
+}
+
+.map-reset-button svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+/* Add these new styles to your production CSS */
+#lotModal:not(.expanded) .lot-details {
+  overflow-y: hidden !important;
+}
+
+#lotModal.expanded .lot-details {
+  overflow-y: auto !important;
+}
+
+/* Detail View Styles */
+.detail-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 0px;
+}
+
+.tag-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.featured-tag {
+  background: #ff8400;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 200;
+  padding: 3px 6px;
+  border-radius: 0px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.nickname {
+  color: #FF8400;
+  font-size: 20px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-style: normal;
+}
+
+.subtitle-row {
+  color: #8a8880;
+  font-size: 13px;
+  margin-bottom: 0px;
+  padding-left: 0px;
+  font-style: italic;
+  text-align: center;
+}
+
+.detail-data-row {
+  display: flex;
+  width: 100%;
+  padding: 12px 20px;
+  box-sizing: border-box;
+  gap: 8px;
+  align-items: center;
+}
+
+.detail-data-row > div {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+
+.detail-data-row .lot-left {
+  flex: 1;
+  text-align: left;
+  padding-left: 0;
+  margin-left: 0;
+}
+
+.detail-data-row .lot-price {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.detail-data-row .price-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.7em;
+  margin-right: 2em;
+}
+
+.detail-data-row .price {
+  font-size: 24px;
+  line-height: 1;
+  position: relative;
+  top: 0.1em;
+}
+
+.detail-data-row .mdp {
+  font-size: 14px;
+  color: #b18d69;
+  line-height: 1;
+  margin-top: 2px;
+  position: relative;
+  left: 0;
+  transform: none;
+}
+
+.detail-extra-row {
+  width: 100%;
+  overflow: hidden;
+  border-top: 1px solid #e0e0e0;
+  margin: 0;
+  padding: 0;
+  margin-top: 8px;
+}
+
+.lot-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  margin: 0;
+  padding: 0;
+}
+
+.lot-details {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.price-per-m2-column {
+  flex: none;
+  width: 20%;
+  font-size: 24px;
+  color: #8a8880;
+  line-height: 1;
+  font-weight: 400;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+}
+
+.price-per-m2-column sup.sup {
+  font-size: 60%;
+  position: relative;
+  top: -0.6em;
+  text-transform: uppercase;
+  color: #b18d69;
+}
+
+.lot-details .lot-left {
+  align-items: flex-start !important;  /* Align children to left */
+}
+
+.lot-details .lote-number {
+  margin-left: 0 !important;
+  text-align: left !important;
+}
+
+.map-info-button {
+  position: fixed;
+  bottom: 20px;
+  left: 0px;
+  width: 48px; height: 48px;
+  border: none; outline: none;
+  background-color: rgba(0,0,0,0);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  z-index: 10000;
+  transition: transform .2s ease, opacity .3s ease;
+}
+.map-info-button:hover { transform: scale(1.1); }
+.map-info-button svg { width: 24px; height: 24px; stroke: #fcfaf3; fill: #fcfaf3; stroke-width: 2; }
+
+.map-info-button.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Agendar Cita Button */
+.schedule-appointment-btn {
+  background-color: #ff8400;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 0px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  width: 100%;
+  margin-top: 16px;
+  transition: background-color 0.3s ease;
+  font-family: 'Barlow Condensed';
+}
+
+.schedule-appointment-btn:hover {
+  background-color: #e67300;
+}
+
+/* Add to your existing styles */
+.calendly-embed-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fcfaf3;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.calendly-embed-container iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.gps-button {
+  position: fixed;
+  bottom: 140px;  /* Adjusted to be above the Reset View Button */
+  right: 11px;
+  width: 48px;
+  height: 48px;
+  border: none;
+  outline: none;
+  background-color: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 9999;
+  transition: opacity 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.gps-button.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gps-button:hover {
+  transform: scale(1.1);
+}
+
+.gps-button svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+
+
+#cameraButton{
+  position: fixed;
+  bottom: 200px;          /* sits above GPS (140) and Reset (80) */
+  right: 11px;
+  z-index: 9999;
+  display: none;
+}
+#takePhotoBtn{
+  width: 48px; height: 48px;
+  border: none; outline: none;
+  background:#fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+  transition: transform .2s ease, box-shadow .2s ease;
+  font-size: 20px; line-height: 1;
+}
+#takePhotoBtn:hover{ transform: scale(1.1); }
+
+/* thumbnail markers */
+.photo-marker{
+  width: 40px; height: 40px;
+  background-size: cover; background-position:center;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  position: relative;
+}
+.photo-timestamp{
+  position: absolute;
+  bottom: -12px; left: 50%;
+  transform: translateX(-50%);
+  background: #1A1A1A; color:#fff;
+  font-size: 10px; padding: 2px 6px; border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* full-screen viewer */
+#photoModal{
+  display:none; position:fixed; inset:0;
+  background: rgba(0,0,0,0.92); z-index: 10000;
+}
+#photoModal #modalImage{
+  max-width:90%; max-height:90%;
+  margin:auto; display:block; position:relative; top:50%; transform:translateY(-50%);
+  box-shadow: 0 6px 24px rgba(0,0,0,.4);
+}
+#photoModal #closeModal{
+  position:absolute; top:20px; right:20px;
+  background:#f44336; color:white; border:none; border-radius:50%;
+  width:40px; height:40px; font-size:20px; cursor:pointer;
+}
+
+/* Hide back/expand controls only in PIN mode */
+#lotModal.pin-mode #backButton,
+#lotModal.pin-mode .plus-button,
+#lotModal.pin-mode .bottom-plus-button {
+  display: none !important;
+}
+
+#lotModal.pin-mode .modal-info,
+#lotModal.pin-mode .custom-scrollbar {
+  display: none !important;
+}
+
+.auth-controls {
+  display: none;               /* hide by default to avoid flashes */
+  position: absolute;
+  right: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  gap: 8px;
+}
+.auth-btn {
+  width: 32px; height: 32px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:50%; background:none; border:none; cursor:pointer;
+  transition: all .3s ease;
+}
+.auth-btn:hover { background: rgba(255,255,255,0.1); }
+.auth-btn svg { transition: fill .3s ease; }
+.auth-btn:hover svg { fill: #ff8400; }
+
+/* Auth modal inputs/buttons */
+#auth-modal input { background:#333; color:#fff; border:1px solid #555; border-radius:4px; }
+#auth-modal button { cursor:pointer; transition: opacity .2s; }
+#auth-modal button:hover { opacity:.9; }
+#auth-modal #auth-cancel:hover { color:#fff; }
+
+#lotModal.info-mode .auth-controls {
+  display: flex;
+}
+
+/* Dark overlay, covers screen */
+#auth-modal {
+  position: fixed;
+  inset: 0;
+  display: none;       /* hidden by default */
+
+  z-index: 10005;
+}
+
+/* Centered box */
+.auth-box {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate3d(-50%, -50%, 0);
+  will-change: transform;
+  max-width: 400px;
+  width: 90%;
+  background: #1a1a1a;
+  padding: 20px;
+  border-radius: 8px;
+  color: #fff;
+}
+
+#auth-modal h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  text-align: center;
+  color: #ff8400;
+}
+
+#auth-modal label {
+  font-size: 14px;
+  display: block;
+  margin-bottom: 6px;
+  color: #ddd;
+}
+
+#auth-modal input {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #2a2a2a;
+  color: #fff;
+  font-size: 14px;
+}
+
+#auth-modal input:focus {
+  border-color: #ff8400;
+  outline: none;
+
+}
+
+#auth-modal button {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+#auth-modal button.primary {
+  background: #ff8400;
+  color: #fff;
+}
+
+#auth-modal button.primary:hover {
+  background: #e67400;
+}
+
+#auth-modal button.secondary {
+  background: #333;
+  color: #fff;
+  margin-top: 8px;
+}
+
+#auth-modal button.secondary:hover {
+  background: #444;
+}
+
+/* Fade-in animation */
+@keyframes fadeInUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+#auth-modal input,
+#auth-modal button {
+  width: 100%;
+  box-sizing: border-box;  /* make padding & border included in the width */
+}
+
+
+
+  #lotModal #lotDetails {
+    border-radius: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important; /* optional: full-bleed photo */
+  }  
+ 
+ /* Add to your existing CSS */
+#cycleAvailabilityBtn.sold {
+  background-color: #f44336;
+}
+#cycleAvailabilityBtn.sold svg {
+  stroke: white;
+}
+#cycleAvailabilityBtn.featured {
+  background-color: #ff8400;
+}
+#cycleAvailabilityBtn.featured svg {
+  stroke: white;
+}
+#cycleAvailabilityBtn.available {
+  background-color: #fff;
+}
+#cycleAvailabilityBtn.available svg {
+  stroke: #333;
+}
+
+.hide-button {
+  display: none !important;
+}
+
+
+/* ==== Unit controls: same visual language as .header-control ==== */
+.unit-controls {
+  position: absolute;
+  left: 12px;               /* just to the right of the back button */
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  gap: 6px;
+  z-index: 3;
+}
+
+/* Match .header-control at 16x16, rounded 4px, same transitions */
+.unit-btn {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  transition: all 0.3s ease;
+  font-size: 10px;          /* fits symbols at 16x16 */
+  line-height: 1;
+  color: #888;              /* matches stroke color used in header svgs */
+  user-select: none;
+}
+
+/* Hover effect identical to .header-control:hover */
+.unit-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #666;              /* matches .header-control:hover svg stroke */
+}
+
+/* Optional: a subtle active state (not used by back/close by default) */
+.unit-btn.active {
+  background-color: rgba(0, 0, 0, 0.08);
+  color: #444;
+}
+
+/* Make the m² text read nicely at this small size */
+.unit-btn sup {
+  font-size: 0.7em;
+  line-height: 1;
+  vertical-align: top;
+  transform: translateY(-0.1em);
+  display: inline-block;
+}
+
+#lotModal.lot-mode .unit-controls {
+  display: flex;
+}
+
+/* Highlight the active button (orange background) */
+.unit-btn.active {
+  color: #ff8400;
+  background-color:transparent;
+}
+  </style>
+</head>
+ 
+<body>
+<div id="map"></div>
+<div id="toaster" class="hidden">Loaded most recent aerial image (March 2025)</div>
+<a href="https://wa.me/5218185261819"
+   target="_blank"
+   id="ctaToaster"
+   class="hidden"
+   data-utm-source="website"
+   data-utm-medium="toaster"
+   data-utm-campaign="lead_generation">
+  ¿Tienes dudas? ¡Chatea con nosotros por WhatsApp!
+</a>
+
+<div class="logo-wrapper">
+   <a href="#" onclick="event.preventDefault(); window.location.reload(true);" title="Reload Site">
+  <img src="https://lalaland.mx/lalaland.svg" alt="Logo"></a>
+</div>
+
+<!-- Modal Panel -->
+<div id="lotModal">
+  <div class="modal-header">
+    <div class="header-control" id="backButton">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+        <path d="M10 4 L6 8 L10 12" fill="none"/>
+      </svg>
+    </div>
+
+<!-- Unit controls (left) -->
+<div class="unit-controls" id="unitControls">
+  <button class="unit-btn" data-mode="num" title="Lote #">#</button>
+ <!-- <button class="unit-btn" data-mode="area" title="m²">m<sup>2</sup></button> -->
+  <button class="unit-btn" data-mode="price" title="Precio">$</button>
+</div>
+
+
+
+    <div class="header-title">
+      LOTES VENTA — SANTTE 2<span class="header-lot-number" id="headerLotNumber"></span>
+    </div>
+
+<!-- AUTH controls -->
+<div class="auth-controls" id="authControls">
+  <button id="modal-login-btn" class="header-control auth-btn" title="Login">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#888" aria-hidden="true">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V9h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+    </svg>
+  </button>
+  <button id="modal-logout-btn" class="header-control auth-btn" title="Logout">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#888" aria-hidden="true">
+      <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+    </svg>
+  </button>
+</div>
+
+    <div class="header-control close-x" onclick="closeModal()">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+        <path d="M4 4 L12 12 M12 4 L4 12" fill="none"/>
+      </svg>
+    </div>
+<div class="header-control plus-button" onclick="handlePlusButton()">
+<svg viewBox="0 0 16 16">
+  <!-- Plus sign (centered) -->
+  <path class="plus-icon" d="M8 3 L8 13 M3 8 L13 8" 
+        fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" />
+  
+  <!-- Minus sign (centered) -->
+  <path class="minus-icon" d="M3 8 L13 8" 
+        fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" 
+        style="display: none;"/>
+</svg>
+</div>
+
+
+
+  </div>
+  <div class="modal-divider"></div>
+  <div class="modal-content-wrapper">
+    <div class="loading-spinner" id="loadingSpinner"></div>
+
+<div class="lot-details" id="lotDetails"></div>
+
+<!-- Calendly must be a sibling, not inside lotDetails -->
+<div id="calendlyEmbed" class="calendly-embed-container" style="display:none;">
+
+  <iframe id="calendly-iframe" 
+          src="about:blank"
+          frameborder="0"
+          style="width:100%;height:100%;"></iframe>
+</div>
+
+<div class="modal-info" id="modalInfo"></div>
+    <div class="custom-scrollbar" id="customScrollbar">
+      <div class="custom-scrollthumb" id="customScrollthumb"></div>
+    </div>
+  </div>
+  <div class="bottom-plus-button" onclick="handlePlusButton()">
+  <svg viewBox="0 0 16 16" class="wiggle-arrow">
+    <path d="M4 6 L8 10 L12 6" 
+          fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" />
+  </svg>
+  </div>
+</div>
+
+<!-- AUTH MODAL -->
+<div id="auth-modal">
+  <div class="auth-box">
+    <h2>Iniciar sesión</h2>
+
+    <div id="auth-step-email">
+      <label for="auth-email">Correo electrónico</label>
+      <input type="email" id="auth-email" placeholder="tu@correo.com">
+      <button class="primary" id="request-otp">Enviar código</button>
+      <button class="secondary" id="auth-cancel">Cancelar</button>
+    </div>
+
+    <div id="auth-step-otp" style="display:none;">
+      <label for="auth-otp">Código enviado a <span id="otp-email-display"></span></label>
+      <input type="text" id="auth-otp" maxlength="6" placeholder="123456">
+      <button class="primary" id="verify-otp">Verificar</button>
+      <button class="secondary" id="auth-cancel">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+
+
+
+<!-- Whatsapp button -->
+<a href="https://wa.me/5218185261819" target="_blank" class="whatsapp-button"
+   data-utm-source="website"
+   data-utm-medium="button"
+   data-utm-campaign="lead_generation">
+  <img src="https://lalaland.mx/whatrans.png" alt="WhatsApp" />
+</a>
+
+<!-- Reset view Button -->
+<button id="resetViewBtn" class="map-reset-button" title="Reset View">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" stroke="#333">
+  <path d="M8,2 H2 V8"  stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M16,2 H22 V8"  stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M2,16 V22 H8"  stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M16,22 H22 V16"  stroke-width="2" stroke-linecap="round" fill="none"/>
+</svg>
+</button>
+
+<button id="driveBtn" class="gps-button" title="Drive" style="bottom: 200px;">
+<svg viewBox="1.2 4 21.6 16" width="24" height="24" aria-hidden="true" style="color:#333">
+  <path fill="currentColor" d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+</svg>
+</button>
+
+<button id="gpsButton" class="gps-button" title="Enable GPS">
+ <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9" />
+    <line x1="12" y1="2" x2="12" y2="5" />
+    <line x1="12" y1="19" x2="12" y2="22" />
+    <line x1="2" y1="12" x2="5" y2="12" />
+    <line x1="19" y1="12" x2="22" y2="12" />
+    <circle cx="12" cy="12" r="4.5" fill="#333" stroke="none" />
+  </svg>
+</button>
+
+<button id="infoBtn" class="map-info-button" title="View Info">
+  <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Circle outline normal thickness -->
+    <circle cx="12" cy="12" r="9" stroke-width="2"></circle>
+
+    <!-- "i" parts thicker -->
+    <line x1="12" y1="7"  x2="12" y2="7"  stroke-width="3" stroke="#333" fill="none"></line>  <!-- dot -->
+    <line x1="12" y1="12" x2="12" y2="17" stroke-width="3" stroke="#333" fill="none"></line>  <!-- stem -->
+  </svg>
+</button>
+
+<!-- AVAILABILITY BUTTON -->
+<button id="cycleAvailabilityBtn" class="gps-button" title="Cycle Availability" style="bottom: 320px;">
+  <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M23 4L23 10 17 10"></path>
+    <path d="M1 20L1 14 7 14"></path>
+    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10"></path>
+    <path d="M20.49 15a9 9 0 01-14.85 3.36L1 14"></path>
+  </svg>
+</button>
+
+
+<script>
+  const btn = document.querySelector('.whatsapp-button');
+
+  function bounceButton() {
+    if (!btn) return;
+    btn.style.animation = 'bounce 1s';
+    btn.addEventListener('animationend', () => {
+      btn.style.animation = '';
+    }, { once: true });
+  }
+
+  // Initial bounce after 10 seconds
+  setTimeout(bounceButton, 10000);
+
+  // Subsequent bounces every 3 minutes
+  setInterval(bounceButton, 3 * 60 * 1000);
+
+const ctaToaster = document.getElementById('ctaToaster');
+const whatsappBtn = document.querySelector('.whatsapp-button');
+
+const ctaobserver = new MutationObserver(() => {
+  if (ctaToaster.classList.contains('show')) {
+    setTimeout(() => {
+      whatsappBtn.classList.add('bounce');
+
+      // Remove after animation so it can be triggered again later
+      setTimeout(() => {
+        whatsappBtn.classList.remove('bounce');
+      }, 600); // duration of bounce animation
+    }, 4000); // ⏳ 2s delay before bounce
+  }
+});
+
+ctaobserver.observe(ctaToaster, {
+  attributes: true,
+  attributeFilter: ['class']
+});
+
+</script>
+
+<script>
+  //HASH FOR URL
+  function openInitialLotModal() {
+    const hash = window.location.hash;
+    if (hash.startsWith('#lot=')) {
+      const lotName = decodeURIComponent(hash.slice(5));
+      const lot = lotData.find(l => l.name === lotName);
+      if (lot) openModal(lot);
+    }
+  }
+</script>
+   
+<script>
+  // LOAD SUPABASE
+  window.supabaseReady = new Promise((resolve, reject) => {
+    const supabaseScript = document.createElement('script');
+    supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    
+    supabaseScript.onload = () => {
+      fetch('https://lalaland.mx/sb_config.json')
+        .then(r => r.json())
+        .then(cfg => {
+          window.supabaseClient = supabase.createClient(cfg.url, cfg.key);
+          console.log('✅ Supabase client initialized with config.json');
+          resolve();
+
+          // ✅ ✅ ✅ ADD REALTIME SUBSCRIPTION HERE
+          const channel = window.supabaseClient
+            .channel('lots-realtime')
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'lots',
+              },
+              (payload) => {
+                console.log('📡 Change detected:', payload);
+
+                const updatedLotName = payload.new?.lot_name || payload.old?.lot_name;
+                const updatedIndex = lotData.findIndex(l => l.name === updatedLotName);
+
+                if (updatedIndex !== -1) {
+                  const lot = lotData[updatedIndex];
+
+                  // Update local lot data
+const raw = payload.new?.availability ?? lot.availability ?? 'Available';
+lot.availability = raw;                              // "Available" | "Sold" | "Featured"
+lot.featured = raw.toLowerCase() === 'featured';
+                  lot.rSize = payload.new?.rSize ?? lot.rSize;
+                  lot.millones = payload.new?.millones ?? lot.millones;
+
+                  // Refresh visual on map
+                  refreshLotVisuals(map, lot);
+                }
+              }
+            )
+            .subscribe()
+            .catch(error => console.error('❌ Realtime subscription failed:', error));
+        })
+        .catch(e => {
+          console.error('Failed to load Supabase config:', e);
+          reject(new Error("❌ Failed to load Supabase config"));
+        });
+    };
+    
+    supabaseScript.onerror = () => {
+      console.error("❌ Failed to load Supabase script");
+      reject(new Error("❌ Failed to load Supabase script"));
+    };
+    
+    document.head.appendChild(supabaseScript);
+  });
+</script>
+
+
+
+
+<script>
+// ===== AUTH (Supabase OTP) =====
+(() => {
+  const $  = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+  // ⬇️ Keep toaster behavior exactly as before (one-arg showToaster)
+  const toast = (m) => {
+    try { window.showToaster?.(m); } catch { /* no-op to match previous behavior */ }
+  };
+
+  // Header controls (only where that header includes .auth-controls)
+  const btnLogin  = $('#modal-login-btn');
+  const btnLogout = $('#modal-logout-btn');
+
+  // Modal + steps
+  const modal     = $('#auth-modal');
+  const stepEmail = $('#auth-step-email');
+  const stepOtp   = $('#auth-step-otp');
+  const emailInp  = $('#auth-email');
+  const otpInp    = $('#auth-otp');
+  const otpEmail  = $('#otp-email-display');
+
+  const reqBtn     = $('#request-otp');
+  const verifyBtn  = $('#verify-otp');
+  const cancelBtns = $$('#auth-cancel'); // support cancel buttons in both steps
+
+  let pendingEmail = '';
+
+  function showAuthModal() {
+    if (!modal) return;
+    // reset to email step
+    if (stepEmail) stepEmail.style.display = 'block';
+    if (stepOtp)   stepOtp.style.display   = 'none';
+    if (emailInp)  emailInp.value = '';
+    if (otpInp)    otpInp.value   = '';
+    modal.style.display = 'block';
+    setTimeout(() => emailInp?.focus(), 0);
+  }
+
+  function hideAuthModal() {
+    if (!modal) return;
+    modal.style.display = 'none';
+  }
+
+  function resetModalState() {
+    pendingEmail = '';
+    if (emailInp) emailInp.value = '';
+    if (otpInp)   otpInp.value   = '';
+    if (stepEmail) stepEmail.style.display = 'block';
+    if (stepOtp)   stepOtp.style.display   = 'none';
+  }
+
+  function updateButtons(loggedIn) {
+    if (btnLogin)  btnLogin.style.display  = loggedIn ? 'none' : 'flex';
+    if (btnLogout) btnLogout.style.display = loggedIn ? 'flex' : 'none';
+  }
+
+  // --- UI bindings ---
+  btnLogin && btnLogin.addEventListener('click', showAuthModal);
+
+  btnLogout && btnLogout.addEventListener('click', async () => {
+    try {
+      await window.supabaseClient?.auth.signOut();
+      updateButtons(false);
+      toast('Sesión cerrada.');
+    } catch (e) {
+      console.error(e);
+      toast('Error al cerrar sesión.');
+    }
+  });
+
+  // Cancel buttons (both steps)
+  cancelBtns.forEach(btn => {
+    btn.type = 'button';
+    btn.addEventListener('click', () => {
+      resetModalState();
+      hideAuthModal();
+    });
+  });
+
+  // Close on ESC
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal?.style.display === 'block') {
+      resetModalState();
+      hideAuthModal();
+    }
+  });
+
+  // Click backdrop to close (only if clicking outside the inner box)
+  modal && modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      resetModalState();
+      hideAuthModal();
+    }
+  });
+
+  // ======================
+  // ALLOWLIST CHECK (editors.email)
+  // ======================
+  async function isEmailAllowed(email) {
+    const { data, error } = await window.supabaseClient
+      .from('editors')
+      .select('id') // minimal; don't expose lot_table
+      .eq('email', email.trim().toLowerCase())
+      .maybeSingle();
+
+    if (error) {
+      console.error('Allowlist check failed:', error);
+      return false; // fail closed
+    }
+    return !!data; // true if found
+  }
+
+  // --- Send OTP (guarded by allowlist) ---
+  reqBtn && reqBtn.addEventListener('click', async () => {
+    const email = (emailInp?.value || '').trim().toLowerCase();
+    if (!email) { toast('Escribe tu email.'); return; }
+
+    // Basic email format guard
+    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!looksLikeEmail) { toast('Ingresa un correo válido.'); return; }
+
+    // Allowlist guard against public.editors(email)
+    const allowed = await isEmailAllowed(email);
+    if (!allowed) {
+      toast('Este correo no está autorizado.');
+      return;
+    }
+
+    try {
+      const { error } = await window.supabaseClient.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: window.location.origin }
+      });
+      if (error) throw error;
+
+      pendingEmail = email;
+      if (otpEmail) otpEmail.textContent = email; // “Código enviado a …”
+      if (stepEmail) stepEmail.style.display = 'none';
+      if (stepOtp)   stepOtp.style.display   = 'block';
+      setTimeout(() => otpInp?.focus(), 0);
+      toast('Código enviado. Revisa tu correo.');
+    } catch (e) {
+      console.error(e);
+      toast('No pudimos enviar el código.');
+    }
+  });
+
+  // --- Verify OTP ---
+  verifyBtn && verifyBtn.addEventListener('click', async () => {
+    const token = (otpInp?.value || '').trim();
+    if (token.length !== 6) { toast('El código debe tener 6 dígitos.'); return; }
+
+    try {
+      const { error } = await window.supabaseClient.auth.verifyOtp({
+        email: pendingEmail,
+        token,
+        type: 'email'
+      });
+      if (error) throw error;
+
+      resetModalState();
+      hideAuthModal();
+      toast('Has iniciado sesión.');
+      // UI will also update via auth state listener below
+    } catch (e) {
+      console.error(e);
+      toast('Código inválido o vencido.');
+    }
+  });
+
+  // --- Initialize auth state (no toast on page refresh) ---
+  const initAuth = async () => {
+    try {
+      const { data: { session } = { session: null } } =
+        await window.supabaseClient.auth.getSession();
+      updateButtons(!!(session && session.user));
+    } catch (e) {
+      console.warn('getSession failed:', e);
+    }
+
+    window.supabaseClient.auth.onAuthStateChange((_event, session) => {
+      updateButtons(!!(session && session.user));
+      // No toast here—only in explicit login/logout actions above
+    });
+  };
+
+  if (window.supabaseReady && typeof window.supabaseReady.then === 'function') {
+    window.supabaseReady.then(initAuth);
+  } else {
+    const iv = setInterval(() => {
+      if (window.supabaseClient) {
+        clearInterval(iv);
+        initAuth();
+      }
+    }, 200);
+  }
+})();
+</script>
+
+
+ 
+
+<script> 
+// MAP INITIALIZE
+let lotData = [];
+let map;  // global map variable
+let hoveredId = null;
+let currentLotIndex = -1;
+let sideLengthLabels = []; // Array to store side length label elements
+let currentLabeledLot = null; // Track which lot has labels
+let isDetailOpen = false;
+ 
+// Initialize map
+fetch('https://lalaland.mx/mapbox.txt')
+  .then(r => r.text())
+  .then(token => {
+    mapboxgl.accessToken = token.trim();
+    const initialZoom = window.innerWidth >= 768 ? 17 : 16.45; // desktop vs mobile
+
+    const m = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/satellite-streets-v12',
+      center: [-100.15994, 25.461823],
+      zoom: initialZoom
+    });
+ 
+    window.map = m;
+    map = m;
+
+    map.doubleClickZoom.disable();
+
+    map.on('load', async () => {
+      await loadRoad(map, async () => {
+        await loadLotsAsync(map);
+        await window.supabaseReady;
+        await enrichLotsWithAvailability();
+
+animateLots(map, () => {
+  addCustomImage(map);
+  addFeaturedLotsLayer(map, () => {
+    // This callback runs AFTER featured lots have completed initial pulse
+    
+    // ===== MOVE ALL MAP INTERACTIONS HERE =====
+
+// Replace your map.on('moveend') event handler with this:
+let isUserDragging = false;
+
+map.on('dragstart', () => {
+  isUserDragging = true;
+});
+
+map.on('dragend', () => {
+  isUserDragging = false;
+  // Only remove labels if zoom drops below threshold after user dragging
+  const currentZoom = map.getZoom();
+  if (currentZoom < 18.8 && currentLabeledLot) {
+    removeSideLengthLabels();
+  }
+});
+
+map.on('moveend', () => {
+  // Only handle non-drag movements (like zoom changes)
+  if (!isUserDragging) {
+    const currentZoom = map.getZoom();
+    if (currentZoom < 18.8 && currentLabeledLot) {
+      removeSideLengthLabels();
+    }
+  }
+});
+
+    // Clear labels when clicking a different lot
+map.on('click', 'lots-final-click', (e) => {
+  if (e.features.length > 0) {
+    const newLot = lotData.find(l => l.name === e.features[0].properties.name);
+    
+    // Always remove existing labels first
+    if (currentLabeledLot) {
+      removeSideLengthLabels();
+    }
+    
+    // Add labels for the new lot if zoom is high enough
+    const currentZoom = map.getZoom();
+    if (currentZoom >= 18.8 && newLot) {
+      addSideLengthLabels(newLot);
+    }
+  }
+});
+
+    // Main map click handler
+    map.on('click', (e) => {
+      // Don't close if clicking inside modal
+      if (e.originalEvent?.target.closest('#lotModal')) return;
+      
+      // Check if clicking on lots OR cones
+      const lotFeatures = map.queryRenderedFeatures(e.point, { 
+        layers: ['lots-final-click'] 
+      });
+      
+      const coneFeatures = map.queryRenderedFeatures(e.point, { 
+        layers: ['ps-cones-fill'] 
+      });
+      
+      // If clicking on a lot while pin modal is open
+      if (lotFeatures.length > 0 && document.getElementById('lotModal').classList.contains('pin-mode')) {
+        const feature = lotFeatures[0];
+        const lotName = feature.properties.name;
+        const lot = lotData.find(l => l.name === lotName);
+        if (lot) {
+          // Switch from pin modal to lot modal without closing
+          document.getElementById('lotModal').classList.remove('pin-mode');
+          openModal(lot); // This will handle the transition to lot view
+          return; // Exit early
+        }
+      }
+      
+      // Only close if clicking outside both lots and cones
+      if (lotFeatures.length === 0 && coneFeatures.length === 0) {
+        closeModal();
+      }
+    });
+
+    // Add hover outline layer after lots-final source is ready
+    map.addLayer({
+      id: 'lots-hover-outline',
+      type: 'line',
+      source: 'lots-final',
+      paint: {
+        'line-color': '#fff',
+        'line-width': 3,
+        'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
+      }
+    });
+
+    console.log('Ready to open initial modal, lotData:', lotData);
+    openInitialLotModal();
+
+    map.on('mousemove', 'lots-final-click', (e) => {
+      // Don't override modal highlight
+      if (document.getElementById('lotModal').classList.contains('show')) return;
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+      }
+      if (e.features.length > 0) {
+        hoveredId = e.features[0].id;
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: true });
+      }
+    });
+
+    map.on('mouseleave', 'lots-final-click', () => {
+      if (document.getElementById('lotModal').classList.contains('show')) return;
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+      }
+      hoveredId = null;
+    });
+
+    // SINGLE CLICK HANDLER - REMOVED THE DUPLICATE
+    map.on('click', 'lots-final-click', (e) => {
+  if (e.features.length === 0) return;
+
+  const feature = e.features[0];
+  const lotName = feature.properties.name;
+  
+  // NEW: Get the fraccionamiento from the polygon properties
+  const lotFraccionamiento = feature.properties.fraccionamiento;
+  
+  // NEW: Use BOTH name and fraccionamiento to find the correct lot
+  const lot = lotData.find(l => 
+    l.name === lotName && 
+    l.fraccionamiento === lotFraccionamiento
+  );
+  
+  if (!lot) {
+    console.warn('Lot not found:', lotName, 'in', lotFraccionamiento);
+    return;
+  }
+
+  // Remove previous hover
+  if (hoveredId !== null) {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+    hoveredId = null;
+  }
+
+  // Find index
+  const idx = lotData.findIndex(l => l.name === lot.name && l.fraccionamiento === lot.fraccionamiento);
+  if (idx !== -1) {
+    map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
+    hoveredId = idx;
+    currentLotIndex = idx;
+  }
+
+  // Remove any existing labels
+  removeSideLengthLabels();
+  
+  openModal(lot);
+
+  // NEW: Update modal title to show which community
+  const title = document.querySelector('.modal-header .header-title');
+  if (title) {
+    title.textContent = `LOTES VENTA — ${lot.fraccionamiento.toUpperCase()}`;
+  }
+
+  // Scroll modal to correct lot - FIXED VERSION:
+  const baseIndex = baseLots.findIndex(l => 
+    l.number === extractLotNumber(lot.name) && 
+    l.fraccionamiento === lot.fraccionamiento // ADD THIS CONDITION
+  );
+  
+  // Add side length labels if zoom is high enough
+  const currentZoom = map.getZoom();
+  if (currentZoom >= 18.8) {
+    addSideLengthLabels(lot);
+  }
+
+  // Prevent the event from bubbling to avoid duplicate handling
+  e.preventDefault();
+  e.originalEvent.stopPropagation();
+});
+    // ===== END MAP INTERACTIONS =====
+
+    // ===== REVEAL PINS VERY LAST =====
+    if (window.__LL_PINS__?._revealMarkers) {
+      console.log('Revealing photo pins LAST after everything else');
+       
+      window.__LL_PINS__._revealMarkers();
+    }
+  });
+});
+ 
+        // Add hover outline layer after lots-final source is ready
+        map.addLayer({
+          id: 'lots-hover-outline',
+          type: 'line',
+          source: 'lots-final',
+          paint: {
+            'line-color': '#fff',
+            'line-width': 3,
+            'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
+          }
+        });
+
+        console.log('Ready to open initial modal, lotData:', lotData);
+        openInitialLotModal();
+
+        map.on('mousemove', 'lots-final-click', (e) => {
+          // Don't override modal highlight
+          if (document.getElementById('lotModal').classList.contains('show')) return;
+          if (hoveredId !== null) {
+            map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+          }
+          if (e.features.length > 0) {
+            hoveredId = e.features[0].id;
+            map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: true });
+          }
+        });
+
+        map.on('mouseleave', 'lots-final-click', () => {
+          if (document.getElementById('lotModal').classList.contains('show')) return;
+          if (hoveredId !== null) {
+            map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+          }
+          hoveredId = null;
+        });
+      }); // loadRoad callback ends
+    }); // map load ends
+  }); // fetch token ends
+
+// === SIDE LENGTH LABELS ===
+function addSideLengthLabels(lot) {
+  // Always remove any existing labels first
+  removeSideLengthLabels();
+  currentLabeledLot = lot;
+
+  const coords = [...lot.coords];
+  if (coords.length < 3) return;
+
+  if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+    coords.push(coords[0]);
+  }
+
+  coords.forEach((_, i) => {
+    if (i >= coords.length - 1) return;
+
+    setTimeout(() => {
+      const start = coords[i];
+      const end = coords[i + 1];
+      const midpoint = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+
+      const distance = turf.distance(turf.point(start), turf.point(end), { units: 'meters' });
+      const roundedDistance = Math.round(distance * 2) / 2;
+
+      const label = document.createElement('div');
+      label.className = 'side-length-label';
+      label.textContent = `${roundedDistance}m`;
+      label.style.position = 'absolute';
+
+      const pixelPos = map.project(midpoint);
+      label.style.left = `${pixelPos.x}px`;
+      label.style.top = `${pixelPos.y}px`;
+      label.style.transform = 'translate(-50%, -50%) scale(0.4)';
+      label.style.opacity = '0';
+      label.style.transform = 'scale(0.4)';
+      label.style.animation = 'pop-in 0.35s cubic-bezier(0.25, 1.25, 0.5, 1) forwards';
+
+      document.getElementById('map').appendChild(label);
+      requestAnimationFrame(() => label.style.opacity = '1');
+
+      sideLengthLabels.push(label);
+    }, i * 200);
+  });
+  map.on('move', updateSideLengthPositions);
+}
+
+function updateSideLengthPositions() {
+  if (!currentLabeledLot || sideLengthLabels.length === 0) return;
+  
+  // Make sure we have the same number of labels as coordinates
+  const coords = [...currentLabeledLot.coords];
+  if (coords[0][0] !== coords[coords.length - 1][0] || 
+      coords[0][1] !== coords[coords.length - 1][1]) {
+    coords.push(coords[0]);
+  }
+  
+  // Safety check - if labels and coordinates don't match, recreate labels
+  if (sideLengthLabels.length !== coords.length - 1) {
+    removeSideLengthLabels();
+    addSideLengthLabels(currentLabeledLot);
+    return;
+  }
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
+    const midpoint = [
+      (start[0] + end[0]) / 2,
+      (start[1] + end[1]) / 2
+    ];
+    
+    const pixelPos = map.project(midpoint);
+    sideLengthLabels[i].style.left = `${pixelPos.x}px`;
+    sideLengthLabels[i].style.top = `${pixelPos.y}px`;
+  }
+}
+
+function removeSideLengthLabels() {
+  // Remove all side length labels from the DOM
+  sideLengthLabels.forEach(label => {
+    if (label && label.parentNode) {
+      label.parentNode.removeChild(label);
+    }
+  });
+  
+  // Clear the array
+  sideLengthLabels = [];
+  currentLabeledLot = null;
+  
+  // Remove the move event listener
+  map.off('move', updateSideLengthPositions);
+  
+  // Also remove any potentially orphaned labels
+  const allLabels = document.querySelectorAll('.side-length-label');
+  allLabels.forEach(label => {
+    if (label.parentNode) {
+      label.parentNode.removeChild(label);
+    }
+  });
+}
+</script>
+
+<script>
+// ROAD: Add and animate road layer
+const roadGeojson = {
+  type: "FeatureCollection",
+  features: [{
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [-100.157757, 25.45803],
+        [-100.157888, 25.458456],
+        [-100.158984, 25.45995],
+        [-100.15855, 25.460763],
+        [-100.158634, 25.461454],
+        [-100.158488, 25.462755],
+        [-100.15872, 25.463296],
+        [-100.16009, 25.465042],
+        [-100.161556, 25.464865],
+        [-100.163154, 25.465748],
+        [-100.164051, 25.465707],
+        [-100.165586, 25.466227],
+        [-100.165558, 25.466294],
+        [-100.164039, 25.46578],
+        [-100.163133, 25.465821],
+        [-100.161538, 25.46494],
+        [-100.160053, 25.465119],
+        [-100.158649, 25.463331],
+        [-100.158407, 25.462765],
+        [-100.158554, 25.461455],
+        [-100.158468, 25.46075],
+        [-100.158893, 25.459956],
+        [-100.157814, 25.458486],
+        [-100.15768, 25.458049]
+      ]
+    }
+  }]
+};
+
+// Function to add and animate road layer
+function loadRoad(map, cb) {
+  map.addSource('road', { type: 'geojson', data: roadGeojson });
+  map.addLayer({
+    id: 'road',
+    type: 'line',
+    source: 'road',
+    paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0 }
+  });
+
+  let start = null;
+  function animate(ts) {
+    if (!start) start = ts;
+    let p = Math.min((ts - start) / 500, 1);
+    map.setPaintProperty('road', 'line-opacity', p);
+    if (p < 1) requestAnimationFrame(animate);
+    else cb();
+  }
+  requestAnimationFrame(animate);
+}
+</script>
+
+<script>
+// LOT PARSING: Load and parse lot data
+function loadLotsAsync(map) {
+  return Promise.all([
+    // Load santte2 polygons (original lots.txt)
+    fetch('https://lalaland.mx/lots.txt')
+      .then(r => r.text())
+      .then(txt => {
+        const santte2Lots = parseLots(txt);
+        // Add fraccionamiento property to each lot
+        santte2Lots.forEach(lot => lot.fraccionamiento = 'santte2');
+        return santte2Lots;
+      }),
+    
+    // Load santte1 polygons (new lots2.txt)
+    fetch('https://lalaland.mx/lots2.txt')
+      .then(r => r.text())
+      .then(txt => {
+        const santte1Lots = parseLots(txt);
+        // Add fraccionamiento property to each lot
+        santte1Lots.forEach(lot => lot.fraccionamiento = 'santte1');
+        return santte1Lots;
+      })
+  ]).then(([santte2Lots, santte1Lots]) => {
+    // Combine all lots into one array
+    lotData = [...santte2Lots, ...santte1Lots];
+  });
+}
+
+function parseLots(text) {
+  const lines = text.trim().split('\n');
+  const lots = [], curr = null;
+  let currentLot = null;
+
+  lines.forEach(line => {
+    line = line.trim();
+    if (!line) return;
+
+    if (!line.startsWith('{')) {
+      if (currentLot) lots.push(currentLot);
+      currentLot = { name: line, coords: [] };
+    } else {
+      const m = line.match(/lat:\s*([0-9.\-]+),\s*lng:\s*([0-9.\-]+)/);
+      if (m && currentLot) currentLot.coords.push([+m[2], +m[1]]);
+    }
+  });
+
+  if (currentLot) lots.push(currentLot);
+
+  // ➕ Calculate center using Turf
+  lots.forEach(lot => {
+    try {
+      const poly = turf.polygon([[...lot.coords, lot.coords[0]]]); // Close ring
+      const center = turf.centroid(poly).geometry.coordinates;
+      lot.center = center;
+    } catch (err) {
+      console.warn('Failed to calculate center for', lot.name, err);
+      lot.center = [0, 0]; // Fallback
+    }
+  });
+
+  return lots;
+}
+</script>
+
+<script>
+  // FETCH AVAILABILITY SUPABASE
+  //Async function to fetch availability info from Supabase and attach it to lotData
+  async function enrichLotsWithAvailability() {
+  if (!lotData || lotData.length === 0) {
+    console.warn('lotData is empty, cannot enrich availability');
+    return;
+  }
+
+  if (!window.supabaseClient) {
+    console.error('Supabase client not initialized yet.');
+    return;
+  }
+
+  const names = lotData.map(lot => lot.name);
+
+  const { data, error } = await window.supabaseClient
+    .from('lots')
+    .select('lot_name, availability, rSize, millones, fraccionamiento')
+    .in('lot_name', names);
+
+  if (error) {
+    console.error('Error fetching lot availability from Supabase:', error);
+    return;
+  }
+
+  if (data && data.length > 0) {
+    data.forEach(row => {
+      const lot = lotData.find(l => l.name === row.lot_name);
+      if (lot) {
+        const raw = row.availability ?? 'Available';
+        lot.availability = raw;
+        lot.featured = raw.toLowerCase() === 'featured';
+        lot.rSize = row.rSize;
+        lot.millones = row.millones;
+        // Ensure fraccionamiento matches database (in case of discrepancies)
+        if (row.fraccionamiento) {
+          lot.fraccionamiento = row.fraccionamiento;
+        }
+      }
+    });
+    console.log('Lot data enriched with availability:', lotData);
+  } else {
+    console.warn('No availability data returned for lots');
+  }
+}
+</script>
+
+<script>
+// ========== DRAW X ON SOLD LOTS ==========
+function addSoldXs(map, soldLots, fadeDuration = 500) {
+  if (!map.getSource('sold-x')) {
+    map.addSource('sold-x', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+
+    map.addLayer({
+      id: 'sold-x-layer',
+      type: 'line',
+      source: 'sold-x',
+      layout: {},
+      paint: {
+        'line-color': 'white',
+        'line-width': 1,
+        'line-opacity': 0,
+        'line-opacity-transition': { duration: fadeDuration }
+      }
+    });
+  }
+
+  const newFeatures = soldLots.flatMap(makeXFeatures);
+
+  // Merge with existing features
+  const source = map.getSource('sold-x');
+  const current = source._data?.features || [];
+  const updated = [...current, ...newFeatures];
+
+  source.setData({ type: 'FeatureCollection', features: updated });
+
+  // ⏳ Fade in after tiny delay to ensure features are added first
+  setTimeout(() => {
+    map.setPaintProperty('sold-x-layer', 'line-opacity', 1);
+  }, 10);
+}
+
+function makeXFeatures(lot) {
+  const coords = lot.coords;
+  if (!coords || coords.length < 3) return [];
+
+  // Ensure polygon is not closed twice
+  if (
+    coords[0][0] === coords[coords.length - 1][0] &&
+    coords[0][1] === coords[coords.length - 1][1]
+  ) {
+    coords.pop();
+  }
+
+  const n = coords.length;
+  if (n === 4) {
+    return [
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [coords[0], coords[2]] }
+      },
+      {
+        type: 'Feature',
+        properties: { lotName: lot.name },
+        geometry: { type: 'LineString', coordinates: [coords[1], coords[3]] }
+      }
+    ];
+  }
+
+  function distance(p1, p2) {
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  let maxDistance = 0;
+  let farthestPair = [];
+  let secondMaxDistance = 0;
+  let secondFarthestPair = [];
+
+  for (let i = 0; i < coords.length; i++) {
+    for (let j = i + 1; j < coords.length; j++) {
+      const dist = distance(coords[i], coords[j]);
+      if (dist > maxDistance) {
+        secondMaxDistance = maxDistance;
+        secondFarthestPair = [...farthestPair];
+        maxDistance = dist;
+        farthestPair = [coords[i], coords[j]];
+      } else if (dist > secondMaxDistance) {
+        secondMaxDistance = dist;
+        secondFarthestPair = [coords[i], coords[j]];
+      }
+    }
+  }
+
+  const threshold = 0.000038;
+  function isTooClose(p, a, b) {
+    return distance(p, a) < threshold || distance(p, b) < threshold;
+  }
+
+  let secondMaxDistanceCheck = 0;
+  let secondFarthestPairCheck = [];
+
+  for (let i = 0; i < coords.length; i++) {
+    for (let j = i + 1; j < coords.length; j++) {
+      if (
+        coords[i] === farthestPair[0] || coords[i] === farthestPair[1] ||
+        coords[j] === farthestPair[0] || coords[j] === farthestPair[1]
+      ) continue;
+      if (
+        isTooClose(coords[i], farthestPair[0], farthestPair[1]) ||
+        isTooClose(coords[j], farthestPair[0], farthestPair[1])
+      ) continue;
+
+      const dist = distance(coords[i], coords[j]);
+      if (dist > secondMaxDistanceCheck) {
+        secondMaxDistanceCheck = dist;
+        secondFarthestPairCheck = [coords[i], coords[j]];
+      }
+    }
+  }
+
+  const features = [
+    {
+      type: 'Feature',
+      properties: { lotName: lot.name },
+      geometry: { type: 'LineString', coordinates: farthestPair }
+    }
+  ];
+
+  if (secondFarthestPairCheck.length === 2) {
+    features.push({
+      type: 'Feature',
+      properties: { lotName: lot.name },
+      geometry: { type: 'LineString', coordinates: secondFarthestPairCheck }
+    });
+  }
+
+  return features;
+}
+</script>
+
+<script>
+// LOT ANIMATION: Animate the appearance of lots
+function animateLots(map, cb) { 
+  const groups = 20,
+    delay = 80,
+    duration = 250,
+    finalDelay = 200; 
+  const fadeDuration = 500;
+  const fadeDurationXs = 1500; 
+
+  // Shuffle lots
+  const shuffled = [...Array(lotData.length).keys()];
+  shuffle(shuffled);
+
+  // Divide into groups
+  const groupArr = Array.from({ length: groups }, () => []);
+  shuffled.forEach((i, idx) => groupArr[idx % groups].push(i));
+
+  // Render each group with fade-in animation
+  groupArr.forEach((g, i) => {
+    const geojson = {
+      type: "FeatureCollection",
+      features: g.map((idx) => lotFeature(lotData[idx])),
+    };
+    map.addSource(`lot-group-${i}`, { type: "geojson", data: geojson });
+    map.addLayer({
+      id: `lot-group-${i}`,
+      type: "line",
+      source: `lot-group-${i}`,
+      paint: {
+        "line-color": "#fff",
+        "line-width": 1,
+        "line-opacity": 0,
+        "line-opacity-transition": { duration: fadeDuration },
+      },
+    });
+    setTimeout(() => {
+      map.setPaintProperty(`lot-group-${i}`, "line-opacity", 1);
+
+      // ✅ ADD THIS: Draw Xs for sold lots in this group
+      const soldInGroup = g
+        .map(idx => lotData[idx])
+        .filter(lot => (lot.availability ?? '').toLowerCase() === 'sold');
+
+      if (soldInGroup.length > 0) {
+        addSoldXs(map, soldInGroup, fadeDurationXs); // ⬅ match fade timing
+      } 
+    }, i * delay);
+  });
+
+  // Add final lots layer (initially transparent but visible)
+  const finalGeojson = {
+    type: "FeatureCollection",
+    features: lotData.map((lot, i) => lotFeature(lot, i))  // <- pass index here!
+  };
+  map.addSource("lots-final", { type: "geojson", data: finalGeojson });
+  map.addLayer({
+    id: "lots-final",
+    type: "line",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "line-color": "#fff",
+      "line-width": 1,
+      "line-opacity": 0,
+      "line-opacity-transition": { duration: fadeDuration },
+    },
+  });
+  map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
+    id: "lots-final-click",
+    type: "fill",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "fill-color": "#000",      // any color
+      "fill-opacity": 0          // invisible
+    }
+  });
+
+  // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
+  setTimeout(() => {
+    // Fade in final lots
+    map.setPaintProperty("lots-final", "line-opacity", 1);
+
+    setTimeout(() => {
+      // Fade out all lot groups simultaneously
+      groupArr.forEach((_, i) => {
+        const id = `lot-group-${i}`;
+        if (map.getLayer(id)) {
+          map.setPaintProperty(id, "line-opacity", 0);
+        }
+      });
+
+      // Remove all lot groups after fade out duration and call callback
+      setTimeout(() => {
+        groupArr.forEach((_, i) => {
+          const id = `lot-group-${i}`;
+          if (map.getLayer(id)) map.removeLayer(id);
+          if (map.getSource(id)) map.removeSource(id);
+        });
+        if (cb) cb();
+      }, fadeDuration);
+    }, finalDelay + fadeDuration); // Wait for fade-in and extra delay before fading out groups
+  }, groups * delay + duration);
+}
+
+// Helpers unchanged HERE COLOR IS ADDED DEPENDING ON AVAILABILITY
+function lotFeature(lot, index) {
+  const c = [...lot.coords];
+  if (c[0][0] !== c[c.length - 1][0] || c[0][1] !== c[c.length - 1][1]) c.push(c[0]);
+  return {
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [c] },
+    properties: { 
+      name: lot.name,
+      fraccionamiento: lot.fraccionamiento // Add this line
+    },
+    id: index
+  };
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+</script>
+
+<script>
+// DRONE IMAGE - Add custom recent drone satellite image as a raster layer
+function addCustomImage(map) {
+  // Coordinates for the custom drone image (georeferenced)
+  const imageBounds = [
+    [-100.16483, 25.467111], // Top-left corner [lng, lat]
+    [-100.154874, 25.467111], // Top-right corner [lng, lat]
+    [-100.154874, 25.457155], // Bottom-right corner [lng, lat]
+    [-100.16483, 25.457155],  // Bottom-left corner [lng, lat]
+  ];
+
+  map.addSource('drone-satellite', { 
+    type: 'image',
+    url: 'https://lalaland.mx/santte2.jpg', // Your drone image URL
+    coordinates: imageBounds // Set the coordinates for where the image will be placed
+  });
+
+  map.addLayer({
+    id: 'drone-satellite-layer',
+    type: 'raster',
+    source: 'drone-satellite',
+    paint: {
+      'raster-opacity': 0
+    }
+  }, 'road');  // Insert BELOW 'road' layer, so roads are on top
+
+  // Then fade in opacity as you do
+  fadeInImage(map);
+  showToaster("Cargamos la imágen aérea más actual — (marzo 2025)");
+}
+
+//CTA
+function showCta(message = "Want more info about this lot?", duration = 5000) {
+  const ctaToaster = document.getElementById('ctaToaster');
+  ctaToaster.classList.remove('hidden');
+  ctaToaster.textContent = message;
+  ctaToaster.classList.add('show');
+ 
+  setTimeout(() => {
+    ctaToaster.classList.remove('show');
+    setTimeout(() => ctaToaster.classList.add('hidden'), 400); // Wait for fade out
+  }, duration);
+}
+ 
+// Fade-in effect for the image (opacity increases gradually from 0 to 1)
+function fadeInImage(map) {
+  let opacity = 0;
+  const interval = setInterval(() => {
+    opacity += 0.05;  // Increase opacity gradually
+    if (opacity >= 1) {
+      opacity = 1;
+      clearInterval(interval); // Stop once opacity reaches 1
+    }
+    map.setPaintProperty('drone-satellite-layer', 'raster-opacity', opacity);
+  }, 50); // Adjust the interval for smoother or faster fade-in
+} 
+
+function showToaster(message, duration = 3000) {
+  const toaster = document.getElementById('toaster');
+  toaster.textContent = message;
+  toaster.classList.add('show');
+
+  setTimeout(() => {
+    toaster.classList.remove('show');
+  }, duration);
+} 
+</script> 
+
+<script>
+// === FEATURED LOT POLYGON PULSE (ASYNC) ===
+
+// Utility to create a polygon feature from a lot
+function featuredPolygonFeature(lot) {
+  const coords = [...lot.coords];
+  if (
+    coords.length < 3 ||
+    coords[0][0] !== coords[coords.length - 1][0] ||
+    coords[0][1] !== coords[coords.length - 1][1]
+  ) {
+    coords.push(coords[0]); // Ensure closed polygon
+  }
+
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coords]
+    },
+    properties: {
+      name: lot.name,
+      phase: Math.random() * Math.PI * 2, // ✅ random delay per lot
+      opacity: 0.5 // initial value for fill-opacity
+    }
+  };
+}
+
+// Main function — still named as requested
+function addFeaturedLotsLayer(map, onComplete) {
+  const featuredLots = lotData.filter(lot => lot.featured);
+  if (featuredLots.length === 0) {
+    // If no featured lots, call completion immediately
+    if (onComplete) onComplete();
+    return;
+  }
+
+  const features = featuredLots.map(featuredPolygonFeature);
+
+  map.addSource('featured-lots', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features
+    }
+  });
+
+  // Orange fill with pulsating opacity
+  map.addLayer({
+    id: 'featured-lots-layer',
+    type: 'fill',
+    source: 'featured-lots',
+    paint: {
+      'fill-color': '#ff8400',
+      'fill-opacity': ['get', 'opacity']
+    }
+  }, 'lots-final');
+
+  // Get the list of all layers
+  const layers = map.getStyle().layers;
+  let insertBefore = null;
+
+  for (let i = 0; i < layers.length; i++) {
+    if (layers[i].id === 'sold-x-layer') {
+      insertBefore = layers[i + 1]?.id || null;
+      break;
+    }
+  }
+
+  // Add the orange outline *after* lots-final
+  map.addLayer({
+    id: 'featured-lots-outline',
+    type: 'line',
+    source: 'featured-lots',
+    paint: {
+      'line-color': '#ff8400',
+      'line-width': 2,
+      'line-opacity': 1
+    }
+  }, 'lots-final-click');  
+ 
+  // Start animation with completion callback 
+  startPolygonPulse(map, onComplete); 
+}
+
+
+
+
+// Animate each polygon's opacity independently
+function startPolygonPulse(map, onComplete) {
+  let t = 0;
+  let initialPulseCompleted = false;
+  const PULSE_DURATION = 2.0; // seconds
+
+  function frame() {
+    t += 0.05; // SLOWER: was 0.05, now 0.02 for slower animation
+
+    const source = map.getSource('featured-lots');
+    if (!source || !source._data) return;
+
+    const updated = {
+      ...source._data,
+      features: source._data.features.map(f => {
+        const phase = f.properties?.phase ?? 0;
+        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            opacity
+          }
+        };
+      })
+    };
+
+    source.setData(updated);
+    
+    // Call completion callback after initial pulse duration
+    if (!initialPulseCompleted && t >= PULSE_DURATION) {
+      initialPulseCompleted = true;
+      if (onComplete && typeof onComplete === 'function') {
+        onComplete();
+      }
+    }
+    
+    requestAnimationFrame(frame); 
+  }
+
+  requestAnimationFrame(frame);
+}
+</script> 
+
+
+
+<script>
+  // MODAL HERE
+let lastOffset = [0, 0];
+
+function adjustMapForModal() {
+  if (!map) {
+    console.error('Map not initialized');
+    return;
+  }
+
+  const isMobile = window.innerWidth < 768;
+
+  const offset = isMobile
+    ? [0, -window.innerHeight * 0.23] // mobile: pan upward
+    : [-240, 0];                      // desktop: pan left
+
+  lastOffset = offset;
+
+  console.log('🔄 map.panBy:', offset);
+  map.panBy(offset, { duration: 800 });
+}
+ 
+const modal = document.getElementById('lotModal');
+const modalInfo = document.getElementById('modalInfo');
+const customScrollbar = document.getElementById('customScrollbar');
+const customScrollthumb = document.getElementById('customScrollthumb');
+const loadingSpinner = document.getElementById('loadingSpinner');
+const lotDetails = document.getElementById('lotDetails');
+const backButton = document.getElementById('backButton');
+const detailNumber = document.getElementById('detailNumber');
+const detailSize = document.getElementById('detailSize');
+const detailPrice = document.getElementById('detailPrice');
+const detailAvailability = document.getElementById('detailAvailability');
+const headerLotNumber = document.getElementById('headerLotNumber');
+
+let cloneCount = 5;
+let baseLots = [];
+let lots = [];
+let isDataLoaded = false;
+let previousMapView = null; // for "Back" button inside modal
+let preModalView = null;    // for closing modal completely
+let isDragging = false;
+let isScrollbarDragging = false;
+let dragStartY = 0;
+let dragStartScroll = 0;
+let scrollTimeout;
+let scrollHandlerAttached = true;
+let clampCooldown = false;
+let infoMode = false;
+
+function extractLotNumber(lotName) {
+  const num = lotName.replace(/^lot/i, '');
+  return parseInt(num, 10) || 0;
+}
+
+async function fetchLots() {
+  try {
+    loadingSpinner.style.display = 'block';
+    modalInfo.style.opacity = '0.5';
+    
+    await window.supabaseReady;
+    
+    // Fetch ALL data (including images and fraccionamiento) upfront
+    const { data, error } = await window.supabaseClient
+      .from('lots')
+      .select('lot_name, rSize, millones, availability, nickname, subtitle, image, fraccionamiento') // ADD fraccionamiento here
+      .order('lot_name', { ascending: true });
+    
+    if (error) throw error;
+    
+    baseLots = data.map(lot => ({
+      number: extractLotNumber(lot.lot_name),
+      size: lot.rSize,
+      price: lot.millones,
+      availability: lot.availability,
+      fraccionamiento: lot.fraccionamiento, // ADD this line
+      // Store all detail data upfront
+      detailData: {
+        nickname: lot.nickname,
+        subtitle: lot.subtitle,
+        image: lot.image
+      }
+    }));
+    
+    updateLotsArray();
+    isDataLoaded = true;
+    console.log('✅ Pre-loaded all lots + images + fraccionamiento');
+  } catch (error) {
+    console.error('Error fetching lots:', error);
+    // Fallback dummy data
+    baseLots = Array.from({ length: 10 }, (_, i) => ({
+      number: 100 + i,
+      size: '150',
+      price: '1.5',
+      availability: 'available',
+      fraccionamiento: 'santte2', // Default to santte2 for fallback
+      detailData: {
+        nickname: `Lot ${100 + i}`,
+        image: 'https://via.placeholder.com/800x400?text=No+Image'
+      }
+    }));
+    updateLotsArray();
+  } finally {
+    loadingSpinner.style.display = 'none';
+    modalInfo.style.opacity = '1';
+  }
+}
+
+function updateLotsArray() {
+  lots = [
+    ...baseLots.slice(-cloneCount).map(l => ({ ...l, clone: true })),
+    ...baseLots,
+    ...baseLots.slice(0, cloneCount).map(l => ({ ...l, clone: true }))
+  ];
+}
+
+function setupLotClickHandlers() {
+  const allRows = document.querySelectorAll('.info-row');
+
+  allRows.forEach(row => {
+    row.addEventListener('click', async (e) => {
+      // If we're already in detail view, don't process the click
+      if (isDetailOpen) {
+        e.stopPropagation();
+        return;
+      }
+
+      const index = row.dataset.index;
+      const lot = lots[index];
+      const status = (lot.availability ?? '').toLowerCase();
+
+      if (status === 'sold') return;
+
+      if (status === 'available') {
+        showCta("¡Este lote también tiene mucho potencial\n¿lo vemos juntos? Escríbenos por WhatsApp.");
+        return;
+      }
+
+      if (status === 'featured') {
+        // Save map state
+        if (map && map.getCenter) {
+          preModalView = {
+            center: map.getCenter().toArray(),
+            zoom: map.getZoom(),
+            bearing: map.getBearing(),
+            pitch: map.getPitch()
+          };
+        }
+
+        const lotNumber = lot.number;
+        const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
+        
+        if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
+          previousMapView = {
+            center: map.getCenter().toArray(),
+            zoom: map.getZoom(),
+            bearing: map.getBearing(),
+            pitch: map.getPitch()
+          };
+
+          const [lng, lat] = lotData[lotMapIndex].center;
+          currentLotIndex = lotMapIndex;
+
+          // 1. First start the map animation
+          await new Promise(resolve => {
+            map.once('moveend', resolve);
+
+            const isDesktop = window.innerWidth >= 768;
+            const isExpanded = document.getElementById('lotModal').classList.contains('expanded');
+
+            const xOffset = isDesktop ?  310 : 0; // 👉 more pan on desktop
+            const yOffset = isDesktop ? 0 : 180;  // keep vertical nudged on mobile
+
+            map.easeTo({
+              center: [lng, lat],
+              zoom: 18.8,
+              speed: 1.2,
+              curve: 1.5,
+              offset: [xOffset, yOffset]
+            });
+          });
+
+          // 2. Then show detail view for the new lot
+          showDetailViewForLot(index);
+        } else {
+          // Fallback if map data isn't available
+          showDetailViewForLot(index);
+        }
+      }
+    });
+  });
+}
+
+async function showDetailViewForLot(index, isSwitchingLots = false) {
+  // Only clear previous details if we're not switching between lots
+  if (!isSwitchingLots) {
+    lotDetails.innerHTML = '';
+  }
+  isDetailOpen = true;
+  // Get the pre-fetched lot data
+  const lot = lots[index];
+  const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
+  const detailData = lot.detailData || {};
+
+  // If we're switching lots, remove old labels first
+  if (isSwitchingLots && currentLabeledLot) {
+    removeSideLengthLabels();
+  }
+  
+  // ✅ ensure lot detail view is NOT in pin-mode
+const modalEl = document.getElementById('lotModal');
+modalEl.classList.remove('pin-mode');
+modal.classList.remove('lot-mode');
+
+// ✅ clear any inline hiding left from pin mode
+const bottomPlusEl = document.querySelector('.bottom-plus-button');
+if (bottomPlusEl) bottomPlusEl.style.display = '';
+const plusBtnEl = document.querySelector('.plus-button');
+if (plusBtnEl) plusBtnEl.style.display = '';
+const backBtnEl = document.getElementById('backButton');
+if (backBtnEl) backBtnEl.style.display = '';
+
+  // Create container for detail view
+  const detailContainer = document.createElement('div');
+  detailContainer.className = 'detail-container';
+
+  // ===== HEADER SECTION =====
+  const headerSection = document.createElement('div');
+  headerSection.className = 'detail-header';
+
+  // Tag row with LALALAND SELECTION and nickname
+const state = (lot.availability ?? '').toString().toLowerCase();
+headerSection.innerHTML = `
+  <div class="tag-row">
+    ${state === 'featured' ? '<div class="featured-tag">SELECCIÓN LALALAND</div>' : ''}
+    <div class="nickname">${detailData.nickname || 'Lot ' + lot.number}</div>
+  </div>
+  ${detailData.subtitle ? `<div class="subtitle-row">${detailData.subtitle}</div>` : ''}
+`;
+  detailContainer.appendChild(headerSection);
+
+  // ===== PRICE/SIZE ROW =====
+  const detailRow = document.createElement('div');
+  detailRow.className = 'detail-data-row';
+  
+  // Calculate price per m2
+  const price = parseFloat(lot.price);
+  const size = parseFloat(lot.size);
+  let pricePerM2Formatted = 'N/A';
+  
+  if (price > 0 && size > 0) {
+    const pricePerM2 = (price * 1000000) / size;
+    pricePerM2Formatted = `$${pricePerM2.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<sup class="sup">/M2</sup>`;
+  }
+
+  // Build the price/size row
+  detailRow.innerHTML = `
+    <div class="lot-left">
+      <div class="lote-label">LOTE</div>
+      <div class="lote-number">${lot.number}</div>
+    </div>
+    
+    <div class="lot-middle">
+      ${lot.size}<span class="sup">M2</span>
+    </div>
+    
+    <div class="lot-price">
+      <div class="price-wrapper">
+        <span class="price">$${lot.price}</span>
+        <span class="mdp">MDP</span>
+      </div>
+    </div>
+    
+    <div class="price-per-m2-column">
+      ${pricePerM2Formatted}
+    </div>
+  `;
+  detailContainer.appendChild(detailRow);
+
+  // ===== IMAGE ROW =====
+  const image = new Image();  // Create an image element
+  image.src = detailData.image || lotMapData.image || 'https://via.placeholder.com/800x400?text=No+Image+Available';
+  image.onload = function() {
+    // This runs once the image is fully loaded
+
+    // Add image to the DOM
+    const extraRow = document.createElement('div');
+    extraRow.className = 'detail-extra-row';
+    extraRow.innerHTML = `
+      <img src="${image.src}" class="lot-image" onerror="this.src='https://via.placeholder.com/800x400?text=Image+Not+Available'">
+    `;
+    detailContainer.appendChild(extraRow);
+
+    // Add the Agendar Cita button below the image after the image is loaded
+    const scheduleButton = document.createElement('button');
+    scheduleButton.id = 'scheduleAppointmentBtn';
+    scheduleButton.className = 'schedule-appointment-btn';
+    scheduleButton.innerText = 'Agendar Visita';
+
+    detailContainer.appendChild(scheduleButton);
+
+    // Add to DOM after the image is loaded
+    lotDetails.appendChild(detailContainer);
+
+    // Activate modal view
+    document.querySelector('.modal-content-wrapper').classList.add('show-details');
+    lotDetails.classList.add('active');
+    backButton.style.display = 'flex';
+    document.querySelector('.plus-button').style.display = 'flex';
+    scrollHandlerAttached = false;
+
+  // Add side length labels if we have map data and zoom is high enough
+  if (lotMapData) {
+    const currentZoom = map.getZoom();
+    if (currentZoom >= 18.8) {
+      // Remove any existing labels first (double safety)
+      if (currentLabeledLot && currentLabeledLot.name !== lotMapData.name) {
+        removeSideLengthLabels();
+      }
+      addSideLengthLabels(lotMapData);
+    }
+  }
+
+    // === Step 4: Add the Event Listener for the "Agendar Cita" Button ===
+    document.getElementById('scheduleAppointmentBtn').addEventListener('click', function () {
+      // Hide lot details and show Calendly
+      document.getElementById('lotDetails').style.display = 'none'; // Hide lot details
+
+      // Show Calendly widget
+      document.getElementById('calendlyEmbed').style.display = 'block';
+
+      // Initialize Calendly widget
+      loadCalendlyWidget({ lot, detailData });
+    });
+  };
+
+  // If the image fails to load, use the fallback image
+  image.onerror = function() {
+    image.src = 'https://via.placeholder.com/800x400?text=Image+Not+Available';
+  };
+}
+
+
+
+backButton.addEventListener('click', () => {
+  const modal = document.getElementById('lotModal');
+  const plusIcon = document.querySelector('.plus-button .plus-icon');
+  const minusIcon = document.querySelector('.plus-button .minus-icon');
+  const calendly = document.getElementById('calendlyEmbed');
+
+  isDetailOpen = false;
+  removeSideLengthLabels(); // keep it
+
+  // Check if we're in the Calendly view
+  if (calendly && calendly.style.display === 'block') {
+    // Close Calendly and return to lot details
+    calendly.style.display = 'none';
+    document.getElementById('lotDetails').style.display = 'block';
+    return; // exit here to avoid further actions
+  }
+
+  // Reset expanded state if needed
+  if (modal.classList.contains('expanded')) {
+    modal.classList.remove('expanded');
+    plusIcon.style.display = 'block';
+    minusIcon.style.display = 'none';
+  }
+
+  // Return to list view
+  headerLotNumber.style.display = 'none';
+  document.querySelector('.modal-content-wrapper').classList.remove('show-details');
+  lotDetails.classList.remove('active');
+  backButton.style.display = 'none';
+  document.querySelector('.plus-button').style.display = 'none';
+  modal.classList.add('lot-mode');
+
+  // Re-enable scrolling
+  scrollHandlerAttached = true;
+
+  // Remove side length labels
+  removeSideLengthLabels();
+
+  // Return to previous map zoom state
+  if (previousMapView && map) {
+    map.flyTo({
+      center: previousMapView.center,
+      zoom: previousMapView.zoom,
+      bearing: previousMapView.bearing,
+      pitch: previousMapView.pitch,
+      speed: 1.2,
+      curve: 1.5
+    });
+    previousMapView = null;
+  }
+});
+
+
+function render() {
+  modalInfo.innerHTML = '';
+  lots.forEach((lot, i) => {
+    const row = document.createElement('div');
+    row.classList.add('info-row');
+    row.dataset.index = i;
+    row.dataset.baseIndex = lot.clone ? -1 : baseLots.findIndex(l => l.number === lot.number);
+
+const state = (lot.availability ?? '').toString();
+const isFeatured = state.toLowerCase() === 'featured';
+const isSold     = state.toLowerCase() === 'sold';
+
+    if (isFeatured) row.classList.add('info-row--featured');
+
+    row.innerHTML = `
+      <div class="lot-left">
+        <div class="lote-label">LOTE</div>
+        <div class="lote-number">${lot.number}</div>
+      </div>
+
+      <div class="lot-middle ${isSold ? 'lot-middle--sold' : ''}">
+        ${
+          isSold
+            ? `<div style="font-size:48px; font-weight:700; color:#ff8400;">VENDIDO</div>`
+            : `${lot.size}<span class="sup">M2</span>`
+        }
+      </div>
+
+      <div class="lot-price ${isSold ? 'lot-price--hidden' : ''}">
+        <div class="price-wrapper">
+          <span class="price">$${lot.price}</span>
+          <span class="mdp">MDP</span>
+        </div>
+      </div>
+
+      <div class="arrow ${isFeatured ? '' : 'arrow-hidden'}">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12">
+          <path d="M4 3 L7 6 L4 9" stroke="#888" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+    `;
+
+    if (isFeatured) {
+      const left = document.createElement('div');
+      left.classList.add('border-left');
+      row.appendChild(left);
+
+      const top = document.createElement('div');
+      top.classList.add('border-top');
+      row.appendChild(top);
+
+      const label = document.createElement('div');
+      label.classList.add('featured-label');
+      label.textContent = 'SELECCIÓN LALALAND';
+      row.appendChild(label);
+    }
+
+    modalInfo.appendChild(row);
+  });
+  
+  setupLotClickHandlers();
+  updateScrollbar();
+}
+
+function updateScrollbar() {
+  const containerHeight = modalInfo.clientHeight;
+  const contentHeight = modalInfo.scrollHeight;
+  const scrollTop = modalInfo.scrollTop;
+
+  if (baseLots.length === 0 || contentHeight === 0) {
+    customScrollthumb.style.height = '0px';
+    customScrollthumb.style.transform = 'translateY(0)';
+    return;
+  }
+
+  const rowHeight = contentHeight / lots.length;
+  const bufferHeight = rowHeight * cloneCount;
+  const baseHeight = rowHeight * baseLots.length;
+
+  const thumbHeight = Math.max(20, (containerHeight / contentHeight) * containerHeight);
+  customScrollthumb.style.height = `${thumbHeight}px`;
+
+  let baseScrollTop = ((scrollTop - bufferHeight) % baseHeight);
+  if (baseScrollTop < 0) baseScrollTop += baseHeight;
+  baseScrollTop = Math.min(baseScrollTop, baseHeight - containerHeight);
+
+  const scrollRatio = baseScrollTop / (baseHeight - containerHeight);
+  const thumbPosition = scrollRatio * (containerHeight - thumbHeight);
+
+  customScrollthumb.style.transform = `translateY(${thumbPosition}px)`;
+}
+
+function scrollToBaseIndex(baseIndex, smooth = true) {
+  if (baseLots.length === 0) return;
+  
+  const actualIndex = baseIndex + cloneCount;
+  const target = modalInfo.querySelector(`.info-row[data-index="${actualIndex}"]`);
+
+  if (target) {
+    target.offsetWidth;
+    target.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
+
+    if (!smooth) {
+      setTimeout(() => {
+        highlightCenter();
+        updateScrollbar();
+      }, 0);
+    }
+  }
+}
+
+const animatedFeaturedLots = new Set();
+
+
+
+
+// Find and update your highlightCenter function:
+function highlightCenter(isClamping = false) {
+  const rows = [...modalInfo.querySelectorAll('.info-row')];
+  
+  // Get current scroll position to find which row is at the center
+  const scrollTop = modalInfo.scrollTop;
+  const rowHeight = modalInfo.scrollHeight / rows.length;
+  
+  // Find the index of the row at the center of the viewport
+  const centerScrollPos = scrollTop + (modalInfo.clientHeight / 2);
+  const targetCenterIndex = Math.floor(centerScrollPos / rowHeight);
+  
+  // Track if we're changing to a different lot
+  let changingLot = false;
+  let newLotMapIndex = -1;
+  
+  // Update classes
+  rows.forEach((row, index) => {
+    row.classList.remove('active', 'center');
+    
+    if (index === targetCenterIndex) {
+      row.classList.add('active', 'center');
+
+      if (row.classList.contains('info-row--featured')) {
+        const featureIndex = row.dataset.index;
+        if (!animatedFeaturedLots.has(featureIndex)) {
+          void row.offsetWidth;
+          row.classList.add('animate-featured');
+          animatedFeaturedLots.add(featureIndex);
+        } else {
+          row.classList.add('animate-featured');
+        }
+      }
+
+      // === Map sync logic ===
+      const baseIndex = parseInt(row.dataset.baseIndex, 10);
+      if (!isNaN(baseIndex)) {
+        const lot = baseLots[baseIndex];
+        if (lot && window.map && lotData) {
+          // FIXED: Find lot using both number AND community
+          newLotMapIndex = lotData.findIndex(l => 
+            extractLotNumber(l.name) === lot.number && 
+            l.fraccionamiento === lot.fraccionamiento // ADD THIS
+          );
+          
+          if (newLotMapIndex !== -1) {
+            if (hoveredId !== null && hoveredId !== newLotMapIndex) {
+              map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+              changingLot = true;
+            }
+            map.setFeatureState({ source: 'lots-final', id: newLotMapIndex }, { hover: true });
+            hoveredId = newLotMapIndex;
+            
+            if (changingLot && currentLabeledLot) {
+              const newLot = lotData[newLotMapIndex];
+              if (newLot && currentLabeledLot.name !== newLot.name) {
+                removeSideLengthLabels();
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+}
+  
+
+
+
+function clampScroll() {
+  if (baseLots.length === 0 || lots.length === 0 || clampCooldown) return;
+
+  const { scrollTop, scrollHeight, clientHeight } = modalInfo;
+  const lotHeight = scrollHeight / lots.length;
+  const bufferHeight = lotHeight * cloneCount;
+  const baseHeight = lotHeight * baseLots.length;
+
+  let virtualScroll = scrollTop;
+  
+  if (scrollTop < bufferHeight) {
+    clampCooldown = true;
+    virtualScroll = scrollTop + baseHeight;
+  } 
+  else if (scrollTop + clientHeight >= scrollHeight - bufferHeight) {
+    clampCooldown = true;
+    virtualScroll = scrollTop - baseHeight;
+  }
+
+  if (clampCooldown) {
+    modalInfo.removeEventListener('scroll', handleScroll);
+    modalInfo.scrollTop = virtualScroll;
+    
+    requestAnimationFrame(() => {
+      highlightCenter(true);
+      updateScrollbar();
+      
+      setTimeout(() => {
+        modalInfo.addEventListener('scroll', handleScroll);
+        clampCooldown = false;
+      }, 50);
+    });
+  }
+}
+
+function stopDragging() {
+  if (!isDragging && !isScrollbarDragging) return;
+  
+  isDragging = false;
+  isScrollbarDragging = false;
+  customScrollthumb.classList.remove('active');
+  modalInfo.classList.remove('dragging');
+
+  const rows = [...modalInfo.querySelectorAll('.info-row')];
+  const containerRect = modalInfo.getBoundingClientRect();
+  const centerY = containerRect.top + containerRect.height / 2;
+
+  let closestBaseIndex = 0;
+  let closestDistance = Infinity;
+
+  rows.forEach(row => {
+    if(row.dataset.baseIndex === "-1") return;
+    const rect = row.getBoundingClientRect();
+    const rowCenter = (rect.top + rect.bottom) / 2;
+    const dist = Math.abs(rowCenter - centerY);
+    if (dist < closestDistance) {
+      closestDistance = dist;
+      closestBaseIndex = parseInt(row.dataset.baseIndex, 10);
+    }
+  });
+
+  scrollToBaseIndex(closestBaseIndex, true);
+}
+
+customScrollthumb.addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  isScrollbarDragging = true;
+  dragStartY = e.clientY;
+  dragStartScroll = modalInfo.scrollTop;
+  customScrollthumb.classList.add('active');
+  
+  document.addEventListener('pointermove', handleScrollDrag);
+  document.addEventListener('pointerup', stopScrollDrag);
+  e.preventDefault();
+});
+
+function handleScrollDrag(e) {
+  if (isScrollbarDragging) {
+    const deltaY = e.clientY - dragStartY;
+    const scrollRatio = deltaY / modalInfo.clientHeight;
+    modalInfo.scrollTop = dragStartScroll + (scrollRatio * modalInfo.scrollHeight);
+  }
+  e.preventDefault();
+}
+
+function stopScrollDrag() {
+  if (isScrollbarDragging) {
+    isScrollbarDragging = false;
+    customScrollthumb.classList.remove('active');
+    document.removeEventListener('pointermove', handleScrollDrag);
+    document.removeEventListener('pointerup', stopScrollDrag);
+    stopDragging();
+  }
+}
+
+modalInfo.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.custom-scrollbar')) return;
+  isDragging = true;
+  dragStartY = e.clientY;
+  dragStartScroll = modalInfo.scrollTop;
+  modalInfo.classList.add('dragging');
+  document.addEventListener('pointermove', handleContentDrag);
+  document.addEventListener('pointerup', stopContentDrag);
+  e.preventDefault();
+});
+
+function handleContentDrag(e) {
+  if (isDragging) {
+    const deltaY = dragStartY - e.clientY;
+    modalInfo.scrollTop = dragStartScroll + deltaY;
+
+    const scrollTop = modalInfo.scrollTop;
+    const scrollHeight = modalInfo.scrollHeight;
+    const clientHeight = modalInfo.clientHeight;
+    const lotHeight = scrollHeight / lots.length;
+    const bufferHeight = lotHeight * cloneCount;
+    const baseHeight = lotHeight * baseLots.length;
+
+    if (scrollTop < bufferHeight) {
+      modalInfo.scrollTop = scrollTop + baseHeight;
+      dragStartScroll = modalInfo.scrollTop;
+      dragStartY = e.clientY;
+    } else if (scrollTop + clientHeight >= scrollHeight - bufferHeight) {
+      modalInfo.scrollTop = scrollTop - baseHeight;
+      dragStartScroll = modalInfo.scrollTop;
+      dragStartY = e.clientY;
+    }
+  }
+  e.preventDefault();
+}
+
+function stopContentDrag() {
+  if (isDragging) {
+    isDragging = false;
+    modalInfo.classList.remove('dragging');
+    document.removeEventListener('pointermove', handleContentDrag);
+    document.removeEventListener('pointerup', stopContentDrag);
+    stopDragging();
+  }
+}
+
+function handleScroll() {
+  if (!scrollHandlerAttached) return;
+  
+  requestAnimationFrame(() => {
+    highlightCenter();
+    updateScrollbar();
+    
+    if (!isDragging && !isScrollbarDragging) {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        clampScroll();
+      }, 100);
+    }
+  });
+}
+
+modalInfo.addEventListener('scroll', handleScroll);
+
+modalInfo.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if(isDragging || isScrollbarDragging) return;
+
+  const rows = [...modalInfo.querySelectorAll('.info-row')];
+  const containerRect = modalInfo.getBoundingClientRect();
+  const centerY = containerRect.top + containerRect.height / 2;
+  
+  let closestRow = null;
+  let minDistance = Infinity;
+  
+  rows.forEach(row => {
+    const rect = row.getBoundingClientRect();
+    const distance = Math.abs((rect.top + rect.bottom)/2 - centerY);
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestRow = row;
+    }
+  });
+
+  if (!closestRow) return;
+  
+  const currentIndex = parseInt(closestRow.dataset.index);
+  const direction = Math.sign(e.deltaY);
+  let nextIndex = currentIndex + direction;
+
+  if (nextIndex < 0) {
+      nextIndex = lots.length - 1;
+  } else if (nextIndex >= lots.length) {
+      nextIndex = 0;
+  }
+  
+  modalInfo.querySelector(`.info-row[data-index="${nextIndex}"]`)?.scrollIntoView({
+    behavior: 'auto',
+    block: 'center'
+  });
+});
+
+function openModal(lot = null, baseIndex = 0) {
+  const wasHidden = !modal.classList.contains('show');
+
+  // If we're in PIN mode, block only when NOT switching to Info
+  const isPinMode = document.getElementById('lotModal')?.classList.contains('pin-mode');
+  if (isPinMode && !infoMode) return;
+  if (isPinMode && infoMode) {
+    document.getElementById('lotModal').classList.remove('pin-mode');
+  }
+
+  // NEW: Improved community filtering logic
+  if (lot && lot.fraccionamiento) {
+    // Store the original unfiltered baseLots if not already stored
+    if (!window.originalBaseLots) {
+      window.originalBaseLots = [...baseLots];
+    }
+    
+    // DEBUG: Check what we're filtering
+    console.log('Filtering for community:', lot.fraccionamiento);
+    console.log('Original lots:', window.originalBaseLots.length);
+    
+    // Filter to only show lots from the same community
+    baseLots = window.originalBaseLots.filter(l => 
+      l.fraccionamiento === lot.fraccionamiento
+    );
+    
+    console.log('Filtered lots:', baseLots.length);
+    
+    // Update modal title to show which community
+    const title = document.querySelector('.modal-header .header-title');
+    if (title) {
+      title.textContent = `LOTES VENTA — ${lot.fraccionamiento.toUpperCase()}`;
+    }
+  } else if (window.originalBaseLots) {
+    // Restore original list if no specific lot is selected
+    baseLots = [...window.originalBaseLots];
+    
+    // Reset modal title to default
+    const title = document.querySelector('.modal-header .header-title');
+    if (title) {
+      title.textContent = `LOTES VENTA`; // Generic title
+    }
+  }
+
+  // 🧹 Reset modal state
+  headerLotNumber.style.display = 'none';
+  document.querySelector('.modal-content-wrapper').classList.remove('show-details');
+  lotDetails.classList.remove('active');
+  backButton.style.display = 'none';
+  document.querySelector('.plus-button').style.display = 'none';
+  modal.classList.remove('info-mode','expanded', 'lot-mode');
+  scrollHandlerAttached = true;
+  document.getElementById('calendlyEmbed').style.display = 'none';
+  document.getElementById('lotDetails').style.display = 'block';
+
+  // 🔶 If we're going to list mode, clear previous INFO content
+  const modalInfoEl = document.getElementById('modalInfo');
+  const customScrollbarEl = document.getElementById('customScrollbar');
+  const spinnerEl = document.getElementById('loadingSpinner');
+
+  if (!infoMode) {
+    modalInfoEl.innerHTML = '';
+    customScrollbarEl.style.display = '';
+    spinnerEl.style.display = 'block';
+    modalInfoEl.style.opacity = '0';
+  }
+
+  // Now show the modal
+  modal.classList.add('show');
+  modal.style.display = 'block';
+  if (wasHidden) adjustMapForModal();
+
+  // 🔸 INFO MODE short-circuit
+  if (infoMode) {
+    modal.classList.add('expanded');
+    modalInfoEl.innerHTML = `
+      <div style="padding:20px; color:#8a8880;">
+        <h2 style="color:#a17345; margin-bottom:10px;">Sobre Santte 2</h2>
+        <p>Bienvenido a Santte 2. Aquí puedes poner descripción, ubicación, beneficios, etc.</p>
+        <p>Para más información contáctanos por WhatsApp o visita nuestras oficinas.</p>
+      </div>
+    `;
+    customScrollbarEl.style.display = 'none';
+    spinnerEl.style.display = 'none';
+    scrollHandlerAttached = false;
+    infoMode = false;
+    return;
+  }
+
+  // 👇 Normal list flow
+  modal.classList.add('lot-mode');
+  const doScrollAndHighlight = () => {
+    let scrollToIndex = 0;
+    
+    if (lot) {
+      // FIXED: Find the correct lot using both number AND community
+      scrollToIndex = baseLots.findIndex(l => 
+        l.number === extractLotNumber(lot.name) && 
+        l.fraccionamiento === lot.fraccionamiento
+      );
+      
+      if (scrollToIndex === -1) {
+        // Fallback: just use the first lot
+        scrollToIndex = 0;
+      }
+    } else {
+      scrollToIndex = baseIndex;
+    }
+
+    scrollToBaseIndex(scrollToIndex, false);
+
+    // show list once content exists
+    setTimeout(() => {
+      highlightCenter();
+      updateScrollbar();
+      spinnerEl.style.display = 'none';
+      modalInfoEl.style.opacity = '1';
+    }, 0);
+  };
+
+  if (!isDataLoaded) {
+    fetchLots().then(() => {
+      render();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(doScrollAndHighlight);
+      });
+    });
+  } else {
+    render();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(doScrollAndHighlight);
+    });
+  }
+}
+
+
+
+
+//LOT UNIT CONTROLS SORTING
+(() => {
+  const modal = document.getElementById('lotModal');
+  const unitControls = document.getElementById('unitControls');
+  if (!modal || !unitControls) return;
+
+  let currentMode = modal.dataset.mode || 'num';
+  const btns = Array.from(unitControls.querySelectorAll('.unit-btn'));
+  
+  // Store original unsorted list
+  let unsortedBaseLots = [];
+
+  // Function to sort the lots based on mode
+  function sortLots(mode) {
+    if (!baseLots.length) return;
+    
+    // Save original order if not already saved
+    if (unsortedBaseLots.length === 0) {
+      unsortedBaseLots = [...baseLots];
+    }
+    
+    let sortedLots;
+    
+    switch(mode) {
+      case 'num':
+        // Restore original order (lot number ascending)
+        sortedLots = [...unsortedBaseLots].sort((a, b) => a.number - b.number);
+        break;
+        
+      case 'area':
+        // Sort by size (largest to smallest) - filter out sold lots
+        sortedLots = unsortedBaseLots.filter(lot => {
+          const status = (lot.availability || '').toString().toLowerCase();
+          return status !== 'sold';
+        }).sort((a, b) => {
+          const sizeA = parseFloat(a.size) || 0;
+          const sizeB = parseFloat(b.size) || 0;
+          return sizeB - sizeA;
+        });
+        break;
+        
+      case 'price':
+        // Sort by price (highest to lowest) - filter out sold lots
+        sortedLots = unsortedBaseLots.filter(lot => {
+          const status = (lot.availability || '').toString().toLowerCase();
+          return status !== 'sold';
+        }).sort((a, b) => {
+          const priceA = parseFloat(a.price) || 0;
+          const priceB = parseFloat(b.price) || 0;
+          return priceB - priceA;
+        });
+        break;
+        
+      default:
+        return;
+    }
+    
+    // Update the baseLots array with sorted data
+    baseLots = sortedLots;
+    
+    // Update the display
+    updateLotsArray();
+    render();
+    
+    // Scroll to the correct position (accounting for clones)
+    if (modalInfo && lots.length > 0) {
+      const rowHeight = modalInfo.scrollHeight / lots.length;
+      const bufferHeight = rowHeight * cloneCount;
+      modalInfo.scrollTop = bufferHeight;
+      
+      highlightCenter();
+      updateScrollbar();
+    }
+  }
+
+  // Function to set the display mode
+  function setMode(mode) {
+    currentMode = mode;
+    modal.dataset.mode = mode;
+
+    // Toggle the active button styling
+    btns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    
+    // Sort the lots based on the selected mode
+    sortLots(mode);
+  }
+
+  // Attach event listeners to each button to toggle mode
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      setMode(btn.dataset.mode);
+    });
+  });
+
+  // Initialize by setting the correct mode
+  // But don't sort on initial load - wait until user clicks a button
+  btns.forEach(b => b.classList.toggle('active', b.dataset.mode === currentMode));
+})();
+
+
+
+
+
+
+function closeModal() {
+
+  
+  const modal = document.getElementById('lotModal');
+  if (!modal) return;
+
+  const wrapper = document.querySelector('.modal-content-wrapper');
+  const modalInfo = document.getElementById('modalInfo');
+  const customScrollbar = document.getElementById('customScrollbar');
+  const lotDetails = document.getElementById('lotDetails');
+  const backButton = document.getElementById('backButton');
+  const headerLotNumber = document.getElementById('headerLotNumber');
+  const plusIcon = document.querySelector('.plus-button .plus-icon');
+  const minusIcon = document.querySelector('.plus-button .minus-icon');
+  const plusBtn = document.querySelector('.plus-button');
+  const bottomPlus = document.querySelector('.bottom-plus-button');
+
+  
+
+  // --- 1) Kill special modes / embeds
+  modal.classList.remove('info-mode', 'pin-mode', 'expanded', 'lot-mode');
+  hideCalendlyEmbed();                       // blanks iframe + hides container
+  isDetailOpen = false;
+
+  // --- 2) Clear lot side labels & map hover
+  removeSideLengthLabels();
+  if (typeof hoveredId !== 'undefined' && hoveredId !== null && map && map.getSource('lots-final')) {
+    try { map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false }); } catch {}
+    hoveredId = null;
+  }
+
+  // --- 3) Reset panes (detail vs list) & content
+  if (wrapper) wrapper.classList.remove('show-details');
+  if (lotDetails) {
+    lotDetails.classList.remove('active');
+    lotDetails.style.display = 'block';
+    lotDetails.innerHTML = '';
+  }
+  if (modalInfo) {
+    modalInfo.style.display = '';
+    modalInfo.style.opacity = '1';
+    // Optional: reset scroll position so list starts clean
+
+  }
+  if (customScrollbar) customScrollbar.style.display = '';
+
+  // --- 4) Reset controls visibility & header
+  if (backButton) backButton.style.display = 'none';
+  if (headerLotNumber) headerLotNumber.style.display = 'none';
+  if (plusBtn) plusBtn.style.display = 'none';
+  if (bottomPlus) bottomPlus.style.display = 'none';
+  if (plusIcon) plusIcon.style.display = 'block';
+  if (minusIcon) minusIcon.style.display = 'none';
+
+  // --- 5) Reset internal scroll/animation flags (if you use them)
+  try { scrollHandlerAttached = true; } catch {}
+  try { clampCooldown = false; } catch {}
+  try { animatedFeaturedLots?.clear?.(); } catch {}
+
+  // --- 6) Restore map view (undo panBy offset + preModalView fly)
+  if (preModalView && map) {
+    map.flyTo({
+      center: preModalView.center,
+      zoom: preModalView.zoom,
+      bearing: preModalView.bearing,
+      pitch: preModalView.pitch,
+      speed: 1.2,
+      curve: 1.5
+    });
+
+    // After fly, undo the modal offset pan
+    map.once('moveend', () => {
+      if (lastOffset) {
+        map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
+        lastOffset = [0, 0];
+      }
+    });
+
+    preModalView = null;
+  } else if (map && lastOffset) {
+    // Fallback: just undo the offset
+    map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
+    lastOffset = [0, 0];
+  }
+
+  // --- 7) Close modal (let CSS transition run)
+  modal.classList.remove('show');
+  setTimeout(() => { modal.style.display = 'none'; }, 300);
+}
+
+
+function handlePlusButton() {
+  const modal = document.getElementById('lotModal');
+  const plusIcon = document.querySelector('.plus-button .plus-icon');
+  const minusIcon = document.querySelector('.plus-button .minus-icon');
+  
+  // Toggle expanded state
+  modal.classList.toggle('expanded');
+  
+  // Toggle between plus and minus icon
+  if (modal.classList.contains('expanded')) {
+    plusIcon.style.display = 'none';
+    minusIcon.style.display = 'block';
+  } else {
+    plusIcon.style.display = 'block';
+    minusIcon.style.display = 'none';
+  }
+ }
+
+function loadCalendlyWidget({ lot, detailData }) {
+  const container = document.getElementById('calendlyEmbed');
+  const iframe = document.getElementById('calendly-iframe');
+  
+  // Build the Calendly URL with all hiding parameters
+  const calendlyUrl = new URL('https://calendly.com/lalaland_/santte2');
+  calendlyUrl.searchParams.set('hide_gdpr_banner', '1');
+  calendlyUrl.searchParams.set('background_color', 'fcfaf3');
+  calendlyUrl.searchParams.set('text_color', '1a1a1a');
+  calendlyUrl.searchParams.set('primary_color', 'ff8400');
+  
+  // Load the iframe
+  iframe.src = calendlyUrl.toString();
+  container.style.display = 'block';
+  
+
+  
+  // Nuclear option to remove branding (runs every 500ms)
+  const checkForBranding = setInterval(() => {
+    try {
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+      const elements = iframeDoc.querySelectorAll('.calendly-branding, .calendly-cookie-banner');
+      elements.forEach(el => el.remove());
+    } catch(e) {
+      // Cross-origin error - we'll rely on URL parameters
+      clearInterval(checkForBranding);
+    }
+  }, 500);
+}
+
+
+
+
+
+</script>
+ 
+ 
+<script>
+// RESET GPS + INFO (reusing #lotModal)
+document.addEventListener('DOMContentLoaded', () => {
+  const modal    = document.getElementById('lotModal');
+  const resetBtn = document.getElementById('resetViewBtn');
+  const infoBtn  = document.getElementById('infoBtn'); // left orange button
+  const gpsBtn   = document.getElementById('gpsButton'); 
+
+  // Open lot modal in "info mode" (replace list content)
+infoBtn.addEventListener('click', () => {
+  infoMode = true;              // existing line
+  document.getElementById('lotModal')?.classList.remove('pin-mode');
+  openModal();                  // existing line
+
+  // Mark this instance of the modal as “info-mode”
+  modal.classList.add('info-mode');   // <-- add this
+modal.classList.remove('lot-mode');
+  // Force expanded mode (your existing behavior)
+  modal.classList.add('expanded');
+
+  const modalInfo = document.getElementById('modalInfo');
+  const customScrollbar = document.getElementById('customScrollbar');
+
+  modalInfo.innerHTML = `
+    <div style="padding:20px; color:#8a8880;">
+      <h2 style="color:#a17345; margin-bottom:10px;">Sobre Santte 2</h2>
+      <p>Bienvenido a Santte 2. Aquí puedes poner descripción, ubicación, beneficios, etc.</p>
+      <p>Para más información contáctanos por WhatsApp o visita nuestras oficinas.</p>
+    </div>
+  `;
+  customScrollbar.style.display = 'none';
+});
+
+
+
+
+ 
+  // Hide/show floating buttons while modal is expanded (mobile)
+const observer = new MutationObserver(() => {
+  // Add Pin button may be created later by PS.addAddPinButton()
+  const addPinBtn = document.getElementById('addPinBtn');
+
+  const hideAll = () => {
+    resetBtn?.classList.add('hide');
+    infoBtn?.classList.add('hide');
+    gpsBtn?.classList.add('hide');
+    driveBtn?.classList.add('hide');
+    addPinBtn?.classList.add('hide');
+    cycleAvailabilityBtn?.classList.add('hide');
+
+    // If user was in "add pin" mode, turn it off so no crosshair while hidden
+    if (window.__LL_PINS__?.addMode) {
+      try { window.__LL_PINS__.toggleAddMode(); } catch {}
+    }
+  };
+
+  const showAll = () => {
+    resetBtn?.classList.remove('hide');
+    infoBtn?.classList.remove('hide');
+    gpsBtn?.classList.remove('hide');
+    driveBtn?.classList.remove('hide');
+    addPinBtn?.classList.remove('hide');
+    cycleAvailabilityBtn?.classList.remove('hide');
+  };
+
+  if (window.innerWidth < 768) {
+    if (modal.classList.contains('expanded')) {
+      hideAll();
+    } else {
+      showAll();
+    }
+  } else {
+    // Desktop: keep them visible
+    showAll();
+  }
+});
+
+  observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+
+  // Reset map view (existing behavior)
+  const initialZoom = window.innerWidth >= 768 ? 17 : 16.45;
+  resetBtn.addEventListener('click', () => {
+    if (!window.map) return;
+    map.flyTo({
+      center: [-100.15994, 25.461823],
+      zoom: initialZoom,
+      bearing: 0,
+      pitch: 0,
+      speed: 1.2,
+      curve: 1.5
+    });
+  });
+});
+
+
+function hideCalendlyEmbed() {
+  // Hide the embedded Calendly pane
+  const wrap = document.getElementById('calendlyEmbed');
+  if (wrap) wrap.style.display = 'none';
+
+  // Blank the iframe so it fully resets next time
+  const iframe = document.getElementById('calendly-iframe');
+  if (iframe) iframe.src = 'about:blank';
+
+  // Close Calendly popup widget if it's open
+  if (window.Calendly && typeof window.Calendly.closePopupWidget === 'function') {
+    try { window.Calendly.closePopupWidget(); } catch {}
+  }
+}
+
+</script>
+
+
+
+
+<script>
+(() => {
+  'use strict';
+
+  const PS = (window.__LL_PINS__ = window.__LL_PINS__ || {});
+  PS.markers = new Map();      // id -> { pin, marker }
+  PS.addMode = false;
+  PS._mapClickHandler = null;
+  PS._isVisible = false;       // markers start hidden (button is now always visible)
+
+  // === Cone visibility & size ===
+  PS._conesVisible = false; 
+  PS._coneFillOpacity = 0.30;  // final fill opacity when visible
+  PS._coneLineOpacity = 0;     // final line opacity when visible
+  PS.coneRadiusMeters = 30;    // cone length (meters)
+  PS.coneFovDegrees   = 60;    // cone width (degrees)
+
+  // GeoJSON store for all cone triangles
+  PS._coneFC = { type: 'FeatureCollection', features: [] };
+
+  // Track pins awaiting cone appearance order
+  PS._pinsAwaitingCone = new Set();  // ids that will get cone after dot is visible
+
+  const toast = (m, t=2500) => { try{ window.showToaster?.(m, t);}catch{} };
+  const debounce = (fn, wait=400) => { let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), wait); }; };
+
+  async function compressImageToJPEG(fileOrBlob, maxSize = 1000) {
+    const dataURL = await new Promise((res) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.readAsDataURL(fileOrBlob);
+    });
+    const img = await new Promise((res) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.src = dataURL;
+    });
+    let { width, height } = img;
+    if (width > height && width > maxSize) {
+      height = Math.round(height * (maxSize / width));
+      width = maxSize;
+    } else if (height > width && height > maxSize) {
+      width = Math.round(width * (maxSize / height));
+      height = maxSize;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+    return await new Promise((res) => canvas.toBlob(b => res(b), 'image/jpeg', 0.85));
+  }
+
+  // ======== GEO UTILS: destination point (lng,lat + meters + bearing°) ========
+  function destination(lng, lat, distMeters, bearingDeg) {
+    const R = 6371000; // meters
+    const δ = distMeters / R;
+    const θ = (bearingDeg * Math.PI) / 180;
+    const φ1 = (lat * Math.PI) / 180;
+    const λ1 = (lng * Math.PI) / 180;
+
+    const sinφ1 = Math.sin(φ1), cosφ1 = Math.cos(φ1);
+    const sinδ = Math.sin(δ),   cosδ = Math.cos(δ);
+    const sinφ2 = sinφ1 * cosδ + cosφ1 * sinδ * Math.cos(θ);
+    const φ2 = Math.asin(sinφ2);
+    const y = Math.sin(θ) * sinδ * cosφ1;
+    const x = cosδ - sinφ1 * sinφ2;
+    const λ2 = λ1 + Math.atan2(y, x);
+
+    return [ ((λ2 * 180) / Math.PI + 540) % 360 - 180, (φ2 * 180) / Math.PI ];
+  }
+
+  // Build a triangular cone polygon for a pin
+  function _buildConeFeature(pin) {
+    const heading = ((pin.heading ?? 0) % 360 + 360) % 360;
+    const half = PS.coneFovDegrees / 2;
+    const leftBrg  = heading - half;
+    const rightBrg = heading + half;
+
+    const pLeft  = destination(pin.lng, pin.lat, PS.coneRadiusMeters, leftBrg);
+    const pRight = destination(pin.lng, pin.lat, PS.coneRadiusMeters, rightBrg);
+
+    return {
+      type: 'Feature',
+      properties: { role: 'cone', pin_id: pin.id, heading },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [pin.lng, pin.lat],
+          pLeft,
+          pRight,
+          [pin.lng, pin.lat]
+        ]]
+      }
+    };
+  }
+
+  function _ensureConeLayer() {
+  if (!window.map) return;
+  if (!map.getSource('ps-cones')) {
+    map.addSource('ps-cones', { type: 'geojson', data: PS._coneFC });
+  }
+  if (!map.getLayer('ps-cones-fill')) {
+    map.addLayer({
+      id: 'ps-cones-fill',
+      type: 'fill',
+      source: 'ps-cones',
+      paint: {
+        'fill-color': '#ff8400',
+        'fill-opacity': 0 // start hidden
+      },
+      filter: ['==', ['get', 'role'], 'cone']
+    });
+  } 
+  if (!map.getLayer('ps-cones-outline')) {
+    map.addLayer({
+      id: 'ps-cones-outline',
+      type: 'line',
+      source: 'ps-cones',
+      paint: {
+        'line-color': '#ff8400',
+        'line-width': 0, 
+        'line-opacity': 0 // start hidden
+      },
+      filter: ['==', ['get', 'role'], 'cone']
+    });
+  }
+  
+  // Add click handler for cone layer (only once)
+  if (!map._coneClickHandlerAdded) {
+    map.on('click', 'ps-cones-fill', (e) => {
+      if (e.features.length > 0) {
+        const pinId = e.features[0].properties.pin_id;
+        const pinRec = PS.markers.get(pinId);
+        if (pinRec) {
+          // Prevent the event from bubbling to the map's click handler
+          e.preventDefault();
+          e.originalEvent.stopPropagation();
+          e.originalEvent.stopImmediatePropagation();
+          
+          PS.openPinInModal(pinRec.pin);
+        }
+      }
+    });
+    
+    map._coneClickHandlerAdded = true;
+  }
+  
+  try {
+    map.setPaintProperty('ps-cones-fill', 'fill-opacity-transition', { duration: 250 });
+    map.setPaintProperty('ps-cones-outline', 'line-opacity-transition', { duration: 250 });
+  } catch {}
+}
+
+  function _syncConesSource() {
+    const src = map?.getSource('ps-cones');
+    if (src) src.setData(PS._coneFC);
+  }
+
+  function _addConeFeatureNow(pin) {
+    // upsert feature and sync source
+    const idx = PS._coneFC.features.findIndex(f => f.properties?.pin_id === pin.id);
+    const feat = _buildConeFeature(pin);
+    if (idx >= 0) PS._coneFC.features[idx] = feat;
+    else PS._coneFC.features.push(feat);
+    _syncConesSource();
+  }
+
+  function _removeConeForPinId(pinId) {
+    const before = PS._coneFC.features.length;
+    PS._coneFC.features = PS._coneFC.features.filter(f => f.properties?.pin_id !== pinId);
+    if (PS._coneFC.features.length !== before) _syncConesSource();
+  }
+
+function _ensureConesShown() {
+  if (!window.map) return;
+  // Ensure sources/layers exist before setting paint
+  _ensureConeLayer(); // <— safe no-op if already present
+
+  if (!PS._conesVisible) {
+    const fill = PS._coneFillOpacity, line = PS._coneLineOpacity;
+    map.setPaintProperty('ps-cones-fill', 'fill-opacity', fill);
+    map.setPaintProperty('ps-cones-outline', 'line-opacity', line);
+    PS._conesVisible = true;
+  }
+}
+
+  // ---- Add Pin button (ALWAYS visible now)
+  PS.addAddPinButton = function () {
+    if (document.getElementById('addPinBtn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'addPinBtn';
+    btn.className = 'gps-button';
+    btn.title = 'Add point';
+    btn.style.bottom = '260px';
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>`;
+    btn.addEventListener('click', () => PS.toggleAddMode());
+    document.body.appendChild(btn);
+  };
+
+  // ---- Toggle add mode (no gating on _isVisible)
+  PS.toggleAddMode = function () {
+    if (!window.map) { toast('Map is still loading…'); return; }
+    PS.addMode = !PS.addMode;
+    const btn = document.getElementById('addPinBtn');
+    if (btn) btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,1)' : '';
+    map.getCanvas().style.cursor = PS.addMode ? 'crosshair' : '';
+    if (PS.addMode && !PS._mapClickHandler) {
+      PS._mapClickHandler = (e) => {
+        const t = e.originalEvent?.target;
+        if (t && (t.closest('#lotModal') || t.closest('.mapboxgl-ctrl') || t.closest('button') || t.closest('a'))) return;
+        PS.createPinAt(e.lngLat).finally(() => {
+          PS.addMode = false;
+          PS.toggleAddMode(); 
+        });
+      };
+      map.on('click', PS._mapClickHandler);
+      toast('Click the map to drop a pin');
+    } else if (!PS.addMode && PS._mapClickHandler) {
+      map.off('click', PS._mapClickHandler);
+      PS._mapClickHandler = null;
+    }
+  };
+
+  // ---- DB create
+  PS.createPinAt = async function (lngLat) {
+    await window.supabaseReady;
+    const { data, error } = await window.supabaseClient
+      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat, heading: 0 }).select().single();
+    if (error) { console.error(error); toast('Could not create pin'); return; }
+    PS.addMarker(data);
+    toast('Pin added');
+  };
+
+  // ---- Delete pin (DB + local cleanup + cone)
+  PS.deletePin = async function (pinId) {
+    try {
+      await window.supabaseReady;
+      const { error } = await window.supabaseClient
+        .from('pins').delete().eq('id', pinId);
+      if (error) { console.error(error); toast('Failed to delete pin'); return false; }
+
+      // Optimistic local cleanup (RT delete will also do this)
+      const rec = PS.markers.get(pinId);
+      if (rec) { rec.marker.remove(); PS.markers.delete(pinId); }
+      _removeConeForPinId(pinId);
+
+      toast('Pin deleted');
+      return true;
+    } catch (e) {
+      console.error(e);
+      toast('Delete failed');
+      return false;
+    }
+  };
+
+  // ---- HTML marker (12px dot)
+  PS.markerElement = function () {
+    const el = document.createElement('div');
+    el.style.width = '10px';
+    el.style.height = '10px';
+    el.style.borderRadius = '50%';
+    el.style.background = 'transparent';
+    el.style.border = 'none';
+    el.style.boxShadow = 'none';
+    el.style.cursor = 'pointer';
+    el.style.border = '2px solid #ff8400'; // Orange outline
+    return el;
+  };
+
+  // ---- Add marker + schedule cone strictly AFTER dot is visible
+  PS.addMarker = function (pin) {
+    const updating = PS.markers.has(pin.id);
+    if (updating) {
+      PS.markers.get(pin.id).marker.setLngLat([pin.lng, pin.lat]);
+      PS.markers.get(pin.id).pin = pin;
+      return;
+    }
+
+    const el = PS.markerElement();
+    const marker = new mapboxgl.Marker({ element: el, draggable: true })
+      .setLngLat([pin.lng, pin.lat]);
+
+    PS.markers.set(pin.id, { pin, marker });
+
+    // Add marker to map immediately if pins are already visible
+    if (PS._isVisible && window.map) {
+      marker.addTo(map);
+      // schedule cone AFTER this dot paints (2 RAFs)
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        _addConeFeatureNow(pin);
+        _ensureConesShown();
+      }));
+    } else {
+      // Initial load path: marker is not yet on map; _revealMarkers will add + fade-in.
+      PS._pinsAwaitingCone.add(pin.id);
+    }
+
+    marker.on('dragend', async () => {
+      const ll = marker.getLngLat();
+      const { error } = await window.supabaseClient
+        .from('pins').update({ lng: ll.lng, lat: ll.lat }).eq('id', pin.id);
+      if (error) toast('Failed to save position'); else toast('Position saved');
+      const rec = PS.markers.get(pin.id);
+      if (rec) {
+        rec.pin.lng = ll.lng; rec.pin.lat = ll.lat;
+        _addConeFeatureNow(rec.pin); // move cone with pin
+      }
+    });
+
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      PS.openPinInModal(pin);
+    });
+
+
+
+    
+  };
+
+  // programmatic setter (update heading + persist + refresh cone)
+  PS.setPinHeading = async function (pinId, newHeading, { persist = true } = {}) {
+    const rec = PS.markers.get(pinId);
+    if (!rec) return;
+    const h = (Math.round(newHeading) % 360 + 360) % 360;
+    rec.pin.heading = h;
+    _addConeFeatureNow(rec.pin); // redraw cone polygon
+    if (persist) {
+      await window.supabaseReady;
+      const { error } = await window.supabaseClient
+        .from('pins').update({ heading: h }).eq('id', pinId);
+      if (error) console.warn('Failed to save heading', error);
+    }
+  };
+
+  // ---- Reveal markers (fade-in) and then reveal cones per-pin on transition end
+  PS._revealMarkers = function () {
+    if (PS._isVisible) return;
+    PS._isVisible = true;
+
+    // Count how many awaiting pins we will handle
+    const awaitingIds = new Set(PS._pinsAwaitingCone);
+    let revealedCount = 0;
+    const totalToReveal = awaitingIds.size;
+
+    PS.markers.forEach(({ marker, pin }) => {
+      const el = marker.getElement();
+      if (!el.parentNode) marker.addTo(map); // put it on the map
+      el.style.display = 'block';
+      el.style.opacity = '0';
+      el.style.transition = 'opacity 600ms ease';
+
+      // After fade finishes for this dot, add its cone, then maybe show layer
+      const onDone = () => {
+        el.removeEventListener('transitionend', onDone);
+        if (awaitingIds.has(pin.id)) {
+          _addConeFeatureNow(pin);
+          awaitingIds.delete(pin.id);
+        }
+        revealedCount++;
+        if (revealedCount === totalToReveal) {
+          _ensureConesShown(); // only after all initially pending dots are visible
+          PS._pinsAwaitingCone.clear();
+        }
+      };
+
+      el.addEventListener('transitionend', onDone, { once: true });
+
+      // Safety: if transitionend never fires (browser quirk), force after 1s
+      setTimeout(() => {
+        if (awaitingIds.has(pin.id)) onDone();
+      }, 1000);
+
+      // start fade-in
+      requestAnimationFrame(() => { el.style.opacity = '1'; });
+    });
+  };
+
+  // ---- Open in your lot modal (with heading controls + DELETE button)
+  // ---- Open in modal (full-width photo, no thumbnails)
+// ---- Open in modal (full-width photo, controls overlayed above photo)
+PS.openPinInModal = async function (pin) {
+  await window.supabaseReady;
+  
+  // Check if user is authenticated
+  const { data: { session } } = await window.supabaseClient.auth.getSession();
+  const isAuthenticated = !!(session && session.user);
+  
+  document.getElementById('lotModal').classList.add('pin-mode');
+
+  const modal = document.getElementById('lotModal');
+  const wrapper = document.querySelector('.modal-content-wrapper');
+  const lotDetails = document.getElementById('lotDetails');
+  const backButton = document.getElementById('backButton');
+
+  if (!modal.classList.contains('show')) {
+    try {
+      if (window.map) {
+        window.preModalView = {
+          center: map.getCenter().toArray(),
+          zoom: map.getZoom(),
+          bearing: map.getBearing(),
+          pitch: map.getPitch()
+        };
+      }
+      modal.classList.add('show');
+      modal.style.display = 'block';
+      if (typeof window.adjustMapForModal === 'function') adjustMapForModal();
+    } catch (e) {
+      console.warn('Could not open modal:', e);
+    }
+  }
+
+  modal.classList.add('pin-mode');
+  modal.classList.remove('lot-mode');
+  if (backButton) backButton.style.display = 'none';
+  document.querySelector('.plus-button')?.style && (document.querySelector('.plus-button').style.display = 'none');
+  document.querySelector('.bottom-plus-button')?.style && (document.querySelector('.bottom-plus-button').style.display = 'none');
+
+  // Optional: make the content truly edge-to-edge
+  lotDetails.style.padding = '0';
+  wrapper.style.padding = '0';
+
+  lotDetails.innerHTML = '';
+  wrapper.classList.add('show-details');
+  lotDetails.classList.add('active');
+  try { window.isDetailOpen = true; } catch {}
+
+  // fetch photos (latest shown)
+  const { data: photos } = await window.supabaseClient
+    .from('pin_photos')
+    .select('id,url,created_at')
+    .eq('pin_id', pin.id)
+    .order('created_at', { ascending: true });
+
+  const latest = (photos && photos.length) ? photos[photos.length - 1] : null;
+  const currentHeading = (typeof pin.heading === 'number') ? pin.heading : 0;
+
+  // Build UI: Only show photo when not authenticated, show controls when authenticated
+  const container = document.createElement('div');
+  container.style.padding = '0';
+  
+  // Only show controls if authenticated
+  const authControlsHtml = isAuthenticated ? `
+    <!-- Heading control (on top of photo) -->
+    <div style="display:flex; align-items:center; gap:10px; color:#fff;">
+      <div style="font-size:12px; opacity:.85; min-width:70px;">Heading</div>
+      <input id="ps-heading-${pin.id}" type="range" min="0" max="359" step="1"
+             value="${currentHeading}" style="flex:1;">
+      <input id="ps-heading-num-${pin.id}" type="number" min="0" max="359" step="1"
+             value="${currentHeading}"
+             style="width:64px; padding:4px 6px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#111;">
+    </div>
+
+    <!-- Actions (Upload / Delete) -->
+    <div style="display:flex; gap:10px; align-items:center;">
+      <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">
+        Upload photo
+        <input type="file" accept="image/*" capture="environment" style="display:none" id="ps-upload-${pin.id}">
+      </label>
+      <button id="ps-delete-${pin.id}" type="button"
+        style="background:#f44336;color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:700;">
+        Delete pin
+      </button>
+    </div>
+  ` : '';
+
+  container.innerHTML = `
+    <div id="ps-photo-wrap-${pin.id}" style="
+      position:relative;
+      width:100%;
+      margin:0;
+      border-radius:0 !important;
+      overflow:hidden;
+      background:none;">
+      ${
+        latest
+          ? `<img id="ps-photo-${pin.id}" src="${latest.url}" alt=""
+                 style="display:block;width:100%;height:auto;border-radius:0;cursor:pointer;">`
+          : isAuthenticated 
+            ? `<div id="ps-photo-empty-${pin.id}" style="padding:48px 0;text-align:center;color:#8a8880;">No photo yet.</div>`
+            : `<div id="ps-photo-empty-${pin.id}" style="padding:48px 0;text-align:center;color:#8a8880;">No photo available.</div>`
+      }
+
+      <!-- Only show overlay with controls if authenticated -->
+      ${isAuthenticated ? `
+      <div class="ps-overlay" style="
+        position:absolute;
+        left:0; right:0; bottom:0;
+        z-index:2;                 
+        padding:12px;
+        pointer-events:none;       
+        background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.35) 40%, rgba(0,0,0,.45) 100%);
+      ">
+        <div class="ps-overlay-card" style="
+          display:flex; flex-direction:column; gap:10px;
+          pointer-events:auto;     
+          background: rgba(0,0,0,0.40);
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+          border-radius:10px;
+          padding:10px;
+        ">
+          ${authControlsHtml}
+        </div>
+      </div>
+      ` : ''}
+    </div>
+  `;
+  lotDetails.appendChild(container);
+
+  // photo click => fullscreen viewer (available for all users)
+  const imgEl = container.querySelector(`#ps-photo-${pin.id}`);
+  imgEl?.addEventListener('click', () => PS.showViewer(imgEl.src));
+
+  // Only set up event handlers if authenticated
+  if (isAuthenticated) {
+    // delete pin
+    const delBtn = container.querySelector(`#ps-delete-${pin.id}`);
+    delBtn.addEventListener('click', async () => {
+      if (!confirm('Delete this pin?')) return;
+      const ok = await PS.deletePin(pin.id);
+      if (ok) { try { modal.classList.remove('show'); modal.style.display = 'none'; } catch {} }
+    });
+
+    // heading controls
+    const range = container.querySelector(`#ps-heading-${pin.id}`);
+    const num   = container.querySelector(`#ps-heading-num-${pin.id}`);
+    const syncPair = (v) => { range.value = v; num.value = v; };
+    const updateLive = (v) => PS.setPinHeading(pin.id, Number(v), { persist:false });
+    const saveDebounced = ((fn)=>{ let t; return (v)=>{ clearTimeout(t); t=setTimeout(()=>fn(v),300); }; })
+      (async (v) => {
+        await PS.setPinHeading(pin.id, Number(v), { persist:true });
+        const rec = PS.markers.get(pin.id); if (rec) rec.pin.heading = Number(v);
+      });
+
+    range.addEventListener('input',  (e) => { syncPair(e.target.value); updateLive(e.target.value); });
+    range.addEventListener('change', (e) => saveDebounced(e.target.value));
+    num.addEventListener('input',    (e) => {
+      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
+      syncPair(v); updateLive(v);
+    });
+    num.addEventListener('change',   (e) => {
+      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
+      syncPair(v); saveDebounced(v);
+    });
+
+    // upload: replace full-width image (no thumbnails)
+    const input = container.querySelector(`#ps-upload-${pin.id}`);
+    input.addEventListener('change', async (e) => {
+      if (!e.target.files || !e.target.files[0]) return;
+      try {
+        const blob = await compressImageToJPEG(e.target.files[0], 1200);
+        const path = `${pin.id}/${Date.now()}.jpg`;
+
+        const up = await window.supabaseClient.storage.from('pin-photos')
+          .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (up.error) throw up.error;
+
+        const pub = window.supabaseClient.storage.from('pin-photos').getPublicUrl(path);
+        const url = pub?.data?.publicUrl;
+        if (!url) throw new Error('No public URL');
+
+        const { error: insErr } = await window.supabaseClient
+          .from('pin_photos').insert({ pin_id: pin.id, url });
+        if (insErr) throw insErr;
+
+        const wrap = container.querySelector(`#ps-photo-wrap-${pin.id}`);
+        let img = container.querySelector(`#ps-photo-${pin.id}`);
+        if (!img) {
+          wrap.insertAdjacentHTML('afterbegin',
+            `<img id="ps-photo-${pin.id}" src="${url}" alt="" style="display:block;width:100%;height:auto;border-radius:0;cursor:pointer;">`);
+          img = container.querySelector(`#ps-photo-${pin.id}`);
+          img.addEventListener('click', () => PS.showViewer(img.src));
+          document.getElementById(`ps-photo-empty-${pin.id}`)?.remove();
+        } else {
+          img.src = url;
+        }
+
+        try { window.showToaster?.('Photo uploaded'); } catch {}
+      } catch (err) {
+        console.error(err);
+        try { window.showToaster?.('Upload failed'); } catch {}
+      } finally {
+        e.target.value = '';
+      }
+    });
+  }
+};
+
+
+
+
+  // ---- Simple full-screen viewer
+  PS.ensureViewer = function () {
+    if (document.getElementById('pinViewer')) return;
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="pinViewer" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;">
+        <img id="pinViewerImg" style="max-width:90%;max-height:90%;position:absolute;top:50%;left:50%;transform:translate(-50%, -50%);" />
+        <button id="pinViewerClose" style="position:absolute;top:20px;right:20px;background:#f44336;color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;">×</button>
+      </div>`);
+    document.getElementById('pinViewerClose').addEventListener('click', () => {
+      document.getElementById('pinViewer').style.display = 'none';
+    });
+  };
+  PS.showViewer = function (url) {
+    PS.ensureViewer();
+    document.getElementById('pinViewerImg').src = url;
+    document.getElementById('pinViewer').style.display = 'block';
+  };
+
+  // ---- Load + realtime
+  PS.loadPins = async function () {
+    await window.supabaseReady;
+    const { data, error } = await window.supabaseClient
+      .from('pins').select('id,lng,lat,heading').order('created_at', { ascending: true });
+    if (error) return;
+
+    _ensureConeLayer();
+
+    (data || []).forEach(p => {
+      PS.addMarker(p); // cones deferred until dot visible
+    });
+  };
+
+  PS.subscribe = function () {
+    window.supabaseClient
+      .channel('pins-rt')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins' }, (payload) => {
+        PS.addMarker(payload.new); // for live inserts, cone is delayed 2 RAFs inside addMarker
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pins' }, (payload) => {
+        const rec = PS.markers.get(payload.new.id);
+        if (!rec) return;
+        const { lng, lat, heading } = payload.new;
+        if (typeof lng === 'number' && typeof lat === 'number') {
+          rec.marker.setLngLat([lng, lat]);
+          rec.pin.lng = lng; rec.pin.lat = lat;
+        }
+        if (typeof heading === 'number') {
+          rec.pin.heading = ((heading % 360) + 360) % 360;
+        }
+        _addConeFeatureNow(rec.pin); // move/rotate cone with updates
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pins' }, (payload) => {
+        const rec = PS.markers.get(payload.old.id);
+        if (rec) { rec.marker.remove(); PS.markers.delete(payload.old.id); }
+        _removeConeForPinId(payload.old.id);
+      })
+      .subscribe();
+  };
+
+  // ---- Boot
+  const boot = async () => {
+    await window.supabaseReady;
+    if (!window.map) {
+      const i = setInterval(() => {
+        if (window.map) { clearInterval(i); PS.addAddPinButton(); PS.loadPins(); PS.subscribe(); }
+      }, 200);
+    } else {
+      PS.addAddPinButton();
+      PS.loadPins();
+      PS.subscribe();
+    }
+map.once('idle', () => { _ensureConeLayer(); /* wait for animations */ });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})(); 
+</script>
+
+ 
+
+<script>
+// CYCLE AVAILABILITY — standalone + persistent selection
+(() => {
+  const btn = document.getElementById('cycleAvailabilityBtn');
+  if (!btn) return;
+
+  const ORDER = ['Available', 'Sold', 'Featured'];
+  let selectedLotName = null; // persists selection inside this block
+
+  const $modalInfo = document.getElementById('modalInfo');
+  const $lotModal  = document.getElementById('lotModal');
+
+  // --- utils ---
+  const normalize = v => (v || '').toString().trim().toLowerCase();
+const nextState = cur => {
+  const i = ORDER.findIndex(v => v.toLowerCase() === normalize(cur));
+  return ORDER[(i + 1) % ORDER.length];
+};
+ 
+  // Which lot is currently "selected" (detail view or centered row)
+  function getSelectedLot() {
+    // detail view path
+    if (window.isDetailOpen && typeof window.currentLotIndex === 'number' && window.currentLotIndex >= 0) {
+      const mapLot = lotData[window.currentLotIndex];
+      if (!mapLot) return null;
+      const n = extractLotNumber(mapLot.name);
+      const baseIdx = baseLots.findIndex(b => b.number === n);
+      return { lotName: mapLot.name, number: n, baseIndex: baseIdx };
+    }
+    // list-centered path
+    const centered = document.querySelector('.info-row.center');
+    if (!centered) return null;
+    const baseIndex = parseInt(centered.dataset.baseIndex, 10);
+    if (isNaN(baseIndex) || baseIndex < 0) return null;
+    const base = baseLots[baseIndex];
+    if (!base) return null;
+    const mapIdx = lotData.findIndex(l => extractLotNumber(l.name) === base.number);
+    if (mapIdx === -1) return null;
+    return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
+  } 
+
+  // Visual re-apply: map hover + list active row + button color
+  function setSelectedLotByName(lotName, { scroll = false } = {}) {
+    if (!lotName) return;
+    selectedLotName = lotName;
+
+    // Map hover
+    const mapIndex = lotData.findIndex(l => l.name === lotName);
+    if (mapIndex !== -1 && map?.getSource('lots-final')) {
+      if (window.hoveredId !== null && window.hoveredId !== mapIndex) {
+        try { map.setFeatureState({ source:'lots-final', id: window.hoveredId }, { hover:false }); } catch {}
+      }
+      try { map.setFeatureState({ source:'lots-final', id: mapIndex }, { hover:true }); } catch {}
+      window.hoveredId = mapIndex;
+    }
+
+    // List center/highlight
+    const num = extractLotNumber(lotName);
+    const baseIndex = baseLots.findIndex(b => b.number === num);
+    if (baseIndex !== -1) {
+      if (scroll) {
+        // use your existing helper if present
+        if (typeof scrollToBaseIndex === 'function') scrollToBaseIndex(baseIndex, true);
+      } else {
+        const actualIndex = baseIndex + (window.cloneCount ?? 5);
+        const row = document.querySelector(`.info-row[data-index="${actualIndex}"]`);
+        if (row) {
+          document.querySelectorAll('.info-row').forEach(r => r.classList.remove('active','center'));
+          row.classList.add('active','center');
+        }
+      }
+    }
+
+    // Button color reflects current state
+    const lot = lotData[mapIndex];
+    const state = normalize(lot?.availability || 'available');
+    btn.classList.remove('sold','featured');
+    if (state === 'sold') btn.classList.add('sold');
+    if (state === 'featured') btn.classList.add('featured');
+  }
+
+  // Keep button color synced when UI changes
+  function syncButtonToCurrentSelection() {
+    const sel = getSelectedLot();
+    const name = sel?.lotName ?? selectedLotName;
+    if (!name) { btn.classList.remove('sold','featured'); return; }
+    setSelectedLotByName(name, { scroll:false });
+  }
+
+  // --- local data updates (optimistic) ---
+function applyAvailabilityLocal(lotName, state) {
+  const norm = (state ?? '').toString().toLowerCase();
+
+  const idx = lotData.findIndex(l => l.name === lotName);
+  if (idx !== -1) {
+    lotData[idx].availability = state;            // keep whatever casing you want to store
+    lotData[idx].featured = (norm === 'featured'); // boolean stays correct
+  }
+
+  const num = extractLotNumber(lotName);
+  const bi = baseLots.findIndex(b => b.number === num);
+  if (bi !== -1) baseLots[bi].availability = state;
+
+  lots.forEach(l => { if (l.number === num) l.availability = state; });
+}
+
+  // --- layers refresh ---
+function refreshFeaturedLayer() {
+  const src = map.getSource('featured-lots');
+  const feats = lotData
+    .filter(l => (l.featured === true) || ((l.availability ?? '').toString().toLowerCase() === 'featured'))
+    .map(featuredPolygonFeature);
+
+  if (src) {
+    src.setData({ type: 'FeatureCollection', features: feats });
+  } else {
+    addFeaturedLotsLayer(map);
+  }
+}
+
+  function refreshSoldLayer() {
+    const srcId = 'sold-x';
+    const layerId = 'sold-x-layer';
+    const soldLots = lotData.filter(l => normalize(l.availability) === 'sold');
+    const features = soldLots.flatMap(makeXFeatures);
+
+    if (!map.getSource(srcId)) {
+      map.addSource(srcId, { type: 'geojson', data: { type:'FeatureCollection', features }});
+      map.addLayer({
+        id: layerId, type:'line', source: srcId,
+        paint: { 'line-color':'white', 'line-width':1, 'line-opacity':1 }
+      });
+    } else {
+      map.getSource(srcId).setData({ type:'FeatureCollection', features });
+    }
+  }
+
+  function refreshVisuals() {
+    refreshFeaturedLayer();
+    refreshSoldLayer();
+    if (typeof render === 'function') render();
+  }
+
+  // --- auth guard ---
+  async function ensureLoggedIn() {
+    const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
+    return !!(session && session.user);
+  }
+
+  // --- main action ---
+  async function cycleSelectedLotAvailability() {
+    if (!window.supabaseClient) { window.showToaster?.('Supabase no está listo.'); return; }
+    if (!(await ensureLoggedIn())) { document.getElementById('modal-login-btn')?.click(); return; }
+
+    const sel = getSelectedLot();
+    if (!sel) { window.showToaster?.('Selecciona un lote primero.'); return; }
+
+    const i = lotData.findIndex(l => l.name === sel.lotName);
+    if (i === -1) return;
+
+    const current = normalize(lotData[i].availability || 'available');
+    const next = nextState(current);
+
+    // remember selection and do optimistic update
+    selectedLotName = sel.lotName;
+    applyAvailabilityLocal(sel.lotName, next);
+    // button feedback
+    btn.classList.remove('sold','featured');
+    if (next === 'sold') btn.classList.add('sold');
+    if (next === 'featured') btn.classList.add('featured');
+
+    try {
+      const { error } = await window.supabaseClient
+        .from('lots')
+        .update({ availability: next })
+        .eq('lot_name', sel.lotName);
+      if (error) throw error;
+
+      const LABELS = { available:'disponible', sold:'vendido', featured:'destacado' };
+      window.showToaster?.(`Estado actualizado a "${LABELS[next] || next}".`);
+ 
+      refreshVisuals();
+      // ✅ keep same lot selected after DOM/layers refresh
+      setSelectedLotByName(selectedLotName, { scroll:false });
+    } catch (e) {
+      console.error(e);
+      window.showToaster?.('No se pudo guardar. Revirtiendo…');
+  
+      // revert
+      applyAvailabilityLocal(sel.lotName, current);
+      btn.classList.remove('sold','featured');
+      if (current === 'sold') btn.classList.add('sold');
+      if (current === 'featured') btn.classList.add('featured');
+
+      refreshVisuals();
+      setSelectedLotByName(selectedLotName, { scroll:false });
+    }
+  }
+
+  // --- wiring ---
+  btn.addEventListener('click', cycleSelectedLotAvailability);
+
+  // Keep button/selection in sync on modal changes & scroll
+  const obs = new MutationObserver(() => syncButtonToCurrentSelection());
+  if ($lotModal) obs.observe($lotModal, { attributes:true, attributeFilter:['class','style'] });
+
+  $modalInfo?.addEventListener('scroll', () => {
+    clearTimeout(window.__syncBtnTO);
+    window.__syncBtnTO = setTimeout(syncButtonToCurrentSelection, 120);
+  });
+
+  // Patch highlightCenter to remember selection automatically
+  const origHighlightCenter = window.highlightCenter;
+  if (typeof origHighlightCenter === 'function') {
+    window.highlightCenter = function(...args) {
+      const r = origHighlightCenter.apply(this, args);
+      const sel = getSelectedLot();
+      if (sel?.lotName) selectedLotName = sel.lotName;
+      syncButtonToCurrentSelection();
+      return r;
+    };
+  }
+
+  // Patch showDetailViewForLot to capture selection when opening detail
+  const origShowDetail = window.showDetailViewForLot;
+  if (typeof origShowDetail === 'function') {
+    window.showDetailViewForLot = async function(index, ...rest) {
+      const res = await origShowDetail.apply(this, [index, ...rest]);
+      try {
+        const lot = lots[index];
+        const mapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
+        if (mapData?.name) selectedLotName = mapData.name;
+        syncButtonToCurrentSelection();
+      } catch {}
+      return res;
+    };
+  }
+ 
+  // Patch render so selection is restored after list re-render
+  const origRender = window.render;
+  if (typeof origRender === 'function') {
+    window.render = function(...args) {
+      const res = origRender.apply(this, args);
+      if (selectedLotName) setSelectedLotByName(selectedLotName, { scroll:false });
+      return res;
+    };
+  }
+})();
+</script>
+
+
+  
+
+  <script>
+(() => {
+  'use strict';
+
+  // ===== Namespace GPS FEATURE=====
+  const NS = (window.__LL_GPS__ = window.__LL_GPS__ || {});
+
+  // ---- simple event bus
+  NS._listeners = {};
+  NS.on = function (evt, cb) { (NS._listeners[evt] ||= []).push(cb); };
+  NS.emit = function (evt, payload) { (NS._listeners[evt] || []).forEach(fn => { try { fn(payload); } catch {} }); };
+
+  // Config
+  NS.lotCenter = NS.lotCenter || [-100.15994, 25.461823];
+  NS.maxDistanceMeters = NS.maxDistanceMeters || 1000;
+
+  // State
+  NS.gpsWatchId = null;
+  NS.lastUserLngLat = null;
+  NS.hasInitialFly = false;
+  NS.userHeading = null;
+  NS.headingListenerAttached = false;
+  NS.farAwayTimer = null;
+  NS.farWarned = false;
+  NS.headingMarker = null;
+  NS._onOrientation = null;
+  
+  // Smoothing (for Android)
+  NS.headingSmoothingFactor = 0.15;
+  NS.lastSmoothedHeading = null;
+
+  // Utils
+  const safeToaster = (msg, duration = 3000) => {
+    try { if (typeof window.showToaster === 'function') window.showToaster(msg, duration); } catch {}
+  };
+
+  // Distance calculation
+  const distanceMeters = (a, b) => {
+    const [lng1, lat1] = a, [lng2, lat2] = b;
+    const R = 6371000, φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lng2 - lng1) * Math.PI / 180;
+    const a_ = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a_), Math.sqrt(1 - a_));
+  };
+
+  // Smooth heading
+  const smoothHeading = (newHeading) => {
+    if (NS.lastSmoothedHeading === null) {
+      NS.lastSmoothedHeading = newHeading;
+    } else {
+      const diff = ((newHeading - NS.lastSmoothedHeading + 540) % 360) - 180;
+      NS.lastSmoothedHeading = (NS.lastSmoothedHeading + diff * NS.headingSmoothingFactor) % 360;
+    }
+    return NS.lastSmoothedHeading;
+  };
+
+  // ===== Core Functions =====
+  function ensureUserLocationLayers() {
+    if (!window.map) return;
+
+    if (!map.getSource('ll-user-location')) {
+      map.addSource('ll-user-location', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+      });
+    }
+
+    if (!map.getLayer('ll-user-accuracy')) {
+      map.addLayer({
+        id: 'll-user-accuracy',
+        type: 'circle',
+        source: 'll-user-location',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'],
+            15, ['coalesce', ['get', 'accRadiusZ15'], 2],
+            22, ['coalesce', ['get', 'accRadiusZ22'], 500]
+          ],
+          'circle-color': '#1a73e826',
+          'circle-stroke-color': '#1a73e8',
+          'circle-stroke-width': 1
+        },
+        filter: ['==', ['get', 'role'], 'accuracy']
+      });
+    }
+
+    if (!map.getLayer('ll-user-dot')) {
+      map.addLayer({
+        id: 'll-user-dot',
+        type: 'circle',
+        source: 'll-user-location',
+        paint: {
+          'circle-radius': 8,
+          'circle-color': '#4285F4',
+          'circle-stroke-color': '#FFFFFF',
+          'circle-stroke-width': 2
+        },
+        filter: ['==', ['get', 'role'], 'point']
+      });
+    }
+
+    ensureHeadingMarker();
+  }
+
+  // Google Maps-style cone (wide part forward, pointy end at dot)
+  function ensureHeadingMarker() {
+    if (!window.map || NS.headingMarker) return;
+
+    const el = document.createElement('div');
+    el.style.width = '70px';
+    el.style.height = '50px';
+    el.style.pointerEvents = 'none';
+    el.style.zIndex = '1000';
+    el.innerHTML = `
+      <svg viewBox="0 0 70 50" width="70" height="50">
+        <!-- Solid wide cone (140° opening) -->
+        <path d="M35 45 L5 5 L65 5 Z" 
+              fill="#1a73e8" 
+              opacity="0.6"
+              stroke="none"/>
+      </svg>
+    `;
+
+    NS.headingMarker = new mapboxgl.Marker({
+      element: el,
+      offset: [0, -25],
+      anchor: 'center'
+    })
+      .setRotationAlignment('map')
+      .setPitchAlignment('map')
+      .setLngLat(NS.lotCenter)
+      .addTo(map);
+  }
+
+  // Handle compass data (with iOS permission)
+  async function ensureHeadingListener() {
+    if (NS.headingListenerAttached) return;
+
+    NS._onOrientation = (e) => {
+      let rawHeading;
+      if (typeof e?.webkitCompassHeading === 'number') {
+        rawHeading = e.webkitCompassHeading; // iOS (true north)
+      } else if (typeof e?.alpha === 'number') {
+        rawHeading = (360 - e.alpha) % 360;   // Android
+      } else {
+        return;
+      }
+
+      NS.userHeading = smoothHeading(rawHeading);
+      if (NS.lastUserLngLat) updateUserLocation(NS.lastUserLngLat[0], NS.lastUserLngLat[1]);
+    };
+
+    try {
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+        safeToaster('Tip: enable HTTPS to access compass on iOS', 3500);
+      }
+
+      if (window.DeviceOrientationEvent &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const response = await DeviceOrientationEvent.requestPermission();
+        if (response === 'granted') {
+          window.addEventListener('deviceorientation', NS._onOrientation, true);
+        } else {
+          safeToaster('Compass permission denied', 4000);
+          return;
+        }
+      } else if ('ondeviceorientationabsolute' in window) {
+        window.addEventListener('deviceorientationabsolute', NS._onOrientation, true);
+      } else {
+        window.addEventListener('deviceorientation', NS._onOrientation, true);
+      }
+
+      NS.headingListenerAttached = true;
+    } catch (err) {
+      console.warn('Heading listener setup failed:', err);
+      safeToaster('Unable to access compass data', 4000);
+    }
+  }
+
+  function removeHeadingListener() {
+    if (!NS.headingListenerAttached) return;
+    try {
+      window.removeEventListener('deviceorientation', NS._onOrientation, true);
+      window.removeEventListener('deviceorientationabsolute', NS._onOrientation, true);
+    } catch {}
+    NS._onOrientation = null;
+    NS.headingListenerAttached = false;
+  }
+
+  // Update cone direction
+  function updateUserLocation(lng, lat, accuracyMeters = 10) {
+    const src = map?.getSource('ll-user-location');
+    if (!src) return;
+
+    src.setData({
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', properties: { role: 'point' }, geometry: { type: 'Point', coordinates: [lng, lat] } },
+        {
+          type: 'Feature',
+          properties: {
+            role: 'accuracy',
+            accRadiusZ15: Math.min(12, Math.max(2, accuracyMeters / 6)),
+            accRadiusZ22: Math.min(600, Math.max(50, accuracyMeters * 6))
+          },
+          geometry: { type: 'Point', coordinates: [lng, lat] }
+        }
+      ]
+    });
+
+    if (NS.headingMarker) {
+      NS.headingMarker.setLngLat([lng, lat]);
+      NS.headingMarker.setRotation(NS.userHeading || 0);
+    }
+  }
+
+  // ===== UI Controls =====
+  document.addEventListener('DOMContentLoaded', () => {
+    const gpsBtn = document.getElementById('gpsButton');
+    if (gpsBtn && !gpsBtn.__llBound) {
+      gpsBtn.__llBound = true;
+      gpsBtn.addEventListener('click', () => {
+        if (NS.gpsWatchId == null) startGPS();
+        else stopGPS();
+      });
+    }
+  });
+
+  function startGPS() {
+    safeToaster('Activating GPS...', 2000);
+
+    if (!navigator.geolocation) {
+      safeToaster('Geolocation not supported on this device', 5000);
+      return;
+    }
+    if (!window.map) {
+      safeToaster('Please wait - map is still loading', 5000);
+      return;
+    }
+
+    ensureUserLocationLayers();
+    ensureHeadingListener();
+
+    document.getElementById('cameraButton')?.style && (document.getElementById('cameraButton').style.display = 'block');
+
+    if (NS.gpsWatchId !== null) {
+      navigator.geolocation.clearWatch(NS.gpsWatchId);
+    }
+
+    NS.gpsWatchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy, heading } = pos.coords;
+        NS.lastUserLngLat = [longitude, latitude];
+
+        if (!NS._notifiedStart) { NS._notifiedStart = true; NS.emit('gps-start'); }
+
+        if (heading && !NS.userHeading) {
+          NS.userHeading = smoothHeading(heading);
+        }
+
+        updateUserLocation(longitude, latitude, accuracy);
+
+        if (!NS.hasInitialFly) {
+          NS.hasInitialFly = true;
+          map.flyTo({
+            center: [longitude, latitude],
+            zoom: 17,
+            speed: 1.2,
+            curve: 1.5
+          });
+          safeToaster('GPS active - tracking your location', 3000);
+        }
+      },
+      (err) => {
+        let errorMsg = 'GPS error';
+        switch(err.code) {
+          case err.PERMISSION_DENIED: errorMsg = 'Please enable location permissions'; break;
+          case err.POSITION_UNAVAILABLE: errorMsg = 'Location signal lost'; break;
+          case err.TIMEOUT: errorMsg = 'GPS timeout - try moving outdoors'; break;
+        }
+        stopGPS(errorMsg);
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+    );
+
+    NS.gpsWatchId !== null && safeToaster('GPS activated successfully', 2000);
+  }
+
+  function stopGPS(reason) {
+    if (NS.gpsWatchId) {
+      navigator.geolocation.clearWatch(NS.gpsWatchId);
+      NS.gpsWatchId = null;
+    }
+
+    removeHeadingListener();
+
+    if (map?.getSource('ll-user-location')) {
+      map.getSource('ll-user-location').setData({ type:'FeatureCollection', features:[] });
+    }
+
+    if (NS.headingMarker) {
+      NS.headingMarker.remove();
+      NS.headingMarker = null;
+    }
+
+    document.getElementById('cameraButton')?.style && (document.getElementById('cameraButton').style.display = 'none');
+
+    NS.lastUserLngLat = null;
+    NS.userHeading = null;
+    NS.lastSmoothedHeading = null;
+
+    safeToaster(reason || 'GPS stopped');
+    NS._notifiedStart = false;
+    NS.emit('gps-stop');
+  }
+
+})();
+</script>
+ 
+
+
+<script>
+// Function to check authentication status and toggle buttons visibility
+function toggleAuthButtons(isAuthenticated) {
+  const cycleAvailabilityBtn = document.getElementById('cycleAvailabilityBtn');
+  const addPinBtn = document.getElementById('addPinBtn');
+  const gpsButton = document.getElementById('gpsButton');
+
+  console.log('Toggle buttons - Authenticated:', isAuthenticated);
+  
+  if (cycleAvailabilityBtn) {
+    cycleAvailabilityBtn.classList.toggle('hide-button', !isAuthenticated);
+  }
+  if (addPinBtn) {
+    addPinBtn.classList.toggle('hide-button', !isAuthenticated);
+  }
+ 
+}
+
+// Hide buttons immediately on page load
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('DOM loaded - hiding buttons by default');
+  toggleAuthButtons(false);
+  
+  // Check auth status once Supabase is likely ready
+  const checkAuth = setInterval(function() {
+    if (window.supabaseClient && typeof window.supabaseClient.auth.getSession === 'function') {
+      clearInterval(checkAuth);
+      window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
+        const isAuthenticated = !!(session && session.user);
+        console.log('Initial auth check - Authenticated:', isAuthenticated);
+        toggleAuthButtons(isAuthenticated);
+      });
+    }
+  }, 100);
+});
+  
+// Listen for auth changes once Supabase is ready
+const setupAuthListener = setInterval(function() {
+  if (window.supabaseClient && typeof window.supabaseClient.auth.onAuthStateChange === 'function') {
+    clearInterval(setupAuthListener);
+    window.supabaseClient.auth.onAuthStateChange((_event, session) => {
+      const isAuthenticated = !!(session && session.user);
+      console.log('Auth state changed - Authenticated:', isAuthenticated);
+      toggleAuthButtons(isAuthenticated);
+    });
+  }
+}, 100);
+</script>
+ 
+  
+
+<script>
+  //DRIVE NAVIGATION HERE
+(() => {
+  const DEST_LNG_LAT = [-100.15994, 25.461823]; // [lng, lat] — change to your destination
+
+  function openInNativeMaps([lng, lat]) {
+    const isApple = /iPad|iPhone|Macintosh/.test(navigator.userAgent);
+    // URLs for Google Maps and Apple Maps navigation
+    const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving&dir_action=navigate`;
+    const appleMapsUrl  = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
+    const url = isApple ? appleMapsUrl : googleMapsUrl;
+    window.open(url, '_blank');
+  }
+
+  function onDriveClick(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    openInNativeMaps(DEST_LNG_LAT);
+  }
+
+  // Attach event listener to the button
+  function bindDriveBtn() {
+    const btn = document.getElementById('driveBtn');
+    if (!btn || btn.dataset.bound) return;
+    btn.addEventListener('click', onDriveClick);
+    btn.dataset.bound = '1';
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindDriveBtn);
+  } else {
+    bindDriveBtn();
+  }
+})();
+</script>
+
+
+
+
+
+
+</body>
+</html> 
