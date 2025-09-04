@@ -1490,7 +1490,7 @@ body.fonts-loaded .side-length-label {
 
 
     <div class="header-title">
-      LOTES VENTA — SANTTE 2<span class="header-lot-number" id="headerLotNumber"></span>
+      LOTES VENTA — <span id="headerFracc">SANTTE</span><span class="header-lot-number" id="headerLotNumber"></span>
     </div>
 
 <!-- AUTH controls -->
@@ -2418,7 +2418,7 @@ function parseLots(text) {
 
 <script>
   // FETCH AVAILABILITY SUPABASE
-  //Async function to fetch availability info from Supabase and attach it to lotData
+  // Async function to fetch availability info from Supabase and attach it to lotData
   async function enrichLotsWithAvailability() {
     if (!lotData || lotData.length === 0) {
       console.warn('lotData is empty, cannot enrich availability');
@@ -2434,7 +2434,7 @@ function parseLots(text) {
 
     const { data, error } = await window.supabaseClient
       .from('lots')
-      .select('lot_name, availability, rSize, millones')
+      .select('lot_name, availability, rSize, millones, fraccionamiento')
       .in('lot_name', names);
 
     if (error) {
@@ -2446,14 +2446,15 @@ function parseLots(text) {
       data.forEach(row => {
         const lot = lotData.find(l => l.name === row.lot_name);
         if (lot) {
-const raw = row.availability ?? 'Available';        // preserve title case if you want it in DB
-lot.availability = raw;                             // e.g. "Available", "Sold", "Featured"
-lot.featured = raw.toLowerCase() === 'featured';    // keep a boolean too (for legacy paths)
+          const raw = row.availability ?? 'Available';        // preserve title case if you want it in DB
+          lot.availability = raw;                             // e.g. "Available", "Sold", "Featured"
+          lot.featured = raw.toLowerCase() === 'featured';    // keep a boolean too (for legacy paths)
           lot.rSize = row.rSize;
           lot.millones = row.millones;
+          lot.fraccionamiento = row.fraccionamiento;          // Add fraccionamiento data
         }
       });
-      console.log('Lot data enriched with availability:', lotData);
+      console.log('Lot data enriched with availability and fraccionamiento:', lotData);
     } else {
       console.warn('No availability data returned for lots');
     }
@@ -2978,8 +2979,9 @@ let clampCooldown = false;
 let infoMode = false;
 
 function extractLotNumber(lotName) {
-  const num = lotName.replace(/^lot/i, '');
-  return parseInt(num, 10) || 0;
+  // Remove only the 'lot' prefix (case-insensitive) but keep any remaining letters
+  const withoutLotPrefix = lotName.replace(/^lot/i, '');
+  return withoutLotPrefix;
 }
 
 async function fetchLots() {
@@ -2992,7 +2994,7 @@ async function fetchLots() {
     // Fetch ALL data (including images) upfront
     const { data, error } = await window.supabaseClient
       .from('lots')
-      .select('lot_name, rSize, millones, availability, nickname, subtitle, image')
+      .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image')
       .order('lot_name', { ascending: true });
     
     if (error) throw error;
@@ -3002,6 +3004,7 @@ async function fetchLots() {
       size: lot.rSize,
       price: lot.millones,
       availability: lot.availability,
+      fraccionamiento: lot.fraccionamiento,
       // Store all detail data upfront
       detailData: {
         nickname: lot.nickname,
@@ -3010,7 +3013,9 @@ async function fetchLots() {
       }
     }));
     
-    updateLotsArray();
+    
+    window.baseLotsAll = baseLots.slice();
+updateLotsArray();
     isDataLoaded = true;
     console.log('✅ Pre-loaded all lots + images');
   } catch (error) {
@@ -3484,7 +3489,7 @@ function highlightCenter(isClamping = false) {
             }
             map.setFeatureState({ source: 'lots-final', id: newLotMapIndex }, { hover: true });
             hoveredId = newLotMapIndex;
-            
+             
             // Always remove labels when changing to a different lot, regardless of detail view
             if (changingLot && currentLabeledLot) {
               // Check if we're actually switching to a different lot, not just re-highlighting the same one
@@ -3780,12 +3785,52 @@ function openModal(lot = null, baseIndex = 0) {
 
   if (!isDataLoaded) {
     fetchLots().then(() => {
+
+  // ⤵️ Apply fraccionamiento filter based on clicked lot (and update header)
+  (function applyFraccFilter() {
+    try {
+      const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
+        || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
+      const modalEl = document.getElementById('lotModal');
+      if (modalEl) modalEl.dataset.fracc = fracc;
+      const headerFraccEl = document.getElementById('headerFracc');
+      if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
+      if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
+        // Filter baseLots by fraccionamiento
+        baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
+        updateLotsArray();
+      }
+    } catch (e) {
+      console.warn('Fraccionamiento filter failed:', e);
+    }
+  })();
+
       render();
       requestAnimationFrame(() => {
         requestAnimationFrame(doScrollAndHighlight);
       });
     });
   } else {
+
+  // ⤵️ Apply fraccionamiento filter based on clicked lot (and update header)
+  (function applyFraccFilter() {
+    try {
+      const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
+        || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
+      const modalEl = document.getElementById('lotModal');
+      if (modalEl) modalEl.dataset.fracc = fracc;
+      const headerFraccEl = document.getElementById('headerFracc');
+      if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
+      if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
+        // Filter baseLots by fraccionamiento
+        baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
+        updateLotsArray();
+      }
+    } catch (e) {
+      console.warn('Fraccionamiento filter failed:', e);
+    }
+  })();
+
     render();
     requestAnimationFrame(() => {
       requestAnimationFrame(doScrollAndHighlight);
@@ -3853,6 +3898,12 @@ function openModal(lot = null, baseIndex = 0) {
         return;
     }
     
+    // Apply fraccionamiento filter if set (read from modal dataset)
+    const fracc = (modal.dataset.fracc || '').toString().trim();
+    if (fracc) {
+      sortedLots = sortedLots.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
+    }
+
     // Update the baseLots array with sorted data
     baseLots = sortedLots;
     
@@ -5502,7 +5553,7 @@ const setupAuthListener = setInterval(function() {
 </script>
 
 
-
+ 
 
 
 
