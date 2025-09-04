@@ -2115,66 +2115,50 @@ map.on('click', 'lots-final-click', (e) => {
 
     // SINGLE CLICK HANDLER - REMOVED THE DUPLICATE
     map.on('click', 'lots-final-click', (e) => {
-  if (e.features.length === 0) return;
+      if (e.features.length === 0) return;
 
-  const feature = e.features[0];
-  const lotName = feature.properties.name;
-  
-  // NEW: Get the fraccionamiento from the polygon properties
-  const lotFraccionamiento = feature.properties.fraccionamiento;
-  
-  // NEW: Use BOTH name and fraccionamiento to find the correct lot
-  const lot = lotData.find(l => 
-    l.name === lotName && 
-    l.fraccionamiento === lotFraccionamiento
-  );
-  
-  if (!lot) {
-    console.warn('Lot not found:', lotName, 'in', lotFraccionamiento);
-    return;
-  }
+      const feature = e.features[0];
+      const lotName = feature.properties.name;
+      const lot = lotData.find(l => l.name === lotName);
+      if (!lot) return;
 
-  // Remove previous hover
-  if (hoveredId !== null) {
-    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-    hoveredId = null;
-  }
 
-  // Find index
-  const idx = lotData.findIndex(l => l.name === lot.name && l.fraccionamiento === lot.fraccionamiento);
-  if (idx !== -1) {
-    map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
-    hoveredId = idx;
-    currentLotIndex = idx;
-  }
+      
+      // Remove previous hover
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+        hoveredId = null;
+      }
 
-  // Remove any existing labels
-  removeSideLengthLabels();
-  
-  openModal(lot);
+      // Find index
+      const idx = lotData.findIndex(l => l.name === lot.name);
+      if (idx !== -1) {
+        map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
+        hoveredId = idx;
+        currentLotIndex = idx;
+      }
 
-  // NEW: Update modal title to show which community
-  const title = document.querySelector('.modal-header .header-title');
-  if (title) {
-    title.textContent = `LOTES VENTA — ${lot.fraccionamiento.toUpperCase()}`;
-  }
+      // Remove any existing labels
+      removeSideLengthLabels();
+      
+      openModal(lot);
 
-  // Scroll modal to correct lot - FIXED VERSION:
-  const baseIndex = baseLots.findIndex(l => 
-    l.number === extractLotNumber(lot.name) && 
-    l.fraccionamiento === lot.fraccionamiento // ADD THIS CONDITION
-  );
-  
-  // Add side length labels if zoom is high enough
-  const currentZoom = map.getZoom();
-  if (currentZoom >= 18.8) {
-    addSideLengthLabels(lot);
-  }
+      // 🟩 Scroll modal to correct lot
+      const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+      if (baseIndex !== -1) {
+        scrollToBaseIndex(baseIndex, true);
+      }
+      
+      // Add side length labels if zoom is high enough
+      const currentZoom = map.getZoom();
+      if (currentZoom >= 18.8) {
+        addSideLengthLabels(lot);
+      }
 
-  // Prevent the event from bubbling to avoid duplicate handling
-  e.preventDefault();
-  e.originalEvent.stopPropagation();
-});
+      // Prevent the event from bubbling to avoid duplicate handling
+      e.preventDefault();
+      e.originalEvent.stopPropagation();
+    });
     // ===== END MAP INTERACTIONS =====
 
     // ===== REVEAL PINS VERY LAST =====
@@ -2389,30 +2373,11 @@ function loadRoad(map, cb) {
 <script>
 // LOT PARSING: Load and parse lot data
 function loadLotsAsync(map) {
-  return Promise.all([
-    // Load santte2 polygons (original lots.txt)
-    fetch('https://lalaland.mx/lots.txt')
-      .then(r => r.text())
-      .then(txt => {
-        const santte2Lots = parseLots(txt);
-        // Add fraccionamiento property to each lot
-        santte2Lots.forEach(lot => lot.fraccionamiento = 'santte2');
-        return santte2Lots;
-      }),
-    
-    // Load santte1 polygons (new lots2.txt)
-    fetch('https://lalaland.mx/lots2.txt')
-      .then(r => r.text())
-      .then(txt => {
-        const santte1Lots = parseLots(txt);
-        // Add fraccionamiento property to each lot
-        santte1Lots.forEach(lot => lot.fraccionamiento = 'santte1');
-        return santte1Lots;
-      })
-  ]).then(([santte2Lots, santte1Lots]) => {
-    // Combine all lots into one array
-    lotData = [...santte2Lots, ...santte1Lots];
-  });
+  return fetch('https://lalaland.mx/lots.txt')
+    .then(r => r.text())
+    .then(txt => {
+      lotData = parseLots(txt);
+    });
 }
 
 function parseLots(text) {
@@ -2453,50 +2418,47 @@ function parseLots(text) {
 
 <script>
   // FETCH AVAILABILITY SUPABASE
-  //Async function to fetch availability info from Supabase and attach it to lotData
+  // Async function to fetch availability info from Supabase and attach it to lotData
   async function enrichLotsWithAvailability() {
-  if (!lotData || lotData.length === 0) {
-    console.warn('lotData is empty, cannot enrich availability');
-    return;
-  }
+    if (!lotData || lotData.length === 0) {
+      console.warn('lotData is empty, cannot enrich availability');
+      return;
+    }
 
-  if (!window.supabaseClient) {
-    console.error('Supabase client not initialized yet.');
-    return;
-  }
+    if (!window.supabaseClient) {
+      console.error('Supabase client not initialized yet.');
+      return;
+    }
+  
+    const names = lotData.map(lot => lot.name);
 
-  const names = lotData.map(lot => lot.name);
+    const { data, error } = await window.supabaseClient
+      .from('lots')
+      .select('lot_name, availability, rSize, millones, fraccionamiento')
+      .in('lot_name', names);
 
-  const { data, error } = await window.supabaseClient
-    .from('lots')
-    .select('lot_name, availability, rSize, millones, fraccionamiento')
-    .in('lot_name', names);
+    if (error) {
+      console.error('Error fetching lot availability from Supabase:', error);
+      return;
+    }
 
-  if (error) {
-    console.error('Error fetching lot availability from Supabase:', error);
-    return;
-  }
-
-  if (data && data.length > 0) {
-    data.forEach(row => {
-      const lot = lotData.find(l => l.name === row.lot_name);
-      if (lot) {
-        const raw = row.availability ?? 'Available';
-        lot.availability = raw;
-        lot.featured = raw.toLowerCase() === 'featured';
-        lot.rSize = row.rSize;
-        lot.millones = row.millones;
-        // Ensure fraccionamiento matches database (in case of discrepancies)
-        if (row.fraccionamiento) {
-          lot.fraccionamiento = row.fraccionamiento;
+    if (data && data.length > 0) {
+      data.forEach(row => {
+        const lot = lotData.find(l => l.name === row.lot_name);
+        if (lot) {
+          const raw = row.availability ?? 'Available';        // preserve title case if you want it in DB
+          lot.availability = raw;                             // e.g. "Available", "Sold", "Featured"
+          lot.featured = raw.toLowerCase() === 'featured';    // keep a boolean too (for legacy paths)
+          lot.rSize = row.rSize;
+          lot.millones = row.millones;
+          lot.fraccionamiento = row.fraccionamiento;          // Add fraccionamiento data
         }
-      }
-    });
-    console.log('Lot data enriched with availability:', lotData);
-  } else {
-    console.warn('No availability data returned for lots');
+      });
+      console.log('Lot data enriched with availability and fraccionamiento:', lotData);
+    } else {
+      console.warn('No availability data returned for lots');
+    }
   }
-}
 </script>
 
 <script>
@@ -2751,11 +2713,8 @@ function lotFeature(lot, index) {
   return {
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [c] },
-    properties: { 
-      name: lot.name,
-      fraccionamiento: lot.fraccionamiento // Add this line
-    },
-    id: index
+    properties: { name: lot.name },
+    id: index  // unique id for feature state
   };
 }
 
@@ -3020,8 +2979,9 @@ let clampCooldown = false;
 let infoMode = false;
 
 function extractLotNumber(lotName) {
-  const num = lotName.replace(/^lot/i, '');
-  return parseInt(num, 10) || 0;
+  // Remove only the 'lot' prefix (case-insensitive) but keep any remaining letters
+  const withoutLotPrefix = lotName.replace(/^lot/i, '');
+  return withoutLotPrefix;
 }
 
 async function fetchLots() {
@@ -3031,10 +2991,10 @@ async function fetchLots() {
     
     await window.supabaseReady;
     
-    // Fetch ALL data (including images and fraccionamiento) upfront
+    // Fetch ALL data (including images) upfront
     const { data, error } = await window.supabaseClient
       .from('lots')
-      .select('lot_name, rSize, millones, availability, nickname, subtitle, image, fraccionamiento') // ADD fraccionamiento here
+      .select('lot_name, rSize, millones, availability, nickname, subtitle, image')
       .order('lot_name', { ascending: true });
     
     if (error) throw error;
@@ -3044,7 +3004,6 @@ async function fetchLots() {
       size: lot.rSize,
       price: lot.millones,
       availability: lot.availability,
-      fraccionamiento: lot.fraccionamiento, // ADD this line
       // Store all detail data upfront
       detailData: {
         nickname: lot.nickname,
@@ -3055,7 +3014,7 @@ async function fetchLots() {
     
     updateLotsArray();
     isDataLoaded = true;
-    console.log('✅ Pre-loaded all lots + images + fraccionamiento');
+    console.log('✅ Pre-loaded all lots + images');
   } catch (error) {
     console.error('Error fetching lots:', error);
     // Fallback dummy data
@@ -3064,7 +3023,6 @@ async function fetchLots() {
       size: '150',
       price: '1.5',
       availability: 'available',
-      fraccionamiento: 'santte2', // Default to santte2 for fallback
       detailData: {
         nickname: `Lot ${100 + i}`,
         image: 'https://via.placeholder.com/800x400?text=No+Image'
@@ -3482,7 +3440,6 @@ const animatedFeaturedLots = new Set();
 
 
 
-// Find and update your highlightCenter function:
 function highlightCenter(isClamping = false) {
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   
@@ -3521,21 +3478,18 @@ function highlightCenter(isClamping = false) {
       if (!isNaN(baseIndex)) {
         const lot = baseLots[baseIndex];
         if (lot && window.map && lotData) {
-          // FIXED: Find lot using both number AND community
-          newLotMapIndex = lotData.findIndex(l => 
-            extractLotNumber(l.name) === lot.number && 
-            l.fraccionamiento === lot.fraccionamiento // ADD THIS
-          );
-          
+          newLotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
           if (newLotMapIndex !== -1) {
             if (hoveredId !== null && hoveredId !== newLotMapIndex) {
               map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-              changingLot = true;
+              changingLot = true; // We're changing to a different lot
             }
             map.setFeatureState({ source: 'lots-final', id: newLotMapIndex }, { hover: true });
             hoveredId = newLotMapIndex;
-            
+             
+            // Always remove labels when changing to a different lot, regardless of detail view
             if (changingLot && currentLabeledLot) {
+              // Check if we're actually switching to a different lot, not just re-highlighting the same one
               const newLot = lotData[newLotMapIndex];
               if (newLot && currentLabeledLot.name !== newLot.name) {
                 removeSideLengthLabels();
@@ -3544,6 +3498,7 @@ function highlightCenter(isClamping = false) {
           }
         }
       }
+      // === END Map sync ===
     }
   });
 }
@@ -3751,48 +3706,15 @@ modalInfo.addEventListener('wheel', (e) => {
 function openModal(lot = null, baseIndex = 0) {
   const wasHidden = !modal.classList.contains('show');
 
-  // If we're in PIN mode, block only when NOT switching to Info
+ // If we're in PIN mode, block only when NOT switching to Info
   const isPinMode = document.getElementById('lotModal')?.classList.contains('pin-mode');
   if (isPinMode && !infoMode) return;
   if (isPinMode && infoMode) {
+    // we are explicitly switching from pin to info
     document.getElementById('lotModal').classList.remove('pin-mode');
   }
 
-  // NEW: Improved community filtering logic
-  if (lot && lot.fraccionamiento) {
-    // Store the original unfiltered baseLots if not already stored
-    if (!window.originalBaseLots) {
-      window.originalBaseLots = [...baseLots];
-    }
-    
-    // DEBUG: Check what we're filtering
-    console.log('Filtering for community:', lot.fraccionamiento);
-    console.log('Original lots:', window.originalBaseLots.length);
-    
-    // Filter to only show lots from the same community
-    baseLots = window.originalBaseLots.filter(l => 
-      l.fraccionamiento === lot.fraccionamiento
-    );
-    
-    console.log('Filtered lots:', baseLots.length);
-    
-    // Update modal title to show which community
-    const title = document.querySelector('.modal-header .header-title');
-    if (title) {
-      title.textContent = `LOTES VENTA — ${lot.fraccionamiento.toUpperCase()}`;
-    }
-  } else if (window.originalBaseLots) {
-    // Restore original list if no specific lot is selected
-    baseLots = [...window.originalBaseLots];
-    
-    // Reset modal title to default
-    const title = document.querySelector('.modal-header .header-title');
-    if (title) {
-      title.textContent = `LOTES VENTA`; // Generic title
-    }
-  }
-
-  // 🧹 Reset modal state
+  // 🧹 Reset modal state (your existing code)
   headerLotNumber.style.display = 'none';
   document.querySelector('.modal-content-wrapper').classList.remove('show-details');
   lotDetails.classList.remove('active');
@@ -3802,17 +3724,20 @@ function openModal(lot = null, baseIndex = 0) {
   scrollHandlerAttached = true;
   document.getElementById('calendlyEmbed').style.display = 'none';
   document.getElementById('lotDetails').style.display = 'block';
+  
 
-  // 🔶 If we're going to list mode, clear previous INFO content
+  // 🔶 If we're going to list mode, clear previous INFO content *before showing the modal*
   const modalInfoEl = document.getElementById('modalInfo');
   const customScrollbarEl = document.getElementById('customScrollbar');
   const spinnerEl = document.getElementById('loadingSpinner');
 
   if (!infoMode) {
+    // Pre-clear to avoid flashing old info content
     modalInfoEl.innerHTML = '';
-    customScrollbarEl.style.display = '';
-    spinnerEl.style.display = 'block';
-    modalInfoEl.style.opacity = '0';
+    customScrollbarEl.style.display = '';   // make sure scrollbar is back for list
+    spinnerEl.style.display = 'block';      // show spinner immediately
+    modalInfoEl.style.opacity = '0';        // hide list container until rendered
+    
   }
 
   // Now show the modal
@@ -3820,7 +3745,7 @@ function openModal(lot = null, baseIndex = 0) {
   modal.style.display = 'block';
   if (wasHidden) adjustMapForModal();
 
-  // 🔸 INFO MODE short-circuit
+  // 🔸 INFO MODE short-circuit (your existing block)
   if (infoMode) {
     modal.classList.add('expanded');
     modalInfoEl.innerHTML = `
@@ -3840,22 +3765,9 @@ function openModal(lot = null, baseIndex = 0) {
   // 👇 Normal list flow
   modal.classList.add('lot-mode');
   const doScrollAndHighlight = () => {
-    let scrollToIndex = 0;
-    
-    if (lot) {
-      // FIXED: Find the correct lot using both number AND community
-      scrollToIndex = baseLots.findIndex(l => 
-        l.number === extractLotNumber(lot.name) && 
-        l.fraccionamiento === lot.fraccionamiento
-      );
-      
-      if (scrollToIndex === -1) {
-        // Fallback: just use the first lot
-        scrollToIndex = 0;
-      }
-    } else {
-      scrollToIndex = baseIndex;
-    }
+    const scrollToIndex = lot
+      ? baseLots.findIndex(l => l.number === extractLotNumber(lot.name))
+      : baseIndex;
 
     scrollToBaseIndex(scrollToIndex, false);
 
@@ -3863,8 +3775,8 @@ function openModal(lot = null, baseIndex = 0) {
     setTimeout(() => {
       highlightCenter();
       updateScrollbar();
-      spinnerEl.style.display = 'none';
-      modalInfoEl.style.opacity = '1';
+      spinnerEl.style.display = 'none';   // hide spinner after render
+      modalInfoEl.style.opacity = '1';    // fade in the list
     }, 0);
   };
 
@@ -3909,38 +3821,50 @@ function openModal(lot = null, baseIndex = 0) {
     
     let sortedLots;
     
-    switch(mode) {
-      case 'num':
-        // Restore original order (lot number ascending)
-        sortedLots = [...unsortedBaseLots].sort((a, b) => a.number - b.number);
-        break;
-        
-      case 'area':
-        // Sort by size (largest to smallest) - filter out sold lots
-        sortedLots = unsortedBaseLots.filter(lot => {
-          const status = (lot.availability || '').toString().toLowerCase();
-          return status !== 'sold';
-        }).sort((a, b) => {
-          const sizeA = parseFloat(a.size) || 0;
-          const sizeB = parseFloat(b.size) || 0;
-          return sizeB - sizeA;
-        });
-        break;
-        
-      case 'price':
-        // Sort by price (highest to lowest) - filter out sold lots
-        sortedLots = unsortedBaseLots.filter(lot => {
-          const status = (lot.availability || '').toString().toLowerCase();
-          return status !== 'sold';
-        }).sort((a, b) => {
-          const priceA = parseFloat(a.price) || 0;
-          const priceB = parseFloat(b.price) || 0;
-          return priceB - priceA;
-        });
-        break;
-        
-      default:
-        return;
+switch(mode) {
+  case 'num':
+    // Restore original order (lot number ascending)
+    sortedLots = [...unsortedBaseLots].sort((a, b) => a.number - b.number);
+    break;
+    
+  case 'area':
+    // Sort by size (largest to smallest) - filter out sold lots
+    sortedLots = unsortedBaseLots.filter(lot => {
+      const status = (lot.availability || '').toString().toLowerCase();
+      return status !== 'sold';
+    }).sort((a, b) => {
+      const sizeA = parseFloat(a.size) || 0;
+      const sizeB = parseFloat(b.size) || 0;
+      return sizeB - sizeA;
+    });
+    break;
+    
+  case 'price':
+    // Sort by price (highest to lowest) - filter out sold lots
+    sortedLots = unsortedBaseLots.filter(lot => {
+      const status = (lot.availability || '').toString().toLowerCase();
+      return status !== 'sold';
+    }).sort((a, b) => {
+      const priceA = parseFloat(a.price) || 0;
+      const priceB = parseFloat(b.price) || 0;
+      return priceB - priceA;
+    });
+    break;
+    
+  case 'fracc':
+    // Get the fraccionamiento value of the first lot
+    const targetFracc = unsortedBaseLots[0]?.fraccionamiento || '';
+    
+    // Filter lots to only include those with the same fraccionamiento
+    sortedLots = unsortedBaseLots.filter(lot => {
+      const lotFracc = (lot.fraccionamiento || '').toString();
+      return lotFracc === targetFracc;
+    });
+    break;
+    
+  default:
+    return;
+
     }
     
     // Update the baseLots array with sorted data
@@ -5592,7 +5516,7 @@ const setupAuthListener = setInterval(function() {
 </script>
 
 
-
+ 
 
 
 
