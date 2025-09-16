@@ -3,14 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>360° HLS Video Viewer with Mapbox</title>
+    <title>360° Image Viewer with Mapbox</title>
     <!-- Mapbox GL JS -->
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
     <!-- Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
-    <!-- HLS.js -->
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         :root {
             --bg: #0b1020;
@@ -25,6 +23,7 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
         
         body {
@@ -34,23 +33,24 @@
             color: #e2e8f0;
             font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial;
             overflow: hidden;
+            touch-action: none;
         }
         
         .app {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: 64px 1fr;
+            display: flex;
+            flex-direction: column;
             height: 100%;
         }
         
         header {
-            grid-column: 1 / -1;
             display: flex;
             align-items: center;
             gap: 12px;
             padding: 0 16px;
+            height: 50px;
             border-bottom: 1px solid #1f2937;
             background: linear-gradient(180deg, rgba(34,211,238,0.06), rgba(34,211,238,0));
+            flex-shrink: 0;
         }
         
         header h1 {
@@ -60,77 +60,25 @@
         }
         
         header .pill {
-            padding: 6px 10px;
+            padding: 4px 8px;
             border: 1px solid #233045;
             border-radius: 999px;
-            font-size: 12px;
+            font-size: 11px;
             color: var(--muted);
         }
         
         #map {
             width: 100%;
-            height: 100%;
+            height: 50vh;
+            flex-shrink: 0;
         }
         
-        .right {
+        .viewer-container {
             position: relative;
             background: var(--panel);
-            border-left: 1px solid #1f2937;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .right-header {
-            height: 72px;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 12px;
-            border-bottom: 1px solid #1f2937;
-            background: rgba(15,23,42,.7);
-            backdrop-filter: blur(8px);
-        }
-        
-        .controls {
-            display: flex;
-            gap: 8px;
-            margin-left: auto;
-        }
-        
-        button.icon {
-            background: #0b1220;
-            border: 1px solid #263247;
-            color: #cbd5e1;
-            padding: 6px 10px;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        button.icon:hover {
-            border-color: #33445f;
-            background: #131d33;
-        }
-        
-        input.url {
-            background: #0b1220;
-            border: 1px solid #263247;
-            color: #cbd5e1;
-            padding: 6px 10px;
-            border-radius: 10px;
-            outline: none;
-            width: 100%;
-        }
-        
-        .video-container {
-            flex: 1;
-            position: relative;
+            height: 50vh;
+            flex-grow: 1;
             overflow: hidden;
-        }
-        
-        #video-player {
-            display: none;
         }
         
         #canvas {
@@ -139,6 +87,7 @@
             left: 0;
             width: 100%;
             height: 100%;
+            touch-action: none;
         }
         
         .legend {
@@ -154,13 +103,9 @@
             z-index: 4;
         }
         
-        .legend b {
-            color: #e2e8f0;
-        }
-        
         .toast {
             position: absolute;
-            top: 84px;
+            top: 60px;
             right: 16px;
             background: #0b1220;
             border: 1px solid #263247;
@@ -176,22 +121,6 @@
         .toast.error {
             background: rgba(239, 68, 68, 0.15);
             border-color: rgba(239, 68, 68, 0.3);
-        }
-        
-        .toast.success {
-            background: rgba(16, 185, 129, 0.15);
-            border-color: rgba(16, 185, 129, 0.3);
-        }
-        
-        .row {
-            display: flex;
-            gap: 6px;
-            width: 100%;
-            align-items: center;
-        }
-        
-        .grow {
-            flex: 1 1 auto;
         }
         
         .loading {
@@ -222,61 +151,7 @@
             100% { transform: rotate(360deg); }
         }
         
-        .status {
-            font-size: 12px;
-            color: var(--muted);
-            margin-top: 8px;
-        }
-        
-        .error-panel {
-            display: none;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            max-width: 80%;
-            z-index: 100;
-        }
-        
-        .error-panel h3 {
-            margin: 0 0 10px;
-            color: #f87171;
-        }
-        
-        .error-panel p {
-            margin: 0 0 15px;
-            font-size: 14px;
-        }
-        
-        .troubleshoot {
-            margin-top: 20px;
-            padding: 15px;
-            background: rgba(0,0,0,0.3);
-            border-radius: 8px;
-            text-align: left;
-        }
-        
-        .troubleshoot h4 {
-            margin: 0 0 10px;
-            color: var(--accent);
-        }
-        
-        .troubleshoot ul {
-            margin: 0;
-            padding-left: 20px;
-        }
-        
-        .troubleshoot li {
-            margin-bottom: 8px;
-            font-size: 12px;
-        }
-        
-        .video-controls {
+        .image-controls {
             position: absolute;
             bottom: 20px;
             left: 50%;
@@ -287,14 +162,22 @@
             background: rgba(0,0,0,0.5);
             padding: 10px;
             border-radius: 10px;
+            align-items: center;
         }
         
-        .play-pause {
-            background: #4CAF50;
+        button.icon {
+            background: #0b1220;
+            border: 1px solid #263247;
+            color: #cbd5e1;
+            padding: 8px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
         }
         
-        .play-pause:hover {
-            background: #6bc76e;
+        button.icon:hover {
+            border-color: #33445f;
+            background: #131d33;
         }
         
         .progress-container {
@@ -304,6 +187,7 @@
             cursor: pointer;
             position: relative;
             flex-grow: 1;
+            min-width: 100px;
         }
         
         .progress-bar {
@@ -314,316 +198,356 @@
         }
         
         .time {
-            margin-left: 10px;
+            margin: 0 10px;
             font-variant-numeric: tabular-nums;
+            min-width: 60px;
+            text-align: center;
+            font-size: 14px;
         }
         
-        .fullscreen {
-            background: #3f51b5;
+        .current-location-marker {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ff6b6b;
+            border: 2px solid white;
+            box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.5);
         }
         
-        .fullscreen:hover {
-            background: #5768ce;
+        .zoom-controls {
+            position: absolute;
+            right: 10px;
+            bottom: 80px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 5;
         }
         
-        @media (max-width: 1024px) {
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid #263247;
+            color: #cbd5e1;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        
+        .zoom-btn:hover {
+            background: rgba(0,0,0,0.7);
+        }
+        
+        .reset-view {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 10;
+        }
+        
+        .preload-status {
+            position: absolute;
+            bottom: 80px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 10;
+        }
+        
+        @media (min-width: 768px) {
             .app {
-                grid-template-columns: 1fr;
-                grid-template-rows: 64px 1fr 1fr;
+                flex-direction: row;
+                height: 100vh;
             }
             
-            .right {
-                border-left: none;
-                border-top: 1px solid #1f2937;
+            header {
+                display: none;
             }
+            
+            #map {
+                width: 50%;
+                height: 100%;
+            }
+            
+            .viewer-container {
+                width: 50%;
+                height: 100%;
+            }
+            
+            .mobile-header {
+                display: none;
+            }
+        }
+        
+        .mobile-header {
+            padding: 10px;
+            text-align: center;
+            background: rgba(15,23,42,.7);
+            border-bottom: 1px solid #1f2937;
+        }
+        
+        .debug-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 10;
+            display: none;
+        }
+        
+        .zoom-level {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 10;
         }
     </style>
 </head>
 <body>
     <div class="app">
-        <header>
-            <h1>360° HLS Video Viewer with Mapbox</h1>
-            <span class="pill">360° Video + Map Integration</span>
-            <span class="pill">HLS Support</span>
-        </header>
-
         <div id="map"></div>
-
-        <section class="right">
-            <div class="right-header">
-                <div id="panoTitle" class="grow">No video loaded</div>
-                <div class="row">
-                    <input id="videoUrl" class="url grow" placeholder="HLS Video URL (m3u8)" value="https://jmoxbhodpvnlmtihcwvt.supabase.co/storage/v1/object/public/pin-photos/output.m3u8" />
-                    <input id="gpxUrl" class="url grow" placeholder="GPX Track URL" value="https://lalaland.mx/army(1).gpx" />
-                    <button class="icon" id="loadRemote">Load URLs</button>
-                </div>
-                <div class="controls">
-                    <label class="icon" for="videoInput" title="Load 360° MP4 locally">📹 Load MP4</label>
-                    <input id="videoInput" type="file" accept="video/*" style="display:none" />
-                    <label class="icon" for="gpxInput" title="Load GPX file">🗺️ Load GPX</label>
-                    <input id="gpxInput" type="file" accept=".gpx,application/gpx+xml" style="display:none" />
-                    <button class="icon" id="back5" title="Seek −5s">−5s</button>
-                    <button class="icon" id="fwd5" title="Seek +5s">+5s</button>
-                </div>
+        
+        <div class="viewer-container">
+            <div class="mobile-header">
+                <h2>360° Viewer</h2>
             </div>
             
-            <div class="video-container">
-                <video id="video-player" crossorigin="anonymous"></video>
-                <canvas id="canvas"></canvas>
-                <div class="loading" id="loading">
-                    <div class="spinner"></div>
-                    <div>Loading 360° video...</div>
-                    <div class="status" id="loadingStatus"></div>
-                </div>
+            <canvas id="canvas"></canvas>
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div id="loading-text">Loading 360° images...</div>
             </div>
             
-            <div class="legend" id="legend">
-                Load a video (MP4 or HLS URL), then a GPX (file or URL). Click the route to jump around the 360° video.
+            <div class="legend">
+                Drag to look around. Pinch to zoom. Tap on the map to navigate.
             </div>
             
             <div class="toast" id="toast"></div>
             
-            <div class="error-panel" id="errorPanel">
-                <h3>Video Loading Failed</h3>
-                <p id="errorMessage">The video could not be loaded. This is likely due to CORS restrictions on the server.</p>
-                
-                <div class="troubleshoot">
-                    <h4>Troubleshooting Tips:</h4>
-                    <ul>
-                        <li>Check if the video URL is correct and accessible</li>
-                        <li>The server may need CORS headers configured</li>
-                        <li>Try using a CORS proxy service for development</li>
-                        <li>Try loading a local video file instead</li>
-                    </ul>
-                </div>
-                
-                <button class="icon" id="retryButton">Retry Loading</button>
-                <button class="icon" id="tryLocalButton">Try Local File Instead</button>
+            <div class="debug-info" id="debug-info"></div>
+            
+            <div class="zoom-level" id="zoom-level">Zoom: 75°</div>
+            
+            <div class="preload-status" id="preload-status">Preloading: 0%</div>
+            
+            <div class="reset-view">
+                <button class="icon" id="resetView">Reset View</button>
             </div>
             
-            <div class="video-controls" id="videoControls" style="display: none;">
-                <button class="icon play-pause" id="playPause">▶️ Play</button>
+            <div class="zoom-controls">
+                <button class="zoom-btn" id="zoomIn">+</button>
+                <button class="zoom-btn" id="zoomOut">-</button>
+            </div>
+            
+            <div class="image-controls" id="imageControls">
+                <button class="icon" id="prevImage">◀</button>
                 <div class="progress-container" id="progress-container">
                     <div class="progress-bar" id="progress-bar"></div>
                 </div>
-                <div class="time" id="time">0:00 / 0:00</div>
-                <button class="icon fullscreen" id="fullscreen">⛶ Fullscreen</button>
-                <button class="icon" id="muteUnmute">🔇 Unmute</button>
+                <div class="time" id="time">1/12</div>
+                <button class="icon" id="nextImage">▶</button>
             </div>
-        </section>
+        </div>
     </div>
 
     <script>
         // ===== 0) CONFIG =====
         const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
-
-        // Start empty: no route until GPX or telemetry is loaded
-        let ROUTE_COORDS = [];
-        let ROUTE_TIMES  = null; // ms since route start (optional)
-
+        
+        // Image data with coordinates and orientation
+        const IMAGE_DATA = [
+            {
+                "id": "00000", 
+                "src": "https://lalaland.mx/frame_000001.jpg", 
+                "lat": 25.660812215045993, 
+                "pitch": 0.0, 
+                "yaw": 26.787332907809628, 
+                "lon": -100.29092561135387, 
+                "fov": 80.0, 
+                "timestamp": 1757980312
+            }, 
+            {
+                "id": "00001", 
+                "src": "https://lalaland.mx/frame_000002.jpg", 
+                "lat": 25.66081222199065, 
+                "pitch": 0.0, 
+                "yaw": 25.881323521757281, 
+                "lon": -100.29092560746437, 
+                "fov": 80.0, 
+                "timestamp": 1757980314
+            }, 
+            {
+                "id": "00002", 
+                "src": "https://lalaland.mx/frame_000003.jpg", 
+                "lat": 25.660812587123861, 
+                "pitch": 0.0, 
+                "yaw": 38.341285160918915, 
+                "lon": -100.29092532007309, 
+                "fov": 80.0, 
+                "timestamp": 1757980316
+            }, 
+            {
+                "id": "00003", 
+                "src": "https://lalaland.mx/frame_000004.jpg", 
+                "lat": 25.660813069350191, 
+                "pitch": 0.0, 
+                "yaw": 276.2019658011892, 
+                "lon": -100.29092574567257, 
+                "fov": 80.0, 
+                "timestamp": 1757980318
+            }, 
+            {
+                "id": "00004", 
+                "src": "https://lalaland.mx/frame_000005.jpg", 
+                "lat": 25.660813261990945, 
+                "pitch": 0.0, 
+                "yaw": 207.1773261440288, 
+                "lon": -100.29093334512103, 
+                "fov": 80.0, 
+                "timestamp": 1757980320
+            }, 
+            {
+                "id": "00005", 
+                "src": "https://lalaland.mx/frame_000006.jpg", 
+                "lat": 25.660796970626045, 
+                "pitch": 0.0, 
+                "yaw": 213.76606287324259, 
+                "lon": -100.29094209798276, 
+                "fov": 80.0, 
+                "timestamp": 1757980322
+            }, 
+            {
+                "id": "00006", 
+                "src": "https://lalaland.mx/frame_000007.jpg", 
+                "lat": 25.660776639045288, 
+                "pitch": 0.0, 
+                "yaw": 240.443989592413, 
+                "lon": -100.29096064480655, 
+                "fov": 80.0, 
+                "timestamp": 1757980324
+            }, 
+            {
+                "id": "00007", 
+                "src": "https://lalaland.mx/frame_000008.jpg", 
+                "lat": 25.660762648448145, 
+                "pitch": 0.0, 
+                "yaw": 256.93283619075464, 
+                "lon": -100.2909924238042, 
+                "fov": 80.0, 
+                "timestamp": 1757980326
+            }, 
+            {
+                "id": "00008", 
+                "src": "https://lalaland.mx/frame_000009.jpg", 
+                "lat": 25.66075759848551, 
+                "pitch": 0.0, 
+                "yaw": 266.78585969112106, 
+                "lon": -100.29102544740998, 
+                "fov": 80.0, 
+                "timestamp": 1757980328
+            }, 
+            {
+                "id": "00009", 
+                "src": "https://lalaland.mx/frame_000010.jpg", 
+                "lat": 25.660756721242343, 
+                "pitch": 0.0, 
+                "yaw": 274.56016210330631, 
+                "lon": -100.29105670660323, 
+                "fov": 80.0, 
+                "timestamp": 1757980330
+            }, 
+            {
+                "id": "00010", 
+                "src": "https://lalaland.mx/frame_000011.jpg", 
+                "lat": 25.660760434997549, 
+                "pitch": 0.0, 
+                "yaw": 284.29952718339507, 
+                "lon": -100.29108926102735, 
+                "fov": 80.0, 
+                "timestamp": 1757980332
+            }, 
+            {
+                "id": "00011", 
+                "src": "https://lalaland.mx/frame_000012.jpg", 
+                "lat": 25.660764502814366, 
+                "pitch": 0.0, 
+                "yaw": 284.20545258432708, 
+                "lon": -100.29110650436546, 
+                "fov": 80.0, 
+                "timestamp": 1757980334
+            }
+        ];
+        
+        let currentImageIndex = 0;
+        let currentYaw = 0;
+        let currentPitch = 0;
+        let currentFov = 75; // Default field of view
+        let preloadedImages = {}; // Cache for preloaded images
+        let preloadQueue = []; // Queue for preloading images
+        
         // ===== 1) MAPBOX INIT =====
         mapboxgl.accessToken = MAPBOX_TOKEN;
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/dark-v11',
-            center: [-100, 25], // neutral center until data loads
-            zoom: 3,
-            attributionControl: true
+            center: [-100.29, 25.66],
+            zoom: 17,
+            attributionControl: false
         });
-        map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-left');
-
-        // ===== 2) HELPER: distances, bearings, projection =====
-        const R = 6371000; // Earth radius (m)
-        function toRad(d){ return d * Math.PI / 180; }
-        function haversine(a, b){
-            const [lon1, lat1] = a, [lon2, lat2] = b;
-            const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
-            const s1 = Math.sin(dLat/2), s2 = Math.sin(dLon/2);
-            const h = s1*s1 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*s2*s2;
-            return 2 * R * Math.asin(Math.sqrt(h));
-        }
-        function bearingDeg(a, b){
-            const [lon1, lat1] = a.map(toRad), [lon2, lat2] = b.map(toRad);
-            const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
-            const x = Math.cos(lat1)*Math.cos(lat2)*Math.cos(lon2 - lon1) - Math.sin(lat1)*Math.sin(lat2);
-            return (Math.atan2(y, x) * 180/Math.PI + 360) % 360;
-        }
-
-        let cumDist = [0];
-        let segBearing = [];
-        function recomputeRouteMetrics(){
-            cumDist = [0]; segBearing = [];
-            for (let i=1;i<ROUTE_COORDS.length;i++){
-                const d = haversine(ROUTE_COORDS[i-1], ROUTE_COORDS[i]);
-                cumDist.push(cumDist[i-1] + d);
-                segBearing.push(bearingDeg(ROUTE_COORDS[i-1], ROUTE_COORDS[i]));
-            }
-        }
-        function totalDistance(){ return cumDist[cumDist.length-1] || 0; }
-
-        function nearestOnRoute(lngLat){
-            function ll2m([lon,lat]){
-                const x = lon * 20037508.34 / 180;
-                const y = Math.log(Math.tan((90+lat)*Math.PI/360)) / (Math.PI/180);
-                return [x, y * 20037508.34 / 180];
-            }
-            const p = ll2m([lngLat.lng, lngLat.lat]);
-            let best = { meters:0, idx:0, frac:0, minDist: Infinity };
-            for(let i=1;i<ROUTE_COORDS.length;i++){
-                const aLL = ROUTE_COORDS[i-1], bLL = ROUTE_COORDS[i];
-                const a = ll2m(aLL), b = ll2m(bLL);
-                const ab = [b[0]-a[0], b[1]-a[1]];
-                const ap = [p[0]-a[0], p[1]-a[1]];
-                const ab2 = ab[0]*ab[0] + ab[1]*ab[1];
-                const t = Math.max(0, Math.min(1, (ap[0]*ab[0] + ap[1]*ab[1]) / ab2));
-                const proj = [a[0] + t*ab[0], a[1] + t*ab[1]];
-                const dx = p[0]-proj[0], dy = p[1]-proj[1];
-                const dist2 = dx*dx + dy*dy;
-                if (dist2 < best.minDist){
-                    const segLenMeters = haversine(aLL, bLL);
-                    const meters = cumDist[i-1] + segLenMeters * t;
-                    best = { meters, idx:i-1, frac:t, minDist: dist2 };
-                }
-            }
-            return best;
-        }
-
-        function chainageToTimeMs(meters, videoDurationMs){
-            if (Array.isArray(ROUTE_TIMES) && ROUTE_TIMES.length === ROUTE_COORDS.length){
-                let i = 0; while (i < cumDist.length-1 && cumDist[i+1] < meters) i++;
-                const d0 = cumDist[i], d1 = cumDist[i+1] ?? cumDist[i];
-                const t0 = ROUTE_TIMES[i], t1 = ROUTE_TIMES[i+1] ?? ROUTE_TIMES[i];
-                if (d1 === d0) return t0;
-                const f = (meters - d0) / (d1 - d0);
-                return t0 + f * (t1 - t0);
-            }
-            const f = Math.max(0, Math.min(1, meters / (totalDistance() || 1)));
-            return f * videoDurationMs;
-        }
-        function chainageToBearing(meters){
-            let i = 0; while (i < cumDist.length-1 && cumDist[i+1] < meters) i++;
-            return segBearing[Math.max(0, Math.min(segBearing.length-1, i))] || 0;
-        }
-
-        // ===== 3) Map + sources ===== 
-        map.on('load', () => {
-            buildRouteLayers();
-            map.on('click', (e)=> {
-                if (!ROUTE_COORDS || ROUTE_COORDS.length < 2){ showToast('Load GPX or URL first'); return; }
-                const n = nearestOnRoute(e.lngLat);
-                if (!isFinite(n.meters)) return;
-                seekToChainage(n.meters);
-            });
-        });
-
-        function buildRouteLayers(){
-            if (!Array.isArray(ROUTE_COORDS) || ROUTE_COORDS.length < 2){
-                if (map.getLayer('route')) map.removeLayer('route');
-                if (map.getSource('route')) map.removeSource('route');
-                return;
-            }
-            const srcData = { type:'Feature', geometry:{ type:'LineString', coordinates: ROUTE_COORDS }, properties:{} };
-            if (map.getSource('route')) {
-                map.getSource('route').setData(srcData);
-            } else {
-                map.addSource('route', { type:'geojson', data: srcData });
-                map.addLayer({ id:'route', type:'line', source:'route',
-                    paint:{ 'line-color':'#22d3ee', 'line-width':4, 'line-opacity':0.85 } });
-            }
-            recomputeRouteMetrics();
-
-            // Fly/fit to route
-            let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-            ROUTE_COORDS.forEach(c=>{ minX=Math.min(minX,c[0]); minY=Math.min(minY,c[1]); maxX=Math.max(maxX,c[0]); maxY=Math.max(maxY,c[1]); });
-            if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)){
-                const spanLng = Math.abs(maxX-minX), spanLat = Math.abs(maxY-minY);
-                if (spanLng < 0.0005 && spanLat < 0.0005){ map.flyTo({ center: ROUTE_COORDS[0], zoom: 17, speed: 0.7 }); }
-                else { map.fitBounds([[minX,minY],[maxX,maxY]], { padding: 60, duration: 700 }); }
-            }
-        }
-
-        // ===== 4) Three.js 360 video viewer =====
-        const video = document.getElementById('video-player');
-        const canvas = document.getElementById('canvas');
+        
+        // Add navigation control
+        map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-left');
+        
+        // ===== 2) THREE.JS SETUP =====
         let scene, camera, renderer, sphere;
-        let isPlaying = false;
-        let isMuted = true;
-        let videoReady = false;
-
-        // Initialize Three.js
+        
         function initThreeJS() {
             // Set up scene
             scene = new THREE.Scene();
             
-            // Set up camera
-            camera = new THREE.PerspectiveCamera(75, canvas.offsetWidth / canvas.offsetHeight, 0.1, 1000);
+            // Set up camera with initial FOV
+            const canvas = document.getElementById('canvas');
+            camera = new THREE.PerspectiveCamera(currentFov, canvas.offsetWidth / canvas.offsetHeight, 0.1, 1000);
             camera.position.set(0, 0, 0.1);
             
             // Set up renderer
-            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: canvas, 
+                antialias: true,
+                preserveDrawingBuffer: true
+            });
             renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
-            
-            // Create sphere geometry
-            const geometry = new THREE.SphereGeometry(100, 60, 40);
-            
-            // Flip the geometry inside out
-            geometry.scale(-1, 1, 1);
-            
-            // Create video texture
-            const texture = new THREE.VideoTexture(video);
-            const material = new THREE.MeshBasicMaterial({ map: texture });
-            
-            // Create mesh and add to scene
-            sphere = new THREE.Mesh(geometry, material);
-            scene.add(sphere);
             
             // Handle window resize
             window.addEventListener('resize', onWindowResize);
             
-            // Mouse controls for 360 view
-            let isMouseDown = false;
-            let previousMousePosition = { x: 0, y: 0 };
-            
-            canvas.addEventListener('mousedown', function(e) {
-                isMouseDown = true;
-                previousMousePosition = { x: e.clientX, y: e.clientY };
-            });
-            
-            canvas.addEventListener('mousemove', function(e) {
-                if (!isMouseDown) return;
-                
-                const deltaX = e.clientX - previousMousePosition.x;
-                const deltaY = e.clientY - previousMousePosition.y;
-                
-                // Rotate the sphere
-                sphere.rotation.y += deltaX * 0.005;
-                sphere.rotation.x += deltaY * 0.005;
-                
-                // Limit vertical rotation
-                sphere.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, sphere.rotation.x));
-                
-                previousMousePosition = { x: e.clientX, y: e.clientY };
-            });
-            
-            canvas.addEventListener('mouseup', function() {
-                isMouseDown = false;
-            });
-            
-            canvas.addEventListener('mouseleave', function() {
-                isMouseDown = false;
-            });
+            // Update zoom level display
+            updateZoomDisplay();
             
             // Start animation loop
             animate();
         }
         
         function onWindowResize() {
+            const canvas = document.getElementById('canvas');
             camera.aspect = canvas.offsetWidth / canvas.offsetHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
         }
         
-        // Animation loop
         function animate() {
             requestAnimationFrame(animate);
             if (renderer && scene && camera) {
@@ -631,354 +555,550 @@
             }
         }
         
-        function seekToChainage(meters){
-            if (!videoReady || !isFinite(video.duration)) { showToast('Video not ready yet'); return; }
-            const tMs = chainageToTimeMs(meters, video.duration * 1000);
-            const yaw = chainageToBearing(meters);
-            video.currentTime = Math.max(0, Math.min(video.duration - 0.05, tMs/1000));
-            if (sphere) {
-                sphere.rotation.y = THREE.MathUtils.degToRad(-yaw);
-            }
-            showToast(`Seek: ${(tMs/1000).toFixed(1)}s • Yaw ${Math.round(yaw)}°`);
-        }
-
-        // ===== 5) Video controls =====
-        document.getElementById('playPause').onclick = togglePlayPause;
-        document.getElementById('muteUnmute').onclick = toggleMute;
-        document.getElementById('fullscreen').onclick = toggleFullscreen;
-        document.getElementById('progress-container').addEventListener('click', seek);
-        document.getElementById('back5').onclick = () => { 
-            if (!videoReady) return; 
-            video.currentTime = Math.max(0, video.currentTime - 5); 
-            if (!isPlaying) video.pause(); 
-        };
-        document.getElementById('fwd5').onclick = () => { 
-            if (!videoReady) return; 
-            video.currentTime = Math.min(video.duration - 0.05, video.currentTime + 5); 
-            if (!isPlaying) video.pause(); 
-        };
-
-        function togglePlayPause() {
-            if (video.paused) {
-                video.play().catch(e => {
-                    console.error('Playback failed:', e);
-                    showToast("Playback failed: " + e.message, 3000);
-                });
-            } else {
-                video.pause();
-            }
-        }
-        
-        function toggleMute() {
-            video.muted = !video.muted;
-            isMuted = video.muted;
-            document.getElementById('muteUnmute').textContent = isMuted ? '🔇 Unmute' : '🔊 Mute';
-        }
-        
-        function toggleFullscreen() {
-            if (!document.fullscreenElement) {
-                if (canvas.requestFullscreen) {
-                    canvas.requestFullscreen();
-                } else if (canvas.webkitRequestFullscreen) {
-                    canvas.webkitRequestFullscreen();
-                } else if (canvas.msRequestFullscreen) {
-                    canvas.msRequestFullscreen();
-                }
-            } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen();
-                } else if (document.webkitExitFullscreen) {
-                    document.webkitExitFullscreen();
-                } else if (document.msExitFullscreen) {
-                    document.msExitFullscreen();
-                }
-            }
-        }
-        
-        function seek(e) {
-            const pos = (e.pageX - e.currentTarget.getBoundingClientRect().left) / e.currentTarget.offsetWidth;
-            video.currentTime = pos * video.duration;
-        }
-        
-        function updateProgress() {
-            const value = (video.currentTime / video.duration) * 100;
-            document.getElementById('progress-bar').style.width = value + '%';
+        // ===== 3) IMAGE PRELOADING =====
+        function preloadImages() {
+            const totalImages = IMAGE_DATA.length;
+            let loadedCount = 0;
             
-            // Update time display
-            const currentTime = formatTime(video.currentTime);
-            const duration = formatTime(video.duration);
-            document.getElementById('time').textContent = `${currentTime} / ${duration}`;
+            // Update preload status
+            updatePreloadStatus(0);
+            
+            // Preload all images
+            IMAGE_DATA.forEach((imageData, index) => {
+                const img = new Image();
+                img.crossOrigin = "Anonymous";
+                
+                img.onload = function() {
+                    loadedCount++;
+                    const percent = Math.round((loadedCount / totalImages) * 100);
+                    updatePreloadStatus(percent);
+                    
+                    // Store the loaded image in cache
+                    preloadedImages[imageData.src] = img;
+                    
+                    // If all images are loaded, hide the preload status
+                    if (loadedCount === totalImages) {
+                        setTimeout(() => {
+                            document.getElementById('preload-status').style.display = 'none';
+                        }, 1000);
+                    }
+                };
+                
+                img.onerror = function() {
+                    loadedCount++;
+                    const percent = Math.round((loadedCount / totalImages) * 100);
+                    updatePreloadStatus(percent);
+                    console.error('Failed to preload image:', imageData.src);
+                };
+                
+                // Add a timestamp to bypass cache
+                const timestamp = new Date().getTime();
+                const url = imageData.src + '?t=' + timestamp;
+                img.src = url;
+            });
         }
         
-        function formatTime(seconds) {
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        function updatePreloadStatus(percent) {
+            const preloadStatus = document.getElementById('preload-status');
+            preloadStatus.textContent = `Preloading: ${percent}%`;
+            preloadStatus.style.display = 'block';
         }
-
-        // ===== 6) Toast and status functions =====
-        function showToast(msg, ms=1500, isError=false){
+        
+        function preloadAdjacentImages() {
+            // Clear any existing preload queue
+            preloadQueue = [];
+            
+            // Preload next and previous images for smoother navigation
+            const prevIndex = currentImageIndex - 1;
+            const nextIndex = currentImageIndex + 1;
+            
+            if (prevIndex >= 0 && !preloadedImages[IMAGE_DATA[prevIndex].src]) {
+                preloadQueue.push(prevIndex);
+            }
+            
+            if (nextIndex < IMAGE_DATA.length && !preloadedImages[IMAGE_DATA[nextIndex].src]) {
+                preloadQueue.push(nextIndex);
+            }
+            
+            // Process preload queue
+            processPreloadQueue();
+        }
+        
+        function processPreloadQueue() {
+            if (preloadQueue.length === 0) return;
+            
+            const index = preloadQueue.shift();
+            const imageData = IMAGE_DATA[index];
+            
+            if (preloadedImages[imageData.src]) {
+                // Image already loaded, process next in queue
+                processPreloadQueue();
+                return;
+            }
+            
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            
+            img.onload = function() {
+                preloadedImages[imageData.src] = img;
+                processPreloadQueue();
+            };
+            
+            img.onerror = function() {
+                console.error('Failed to preload image:', imageData.src);
+                processPreloadQueue();
+            };
+            
+            // Add a timestamp to bypass cache
+            const timestamp = new Date().getTime();
+            const url = imageData.src + '?t=' + timestamp;
+            img.src = url;
+        }
+        
+        // ===== 4) ZOOM CONTROLS =====
+        function zoomIn() {
+            if (currentFov > 30) {
+                currentFov -= 5;
+                camera.fov = currentFov;
+                camera.updateProjectionMatrix();
+                updateZoomDisplay();
+                showToast(`Zoomed in (${currentFov}°)`, 1000);
+            }
+        }
+        
+        function zoomOut() {
+            if (currentFov < 120) {
+                currentFov += 5;
+                camera.fov = currentFov;
+                camera.updateProjectionMatrix();
+                updateZoomDisplay();
+                showToast(`Zoomed out (${currentFov}°)`, 1000);
+            }
+        }
+        
+        function updateZoomDisplay() {
+            document.getElementById('zoom-level').textContent = `Zoom: ${currentFov}°`;
+        }
+        
+        function handlePinchZoom(e) {
+            if (e.touches.length !== 2) return;
+            
+            e.preventDefault();
+            
+            // Calculate distance between two fingers
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            const distance = Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+            );
+            
+            if (!this.lastPinchDistance) {
+                this.lastPinchDistance = distance;
+                return;
+            }
+            
+            // Determine zoom direction
+            const zoomFactor = distance / this.lastPinchDistance;
+            
+            if (zoomFactor > 1.05) {
+                // Pinch out - zoom in
+                zoomIn();
+                this.lastPinchDistance = distance;
+            } else if (zoomFactor < 0.95) {
+                // Pinch in - zoom out
+                zoomOut();
+                this.lastPinchDistance = distance;
+            }
+        }
+        
+        function handleWheelZoom(e) {
+            e.preventDefault();
+            
+            if (e.deltaY < 0) {
+                // Scroll up - zoom in
+                zoomIn();
+            } else {
+                // Scroll down - zoom out
+                zoomOut();
+            }
+        }
+        
+        // ===== 5) IMAGE LOADING =====
+        function loadImage(index, preserveOrientation = false) {
+            if (index < 0 || index >= IMAGE_DATA.length) return;
+            
+            showLoading('Loading image ' + (index + 1) + '...');
+            currentImageIndex = index;
+            
+            const imageData = IMAGE_DATA[index];
+            updateDebugInfo('Loading: ' + imageData.src);
+            
+            // Check if image is already preloaded
+            if (preloadedImages[imageData.src]) {
+                updateDebugInfo('Using preloaded image: ' + imageData.src);
+                applyImageToScene(preloadedImages[imageData.src], imageData, preserveOrientation);
+                preloadAdjacentImages(); // Preload next/previous images
+                return;
+            }
+            
+            // Image not preloaded, load it now
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            
+            img.onload = function() {
+                updateDebugInfo('Image loaded successfully: ' + imageData.src);
+                preloadedImages[imageData.src] = img; // Add to cache
+                applyImageToScene(img, imageData, preserveOrientation);
+                preloadAdjacentImages(); // Preload next/previous images
+            };
+            
+            img.onerror = function() {
+                updateDebugInfo('Failed to load: ' + imageData.src);
+                showToast('Failed to load image ' + (index + 1), 3000, true);
+                
+                // Try to load the next image if this one fails
+                setTimeout(() => {
+                    if (index < IMAGE_DATA.length - 1) {
+                        loadImage(index + 1, preserveOrientation);
+                    } else if (index > 0) {
+                        loadImage(index - 1, preserveOrientation);
+                    } else {
+                        hideLoading();
+                        showToast('All images failed to load', 5000, true);
+                    }
+                }, 1000);
+            };
+            
+            // Add a timestamp to bypass cache
+            const timestamp = new Date().getTime();
+            const url = imageData.src + '?t=' + timestamp;
+            updateDebugInfo('Trying to load: ' + url);
+            
+            img.src = url;
+        }
+        
+        function applyImageToScene(img, imageData, preserveOrientation) {
+            // Create or update sphere with the new image
+            if (sphere) {
+                scene.remove(sphere);
+            }
+            
+            const geometry = new THREE.SphereGeometry(100, 60, 40);
+            geometry.scale(-1, 1, 1);
+            
+            const texture = new THREE.Texture(img);
+            texture.needsUpdate = true;
+            
+            const material = new THREE.MeshBasicMaterial({ 
+                map: texture,
+                side: THREE.DoubleSide
+            });
+            sphere = new THREE.Mesh(geometry, material);
+            scene.add(sphere);
+            
+            // Set rotation based on whether we're preserving orientation
+            if (sphere) {
+                if (preserveOrientation) {
+                    // Keep the current viewing direction
+                    sphere.rotation.y = currentYaw;
+                    sphere.rotation.x = currentPitch;
+                } else {
+                    // Reset to the image's original yaw
+                    sphere.rotation.y = THREE.MathUtils.degToRad(imageData.yaw);
+                    sphere.rotation.x = 0;
+                    currentYaw = sphere.rotation.y;
+                    currentPitch = 0;
+                }
+            }
+            
+            // Update UI
+            updateUI();
+            updateMapMarker();
+            
+            hideLoading();
+            showToast('Loaded image ' + (currentImageIndex + 1), 1000);
+        }
+        
+        // ===== 6) MAP FUNCTIONS =====
+        function initMap() {
+            // Extract coordinates for the route line
+            const coordinates = IMAGE_DATA.map(img => [img.lon, img.lat]);
+            
+            // Fit map to the route
+            const bounds = coordinates.reduce((bounds, coord) => {
+                return bounds.extend(coord);
+            }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+            
+            map.fitBounds(bounds, {
+                padding: 50,
+                maxZoom: 18
+            });
+            
+            // Add route source and layer
+            map.on('load', () => {
+                map.addSource('route', {
+                    type: 'geojson',
+                    data: {
+                        type: 'Feature',
+                        properties: {},
+                        geometry: {
+                            type: 'LineString',
+                            coordinates: coordinates
+                        }
+                    }
+                });
+                
+                map.addLayer({
+                    id: 'route',
+                    type: 'line',
+                    source: 'route',
+                    layout: {
+                        'line-join': 'round',
+                        'line-cap': 'round'
+                    },
+                    paint: {
+                        'line-color': '#22d3ee',
+                        'line-width': 4,
+                        'line-opacity': 0.7
+                    }
+                });
+                
+                // Add markers for each point
+                IMAGE_DATA.forEach((img, index) => {
+                    const el = document.createElement('div');
+                    el.className = 'map-marker';
+                    el.innerHTML = `<div style="width:10px;height:10px;border-radius:50%;background:#22d3ee;border:2px solid white;"></div>`;
+                    el.dataset.index = index;
+                    
+                    new mapboxgl.Marker(el)
+                        .setLngLat([img.lon, img.lat])
+                        .addTo(map);
+                    
+                    // Add click event to navigate to image
+                    el.addEventListener('click', () => {
+                        loadImage(index);
+                    });
+                });
+                
+                // Add current location marker
+                const currentLocationEl = document.createElement('div');
+                currentLocationEl.className = 'current-location-marker';
+                
+                window.currentLocationMarker = new mapboxgl.Marker(currentLocationEl)
+                    .setLngLat([IMAGE_DATA[0].lon, IMAGE_DATA[0].lat])
+                    .addTo(map);
+                
+                // Add click event on route to navigate
+                map.on('click', 'route', (e) => {
+                    const features = map.queryRenderedFeatures(e.point, { layers: ['route'] });
+                    if (!features.length) return;
+                    
+                    // Find closest image to clicked point
+                    const clickedLngLat = e.lngLat;
+                    let closestIndex = 0;
+                    let minDistance = Infinity;
+                    
+                    IMAGE_DATA.forEach((img, index) => {
+                        const distance = getDistance(clickedLngLat, [img.lon, img.lat]);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestIndex = index;
+                        }
+                    });
+                    
+                    loadImage(closestIndex);
+                });
+            });
+        }
+        
+        function updateMapMarker() {
+            if (!window.currentLocationMarker || !IMAGE_DATA[currentImageIndex]) return;
+            
+            const currentImage = IMAGE_DATA[currentImageIndex];
+            window.currentLocationMarker.setLngLat([currentImage.lon, currentImage.lat]);
+        }
+        
+        function getDistance(lngLat1, lngLat2) {
+            const R = 6371000;
+            const dLat = (lngLat2[1] - lngLat1[1]) * Math.PI / 180;
+            const dLon = (lngLat2[0] - lngLat1[0]) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lngLat1[1] * Math.PI / 180) * Math.cos(lngLat2[1] * Math.PI / 180) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+        
+        // ===== 7) UI FUNCTIONS =====
+        function updateUI() {
+            document.getElementById('time').textContent = `${currentImageIndex + 1}/${IMAGE_DATA.length}`;
+            document.getElementById('progress-bar').style.width = `${(currentImageIndex / (IMAGE_DATA.length - 1)) * 100}%`;
+        }
+        
+        function showToast(msg, ms=1500, isError=false) {
             const t = document.getElementById('toast');
             t.textContent = msg; 
             t.className = isError ? 'toast error' : 'toast';
             t.style.display = 'block';
             clearTimeout(t._to); 
-            t._to = setTimeout(()=> t.style.display='none', ms);
+            t._to = setTimeout(() => t.style.display = 'none', ms);
         }
         
         function showLoading(message) {
             const loading = document.getElementById('loading');
-            const status = document.getElementById('loadingStatus');
-            status.textContent = message;
+            const loadingText = document.getElementById('loading-text');
+            loadingText.textContent = message;
             loading.style.display = 'block';
-            hideError();
         }
         
         function hideLoading() {
-            document.getElementById('loading').style.display = 'none';
+            const loading = document.getElementById('loading');
+            loading.style.display = 'none';
         }
         
-        function showError(message, showButtons = false) {
-            const errorPanel = document.getElementById('errorPanel');
-            document.getElementById('errorMessage').textContent = message;
-            errorPanel.style.display = 'block';
+        function updateDebugInfo(message) {
+            const debugInfo = document.getElementById('debug-info');
+            debugInfo.textContent = message;
+            debugInfo.style.display = 'block';
             
-            if (showButtons) {
-                document.getElementById('retryButton').style.display = 'inline-block';
-                document.getElementById('tryLocalButton').style.display = 'inline-block';
-            } else {
-                document.getElementById('retryButton').style.display = 'none';
-                document.getElementById('tryLocalButton').style.display = 'none';
-            }
+            setTimeout(() => {
+                debugInfo.style.display = 'none';
+            }, 5000);
+        }
+        
+        // ===== 8) EVENT HANDLERS =====
+        function setupEventListeners() {
+            // Navigation buttons
+            document.getElementById('prevImage').addEventListener('click', () => {
+                loadImage(currentImageIndex - 1, true);
+            });
             
-            hideLoading();
-        }
-        
-        function hideError() {
-            document.getElementById('errorPanel').style.display = 'none';
-        }
-
-        // ===== 7) Loaders: local files =====
-        (function attachLocalLoaders(){
-            const videoInput = document.getElementById('videoInput');
-            videoInput.addEventListener('change', (e)=>{
-                const file = e.target.files?.[0]; 
-                if(!file) return;
-                
-                showLoading('Loading local video...');
-                const url = URL.createObjectURL(file);
-                if (window._hls) { window._hls.destroy(); window._hls = null; }
-                video.innerHTML=''; 
-                const src=document.createElement('source'); 
-                src.src=url; 
-                src.type=file.type||'video/mp4'; 
-                video.appendChild(src);
-                try{ 
-                    video.load(); 
-                    hideError();
-                }catch(e){
-                    showError('Failed to load local video: ' + e.message);
-                }
-                document.getElementById('panoTitle').textContent = `Video: ${file.name}`;
-                showToast('Video loaded. Now load a GPX (file or URL).');
+            document.getElementById('nextImage').addEventListener('click', () => {
+                loadImage(currentImageIndex + 1, true);
             });
-
-            const gpxInput = document.getElementById('gpxInput');
-            gpxInput.addEventListener('change', async (e)=>{
-                const file = e.target.files?.[0]; if(!file) return;
-                showLoading('Parsing GPX file...');
-                try {
-                    const text = await file.text();
-                    const {coords, times} = parseGpxText(text);
-                    if (!coords || coords.length < 2){ showToast('Need at least 2 GPX points', 3000, true); return; }
-                    ROUTE_COORDS = coords;
-                    ROUTE_TIMES  = (times && times.length === coords.length) ? times.map(t=> t - times[0]) : null;
-                    buildRouteLayers();
-                    showToast('GPX loaded');
-                } catch (e) {
-                    showToast('Error loading GPX: ' + e.message, 3000, true);
-                } finally {
-                    hideLoading();
+            
+            // Reset view button
+            document.getElementById('resetView').addEventListener('click', () => {
+                loadImage(currentImageIndex, false);
+                // Reset zoom to default
+                currentFov = 75;
+                camera.fov = currentFov;
+                camera.updateProjectionMatrix();
+                updateZoomDisplay();
+            });
+            
+            // Zoom buttons
+            document.getElementById('zoomIn').addEventListener('click', zoomIn);
+            document.getElementById('zoomOut').addEventListener('click', zoomOut);
+            
+            // Progress bar click
+            document.getElementById('progress-container').addEventListener('click', (e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const percent = (e.clientX - rect.left) / rect.width;
+                const newIndex = Math.floor(percent * (IMAGE_DATA.length - 1));
+                loadImage(newIndex, true);
+            });
+            
+            // Touch events for mobile dragging
+            const canvas = document.getElementById('canvas');
+            let isDragging = false;
+            let previousPosition = { x: 0, y: 0 };
+            
+            canvas.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    isDragging = true;
+                    previousPosition = {
+                        x: e.touches[0].clientX,
+                        y: e.touches[0].clientY
+                    };
+                }
+                e.preventDefault();
+            });
+            
+            canvas.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1 && isDragging && sphere) {
+                    const currentPosition = {
+                        x: e.touches[0].clientX,
+                        y: e.touches[0].clientY
+                    };
+                    
+                    const deltaX = currentPosition.x - previousPosition.x;
+                    const deltaY = currentPosition.y - previousPosition.y;
+                    
+                    sphere.rotation.y += deltaX * 0.01;
+                    sphere.rotation.x += deltaY * 0.01;
+                    
+                    // Update current orientation
+                    currentYaw = sphere.rotation.y;
+                    currentPitch = sphere.rotation.x;
+                    
+                    previousPosition = currentPosition;
+                }
+                e.preventDefault();
+            });
+            
+            canvas.addEventListener('touchend', () => {
+                isDragging = false;
+            });
+            
+            // Pinch to zoom
+            canvas.addEventListener('touchmove', handlePinchZoom);
+            
+            // Mouse events for desktop dragging
+            canvas.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                previousPosition = {
+                    x: e.clientX,
+                    y: e.clientY
+                };
+            });
+            
+            canvas.addEventListener('mousemove', (e) => {
+                if (isDragging && sphere) {
+                    const currentPosition = {
+                        x: e.clientX,
+                        y: e.clientY
+                    };
+                    
+                    const deltaX = currentPosition.x - previousPosition.x;
+                    const deltaY = currentPosition.y - previousPosition.y;
+                    
+                    sphere.rotation.y += deltaX * 0.01;
+                    sphere.rotation.x += deltaY * 0.01;
+                    
+                    // Update current orientation
+                    currentYaw = sphere.rotation.y;
+                    currentPitch = sphere.rotation.x;
+                    
+                    previousPosition = currentPosition;
                 }
             });
-        })();
-
-        // ===== 8) Loaders: URLs (HLS + GPX) =====
-        document.getElementById('loadRemote').onclick = async () => {
-            const m3u8 = document.getElementById('videoUrl').value;
-            const gpx  = document.getElementById('gpxUrl').value;
-
-            // 1) Load HLS (or MP4 URL if you paste one)
-            if (m3u8) {
-                showLoading('Loading video...');
-                if (window._hls) { window._hls.destroy(); window._hls = null; }
-                video.pause(); 
-                video.removeAttribute('src'); 
-                video.innerHTML = '';
-
-                const isM3U8 = /\.m3u8(\?|$)/i.test(m3u8);
-                if (isM3U8 && window.Hls && Hls.isSupported()) {
-                    try {
-                        window._hls = new Hls({ 
-                            maxBufferLength: 10,
-                            enableWorker: true,
-                            lowLatencyMode: true
-                        });
-                        
-                        window._hls.on(Hls.Events.ERROR, (event, data) => {
-                            console.error("HLS Error:", data);
-                            if (data.fatal) {
-                                switch(data.type) {
-                                    case Hls.ErrorTypes.NETWORK_ERROR:
-                                        showError("Network error loading video. Check URL and CORS settings.", true);
-                                        break;
-                                    case Hls.ErrorTypes.MEDIA_ERROR:
-                                        showError("Media error loading video. Format may be unsupported.", true);
-                                        break;
-                                    default:
-                                        showError("Error loading video: " + data.details, true);
-                                        break;
-                                }
-                                window._hls.destroy();
-                            }
-                        });
-                        
-                        window._hls.loadSource(m3u8);
-                        window._hls.attachMedia(video);
-                        window._hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                            video.muted = true;
-                            video.play().then(()=> setTimeout(()=> {
-                                video.pause();
-                                isPlaying = false;
-                                hideLoading();
-                                document.getElementById('playPause').textContent = '▶️ Play';
-                                videoReady = true;
-                                document.getElementById('videoControls').style.display = 'flex';
-                                document.getElementById('panoTitle').textContent = `Video duration: ${video.duration.toFixed(1)}s`;
-                                initThreeJS();
-                            }, 120)).catch((e) => {
-                                console.warn("Auto-play prevented:", e);
-                                hideLoading();
-                                showToast("Click play to start video", 3000);
-                                videoReady = true;
-                                document.getElementById('videoControls').style.display = 'flex';
-                                document.getElementById('panoTitle').textContent = `Video duration: ${video.duration.toFixed(1)}s`;
-                                initThreeJS();
-                            });
-                        });
-                    } catch (e) {
-                        showError("HLS.js initialization failed: " + e.message, true);
-                    }
-                } else if (video.canPlayType('application/vnd.apple.mpegurl') || !isM3U8) {
-                    // Safari HLS, or direct MP4 URL
-                    const src = document.createElement('source');
-                    src.src = m3u8; 
-                    src.type = isM3U8 ? 'application/vnd.apple.mpegurl' : 'video/mp4';
-                    video.appendChild(src);
-                    video.load();
-                    
-                    // Set a timeout to detect if video fails to load
-                    const loadTimeout = setTimeout(() => {
-                        if (video.readyState < 2) { // HAVE_CURRENT_DATA
-                            showError("Video is taking too long to load. This may be a CORS issue.", true);
-                        }
-                    }, 10000);
-                    
-                    video.addEventListener('loadedmetadata', () => {
-                        clearTimeout(loadTimeout);
-                        hideLoading();
-                        videoReady = true;
-                        document.getElementById('videoControls').style.display = 'flex';
-                        document.getElementById('panoTitle').textContent = `Video duration: ${video.duration.toFixed(1)}s`;
-                        initThreeJS();
-                    });
-                } else {
-                    hideLoading();
-                    showError('HLS not supported in this browser. Try using MP4 instead.', true);
-                }
-                document.getElementById('panoTitle').textContent = `Video: ${m3u8}`;
-            }
-
-            // 2) Load GPX from URL
-            if (gpx) {
-                showLoading('Loading GPX...');
-                try {
-                    // Encode URL properly
-                    const enc = encodeURI(gpx);
-                    const resp = await fetch(enc, { cache: 'no-store' });
-                    if (!resp.ok) throw new Error('GPX fetch failed: ' + resp.status);
-                    const text = await resp.text();
-                    const { coords, times } = parseGpxText(text);
-                    if (!coords || coords.length < 2) throw new Error('No valid track points found');
-                    ROUTE_COORDS = coords;
-                    ROUTE_TIMES  = (times && times.length === coords.length) ? times.map(t=> t - times[0]) : null;
-                    buildRouteLayers();
-                    showToast('GPX loaded from URL');
-                } catch (e) {
-                    console.warn(e);
-                    showToast('Could not load GPX URL: ' + e.message, 3000, true);
-                } finally {
-                    hideLoading();
-                }
-            }
-        };
-
-        // Retry and try local buttons
-        document.getElementById('retryButton').onclick = () => {
-            hideError();
-            document.getElementById('loadRemote').click();
-        };
-        
-        document.getElementById('tryLocalButton').onclick = () => {
-            hideError();
-            document.getElementById('videoInput').click();
-        };
-
-        // ===== 9) Utilities: GPX parser =====
-        function parseGpxText(text){
-            try{
-                const xml = new DOMParser().parseFromString(text, 'application/xml');
-                const pts = Array.from(xml.getElementsByTagName('trkpt'));
-                const coords = []; const times = [];
-                for (const p of pts){
-                    const lat = parseFloat(p.getAttribute('lat')); const lon = parseFloat(p.getAttribute('lon'));
-                    if (!isFinite(lat) || !isFinite(lon)) continue;
-                    coords.push([lon, lat]);
-                    const tEl = p.getElementsByTagName('time')[0];
-                    if (tEl && tEl.textContent){
-                        const t = Date.parse(tEl.textContent);
-                        times.push(isNaN(t)?null:t);
-                    }
-                }
-                return { coords, times: times.every(v=>v!=null)?times:null };
-            }catch(e){ 
-                console.error("GPX parsing error:", e);
-                return { coords:null, times:null }; 
-            }
+            
+            canvas.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+            
+            canvas.addEventListener('mouseleave', () => {
+                isDragging = false;
+            });
+            
+            // Mouse wheel zoom
+            canvas.addEventListener('wheel', handleWheelZoom);
         }
-
-        // ===== 10) Video event listeners =====
-        video.addEventListener('timeupdate', updateProgress);
         
-        video.addEventListener('play', function() {
-            isPlaying = true;
-            document.getElementById('playPause').textContent = '⏸️ Pause';
-        });
+        // ===== 9) INITIALIZATION =====
+        function init() {
+            initThreeJS();
+            setupEventListeners();
+            initMap();
+            preloadImages(); // Start preloading all images
+            loadImage(0); // Load the first image
+        }
         
-        video.addEventListener('pause', function() {
-            isPlaying = false;
-            document.getElementById('playPause').textContent = '▶️ Play';
-        });
-        
-        video.addEventListener('ended', function() {
-            isPlaying = false;
-            document.getElementById('playPause').textContent = '▶️ Play';
-        });
-        
-        video.addEventListener('error', (e) => {
-            console.error("Video error:", e);
-            showError("Video failed to load. This is likely a CORS issue.", true);
-        });
+        // Start the application
+        init();
     </script>
 </body>
 </html>
