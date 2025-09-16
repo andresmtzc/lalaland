@@ -1,187 +1,984 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Mini Street View (hybrid)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <!-- Mapbox GL -->
-  <link href="https://api.mapbox.com/mapbox-gl-js/v2.16.1/mapbox-gl.css" rel="stylesheet">
-  <script src="https://api.mapbox.com/mapbox-gl-js/v2.16.1/mapbox-gl.js"></script>
-
-  <!-- Pannellum (simple, lightweight 360 viewer) -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum/build/pannellum.css">
-  <script src="https://cdn.jsdelivr.net/npm/pannellum/build/pannellum.js"></script>
-
-  <style>
-    :root { --bg:#0b0e13; --panel:#111722; --line:#2a81fb; }
-    html, body { margin:0; height:100%; background:var(--bg); color:#eaeaea; font-family:system-ui, sans-serif; }
-    #app { display:grid; grid-template-columns: 1fr 46%; grid-template-rows: 56px 1fr; height:100%; }
-    header { grid-column:1 / span 2; background:#131a26; border-bottom:1px solid #1f2a3d; display:flex; align-items:center; gap:12px; padding:10px 14px; }
-    .brand { font-weight:700; }
-    .controls { display:flex; gap:8px; margin-left:auto; }
-    button { background:#1c2533; color:#fff; border:1px solid #2a364a; padding:8px 12px; border-radius:10px; cursor:pointer; }
-    button:hover { background:#253146; }
-
-    #map { width:100%; height:100%; }
-    #viewer { width:100%; height:100%; }
-
-    .panel { background:var(--panel); border-left:1px solid #1f2a3d; display:flex; flex-direction:column; }
-    .meta { padding:10px 12px; font-size:12px; opacity:.9; border-bottom:1px solid #1f2a3d; display:flex; gap:8px; align-items:center; }
-
-    /* moving marker (dot + arrow) */
-    .marker {
-      width: 18px; height: 18px; position: relative;
-      transform: translate(-50%, -50%) rotate(0deg);
-    }
-    .marker .dot {
-      width: 18px; height: 18px; border-radius: 50%;
-      background:#fff; box-shadow: 0 0 0 2px #4ea3ff;
-    }
-    .marker .arrow {
-      position:absolute; left:50%; top:-8px; width:2px; height:10px;
-      background:#4ea3ff; transform: translateX(-50%);
-      border-radius: 1px;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>360° HLS Video Viewer with Mapbox</title>
+    <!-- Mapbox GL JS -->
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <!-- Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <!-- HLS.js -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --panel: #0f172a;
+            --accent: #22d3ee;
+            --muted: #94a3b8;
+            --error: #ef4444;
+            --success: #10b981;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            height: 100vh;
+            margin: 0;
+            background: var(--bg);
+            color: #e2e8f0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial;
+            overflow: hidden;
+        }
+        
+        .app {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 64px 1fr;
+            height: 100%;
+        }
+        
+        header {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 16px;
+            border-bottom: 1px solid #1f2937;
+            background: linear-gradient(180deg, rgba(34,211,238,0.06), rgba(34,211,238,0));
+        }
+        
+        header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0;
+        }
+        
+        header .pill {
+            padding: 6px 10px;
+            border: 1px solid #233045;
+            border-radius: 999px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .right {
+            position: relative;
+            background: var(--panel);
+            border-left: 1px solid #1f2937;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .right-header {
+            height: 72px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-bottom: 1px solid #1f2937;
+            background: rgba(15,23,42,.7);
+            backdrop-filter: blur(8px);
+        }
+        
+        .controls {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+        
+        button.icon {
+            background: #0b1220;
+            border: 1px solid #263247;
+            color: #cbd5e1;
+            padding: 6px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        button.icon:hover {
+            border-color: #33445f;
+            background: #131d33;
+        }
+        
+        input.url {
+            background: #0b1220;
+            border: 1px solid #263247;
+            color: #cbd5e1;
+            padding: 6px 10px;
+            border-radius: 10px;
+            outline: none;
+            width: 100%;
+        }
+        
+        .video-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #video-player {
+            display: none;
+        }
+        
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            font-size: 12px;
+            color: #cbd5e1;
+            background: rgba(2,6,23,.65);
+            border: 1px solid #263247;
+            padding: 8px 10px;
+            border-radius: 10px;
+            z-index: 4;
+        }
+        
+        .legend b {
+            color: #e2e8f0;
+        }
+        
+        .toast {
+            position: absolute;
+            top: 84px;
+            right: 16px;
+            background: #0b1220;
+            border: 1px solid #263247;
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 12px;
+            color: #cbd5e1;
+            z-index: 10;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .toast.error {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+        
+        .toast.success {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+        
+        .row {
+            display: flex;
+            gap: 6px;
+            width: 100%;
+            align-items: center;
+        }
+        
+        .grow {
+            flex: 1 1 auto;
+        }
+        
+        .loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+            background: rgba(0,0,0,0.7);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            border-top: 4px solid var(--accent);
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .status {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 8px;
+        }
+        
+        .error-panel {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            max-width: 80%;
+            z-index: 100;
+        }
+        
+        .error-panel h3 {
+            margin: 0 0 10px;
+            color: #f87171;
+        }
+        
+        .error-panel p {
+            margin: 0 0 15px;
+            font-size: 14px;
+        }
+        
+        .troubleshoot {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            text-align: left;
+        }
+        
+        .troubleshoot h4 {
+            margin: 0 0 10px;
+            color: var(--accent);
+        }
+        
+        .troubleshoot ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .troubleshoot li {
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        
+        .video-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 5;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 10px;
+        }
+        
+        .play-pause {
+            background: #4CAF50;
+        }
+        
+        .play-pause:hover {
+            background: #6bc76e;
+        }
+        
+        .progress-container {
+            height: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 5px;
+            cursor: pointer;
+            position: relative;
+            flex-grow: 1;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: #ff6b6b;
+            border-radius: 5px;
+            width: 0%;
+        }
+        
+        .time {
+            margin-left: 10px;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .fullscreen {
+            background: #3f51b5;
+        }
+        
+        .fullscreen:hover {
+            background: #5768ce;
+        }
+        
+        @media (max-width: 1024px) {
+            .app {
+                grid-template-columns: 1fr;
+                grid-template-rows: 64px 1fr 1fr;
+            }
+            
+            .right {
+                border-left: none;
+                border-top: 1px solid #1f2937;
+            }
+        }
+    </style>
 </head>
 <body>
-<div id="app">
-  <header>
-    <div class="brand">Blue line + moving marker • 360 drag</div>
-    <div class="controls">
-      <button id="prevBtn">⟵ Prev</button>
-      <button id="nextBtn">Next ⟶</button>
+    <div class="app">
+        <header>
+            <h1>360° HLS Video Viewer with Mapbox</h1>
+            <span class="pill">360° Video + Map Integration</span>
+            <span class="pill">HLS Support</span>
+        </header>
+
+        <div id="map"></div>
+
+        <section class="right">
+            <div class="right-header">
+                <div id="panoTitle" class="grow">No video loaded</div>
+                <div class="row">
+                    <input id="videoUrl" class="url grow" placeholder="HLS Video URL (m3u8)" value="https://jmoxbhodpvnlmtihcwvt.supabase.co/storage/v1/object/public/pin-photos/output.m3u8" />
+                    <input id="gpxUrl" class="url grow" placeholder="GPX Track URL" value="https://lalaland.mx/army(1).gpx" />
+                    <button class="icon" id="loadRemote">Load URLs</button>
+                </div>
+                <div class="controls">
+                    <label class="icon" for="videoInput" title="Load 360° MP4 locally">📹 Load MP4</label>
+                    <input id="videoInput" type="file" accept="video/*" style="display:none" />
+                    <label class="icon" for="gpxInput" title="Load GPX file">🗺️ Load GPX</label>
+                    <input id="gpxInput" type="file" accept=".gpx,application/gpx+xml" style="display:none" />
+                    <button class="icon" id="back5" title="Seek −5s">−5s</button>
+                    <button class="icon" id="fwd5" title="Seek +5s">+5s</button>
+                </div>
+            </div>
+            
+            <div class="video-container">
+                <video id="video-player" crossorigin="anonymous"></video>
+                <canvas id="canvas"></canvas>
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <div>Loading 360° video...</div>
+                    <div class="status" id="loadingStatus"></div>
+                </div>
+            </div>
+            
+            <div class="legend" id="legend">
+                Load a video (MP4 or HLS URL), then a GPX (file or URL). Click the route to jump around the 360° video.
+            </div>
+            
+            <div class="toast" id="toast"></div>
+            
+            <div class="error-panel" id="errorPanel">
+                <h3>Video Loading Failed</h3>
+                <p id="errorMessage">The video could not be loaded. This is likely due to CORS restrictions on the server.</p>
+                
+                <div class="troubleshoot">
+                    <h4>Troubleshooting Tips:</h4>
+                    <ul>
+                        <li>Check if the video URL is correct and accessible</li>
+                        <li>The server may need CORS headers configured</li>
+                        <li>Try using a CORS proxy service for development</li>
+                        <li>Try loading a local video file instead</li>
+                    </ul>
+                </div>
+                
+                <button class="icon" id="retryButton">Retry Loading</button>
+                <button class="icon" id="tryLocalButton">Try Local File Instead</button>
+            </div>
+            
+            <div class="video-controls" id="videoControls" style="display: none;">
+                <button class="icon play-pause" id="playPause">▶️ Play</button>
+                <div class="progress-container" id="progress-container">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+                <div class="time" id="time">0:00 / 0:00</div>
+                <button class="icon fullscreen" id="fullscreen">⛶ Fullscreen</button>
+                <button class="icon" id="muteUnmute">🔇 Unmute</button>
+            </div>
+        </section>
     </div>
-  </header>
 
-  <div id="map"></div>
+    <script>
+        // ===== 0) CONFIG =====
+        const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
 
-  <div class="panel">
-    <div class="meta" id="meta">Loading…</div>
-    <div id="viewer"></div>
-  </div>
-</div>
+        // Start empty: no route until GPX or telemetry is loaded
+        let ROUTE_COORDS = [];
+        let ROUTE_TIMES  = null; // ms since route start (optional)
 
-<script>
-  // Your token (from you)
-  mapboxgl.accessToken = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
+        // ===== 1) MAPBOX INIT =====
+        mapboxgl.accessToken = MAPBOX_TOKEN;
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/dark-v11',
+            center: [-100, 25], // neutral center until data loads
+            zoom: 3,
+            attributionControl: true
+        });
+        map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-left');
 
-  const FLY_ZOOM = 17;
-  const YAW_OFFSET = 0; // tweak if the camera's "forward" isn't true yaw (try 90/-90/180)
+        // ===== 2) HELPER: distances, bearings, projection =====
+        const R = 6371000; // Earth radius (m)
+        function toRad(d){ return d * Math.PI / 180; }
+        function haversine(a, b){
+            const [lon1, lat1] = a, [lon2, lat2] = b;
+            const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+            const s1 = Math.sin(dLat/2), s2 = Math.sin(dLon/2);
+            const h = s1*s1 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*s2*s2;
+            return 2 * R * Math.asin(Math.sqrt(h));
+        }
+        function bearingDeg(a, b){
+            const [lon1, lat1] = a.map(toRad), [lon2, lat2] = b.map(toRad);
+            const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+            const x = Math.cos(lat1)*Math.cos(lat2)*Math.cos(lon2 - lon1) - Math.sin(lat1)*Math.sin(lat2);
+            return (Math.atan2(y, x) * 180/Math.PI + 360) % 360;
+        }
 
-  let map, marker, viewer, nodes = [], idx = 0;
+        let cumDist = [0];
+        let segBearing = [];
+        function recomputeRouteMetrics(){
+            cumDist = [0]; segBearing = [];
+            for (let i=1;i<ROUTE_COORDS.length;i++){
+                const d = haversine(ROUTE_COORDS[i-1], ROUTE_COORDS[i]);
+                cumDist.push(cumDist[i-1] + d);
+                segBearing.push(bearingDeg(ROUTE_COORDS[i-1], ROUTE_COORDS[i]));
+            }
+        }
+        function totalDistance(){ return cumDist[cumDist.length-1] || 0; }
 
-  // Init map
-  map = new mapboxgl.Map({
-    container: 'map',
-    style: 'mapbox://styles/mapbox/dark-v11',
-    center: [-100.29, 25.66],
-    zoom: 14
-  });
-  map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-right');
+        function nearestOnRoute(lngLat){
+            function ll2m([lon,lat]){
+                const x = lon * 20037508.34 / 180;
+                const y = Math.log(Math.tan((90+lat)*Math.PI/360)) / (Math.PI/180);
+                return [x, y * 20037508.34 / 180];
+            }
+            const p = ll2m([lngLat.lng, lngLat.lat]);
+            let best = { meters:0, idx:0, frac:0, minDist: Infinity };
+            for(let i=1;i<ROUTE_COORDS.length;i++){
+                const aLL = ROUTE_COORDS[i-1], bLL = ROUTE_COORDS[i];
+                const a = ll2m(aLL), b = ll2m(bLL);
+                const ab = [b[0]-a[0], b[1]-a[1]];
+                const ap = [p[0]-a[0], p[1]-a[1]];
+                const ab2 = ab[0]*ab[0] + ab[1]*ab[1];
+                const t = Math.max(0, Math.min(1, (ap[0]*ab[0] + ap[1]*ab[1]) / ab2));
+                const proj = [a[0] + t*ab[0], a[1] + t*ab[1]];
+                const dx = p[0]-proj[0], dy = p[1]-proj[1];
+                const dist2 = dx*dx + dy*dy;
+                if (dist2 < best.minDist){
+                    const segLenMeters = haversine(aLL, bLL);
+                    const meters = cumDist[i-1] + segLenMeters * t;
+                    best = { meters, idx:i-1, frac:t, minDist: dist2 };
+                }
+            }
+            return best;
+        }
 
-  // Load manifest, build line, init viewer
-  (async () => {
-    const manifest = await fetch('manifest.json').then(r => r.json());
-    nodes = manifest.nodes || [];
-    if (!nodes.length) { alert('No nodes in manifest.json'); return; }
+        function chainageToTimeMs(meters, videoDurationMs){
+            if (Array.isArray(ROUTE_TIMES) && ROUTE_TIMES.length === ROUTE_COORDS.length){
+                let i = 0; while (i < cumDist.length-1 && cumDist[i+1] < meters) i++;
+                const d0 = cumDist[i], d1 = cumDist[i+1] ?? cumDist[i];
+                const t0 = ROUTE_TIMES[i], t1 = ROUTE_TIMES[i+1] ?? ROUTE_TIMES[i];
+                if (d1 === d0) return t0;
+                const f = (meters - d0) / (d1 - d0);
+                return t0 + f * (t1 - t0);
+            }
+            const f = Math.max(0, Math.min(1, meters / (totalDistance() || 1)));
+            return f * videoDurationMs;
+        }
+        function chainageToBearing(meters){
+            let i = 0; while (i < cumDist.length-1 && cumDist[i+1] < meters) i++;
+            return segBearing[Math.max(0, Math.min(segBearing.length-1, i))] || 0;
+        }
 
-    // Build the blue route line from nodes (no per-frame dots)
-    const line = {
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: nodes.map(n => [n.lon, n.lat])
-      }
-    };
+        // ===== 3) Map + sources ===== 
+        map.on('load', () => {
+            buildRouteLayers();
+            map.on('click', (e)=> {
+                if (!ROUTE_COORDS || ROUTE_COORDS.length < 2){ showToast('Load GPX or URL first'); return; }
+                const n = nearestOnRoute(e.lngLat);
+                if (!isFinite(n.meters)) return;
+                seekToChainage(n.meters);
+            });
+        });
 
-    map.on('load', () => {
-      map.addSource('route', { type: 'geojson', data: line });
-      map.addLayer({
-        id: 'route-line',
-        type: 'line',
-        source: 'route',
-        paint: { 'line-color': '#2a81fb', 'line-width': 4, 'line-opacity': 0.9 }
-      });
+        function buildRouteLayers(){
+            if (!Array.isArray(ROUTE_COORDS) || ROUTE_COORDS.length < 2){
+                if (map.getLayer('route')) map.removeLayer('route');
+                if (map.getSource('route')) map.removeSource('route');
+                return;
+            }
+            const srcData = { type:'Feature', geometry:{ type:'LineString', coordinates: ROUTE_COORDS }, properties:{} };
+            if (map.getSource('route')) {
+                map.getSource('route').setData(srcData);
+            } else {
+                map.addSource('route', { type:'geojson', data: srcData });
+                map.addLayer({ id:'route', type:'line', source:'route',
+                    paint:{ 'line-color':'#22d3ee', 'line-width':4, 'line-opacity':0.85 } });
+            }
+            recomputeRouteMetrics();
 
-      // Fit to route
-      const b = new mapboxgl.LngLatBounds();
-      line.geometry.coordinates.forEach(c => b.extend(c));
-      map.fitBounds(b, { padding: 50, duration: 800 });
+            // Fly/fit to route
+            let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+            ROUTE_COORDS.forEach(c=>{ minX=Math.min(minX,c[0]); minY=Math.min(minY,c[1]); maxX=Math.max(maxX,c[0]); maxY=Math.max(maxY,c[1]); });
+            if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)){
+                const spanLng = Math.abs(maxX-minX), spanLat = Math.abs(maxY-minY);
+                if (spanLng < 0.0005 && spanLat < 0.0005){ map.flyTo({ center: ROUTE_COORDS[0], zoom: 17, speed: 0.7 }); }
+                else { map.fitBounds([[minX,minY],[maxX,maxY]], { padding: 60, duration: 700 }); }
+            }
+        }
 
-      // Add a single moving marker
-      const el = document.createElement('div');
-      el.className = 'marker';
-      el.innerHTML = '<div class="dot"></div><div class="arrow"></div>';
-      marker = new mapboxgl.Marker({ element: el, rotationAlignment: 'map' })
-        .setLngLat([nodes[0].lon, nodes[0].lat])
-        .addTo(map);
+        // ===== 4) Three.js 360 video viewer =====
+        const video = document.getElementById('video-player');
+        const canvas = document.getElementById('canvas');
+        let scene, camera, renderer, sphere;
+        let isPlaying = false;
+        let isMuted = true;
+        let videoReady = false;
 
-      // Hook up buttons / keys
-      document.getElementById('prevBtn').onclick = () => loadNode(idx - 1, true);
-      document.getElementById('nextBtn').onclick = () => loadNode(idx + 1, true);
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowLeft') loadNode(idx - 1, true);
-        if (e.key === 'ArrowRight') loadNode(idx + 1, true);
-      });
+        // Initialize Three.js
+        function initThreeJS() {
+            // Set up scene
+            scene = new THREE.Scene();
+            
+            // Set up camera
+            camera = new THREE.PerspectiveCamera(75, canvas.offsetWidth / canvas.offsetHeight, 0.1, 1000);
+            camera.position.set(0, 0, 0.1);
+            
+            // Set up renderer
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
+            
+            // Create sphere geometry
+            const geometry = new THREE.SphereGeometry(100, 60, 40);
+            
+            // Flip the geometry inside out
+            geometry.scale(-1, 1, 1);
+            
+            // Create video texture
+            const texture = new THREE.VideoTexture(video);
+            const material = new THREE.MeshBasicMaterial({ map: texture });
+            
+            // Create mesh and add to scene
+            sphere = new THREE.Mesh(geometry, material);
+            scene.add(sphere);
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize);
+            
+            // Mouse controls for 360 view
+            let isMouseDown = false;
+            let previousMousePosition = { x: 0, y: 0 };
+            
+            canvas.addEventListener('mousedown', function(e) {
+                isMouseDown = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+            
+            canvas.addEventListener('mousemove', function(e) {
+                if (!isMouseDown) return;
+                
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+                
+                // Rotate the sphere
+                sphere.rotation.y += deltaX * 0.005;
+                sphere.rotation.x += deltaY * 0.005;
+                
+                // Limit vertical rotation
+                sphere.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, sphere.rotation.x));
+                
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+            
+            canvas.addEventListener('mouseup', function() {
+                isMouseDown = false;
+            });
+            
+            canvas.addEventListener('mouseleave', function() {
+                isMouseDown = false;
+            });
+            
+            // Start animation loop
+            animate();
+        }
+        
+        function onWindowResize() {
+            camera.aspect = canvas.offsetWidth / canvas.offsetHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+        
+        function seekToChainage(meters){
+            if (!videoReady || !isFinite(video.duration)) { showToast('Video not ready yet'); return; }
+            const tMs = chainageToTimeMs(meters, video.duration * 1000);
+            const yaw = chainageToBearing(meters);
+            video.currentTime = Math.max(0, Math.min(video.duration - 0.05, tMs/1000));
+            if (sphere) {
+                sphere.rotation.y = THREE.MathUtils.degToRad(-yaw);
+            }
+            showToast(`Seek: ${(tMs/1000).toFixed(1)}s • Yaw ${Math.round(yaw)}°`);
+        }
 
-      // Start viewer after map is ready
-      initViewer();
-      loadNode(0, true);
-    });
-  })();
+        // ===== 5) Video controls =====
+        document.getElementById('playPause').onclick = togglePlayPause;
+        document.getElementById('muteUnmute').onclick = toggleMute;
+        document.getElementById('fullscreen').onclick = toggleFullscreen;
+        document.getElementById('progress-container').addEventListener('click', seek);
+        document.getElementById('back5').onclick = () => { 
+            if (!videoReady) return; 
+            video.currentTime = Math.max(0, video.currentTime - 5); 
+            if (!isPlaying) video.pause(); 
+        };
+        document.getElementById('fwd5').onclick = () => { 
+            if (!videoReady) return; 
+            video.currentTime = Math.min(video.duration - 0.05, video.currentTime + 5); 
+            if (!isPlaying) video.pause(); 
+        };
 
-  function initViewer() {
-    // Simple pannellum viewer
-    viewer = pannellum.viewer('viewer', {
-      type: 'equirectangular',
-      panorama: nodes[0].src,
-      autoLoad: true,
-      hfov: nodes[0].fov || 80,
-      pitch: nodes[0].pitch || 0,
-      yaw: (nodes[0].yaw || 0) + YAW_OFFSET,
-      compass: false,
-      showFullscreenCtrl: true,
-      showZoomCtrl: true
-    });
-  }
+        function togglePlayPause() {
+            if (video.paused) {
+                video.play().catch(e => {
+                    console.error('Playback failed:', e);
+                    showToast("Playback failed: " + e.message, 3000);
+                });
+            } else {
+                video.pause();
+            }
+        }
+        
+        function toggleMute() {
+            video.muted = !video.muted;
+            isMuted = video.muted;
+            document.getElementById('muteUnmute').textContent = isMuted ? '🔇 Unmute' : '🔊 Mute';
+        }
+        
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                if (canvas.requestFullscreen) {
+                    canvas.requestFullscreen();
+                } else if (canvas.webkitRequestFullscreen) {
+                    canvas.webkitRequestFullscreen();
+                } else if (canvas.msRequestFullscreen) {
+                    canvas.msRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+            }
+        }
+        
+        function seek(e) {
+            const pos = (e.pageX - e.currentTarget.getBoundingClientRect().left) / e.currentTarget.offsetWidth;
+            video.currentTime = pos * video.duration;
+        }
+        
+        function updateProgress() {
+            const value = (video.currentTime / video.duration) * 100;
+            document.getElementById('progress-bar').style.width = value + '%';
+            
+            // Update time display
+            const currentTime = formatTime(video.currentTime);
+            const duration = formatTime(video.duration);
+            document.getElementById('time').textContent = `${currentTime} / ${duration}`;
+        }
+        
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
 
-  function loadNode(i, fly=false) {
-    idx = (i + nodes.length) % nodes.length;
-    const n = nodes[idx];
+        // ===== 6) Toast and status functions =====
+        function showToast(msg, ms=1500, isError=false){
+            const t = document.getElementById('toast');
+            t.textContent = msg; 
+            t.className = isError ? 'toast error' : 'toast';
+            t.style.display = 'block';
+            clearTimeout(t._to); 
+            t._to = setTimeout(()=> t.style.display='none', ms);
+        }
+        
+        function showLoading(message) {
+            const loading = document.getElementById('loading');
+            const status = document.getElementById('loadingStatus');
+            status.textContent = message;
+            loading.style.display = 'block';
+            hideError();
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        function showError(message, showButtons = false) {
+            const errorPanel = document.getElementById('errorPanel');
+            document.getElementById('errorMessage').textContent = message;
+            errorPanel.style.display = 'block';
+            
+            if (showButtons) {
+                document.getElementById('retryButton').style.display = 'inline-block';
+                document.getElementById('tryLocalButton').style.display = 'inline-block';
+            } else {
+                document.getElementById('retryButton').style.display = 'none';
+                document.getElementById('tryLocalButton').style.display = 'none';
+            }
+            
+            hideLoading();
+        }
+        
+        function hideError() {
+            document.getElementById('errorPanel').style.display = 'none';
+        }
 
-    // Update viewer
-    viewer.loadScene('scene'+idx, {
-      type: 'equirectangular',
-      panorama: n.src,
-      hfov: n.fov || 80,
-      pitch: n.pitch || 0,
-      yaw: (n.yaw || 0) + YAW_OFFSET,
-      autoLoad: true
-    });
+        // ===== 7) Loaders: local files =====
+        (function attachLocalLoaders(){
+            const videoInput = document.getElementById('videoInput');
+            videoInput.addEventListener('change', (e)=>{
+                const file = e.target.files?.[0]; 
+                if(!file) return;
+                
+                showLoading('Loading local video...');
+                const url = URL.createObjectURL(file);
+                if (window._hls) { window._hls.destroy(); window._hls = null; }
+                video.innerHTML=''; 
+                const src=document.createElement('source'); 
+                src.src=url; 
+                src.type=file.type||'video/mp4'; 
+                video.appendChild(src);
+                try{ 
+                    video.load(); 
+                    hideError();
+                }catch(e){
+                    showError('Failed to load local video: ' + e.message);
+                }
+                document.getElementById('panoTitle').textContent = `Video: ${file.name}`;
+                showToast('Video loaded. Now load a GPX (file or URL).');
+            });
 
-    // Meta
-    const ts = (n.timestamp != null) ? new Date(n.timestamp*1000).toLocaleString() : '—';
-    document.getElementById('meta').textContent =
-      `Frame ${idx+1}/${nodes.length} • yaw ${(n.yaw||0).toFixed(1)}° • ${ts}`;
+            const gpxInput = document.getElementById('gpxInput');
+            gpxInput.addEventListener('change', async (e)=>{
+                const file = e.target.files?.[0]; if(!file) return;
+                showLoading('Parsing GPX file...');
+                try {
+                    const text = await file.text();
+                    const {coords, times} = parseGpxText(text);
+                    if (!coords || coords.length < 2){ showToast('Need at least 2 GPX points', 3000, true); return; }
+                    ROUTE_COORDS = coords;
+                    ROUTE_TIMES  = (times && times.length === coords.length) ? times.map(t=> t - times[0]) : null;
+                    buildRouteLayers();
+                    showToast('GPX loaded');
+                } catch (e) {
+                    showToast('Error loading GPX: ' + e.message, 3000, true);
+                } finally {
+                    hideLoading();
+                }
+            });
+        })();
 
-    // Move/rotate marker
-    if (marker) {
-      marker.setLngLat([n.lon, n.lat]);
-      const el = marker.getElement();
-      el.style.transform = `translate(-50%, -50%) rotate(${(n.yaw||0)+YAW_OFFSET}deg)`;
-    }
+        // ===== 8) Loaders: URLs (HLS + GPX) =====
+        document.getElementById('loadRemote').onclick = async () => {
+            const m3u8 = document.getElementById('videoUrl').value;
+            const gpx  = document.getElementById('gpxUrl').value;
 
-    // Fly map
-    if (fly && map && map.loaded()) {
-      map.flyTo({ center: [n.lon, n.lat], zoom: Math.max(map.getZoom(), FLY_ZOOM), speed: 0.8, curve: 1.42 });
-    }
+            // 1) Load HLS (or MP4 URL if you paste one)
+            if (m3u8) {
+                showLoading('Loading video...');
+                if (window._hls) { window._hls.destroy(); window._hls = null; }
+                video.pause(); 
+                video.removeAttribute('src'); 
+                video.innerHTML = '';
 
-    // Preload next image
-    const j = (idx + 1) % nodes.length;
-    new Image().src = nodes[j].src;
-  }
-</script>
+                const isM3U8 = /\.m3u8(\?|$)/i.test(m3u8);
+                if (isM3U8 && window.Hls && Hls.isSupported()) {
+                    try {
+                        window._hls = new Hls({ 
+                            maxBufferLength: 10,
+                            enableWorker: true,
+                            lowLatencyMode: true
+                        });
+                        
+                        window._hls.on(Hls.Events.ERROR, (event, data) => {
+                            console.error("HLS Error:", data);
+                            if (data.fatal) {
+                                switch(data.type) {
+                                    case Hls.ErrorTypes.NETWORK_ERROR:
+                                        showError("Network error loading video. Check URL and CORS settings.", true);
+                                        break;
+                                    case Hls.ErrorTypes.MEDIA_ERROR:
+                                        showError("Media error loading video. Format may be unsupported.", true);
+                                        break;
+                                    default:
+                                        showError("Error loading video: " + data.details, true);
+                                        break;
+                                }
+                                window._hls.destroy();
+                            }
+                        });
+                        
+                        window._hls.loadSource(m3u8);
+                        window._hls.attachMedia(video);
+                        window._hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                            video.muted = true;
+                            video.play().then(()=> setTimeout(()=> {
+                                video.pause();
+                                isPlaying = false;
+                                hideLoading();
+                                document.getElementById('playPause').textContent = '▶️ Play';
+                                videoReady = true;
+                                document.getElementById('videoControls').style.display = 'flex';
+                                document.getElementById('panoTitle').textContent = `Video duration: ${video.duration.toFixed(1)}s`;
+                                initThreeJS();
+                            }, 120)).catch((e) => {
+                                console.warn("Auto-play prevented:", e);
+                                hideLoading();
+                                showToast("Click play to start video", 3000);
+                                videoReady = true;
+                                document.getElementById('videoControls').style.display = 'flex';
+                                document.getElementById('panoTitle').textContent = `Video duration: ${video.duration.toFixed(1)}s`;
+                                initThreeJS();
+                            });
+                        });
+                    } catch (e) {
+                        showError("HLS.js initialization failed: " + e.message, true);
+                    }
+                } else if (video.canPlayType('application/vnd.apple.mpegurl') || !isM3U8) {
+                    // Safari HLS, or direct MP4 URL
+                    const src = document.createElement('source');
+                    src.src = m3u8; 
+                    src.type = isM3U8 ? 'application/vnd.apple.mpegurl' : 'video/mp4';
+                    video.appendChild(src);
+                    video.load();
+                    
+                    // Set a timeout to detect if video fails to load
+                    const loadTimeout = setTimeout(() => {
+                        if (video.readyState < 2) { // HAVE_CURRENT_DATA
+                            showError("Video is taking too long to load. This may be a CORS issue.", true);
+                        }
+                    }, 10000);
+                    
+                    video.addEventListener('loadedmetadata', () => {
+                        clearTimeout(loadTimeout);
+                        hideLoading();
+                        videoReady = true;
+                        document.getElementById('videoControls').style.display = 'flex';
+                        document.getElementById('panoTitle').textContent = `Video duration: ${video.duration.toFixed(1)}s`;
+                        initThreeJS();
+                    });
+                } else {
+                    hideLoading();
+                    showError('HLS not supported in this browser. Try using MP4 instead.', true);
+                }
+                document.getElementById('panoTitle').textContent = `Video: ${m3u8}`;
+            }
+
+            // 2) Load GPX from URL
+            if (gpx) {
+                showLoading('Loading GPX...');
+                try {
+                    // Encode URL properly
+                    const enc = encodeURI(gpx);
+                    const resp = await fetch(enc, { cache: 'no-store' });
+                    if (!resp.ok) throw new Error('GPX fetch failed: ' + resp.status);
+                    const text = await resp.text();
+                    const { coords, times } = parseGpxText(text);
+                    if (!coords || coords.length < 2) throw new Error('No valid track points found');
+                    ROUTE_COORDS = coords;
+                    ROUTE_TIMES  = (times && times.length === coords.length) ? times.map(t=> t - times[0]) : null;
+                    buildRouteLayers();
+                    showToast('GPX loaded from URL');
+                } catch (e) {
+                    console.warn(e);
+                    showToast('Could not load GPX URL: ' + e.message, 3000, true);
+                } finally {
+                    hideLoading();
+                }
+            }
+        };
+
+        // Retry and try local buttons
+        document.getElementById('retryButton').onclick = () => {
+            hideError();
+            document.getElementById('loadRemote').click();
+        };
+        
+        document.getElementById('tryLocalButton').onclick = () => {
+            hideError();
+            document.getElementById('videoInput').click();
+        };
+
+        // ===== 9) Utilities: GPX parser =====
+        function parseGpxText(text){
+            try{
+                const xml = new DOMParser().parseFromString(text, 'application/xml');
+                const pts = Array.from(xml.getElementsByTagName('trkpt'));
+                const coords = []; const times = [];
+                for (const p of pts){
+                    const lat = parseFloat(p.getAttribute('lat')); const lon = parseFloat(p.getAttribute('lon'));
+                    if (!isFinite(lat) || !isFinite(lon)) continue;
+                    coords.push([lon, lat]);
+                    const tEl = p.getElementsByTagName('time')[0];
+                    if (tEl && tEl.textContent){
+                        const t = Date.parse(tEl.textContent);
+                        times.push(isNaN(t)?null:t);
+                    }
+                }
+                return { coords, times: times.every(v=>v!=null)?times:null };
+            }catch(e){ 
+                console.error("GPX parsing error:", e);
+                return { coords:null, times:null }; 
+            }
+        }
+
+        // ===== 10) Video event listeners =====
+        video.addEventListener('timeupdate', updateProgress);
+        
+        video.addEventListener('play', function() {
+            isPlaying = true;
+            document.getElementById('playPause').textContent = '⏸️ Pause';
+        });
+        
+        video.addEventListener('pause', function() {
+            isPlaying = false;
+            document.getElementById('playPause').textContent = '▶️ Play';
+        });
+        
+        video.addEventListener('ended', function() {
+            isPlaying = false;
+            document.getElementById('playPause').textContent = '▶️ Play';
+        });
+        
+        video.addEventListener('error', (e) => {
+            console.error("Video error:", e);
+            showError("Video failed to load. This is likely a CORS issue.", true);
+        });
+    </script>
 </body>
 </html>
