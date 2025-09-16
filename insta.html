@@ -242,23 +242,8 @@
             background: rgba(0,0,0,0.7);
         }
         
-        .reset-view {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            z-index: 10;
-        }
-        
-        .preload-status {
-            position: absolute;
-            bottom: 80px;
-            left: 10px;
-            background: rgba(0,0,0,0.7);
-            padding: 8px;
-            border-radius: 5px;
-            font-size: 12px;
-            z-index: 10;
-        }
+
+
         
         @media (min-width: 768px) {
             .app {
@@ -341,11 +326,9 @@
             
             <div class="zoom-level" id="zoom-level">Zoom: 75°</div>
             
-            <div class="preload-status" id="preload-status">Preloading: 0%</div>
+
             
-            <div class="reset-view">
-                <button class="icon" id="resetView">Reset View</button>
-            </div>
+
             
             <div class="zoom-controls">
                 <button class="zoom-btn" id="zoomIn">+</button>
@@ -464,6 +447,15 @@ let panoGroup = null;              // parent of the sphere
         let preloadQueue = []; // Queue for preloading images
         let bgPreloadStarted = false;
         
+        let coneZoomDebounce = null;
+
+function requestConeUpdateAfterZoom(delay = 180) {
+  clearTimeout(coneZoomDebounce);
+  coneZoomDebounce = setTimeout(() => {
+    updateViewCone();   // uses currentFov -> horizontal FOV
+  }, delay);
+}
+
         // ===== 1) MAPBOX INIT =====
         mapboxgl.accessToken = MAPBOX_TOKEN;
         const map = new mapboxgl.Map({
@@ -581,11 +573,7 @@ function preloadOne(index) {
   });
 }
         
-        function updatePreloadStatus(percent) {
-            const preloadStatus = document.getElementById('preload-status');
-            preloadStatus.textContent = `Preloading: ${percent}%`;
-            preloadStatus.style.display = 'block';
-        }
+
         
         function preloadAdjacentImages() {
             // Clear any existing preload queue
@@ -738,6 +726,7 @@ function degToCompass(d) {
                 camera.fov = currentFov;
                 camera.updateProjectionMatrix();
                 updateZoomDisplay();
+                  requestConeUpdateAfterZoom();
                 showToast(`Zoomed in (${currentFov}°)`, 1000);
             }
         }
@@ -748,6 +737,7 @@ function degToCompass(d) {
                 camera.fov = currentFov;
                 camera.updateProjectionMatrix();
                 updateZoomDisplay();
+                  requestConeUpdateAfterZoom();
                 showToast(`Zoomed out (${currentFov}°)`, 1000);
             }
         }
@@ -761,6 +751,7 @@ function updateZoomDisplay() {
             if (e.touches.length !== 2) return;
             
             e.preventDefault();
+              requestConeUpdateAfterZoom();
             
             // Calculate distance between two fingers
             const touch1 = e.touches[0];
@@ -961,7 +952,7 @@ if (!map.getSource('view-cone')) {
       );
       map.fitBounds(bounds, { padding: 40, maxZoom: 19.5 });
     }
-
+ 
     // Create click-through DOM markers (once)
     if (!window.__imageMarkersAdded) {
       IMAGE_DATA.forEach((img, index) => {
@@ -1082,15 +1073,7 @@ if (!map.getSource('view-cone')) {
                 loadImage(currentImageIndex + 1, true);
             });
             
-            // Reset view button
-            document.getElementById('resetView').addEventListener('click', () => {
-                loadImage(currentImageIndex, false);
-                // Reset zoom to default
-                currentFov = 75;
-                camera.fov = currentFov;
-                camera.updateProjectionMatrix();
-                updateZoomDisplay();
-            });
+
             
             // Zoom buttons
             document.getElementById('zoomIn').addEventListener('click', zoomIn);
@@ -1146,6 +1129,8 @@ currentPitch = panoGroup.rotation.x;
             
             canvas.addEventListener('touchend', () => {
                 isDragging = false;
+                  canvas.lastPinchDistance = null;
+  updateViewCone();            // <— update when fingers lift
             });
             
             // Pinch to zoom
