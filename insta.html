@@ -3,62 +3,74 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DIY Street-View on Mapbox – Starter</title>
+  <title>DIY Street-View on Mapbox – HLS + GPX</title>
   <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
   <!-- Pannellum (lightweight 360 viewer) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css" />
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
-  <!-- MP4 parser for client-side telemetry attempt -->
-  <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+  <!-- hls.js for .m3u8 playback on Chrome/Firefox/Edge -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <style>
     :root { --bg:#0b1020; --panel:#0f172a; --accent:#22d3ee; --muted:#94a3b8; }
     html,body { height:100%; margin:0; background:var(--bg); color:#e2e8f0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
     .app { display:grid; grid-template-columns: 1fr min(52vw, 860px); grid-template-rows: 64px 1fr; height:100%; }
     header { grid-column: 1 / -1; display:flex; align-items:center; gap:12px; padding:0 16px; border-bottom:1px solid #1f2937; background:linear-gradient(180deg, rgba(34,211,238,0.06), rgba(34,211,238,0)); }
-    header h1 { font-size:16px; font-weight:600; letter-spacing:.2px; margin:0; }
+    header h1 { font-size:16px; font-weight:600; margin:0; }
     header .pill { padding:6px 10px; border:1px solid #233045; border-radius:999px; font-size:12px; color:var(--muted); }
     #map { width:100%; height:100%; }
     .right { position:relative; background:var(--panel); border-left:1px solid #1f2937; }
-    .right header { position:absolute; inset:0 auto auto 0; height:48px; z-index:5; display:flex; align-items:center; gap:8px; padding:0 12px; border-bottom:1px solid #1f2937; background:rgba(15,23,42,.7); backdrop-filter: blur(8px); }
+    .right header { position:absolute; inset:0 auto auto 0; height:72px; z-index:5; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:6px 12px; border-bottom:1px solid #1f2937; background:rgba(15,23,42,.7); backdrop-filter: blur(8px); }
     .controls { display:flex; gap:8px; margin-left:auto; }
     button.icon { background:#0b1220; border:1px solid #263247; color:#cbd5e1; padding:6px 10px; border-radius:10px; cursor:pointer; }
     button.icon:hover { border-color:#33445f; }
-    #pano { position:absolute; top:48px; left:0; right:0; bottom:0; }
+    input.url { background:#0b1220; border:1px solid #263247; color:#cbd5e1; padding:6px 10px; border-radius:10px; outline:none; }
+    #pano { position:absolute; top:72px; left:0; right:0; bottom:0; }
     .legend { position:absolute; bottom:12px; left:12px; font-size:12px; color:#cbd5e1; background:rgba(2,6,23,.65); border:1px solid #263247; padding:8px 10px; border-radius:10px; z-index:4; }
     .legend b { color:#e2e8f0; }
-    .toast { position:absolute; top:72px; right:16px; background:#0b1220; border:1px solid #263247; padding:10px 12px; border-radius:10px; font-size:12px; color:#cbd5e1; z-index: 10; display:none; }
-    a.link { color:var(--accent); text-decoration:none; }
+    .toast { position:absolute; top:84px; right:16px; background:#0b1220; border:1px solid #263247; padding:10px 12px; border-radius:10px; font-size:12px; color:#cbd5e1; z-index: 10; display:none; }
+    .row { display:flex; gap:6px; width:100%; align-items:center; }
+    .grow { flex:1 1 auto; }
+    .loading { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; }
+    .status { font-size: 12px; color: var(--muted); margin-top: 8px; }
   </style>
 </head>
 <body>
   <div class="app">
     <header>
-      <h1>DIY Street-View • Mapbox + Pannellum (Video-Seek Mode)</h1>
-      <span class="pill">Click the blue line to SEEK the 360° video (video never plays)</span>
-      <span class="pill">We map click → distance along line → video time</span>
+      <h1>DIY Street-View • Mapbox + Pannellum (Seek-only)</h1>
+      <span class="pill">Click blue line → seek 360° video (video never plays)</span>
+      <span class="pill">Local MP4 or remote HLS + GPX</span>
     </header>
 
     <div id="map"></div>
 
     <section class="right">
       <header>
-        <div id="panoTitle">No video loaded</div>
+        <div id="panoTitle" class="grow">No video loaded</div>
+        <div class="row">
+          <input id="videoUrl" class="url grow" placeholder="https://lalaland.mx/output.m3u8" value="https://lalaland.mx/output.m3u8" />
+          <input id="gpxUrl"   class="url grow" placeholder="https://lalaland.mx/army(1).gpx" value="https://lalaland.mx/army(1).gpx" />
+          <button class="icon" id="loadRemote">Load URLs</button>
+        </div>
         <div class="controls">
-          <label class="icon" for="videoInput" title="Load 360° video">📹 Load Video</label>
+          <label class="icon" for="videoInput" title="Load 360° MP4 locally">📹 Load MP4</label>
           <input id="videoInput" type="file" accept="video/*" style="display:none" />
-          <label class="icon" for="gpxInput" title="Load GPX track">🗺️ Load GPX</label>
+          <label class="icon" for="gpxInput" title="Load GPX file">🗺️ Load GPX</label>
           <input id="gpxInput" type="file" accept=".gpx,application/gpx+xml" style="display:none" />
-          <button class="icon" id="autoExtract" title="Try to auto-extract GPS from video (client-side)">⚙️ Auto-extract GPX</button>
           <button class="icon" id="back5" title="Seek −5s">−5s</button>
           <button class="icon" id="fwd5" title="Seek +5s">+5s</button>
         </div>
       </header>
       <div id="pano"></div>
       <video id="vid" playsinline muted preload="metadata" crossorigin="anonymous" style="display:none"></video>
-      <div class="legend" id="legend">Click the route to jump around the 360° video. Video stays <b>paused</b>—we only <b>seek</b>.</div>
+      <div class="legend" id="legend">Load a video (MP4 or HLS URL), then a GPX (file or URL). Click the route to jump around the 360° video. Video stays <b>paused</b>—we only <b>seek</b>.</div>
       <div class="toast" id="toast"></div>
+      <div class="loading" id="loading">
+        <div>Loading resources...</div>
+        <div class="status" id="loadingStatus"></div>
+      </div>
     </section>
   </div>
 
@@ -98,12 +110,10 @@
       return (Math.atan2(y, x) * 180/Math.PI + 360) % 360;
     }
 
-    // Dynamic route metrics
     let cumDist = [0];
     let segBearing = [];
     function recomputeRouteMetrics(){
-      cumDist = [0];
-      segBearing = [];
+      cumDist = [0]; segBearing = [];
       for (let i=1;i<ROUTE_COORDS.length;i++){
         const d = haversine(ROUTE_COORDS[i-1], ROUTE_COORDS[i]);
         cumDist.push(cumDist[i-1] + d);
@@ -112,7 +122,6 @@
     }
     function totalDistance(){ return cumDist[cumDist.length-1] || 0; }
 
-    // Project a click to the nearest point along the polyline (return chainage in meters)
     function nearestOnRoute(lngLat){
       function ll2m([lon,lat]){
         const x = lon * 20037508.34 / 180;
@@ -137,10 +146,9 @@
           best = { meters, idx:i-1, frac:t, minDist: dist2 };
         }
       }
-      return best; // {meters, idx, frac}
+      return best;
     }
 
-    // Map chainage -> time (ms)
     function chainageToTimeMs(meters, videoDurationMs){
       if (Array.isArray(ROUTE_TIMES) && ROUTE_TIMES.length === ROUTE_COORDS.length){
         let i = 0; while (i < cumDist.length-1 && cumDist[i+1] < meters) i++;
@@ -153,22 +161,16 @@
       const f = Math.max(0, Math.min(1, meters / (totalDistance() || 1)));
       return f * videoDurationMs;
     }
-
     function chainageToBearing(meters){
       let i = 0; while (i < cumDist.length-1 && cumDist[i+1] < meters) i++;
       return segBearing[Math.max(0, Math.min(segBearing.length-1, i))] || 0;
     }
 
-    // ===== 3) Map + sources =====
+    // ===== 3) Map + sources ===== 
     map.on('load', () => {
       buildRouteLayers();
-
-      // Click to seek
       map.on('click', (e)=> {
-        if (!ROUTE_COORDS || ROUTE_COORDS.length < 2){
-          showToast('Load a GPX or auto-extract from video to get a route');
-          return;
-        }
+        if (!ROUTE_COORDS || ROUTE_COORDS.length < 2){ showToast('Load GPX or URL first'); return; }
         const n = nearestOnRoute(e.lngLat);
         if (!isFinite(n.meters)) return;
         seekToChainage(n.meters);
@@ -176,19 +178,12 @@
     });
 
     function buildRouteLayers(){
-      // Remove if no data yet
       if (!Array.isArray(ROUTE_COORDS) || ROUTE_COORDS.length < 2){
         if (map.getLayer('route')) map.removeLayer('route');
         if (map.getSource('route')) map.removeSource('route');
         return;
       }
-
-      const srcData = {
-        type:'Feature',
-        geometry:{ type:'LineString', coordinates: ROUTE_COORDS },
-        properties:{}
-      };
-
+      const srcData = { type:'Feature', geometry:{ type:'LineString', coordinates: ROUTE_COORDS }, properties:{} };
       if (map.getSource('route')) {
         map.getSource('route').setData(srcData);
       } else {
@@ -196,24 +191,15 @@
         map.addLayer({ id:'route', type:'line', source:'route',
           paint:{ 'line-color':'#22d3ee', 'line-width':4, 'line-opacity':0.85 } });
       }
-
-      // Recompute metrics
       recomputeRouteMetrics();
 
-      // Fly/fit to route location
+      // Fly/fit to route
       let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-      ROUTE_COORDS.forEach(c=>{
-        minX=Math.min(minX,c[0]); minY=Math.min(minY,c[1]);
-        maxX=Math.max(maxX,c[0]); maxY=Math.max(maxY,c[1]);
-      });
+      ROUTE_COORDS.forEach(c=>{ minX=Math.min(minX,c[0]); minY=Math.min(minY,c[1]); maxX=Math.max(maxX,c[0]); maxY=Math.max(maxY,c[1]); });
       if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)){
         const spanLng = Math.abs(maxX-minX), spanLat = Math.abs(maxY-minY);
-        if (spanLng < 0.0005 && spanLat < 0.0005){
-          const first = ROUTE_COORDS[0];
-          map.flyTo({ center:first, zoom:17, speed:0.7 });
-        } else {
-          map.fitBounds([[minX,minY],[maxX,maxY]], { padding:60, duration:700 });
-        }
+        if (spanLng < 0.0005 && spanLat < 0.0005){ map.flyTo({ center: ROUTE_COORDS[0], zoom: 17, speed: 0.7 }); }
+        else { map.fitBounds([[minX,minY],[maxX,maxY]], { padding: 60, duration: 700 }); }
       }
     }
 
@@ -235,12 +221,13 @@
         });
       }
       videoReady = true;
-      vid.pause(); // ensure paused
+      // Prime first frame so Pannellum shows immediately
+      vid.muted = true;
+      vid.play().then(()=> setTimeout(()=> vid.pause(), 120)).catch((e)=>{
+        console.warn("Auto-play prevented:", e);
+        showToast("Click the video to enable playback");
+      });
     });
-
-    // Ensure the current frame shows after seeking
-    vid.addEventListener('seeked', ()=> { vid.pause(); });
-    vid.addEventListener('playing', ()=> { vid.pause(); }); // safety
 
     function seekToChainage(meters){
       if (!videoReady || !isFinite(vid.duration)) { showToast('Video not ready yet'); return; }
@@ -251,64 +238,133 @@
       showToast(`Seek: ${(tMs/1000).toFixed(1)}s • Yaw ${Math.round(yaw)}°`);
     }
 
-    // Buttons: +/-5s (seek only)
-    document.getElementById('back5').onclick = () => {
-      if (!videoReady) return; vid.currentTime = Math.max(0, vid.currentTime - 5); vid.pause();
-    };
-    document.getElementById('fwd5').onclick = () => {
-      if (!videoReady) return; vid.currentTime = Math.min(vid.duration - 0.05, vid.currentTime + 5); vid.pause();
-    };
+    // Nudge buttons
+    document.getElementById('back5').onclick = () => { if (!videoReady) return; vid.currentTime = Math.max(0, vid.currentTime - 5); vid.pause(); };
+    document.getElementById('fwd5').onclick = () => { if (!videoReady) return; vid.currentTime = Math.min(vid.duration - 0.05, vid.currentTime + 5); vid.pause(); };
 
     function showToast(msg, ms=1500){
       const t = document.getElementById('toast');
       t.textContent = msg; t.style.display = 'block';
       clearTimeout(t._to); t._to = setTimeout(()=> t.style.display='none', ms);
     }
+    
+    function showLoading(message) {
+      const loading = document.getElementById('loading');
+      const status = document.getElementById('loadingStatus');
+      status.textContent = message;
+      loading.style.display = 'block';
+    }
+    
+    function hideLoading() {
+      document.getElementById('loading').style.display = 'none';
+    }
 
-    // === Extra: File inputs for Video & GPX ===
-    (function attachLoaders(){
+    // === Loaders: local files ===
+    (function attachLocalLoaders(){
       const videoInput = document.getElementById('videoInput');
-
-      if (videoInput) videoInput.addEventListener('change', (e)=>{
+      videoInput.addEventListener('change', (e)=>{
         const file = e.target.files?.[0]; if(!file) return;
         const url = URL.createObjectURL(file);
+        if (window._hls) { window._hls.destroy(); window._hls = null; }
         vid.innerHTML=''; const src=document.createElement('source'); src.src=url; src.type=file.type||'video/mp4'; vid.appendChild(src);
         try{ vid.load(); }catch(_){}
-        const t = document.getElementById('panoTitle'); if (t) t.textContent = `Video: ${file.name}`;
-        showToast('Video loaded. (Optional) Auto-extract or Load GPX to draw route.');
+        document.getElementById('panoTitle').textContent = `Video: ${file.name}`;
+        showToast('Video loaded. Now load a GPX (file or URL).');
       });
 
       const gpxInput = document.getElementById('gpxInput');
       gpxInput.addEventListener('change', async (e)=>{
         const file = e.target.files?.[0]; if(!file) return;
-        const text = await file.text();
-        const {coords, times} = parseGpxText(text);
-        if (!coords || coords.length < 2){ showToast('Need at least 2 GPX points'); return; }
-        ROUTE_COORDS = coords;
-        ROUTE_TIMES  = (times && times.length === coords.length) ? times.map(t=> t - times[0]) : null;
-        buildRouteLayers();
-        showToast('GPX loaded');
-      });
-
-      // Client-side attempt to auto-extract telemetry using mp4box.js
-      document.getElementById('autoExtract').addEventListener('click', async ()=>{
-        const file = videoInput.files?.[0];
-        if(!file){ showToast('Load a video first'); return; }
-        try{
-          const {coords, times} = await tryExtractGpsClient(file);
-          if (!coords || coords.length < 2) throw new Error('No GPS track found');
+        showLoading('Parsing GPX file...');
+        try {
+          const text = await file.text();
+          const {coords, times} = parseGpxText(text);
+          if (!coords || coords.length < 2){ showToast('Need at least 2 GPX points'); return; }
           ROUTE_COORDS = coords;
           ROUTE_TIMES  = (times && times.length === coords.length) ? times.map(t=> t - times[0]) : null;
           buildRouteLayers();
-          showToast('Auto-extracted GPX ✔');
-        } catch(e){
-          console.warn(e);
-          showToast('Could not auto-extract GPS from this video');
+          showToast('GPX loaded');
+        } catch (e) {
+          showToast('Error loading GPX: ' + e.message);
+        } finally {
+          hideLoading();
         }
       });
     })();
 
-    // === Utilities: GPX parser & client-side MP4 telemetry attempt ===
+    // === Loaders: URLs (HLS + GPX) ===
+    document.getElementById('loadRemote').onclick = async () => {
+      const m3u8 = document.getElementById('videoUrl').value.trim();
+      const gpx  = document.getElementById('gpxUrl').value.trim();
+
+      // 1) Load HLS (or MP4 URL if you paste one)
+      if (m3u8) {
+        showLoading('Loading video...');
+        if (window._hls) { window._hls.destroy(); window._hls = null; }
+        vid.pause(); vid.removeAttribute('src'); vid.innerHTML = '';
+
+        const isM3U8 = /\.m3u8(\?|$)/i.test(m3u8);
+        if (isM3U8 && window.Hls && Hls.isSupported()) {
+          window._hls = new Hls({ maxBufferLength: 10 });
+          window._hls.loadSource(m3u8);
+          window._hls.attachMedia(vid);
+          window._hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            vid.muted = true;
+            vid.play().then(()=> setTimeout(()=> {
+              vid.pause();
+              hideLoading();
+            }, 120)).catch((e) => {
+              console.warn("Auto-play prevented:", e);
+              hideLoading();
+              showToast("Click the video to enable playback");
+            });
+          });
+          window._hls.on(Hls.Events.ERROR, (event, data) => {
+            console.error("HLS Error:", data);
+            if (data.fatal) {
+              hideLoading();
+              showToast("Error loading video. Check CORS settings.");
+            }
+          });
+        } else if (vid.canPlayType('application/vnd.apple.mpegurl') || !isM3U8) {
+          // Safari HLS, or direct MP4 URL
+          const src = document.createElement('source');
+          src.src = m3u8; src.type = isM3U8 ? 'application/vnd.apple.mpegurl' : 'video/mp4';
+          vid.appendChild(src);
+          vid.load();
+          hideLoading();
+        } else {
+          hideLoading();
+          showToast('HLS not supported in this browser');
+        }
+        document.getElementById('panoTitle').textContent = `Video: ${m3u8}`;
+      }
+
+      // 2) Load GPX from URL
+      if (gpx) {
+        showLoading('Loading GPX...');
+        try {
+          // Encode URL properly
+          const enc = encodeURI(gpx);
+          const resp = await fetch(enc, { cache: 'no-store' });
+          if (!resp.ok) throw new Error('GPX fetch failed: ' + resp.status);
+          const text = await resp.text();
+          const { coords, times } = parseGpxText(text);
+          if (!coords || coords.length < 2) throw new Error('No valid track points found');
+          ROUTE_COORDS = coords;
+          ROUTE_TIMES  = (times && times.length === coords.length) ? times.map(t=> t - times[0]) : null;
+          buildRouteLayers();
+          showToast('GPX loaded from URL');
+        } catch (e) {
+          console.warn(e);
+          showToast('Could not load GPX URL: ' + e.message);
+        } finally {
+          hideLoading();
+        }
+      }
+    };
+
+    // === Utilities: GPX parser ===
     function parseGpxText(text){
       try{
         const xml = new DOMParser().parseFromString(text, 'application/xml');
@@ -325,100 +381,18 @@
           }
         }
         return { coords, times: times.every(v=>v!=null)?times:null };
-      }catch(e){ return { coords:null, times:null }; }
-    }
-
-    async function tryExtractGpsClient(file){
-      // Best-effort: success depends on how telemetry is written in the MP4
-      const arrayBuf = await file.arrayBuffer();
-      const mp4boxfile = MP4Box.createFile();
-      const tracks = [];
-      const samples = {}; // id -> [samples]
-
-      mp4boxfile.onError = (e)=>console.warn('mp4box error', e);
-      mp4boxfile.onReady = (info)=>{
-        info.tracks.forEach(t=>{
-          tracks.push(t);
-          mp4boxfile.setExtractionOptions(t.id, null, { nbSamples: 0 });
-        });
-        mp4boxfile.start();
-      };
-      mp4boxfile.onSamples = (id, user, arr)=>{ (samples[id]||(samples[id]=[])).push(...arr); };
-
-      arrayBuf.fileStart = 0; mp4boxfile.appendBuffer(arrayBuf); mp4boxfile.flush();
-
-      // Heuristic: look for text/metadata tracks with NMEA ($GPRMC) or JSON {lat,lon,time}
-      const coords = []; const times=[];
-      for (const id in samples){
-        for (const s of samples[id]){
-          try{
-            const text = new TextDecoder().decode(s.data);
-            if (/\$(GPRMC|GPGGA|GNRMC|GNGGA)/.test(text)){
-              const out = nmeaToPoints(text);
-              if (out?.coords?.length){ coords.push(...out.coords); times.push(...out.times); }
-            }
-            const jsonMatch = text.match(/\{[^]*?\}/g);
-            if (jsonMatch){
-              for (const m of jsonMatch){
-                try{
-                  const obj = JSON.parse(m);
-                  const lat = obj.lat||obj.latitude; const lon = obj.lon||obj.longitude;
-                  const t  = Date.parse(obj.time||obj.timestamp||obj.dateTime||'');
-                  if (isFinite(lat) && isFinite(lon)){
-                    coords.push([Number(lon), Number(lat)]);
-                    times.push(isNaN(t)?null:t);
-                  }
-                }catch(_){}
-              }
-            }
-          }catch(_){ /* binary payloads – ignore */ }
-        }
-      }
-
-      if (coords.length < 2) throw new Error('No GPS payload detected');
-
-      const validTimes = times.filter(t=>t!=null);
-      const timesNorm = validTimes.length===times.length ? times.map(t=> t - times[0]) : null;
-      return { coords, times: timesNorm };
-    }
-
-    function nmeaToPoints(text){
-      const lines = text.split(/\r?\n/);
-      const coords = []; const times = [];
-      for (const ln of lines){
-        if (!ln.startsWith('$') || ln.length < 20) continue;
-        const parts = ln.split(',');
-        const type = parts[0].slice(1);
-        if (type.endsWith('RMC') && parts.length>9){
-          const hhmmss = parts[1];
-          const status = parts[2]; if (status!=='A') continue; // A=valid
-          const latRaw = parts[3], latH = parts[4];
-          const lonRaw = parts[5], lonH = parts[6];
-          const dateRaw = parts[9];
-          const lat = dmToDeg(latRaw, latH), lon = dmToDeg(lonRaw, lonH);
-          if (isFinite(lat) && isFinite(lon)){
-            coords.push([lon, lat]);
-            const t = nmeaToUnix(hhmmss, dateRaw);
-            times.push(isNaN(t)?null:t);
-          }
-        }
-      }
-      return { coords, times };
-
-      function dmToDeg(dm, hem){
-        if (!dm || dm==='') return NaN; const v = parseFloat(dm);
-        const deg = Math.floor(v/100); const min = v - deg*100; let out = deg + (min/60);
-        if (hem==='S' || hem==='W') out *= -1; return out;
-      }
-      function nmeaToUnix(hms, dmy){
-        if (!hms || !dmy) return NaN;
-        const hh = hms.slice(0,2), mm = hms.slice(2,4), ss = hms.slice(4,6);
-        const dd = dmy.slice(0,2), mo = dmy.slice(2,4), yy = dmy.slice(4,6);
-        const fullYear = 2000 + parseInt(yy,10);
-        const iso = `${fullYear}-${mo}-${dd}T${hh}:${mm}:${ss}Z`;
-        return Date.parse(iso);
+      }catch(e){ 
+        console.error("GPX parsing error:", e);
+        return { coords:null, times:null }; 
       }
     }
+    
+    // Auto-load the URLs on page load for testing
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        document.getElementById('loadRemote').click();
+      }, 1000);
+    });
   </script>
 </body>
 </html>
