@@ -655,6 +655,49 @@
             img.src = url;
         }
         
+        // ===== ORIENTATION HELPERS =====
+function radToDeg(r) { return r * 180 / Math.PI; }
+function degToRad(d) { return d * Math.PI / 180; }
+function normDeg(d) { d = d % 360; return d < 0 ? d + 360 : d; }
+function fmt(n, p = 1) { return Number.isFinite(n) ? n.toFixed(p) : '—'; }
+
+// Updates the box in the top-right with FOV, Yaw, Pitch, Heading, Lat/Lon
+// Updates the box with FOV, dynamic Heading, Pitch, and the frame's original Heading + Lat/Lon
+function updateStatusBox() {
+    const el = document.getElementById('zoom-level');
+    if (!el) return;
+
+    const img = IMAGE_DATA[currentImageIndex] || {};
+    const yawDegDynamic = normDeg(radToDeg(currentYaw)); // where the viewer is looking now
+    const pitchDeg = radToDeg(currentPitch);
+    const frameHeading = (img.yaw != null) ? normDeg(img.yaw) : null;
+
+    el.innerHTML = `
+        <div style="line-height:1.25">
+            <div><strong>Zoom</strong>: ${fmt(currentFov,0)}°</div>
+            <div><strong>Heading</strong>: ${fmt(yawDegDynamic)}° ${degToCompass(yawDegDynamic)}</div>
+            <div><strong>Pitch</strong>: ${fmt(pitchDeg)}°</div>
+            <div><strong>Frame Heading</strong>: ${frameHeading != null ? fmt(frameHeading) + '° ' + degToCompass(frameHeading) : '—'}</div>
+            <div><strong>Lat</strong>: ${img.lat != null ? fmt(img.lat,6) : '—'}</div>
+            <div><strong>Lon</strong>: ${img.lon != null ? fmt(img.lon,6) : '—'}</div>
+        </div>
+    `;
+}
+
+// ===== HEADING HELPERS =====
+function radToDeg(r) { return r * 180 / Math.PI; }
+function degToRad(d) { return d * Math.PI / 180; }
+function normDeg(d) { d = d % 360; return d < 0 ? d + 360 : d; }
+function fmt(n, p = 1) { return Number.isFinite(n) ? n.toFixed(p) : '—'; }
+
+// 16-point compass for nice labels (N, NNE, NE, ...)
+function degToCompass(d) {
+    const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE",
+                  "S","SSW","SW","WSW","W","WNW","NW","NNW"];
+    const i = Math.round(normDeg(d) / 22.5) % 16;
+    return dirs[i];
+}
+
         // ===== 4) ZOOM CONTROLS =====
         function zoomIn() {
             if (currentFov > 30) {
@@ -676,9 +719,10 @@
             }
         }
         
-        function updateZoomDisplay() {
-            document.getElementById('zoom-level').textContent = `Zoom: ${currentFov}°`;
-        }
+function updateZoomDisplay() {
+    document.getElementById('zoom-level').textContent = `Zoom: ${currentFov}°`;
+    updateStatusBox(); // NEW
+}
         
         function handlePinchZoom(e) {
             if (e.touches.length !== 2) return;
@@ -815,6 +859,8 @@
             // Update UI
             updateUI();
             updateMapMarker();
+            updateStatusBox(); // NEW
+            updateViewRay()
             
             hideLoading();
             showToast('Loaded image ' + (currentImageIndex + 1), 1000);
@@ -863,6 +909,26 @@
                         'line-opacity': 0.7
                     }
                 });
+
+                // A small “view ray” that points where the user is looking
+map.addSource('view-ray', {
+  type: 'geojson',
+  data: {
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates: [[0,0],[0,0]] }
+  }
+});
+
+map.addLayer({
+  id: 'view-ray',
+  type: 'line',
+  source: 'view-ray',
+  paint: {
+    'line-color': '#ff6b6b',
+    'line-width': 3,
+    'line-opacity': 0.9
+  }
+});
 
 // Add markers for each point
 IMAGE_DATA.forEach((img, index) => {
@@ -943,6 +1009,48 @@ map.on('click', (e) => {
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             return R * c;
         }
+
+        function updateViewRay() {
+  // Make sure map & source exist
+  if (!map || !map.getSource('view-ray')) return;
+
+  const img = IMAGE_DATA[currentImageIndex];
+  if (!img) return;
+
+  // Origin = current frame coordinates
+  const origin = [img.lon, img.lat];
+
+  // Dynamic heading from your current camera yaw (radians -> degrees 0..360)
+  const headingDeg = normDeg(radToDeg(currentYaw));
+
+  // How far the “ray” should extend (meters):
+  const distanceMeters = 25;
+
+  // Great-circle forward calculation
+  const R = 6378137; // Earth radius (m)
+  const d = distanceMeters;
+  const brng = degToRad(headingDeg);
+  const lat1 = degToRad(img.lat);
+  const lon1 = degToRad(img.lon);
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(d / R) +
+    Math.cos(lat1) * Math.sin(d / R) * Math.cos(brng)
+  );
+
+  const lon2 = lon1 + Math.atan2(
+    Math.sin(brng) * Math.sin(d / R) * Math.cos(lat1),
+    Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2)
+  );
+
+  const dest = [radToDeg(lon2), radToDeg(lat2)];
+
+  map.getSource('view-ray').setData({
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates: [origin, dest] }
+  });
+}
+
         
         // ===== 7) UI FUNCTIONS =====
         function updateUI() {
@@ -1046,6 +1154,8 @@ map.on('click', (e) => {
                     // Update current orientation
                     currentYaw = sphere.rotation.y;
                     currentPitch = sphere.rotation.x;
+                    updateStatusBox(); // NEW
+                    updateViewRay()
                     
                     previousPosition = currentPosition;
                 }
@@ -1084,6 +1194,8 @@ map.on('click', (e) => {
                     // Update current orientation
                     currentYaw = sphere.rotation.y;
                     currentPitch = sphere.rotation.x;
+                    updateStatusBox(); // NEW
+                    updateViewRay()
                     
                     previousPosition = currentPosition;
                 }
