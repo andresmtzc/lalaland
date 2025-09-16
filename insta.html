@@ -368,129 +368,92 @@
         const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
         
         // Image data with coordinates and orientation
-        const IMAGE_DATA = [
-            {
-                "id": "00000", 
-                "src": "https://lalaland.mx/frame_000001.jpg", 
-                "lat": 25.660812215045993, 
-                "pitch": 0.0, 
-                "yaw": 26.787332907809628, 
-                "lon": -100.29092561135387, 
-                "fov": 80.0, 
-                "timestamp": 1757980312
-            }, 
-            {
-                "id": "00001", 
-                "src": "https://lalaland.mx/frame_000002.jpg", 
-                "lat": 25.66081222199065, 
-                "pitch": 0.0, 
-                "yaw": 25.881323521757281, 
-                "lon": -100.29092560746437, 
-                "fov": 80.0, 
-                "timestamp": 1757980314
-            }, 
-            {
-                "id": "00002", 
-                "src": "https://lalaland.mx/frame_000003.jpg", 
-                "lat": 25.660812587123861, 
-                "pitch": 0.0, 
-                "yaw": 38.341285160918915, 
-                "lon": -100.29092532007309, 
-                "fov": 80.0, 
-                "timestamp": 1757980316
-            }, 
-            {
-                "id": "00003", 
-                "src": "https://lalaland.mx/frame_000004.jpg", 
-                "lat": 25.660813069350191, 
-                "pitch": 0.0, 
-                "yaw": 276.2019658011892, 
-                "lon": -100.29092574567257, 
-                "fov": 80.0, 
-                "timestamp": 1757980318
-            }, 
-            {
-                "id": "00004", 
-                "src": "https://lalaland.mx/frame_000005.jpg", 
-                "lat": 25.660813261990945, 
-                "pitch": 0.0, 
-                "yaw": 207.1773261440288, 
-                "lon": -100.29093334512103, 
-                "fov": 80.0, 
-                "timestamp": 1757980320
-            }, 
-            {
-                "id": "00005", 
-                "src": "https://lalaland.mx/frame_000006.jpg", 
-                "lat": 25.660796970626045, 
-                "pitch": 0.0, 
-                "yaw": 213.76606287324259, 
-                "lon": -100.29094209798276, 
-                "fov": 80.0, 
-                "timestamp": 1757980322
-            }, 
-            {
-                "id": "00006", 
-                "src": "https://lalaland.mx/frame_000007.jpg", 
-                "lat": 25.660776639045288, 
-                "pitch": 0.0, 
-                "yaw": 240.443989592413, 
-                "lon": -100.29096064480655, 
-                "fov": 80.0, 
-                "timestamp": 1757980324
-            }, 
-            {
-                "id": "00007", 
-                "src": "https://lalaland.mx/frame_000008.jpg", 
-                "lat": 25.660762648448145, 
-                "pitch": 0.0, 
-                "yaw": 256.93283619075464, 
-                "lon": -100.2909924238042, 
-                "fov": 80.0, 
-                "timestamp": 1757980326
-            }, 
-            {
-                "id": "00008", 
-                "src": "https://lalaland.mx/frame_000009.jpg", 
-                "lat": 25.66075759848551, 
-                "pitch": 0.0, 
-                "yaw": 266.78585969112106, 
-                "lon": -100.29102544740998, 
-                "fov": 80.0, 
-                "timestamp": 1757980328
-            }, 
-            {
-                "id": "00009", 
-                "src": "https://lalaland.mx/frame_000010.jpg", 
-                "lat": 25.660756721242343, 
-                "pitch": 0.0, 
-                "yaw": 274.56016210330631, 
-                "lon": -100.29105670660323, 
-                "fov": 80.0, 
-                "timestamp": 1757980330
-            }, 
-            {
-                "id": "00010", 
-                "src": "https://lalaland.mx/frame_000011.jpg", 
-                "lat": 25.660760434997549, 
-                "pitch": 0.0, 
-                "yaw": 284.29952718339507, 
-                "lon": -100.29108926102735, 
-                "fov": 80.0, 
-                "timestamp": 1757980332
-            }, 
-            {
-                "id": "00011", 
-                "src": "https://lalaland.mx/frame_000012.jpg", 
-                "lat": 25.660764502814366, 
-                "pitch": 0.0, 
-                "yaw": 284.20545258432708, 
-                "lon": -100.29110650436546, 
-                "fov": 80.0, 
-                "timestamp": 1757980334
-            }
-        ];
+         let IMAGE_DATA = [];
         
+          async function loadManifest(url) {
+  try {
+    const u = new URL(url, location.href);
+    u.searchParams.set('t', Date.now()); // evita caché en desarrollo
+    const res = await fetch(u.toString(), { method: 'GET', cache: 'no-store' });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} ${res.statusText} – Body: ${text?.slice(0, 200)}`);
+    }
+
+    const jsonText = await res.text();
+    let arr = null;
+
+    try {
+      const json = JSON.parse(jsonText);
+
+      if (Array.isArray(json)) {
+        arr = json;
+      } else if (Array.isArray(json.images)) {
+        arr = json.images;
+      } else if (Array.isArray(json.nodes)) {
+        arr = json.nodes;
+      }
+
+      if (!arr) {
+        throw new Error('Invalid format: expected array or { images: [] } or { nodes: [] }');
+      }
+
+      const base = new URL('.', u); // base path del manifest
+      arr = arr.map((it, i) => {
+        ['id', 'src', 'lat', 'lon'].forEach((k) => {
+          if (!(k in it)) throw new Error(`Item ${i} missing key "${k}"`);
+        });
+        const srcAbs = /^https?:\/\//i.test(it.src) ? it.src : new URL(it.src, base).toString();
+        return { ...it, src: srcAbs };
+      });
+
+      showToast(`Manifest OK (${arr.length} frames)`, 1500);
+      return arr;
+    } catch (parseErr) {
+      throw new Error(
+        `JSON.parse error: ${parseErr.message}\nPrimeros 200 chars:\n${jsonText.slice(0, 200)}`
+      );
+    }
+  } catch (e) {
+    console.error('[loadManifest] Error:', e);
+    showToast(e.message, 6000, true);
+    throw e;
+  }
+}
+  
+// === Route-based heading ===
+const CAMERA_HEADING_OFFSET_DEG = 0; // if your camera points 90° right of travel, set 90
+
+// Bearing in degrees (0..360, 0 = North, clockwise)
+function bearingDeg(fromLat, fromLon, toLat, toLon) {
+  const φ1 = degToRad(fromLat), φ2 = degToRad(toLat);
+  const Δλ = degToRad(toLon - fromLon);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (radToDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+// Compute per-point route headings (simple forward bearing)
+function computeRouteYawSimple(data, offsetDeg = 0) {
+  const n = data.length;
+  const yaw = new Array(n).fill(0);
+  if (n === 0) return yaw;
+  if (n === 1) { yaw[0] = (offsetDeg + 360) % 360; return yaw; }
+
+  for (let i = 0; i < n; i++) {
+    let a = i, b = Math.min(i + 1, n - 1);
+    if (i === n - 1) { a = n - 2; b = n - 1; } // last one looks back
+    const A = data[a], B = data[b];
+    const h = bearingDeg(A.lat, A.lon, B.lat, B.lon);
+    yaw[i] = (h + offsetDeg + 360) % 360;
+  }
+  return yaw;
+}
+
+// Global cache of route headings
+let ROUTE_YAWS = [];
+
         let currentImageIndex = 0;
         let currentYaw = 0;
         let currentPitch = 0;
@@ -664,25 +627,27 @@ function fmt(n, p = 1) { return Number.isFinite(n) ? n.toFixed(p) : '—'; }
 // Updates the box in the top-right with FOV, Yaw, Pitch, Heading, Lat/Lon
 // Updates the box with FOV, dynamic Heading, Pitch, and the frame's original Heading + Lat/Lon
 function updateStatusBox() {
-    const el = document.getElementById('zoom-level');
-    if (!el) return;
+  const el = document.getElementById('zoom-level');
+  if (!el) return;
 
-    const img = IMAGE_DATA[currentImageIndex] || {};
-    const yawDegDynamic = normDeg(radToDeg(currentYaw)); // where the viewer is looking now
-    const pitchDeg = radToDeg(currentPitch);
-    const frameHeading = (img.yaw != null) ? normDeg(img.yaw) : null;
+  const img = IMAGE_DATA[currentImageIndex] || {};
+  const yawDegDynamic = normDeg(radToDeg(currentYaw));
+  const pitchDeg = radToDeg(currentPitch);
+  const frameHeading =
+    (ROUTE_YAWS[currentImageIndex] != null) ? ROUTE_YAWS[currentImageIndex] : null;
 
-    el.innerHTML = `
-        <div style="line-height:1.25">
-            <div><strong>Zoom</strong>: ${fmt(currentFov,0)}°</div>
-            <div><strong>Heading</strong>: ${fmt(yawDegDynamic)}° ${degToCompass(yawDegDynamic)}</div>
-            <div><strong>Pitch</strong>: ${fmt(pitchDeg)}°</div>
-            <div><strong>Frame Heading</strong>: ${frameHeading != null ? fmt(frameHeading) + '° ' + degToCompass(frameHeading) : '—'}</div>
-            <div><strong>Lat</strong>: ${img.lat != null ? fmt(img.lat,6) : '—'}</div>
-            <div><strong>Lon</strong>: ${img.lon != null ? fmt(img.lon,6) : '—'}</div>
-        </div>
-    `;
-}
+  el.innerHTML = `
+    <div style="line-height:1.25">
+      <div><strong>Zoom</strong>: ${fmt(currentFov,0)}°</div>
+      <div><strong>Heading</strong>: ${fmt(yawDegDynamic)}°</div>
+      <div><strong>Pitch</strong>: ${fmt(pitchDeg)}°</div>
+      <div><strong>Route Heading</strong>: ${frameHeading != null ? fmt(frameHeading) + '°' : '—'}</div>
+      <div><strong>Lat</strong>: ${img.lat != null ? fmt(img.lat,6) : '—'}</div>
+      <div><strong>Lon</strong>: ${img.lon != null ? fmt(img.lon,6) : '—'}</div>
+    </div>
+  `;
+}  
+
 
 // 16-point compass for nice labels (N, NNE, NE, ...)
 function degToCompass(d) {
@@ -842,12 +807,18 @@ function updateZoomDisplay() {
                     sphere.rotation.y = currentYaw;
                     sphere.rotation.x = currentPitch;
                 } else {
-                    // Reset to the image's original yaw
-                    sphere.rotation.y = THREE.MathUtils.degToRad(imageData.yaw);
-                    sphere.rotation.x = 0;
-                    currentYaw = sphere.rotation.y;
-                    currentPitch = 0;
-                }
+  // Use route-based yaw instead of JSON yaw
+  const headingDeg = ROUTE_YAWS[currentImageIndex] ?? 0;
+  const headingRad = THREE.MathUtils.degToRad(headingDeg);
+
+  // If your panorama appears mirrored, flip the sign:
+  sphere.rotation.y = headingRad;       // try this first
+  // sphere.rotation.y = -headingRad;   // use this instead if the view is mirrored
+ 
+  sphere.rotation.x = 0;
+  currentYaw = sphere.rotation.y;
+  currentPitch = 0;
+}
             }
             
             // Update UI
@@ -1208,13 +1179,28 @@ map.on('click', (e) => {
         }
         
         // ===== 9) INITIALIZATION =====
-        function init() {
-            initThreeJS();
-            setupEventListeners();
-            initMap();
-            preloadImages(); // Start preloading all images
-            loadImage(0); // Load the first image
-        }
+ async function init() {
+   try {
+     // 1) Load manifest
+     IMAGE_DATA = await loadManifest('https://lalaland.mx/manifest.json');
+     
+     ROUTE_YAWS = computeRouteYawSimple(IMAGE_DATA, CAMERA_HEADING_OFFSET_DEG);
+
+
+     // 2) Boot the app only after data is ready
+     initThreeJS();
+     setupEventListeners();
+     initMap();
+     preloadImages();     // now uses fetched IMAGE_DATA
+     loadImage(0);        // safe to call; IMAGE_DATA is ready
+   } catch (err) {
+     console.error(err);
+     showToast('Failed to load manifest.json', 4000, true);
+     // Optional fallback: keep the app usable if you kept a local backup
+     // IMAGE_DATA = LOCAL_FALLBACK_IMAGE_DATA;
+     // initThreeJS(); setupEventListeners(); initMap(); preloadImages(); loadImage(0);
+   }
+ } 
         
         // Start the application
         init();
