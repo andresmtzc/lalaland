@@ -450,16 +450,19 @@ function computeRouteYawSimple(data, offsetDeg = 0) {
   }
   return yaw;
 }
-
-// Global cache of route headings
+ 
+// Globals cache of route headings
 let ROUTE_YAWS = [];
-
+// Fine-tune how the pano texture is aligned relative to the route
+const TEXTURE_YAW_OFFSET_DEG = 210; // tweak (+/-). 0 means no shift. OFFSET HERE
+let panoGroup = null;              // parent of the sphere
         let currentImageIndex = 0;
         let currentYaw = 0;
         let currentPitch = 0;
         let currentFov = 75; // Default field of view
         let preloadedImages = {}; // Cache for preloaded images
         let preloadQueue = []; // Queue for preloading images
+        let bgPreloadStarted = false;
         
         // ===== 1) MAPBOX INIT =====
         mapboxgl.accessToken = MAPBOX_TOKEN;
@@ -480,7 +483,8 @@ let ROUTE_YAWS = [];
         function initThreeJS() {
             // Set up scene
             scene = new THREE.Scene();
-            
+            panoGroup = new THREE.Group();
+scene.add(panoGroup);
             // Set up camera with initial FOV
             const canvas = document.getElementById('canvas');
             camera = new THREE.PerspectiveCamera(currentFov, canvas.offsetWidth / canvas.offsetHeight, 0.1, 1000);
@@ -519,47 +523,62 @@ let ROUTE_YAWS = [];
         }
         
         // ===== 3) IMAGE PRELOADING =====
-        function preloadImages() {
-            const totalImages = IMAGE_DATA.length;
-            let loadedCount = 0;
-            
-            // Update preload status
-            updatePreloadStatus(0);
-            
-            // Preload all images
-            IMAGE_DATA.forEach((imageData, index) => {
-                const img = new Image();
-                img.crossOrigin = "Anonymous";
-                
-                img.onload = function() {
-                    loadedCount++;
-                    const percent = Math.round((loadedCount / totalImages) * 100);
-                    updatePreloadStatus(percent);
-                    
-                    // Store the loaded image in cache
-                    preloadedImages[imageData.src] = img;
-                    
-                    // If all images are loaded, hide the preload status
-                    if (loadedCount === totalImages) {
-                        setTimeout(() => {
-                            document.getElementById('preload-status').style.display = 'none';
-                        }, 1000);
-                    }
-                };
-                
-                img.onerror = function() {
-                    loadedCount++;
-                    const percent = Math.round((loadedCount / totalImages) * 100);
-                    updatePreloadStatus(percent);
-                    console.error('Failed to preload image:', imageData.src);
-                };
-                
-                // Add a timestamp to bypass cache
-                const timestamp = new Date().getTime();
-                const url = imageData.src + '?t=' + timestamp;
-                img.src = url;
-            });
-        }
+function startBackgroundPreload(concurrency = 3) {
+  if (bgPreloadStarted || IMAGE_DATA.length <= 1) return;
+  bgPreloadStarted = true;
+
+  const order = buildPreloadOrder(currentImageIndex, IMAGE_DATA.length);
+  runPreloadPool(order, concurrency);
+}
+
+// Interleave around the current index: +1, -1, +2, -2, ...
+function buildPreloadOrder(center, total) {
+  const seq = [];
+  for (let step = 1; step < total; step++) {
+    const fwd = center + step;
+    const back = center - step;
+    if (fwd < total) seq.push(fwd);
+    if (back >= 0) seq.push(back);
+  }
+  return seq;
+}
+
+function runPreloadPool(indexes, concurrency) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(concurrency, indexes.length) }, async () => {
+    while (i < indexes.length) {
+      const idx = indexes[i++];
+      await preloadOne(idx).catch(() => {});
+    }
+  });
+  // No await needed; let it run in the background
+  Promise.all(workers).then(() => {
+    // optional: showToast('Preload complete', 1200);
+  });
+}
+
+function preloadOne(index) {
+  return new Promise((resolve) => {
+    const item = IMAGE_DATA[index];
+    if (!item) return resolve();
+
+    const src = item.src;
+    if (preloadedImages[src]) return resolve(); // already cached
+
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      preloadedImages[src] = img;
+      resolve();
+    };
+    img.onerror = () => resolve(); // swallow errors; keep going
+    // important: no cache-busting here
+    img.src = src;
+
+    // Decode hint (non-blocking) if supported
+    if (img.decode) img.decode().catch(() => {});
+  });
+}
         
         function updatePreloadStatus(percent) {
             const preloadStatus = document.getElementById('preload-status');
@@ -647,7 +666,7 @@ function updateStatusBox() {
     </div>
   `;
 }  
-
+ 
 
 // 16-point compass for nice labels (N, NNE, NE, ...)
 function degToCompass(d) {
@@ -781,180 +800,152 @@ function updateZoomDisplay() {
             img.src = url;
         }
         
-        function applyImageToScene(img, imageData, preserveOrientation) {
-            // Create or update sphere with the new image
-            if (sphere) {
-                scene.remove(sphere);
-            }
-            
-            const geometry = new THREE.SphereGeometry(100, 60, 40);
-            geometry.scale(-1, 1, 1);
-            
-            const texture = new THREE.Texture(img);
-            texture.needsUpdate = true;
-            
-            const material = new THREE.MeshBasicMaterial({ 
-                map: texture,
-                side: THREE.DoubleSide
-            });
-            sphere = new THREE.Mesh(geometry, material);
-            scene.add(sphere);
-            
-            // Set rotation based on whether we're preserving orientation
-            if (sphere) {
-                if (preserveOrientation) {
-                    // Keep the current viewing direction
-                    sphere.rotation.y = currentYaw;
-                    sphere.rotation.x = currentPitch;
-                } else {
-  // Use route-based yaw instead of JSON yaw
-  const headingDeg = ROUTE_YAWS[currentImageIndex] ?? 0;
-  const headingRad = THREE.MathUtils.degToRad(headingDeg);
+       function applyImageToScene(img, imageData, preserveOrientation) {
+  // Remove previous sphere (but keep the group)
+  if (sphere) {
+    panoGroup.remove(sphere);
+    sphere.geometry?.dispose?.();
+    sphere.material?.map?.dispose?.();
+    sphere.material?.dispose?.();
+  }
 
-  // If your panorama appears mirrored, flip the sign:
-  sphere.rotation.y = headingRad;       // try this first
-  // sphere.rotation.y = -headingRad;   // use this instead if the view is mirrored
- 
-  sphere.rotation.x = 0;
-  currentYaw = sphere.rotation.y;
-  currentPitch = 0;
+  const geometry = new THREE.SphereGeometry(100, 60, 40);
+  geometry.scale(-1, 1, 1);
+
+  const texture = new THREE.Texture(img);
+  texture.needsUpdate = true;
+
+  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+  sphere = new THREE.Mesh(geometry, material);
+
+  // Add sphere inside the group
+  panoGroup.add(sphere);
+
+  // --- Apply the constant visual shift ONLY to the sphere ---
+  const textureOffsetRad = THREE.MathUtils.degToRad(TEXTURE_YAW_OFFSET_DEG);
+  sphere.rotation.set(0, textureOffsetRad, 0);
+  // If it looks mirrored, use: sphere.rotation.set(0, -textureOffsetRad, 0);
+
+  // --- Apply logical heading ONLY to the group ---
+  if (preserveOrientation) {
+    panoGroup.rotation.y = currentYaw;
+    panoGroup.rotation.x = currentPitch;
+  } else {
+    const headingDeg = ROUTE_YAWS[currentImageIndex] ?? 0;
+    const headingRad = THREE.MathUtils.degToRad(headingDeg);
+    panoGroup.rotation.y = headingRad;  // or -headingRad if needed globally
+    panoGroup.rotation.x = 0;
+    currentYaw = panoGroup.rotation.y;
+    currentPitch = 0;
+  }
+
+  updateUI();
+  updateMapMarker();
+  updateStatusBox();
+  updateViewRay();
+
+  hideLoading();
+  showToast('Loaded image ' + (currentImageIndex + 1), 1000);
 }
-            }
-            
-            // Update UI
-            updateUI();
-            updateMapMarker();
-            updateStatusBox(); // NEW
-            updateViewRay();
-            
-            hideLoading();
-            showToast('Loaded image ' + (currentImageIndex + 1), 1000);
-        }
+
         
         // ===== 6) MAP FUNCTIONS =====
         function initMap() {
-            // Extract coordinates for the route line
-            const coordinates = IMAGE_DATA.map(img => [img.lon, img.lat]);
-            
-            // Fit map to the route
-            const bounds = coordinates.reduce((bounds, coord) => {
-                return bounds.extend(coord);
-            }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
-            
-            map.fitBounds(bounds, {
-                padding: 50,
-                maxZoom: 18
-            });
-            
-            // Add route source and layer
-            map.on('load', () => {
-                map.addSource('route', {
-                    type: 'geojson',
-                    data: {
-                        type: 'Feature',
-                        properties: {},
-                        geometry: {
-                            type: 'LineString',
-                            coordinates: coordinates
-                        }
-                    }
-                });
-                
-                map.addLayer({
-                    id: 'route',
-                    type: 'line',
-                    source: 'route',
-                    layout: {
-                        'line-join': 'round',
-                        'line-cap': 'round'
-                    },
-                    paint: {
-                        'line-color': '#22d3ee',
-                        'line-width': 4,
-                        'line-opacity': 0.7
-                    }
-                });
+  const coordinates = IMAGE_DATA.map(img => [img.lon, img.lat]);
 
-                // A small “view ray” that points where the user is looking
-map.addSource('view-ray', {
-  type: 'geojson',
-  data: {
-    type: 'Feature',
-    geometry: { type: 'LineString', coordinates: [[0,0],[0,0]] }
-  }
-});
-
-map.addLayer({
-  id: 'view-ray',
-  type: 'line',
-  source: 'view-ray',
-  paint: {
-    'line-color': '#ff6b6b',
-    'line-width': 3,
-    'line-opacity': 0.9
-  }
-});
-
-// Add markers for each point
-IMAGE_DATA.forEach((img, index) => {
-    const el = document.createElement('div');
-    el.className = 'map-marker';
-    el.innerHTML = `<div style="width:16px;height:16px;border-radius:50%;background:#22d3ee;border:2px solid white;cursor:pointer;"></div>`;
-    el.dataset.index = index;
-    el.style.cursor = 'pointer'; // Make it clear it's clickable
-    
-    new mapboxgl.Marker(el)
-        .setLngLat([img.lon, img.lat])
-        .addTo(map);
-    
-    // Add click event to navigate to image
-    el.addEventListener('click', () => {
-        loadImage(index, true); // conservar orientación actual
-    });
-});
-                
-                // Add current location marker
-                const currentLocationEl = document.createElement('div');
-                currentLocationEl.className = 'current-location-marker';
-                
-                window.currentLocationMarker = new mapboxgl.Marker(currentLocationEl)
-                    .setLngLat([IMAGE_DATA[0].lon, IMAGE_DATA[0].lat])
-                    .addTo(map);
-                
-// Add click event on the map to navigate to nearest point
-map.on('click', (e) => {
-    // Get all features at the click point
-    const features = map.queryRenderedFeatures(e.point);
-    
-    // Check if we clicked on a marker (look for marker features)
-    const clickedOnMarker = features.some(feature => {
-        return feature.layer && feature.layer.id && 
-               (feature.layer.id.includes('marker') || feature.source.includes('marker'));
-    });
-    
-    // If we clicked on a marker, let the marker's click event handle it
-    if (clickedOnMarker) return;
-    
-    // If no marker was clicked, find the closest image point
-    const clickedLngLat = e.lngLat;
-    let closestIndex = 0;
-    let minDistance = Infinity;
-    
-    IMAGE_DATA.forEach((img, index) => {
-        const distance = getDistance(clickedLngLat, [img.lon, img.lat]);
-        if (distance < minDistance) {
-            minDistance = distance;
-            closestIndex = index;
+  const addMapContent = () => {
+    // Don’t add twice if we ever re-run
+    if (!map.getSource('route')) {
+      map.addSource('route', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates }
         }
-    });
-    
-    // Only navigate if we're reasonably close to a point
-    if (minDistance < 15) { // 15 meters threshold
-        loadImage(closestIndex, true); // conservar orientación actual
+      });
+
+      map.addLayer({
+        id: 'route',
+        type: 'line',
+        source: 'route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#22d3ee', 'line-width': 4, 'line-opacity': 0.7 }
+      });
     }
-});
-            });
-        }
+
+    if (!map.getSource('view-ray')) {
+      map.addSource('view-ray', {
+        type: 'geojson',
+        data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [[0,0],[0,0]] } }
+      });
+
+      map.addLayer({
+        id: 'view-ray',
+        type: 'line',
+        source: 'view-ray',
+        paint: { 'line-color': '#ff6b6b', 'line-width': 3, 'line-opacity': 0.9 }
+      });
+    }
+
+    // Fit once we know coords and style is ready
+    if (coordinates.length) {
+      const bounds = coordinates.reduce(
+        (b, c) => b.extend(c),
+        new mapboxgl.LngLatBounds(coordinates[0], coordinates[0])
+      );
+      map.fitBounds(bounds, { padding: 50, maxZoom: 18 });
+    }
+
+    // Create click-through DOM markers (once)
+    if (!window.__imageMarkersAdded) {
+      IMAGE_DATA.forEach((img, index) => {
+        const el = document.createElement('div');
+        el.className = 'map-marker';
+        el.innerHTML = `<div style="width:16px;height:16px;border-radius:50%;background:#22d3ee;border:2px solid white;cursor:pointer;"></div>`;
+        el.dataset.index = index;
+        new mapboxgl.Marker(el).setLngLat([img.lon, img.lat]).addTo(map);
+        el.addEventListener('click', () => loadImage(index, true));
+      });
+      window.__imageMarkersAdded = true;
+    }
+
+    // Current location marker (create once, then we update it elsewhere)
+    if (!window.currentLocationMarker && IMAGE_DATA[0]) {
+      const currentLocationEl = document.createElement('div');
+      currentLocationEl.className = 'current-location-marker';
+      window.currentLocationMarker = new mapboxgl.Marker(currentLocationEl)
+        .setLngLat([IMAGE_DATA[0].lon, IMAGE_DATA[0].lat])
+        .addTo(map);
+    }
+
+    // Map click handler (only add once)
+    if (!window.__mapClickBound) {
+      map.on('click', (e) => {
+        const features = map.queryRenderedFeatures(e.point);
+        const clickedOnMarker = features.some(f => f.layer && f.layer.id && (f.layer.id.includes('marker') || (f.source && f.source.includes && f.source.includes('marker'))));
+        if (clickedOnMarker) return;
+
+        const clicked = e.lngLat;
+        let closestIndex = 0, minDist = Infinity;
+        IMAGE_DATA.forEach((img, i) => {
+          const d = getDistance(clicked, [img.lon, img.lat]);
+          if (d < minDist) { minDist = d; closestIndex = i; }
+        });
+        if (minDist < 15) loadImage(closestIndex, true);
+      });
+      window.__mapClickBound = true;
+    }
+  };
+
+  // If the map’s style is already loaded, run now; otherwise wait once
+  if (map.isStyleLoaded && map.isStyleLoaded()) {
+    addMapContent();
+  } else {
+    map.once('load', addMapContent);
+  }
+}
+
         
         function updateMapMarker() {
             if (!window.currentLocationMarker || !IMAGE_DATA[currentImageIndex]) return;
@@ -1113,12 +1104,12 @@ map.on('click', (e) => {
                     const deltaX = currentPosition.x - previousPosition.x;
                     const deltaY = currentPosition.y - previousPosition.y;
                     
-                    sphere.rotation.y -= deltaX * 0.01;
-                    sphere.rotation.x -= deltaY * 0.01;
+panoGroup.rotation.y -= deltaX * 0.01;
+panoGroup.rotation.x -= deltaY * 0.01;
                     
                     // Update current orientation
-                    currentYaw = sphere.rotation.y;
-                    currentPitch = sphere.rotation.x;
+currentYaw = panoGroup.rotation.y;
+currentPitch = panoGroup.rotation.x;
                     updateStatusBox(); // NEW
                     updateViewRay();
                     
@@ -1153,12 +1144,12 @@ map.on('click', (e) => {
                     const deltaX = currentPosition.x - previousPosition.x;
                     const deltaY = currentPosition.y - previousPosition.y;
                     
-                    sphere.rotation.y -= deltaX * 0.01;
-                    sphere.rotation.x -= deltaY * 0.01;
+panoGroup.rotation.y -= deltaX * 0.01;
+panoGroup.rotation.x -= deltaY * 0.01;
                     
                     // Update current orientation
-                    currentYaw = sphere.rotation.y;
-                    currentPitch = sphere.rotation.x;
+currentYaw = panoGroup.rotation.y;
+currentPitch = panoGroup.rotation.x;
                     updateStatusBox(); // NEW
                     updateViewRay();
                     
@@ -1179,28 +1170,26 @@ map.on('click', (e) => {
         }
         
         // ===== 9) INITIALIZATION =====
- async function init() {
-   try {
-     // 1) Load manifest
-     IMAGE_DATA = await loadManifest('https://lalaland.mx/manifest.json');
-     
-     ROUTE_YAWS = computeRouteYawSimple(IMAGE_DATA, CAMERA_HEADING_OFFSET_DEG);
+async function init() {
+  try {
+    IMAGE_DATA = await loadManifest('https://lalaland.mx/manifest.json');
+    ROUTE_YAWS = computeRouteYawSimple(IMAGE_DATA, CAMERA_HEADING_OFFSET_DEG);
 
+    initThreeJS();
+    setupEventListeners();
+    initMap();
 
-     // 2) Boot the app only after data is ready
-     initThreeJS();
-     setupEventListeners();
-     initMap();
-     preloadImages();     // now uses fetched IMAGE_DATA
-     loadImage(0);        // safe to call; IMAGE_DATA is ready
-   } catch (err) {
-     console.error(err);
-     showToast('Failed to load manifest.json', 4000, true);
-     // Optional fallback: keep the app usable if you kept a local backup
-     // IMAGE_DATA = LOCAL_FALLBACK_IMAGE_DATA;
-     // initThreeJS(); setupEventListeners(); initMap(); preloadImages(); loadImage(0);
-   }
- } 
+    // Show something immediately
+    await loadImage(0, /*preserveOrientation*/ false);
+
+    // Start background preloading once the first image is on screen
+    startBackgroundPreload();
+
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to load manifest.json', 4000, true);
+  }
+}
         
         // Start the application
         init();
