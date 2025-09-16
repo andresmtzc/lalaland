@@ -863,23 +863,24 @@
                         'line-opacity': 0.7
                     }
                 });
-                
-                // Add markers for each point
-                IMAGE_DATA.forEach((img, index) => {
-                    const el = document.createElement('div');
-                    el.className = 'map-marker';
-                    el.innerHTML = `<div style="width:10px;height:10px;border-radius:50%;background:#22d3ee;border:2px solid white;"></div>`;
-                    el.dataset.index = index;
-                    
-                    new mapboxgl.Marker(el)
-                        .setLngLat([img.lon, img.lat])
-                        .addTo(map);
-                    
-                    // Add click event to navigate to image
-                    el.addEventListener('click', () => {
-                        loadImage(index);
-                    });
-                });
+
+// Add markers for each point
+IMAGE_DATA.forEach((img, index) => {
+    const el = document.createElement('div');
+    el.className = 'map-marker';
+    el.innerHTML = `<div style="width:16px;height:16px;border-radius:50%;background:#22d3ee;border:2px solid white;cursor:pointer;"></div>`;
+    el.dataset.index = index;
+    el.style.cursor = 'pointer'; // Make it clear it's clickable
+    
+    new mapboxgl.Marker(el)
+        .setLngLat([img.lon, img.lat])
+        .addTo(map);
+    
+    // Add click event to navigate to image
+    el.addEventListener('click', () => {
+        loadImage(index);
+    });
+});
                 
                 // Add current location marker
                 const currentLocationEl = document.createElement('div');
@@ -889,26 +890,38 @@
                     .setLngLat([IMAGE_DATA[0].lon, IMAGE_DATA[0].lat])
                     .addTo(map);
                 
-                // Add click event on route to navigate
-                map.on('click', 'route', (e) => {
-                    const features = map.queryRenderedFeatures(e.point, { layers: ['route'] });
-                    if (!features.length) return;
-                    
-                    // Find closest image to clicked point
-                    const clickedLngLat = e.lngLat;
-                    let closestIndex = 0;
-                    let minDistance = Infinity;
-                    
-                    IMAGE_DATA.forEach((img, index) => {
-                        const distance = getDistance(clickedLngLat, [img.lon, img.lat]);
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            closestIndex = index;
-                        }
-                    });
-                    
-                    loadImage(closestIndex);
-                });
+// Add click event on the map to navigate to nearest point
+map.on('click', (e) => {
+    // Get all features at the click point
+    const features = map.queryRenderedFeatures(e.point);
+    
+    // Check if we clicked on a marker (look for marker features)
+    const clickedOnMarker = features.some(feature => {
+        return feature.layer && feature.layer.id && 
+               (feature.layer.id.includes('marker') || feature.source.includes('marker'));
+    });
+    
+    // If we clicked on a marker, let the marker's click event handle it
+    if (clickedOnMarker) return;
+    
+    // If no marker was clicked, find the closest image point
+    const clickedLngLat = e.lngLat;
+    let closestIndex = 0;
+    let minDistance = Infinity;
+    
+    IMAGE_DATA.forEach((img, index) => {
+        const distance = getDistance(clickedLngLat, [img.lon, img.lat]);
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestIndex = index;
+        }
+    });
+    
+    // Only navigate if we're reasonably close to a point
+    if (minDistance < 15) { // 15 meters threshold
+        loadImage(closestIndex);
+    }
+});
             });
         }
         
