@@ -513,6 +513,7 @@ scene.add(panoGroup);
             camera.aspect = canvas.offsetWidth / canvas.offsetHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
+            updateViewCone();
         }
         
         function animate() {
@@ -642,6 +643,60 @@ function radToDeg(r) { return r * 180 / Math.PI; }
 function degToRad(d) { return d * Math.PI / 180; }
 function normDeg(d) { d = d % 360; return d < 0 ? d + 360 : d; }
 function fmt(n, p = 1) { return Number.isFinite(n) ? n.toFixed(p) : '—'; }
+
+
+function getHorizontalFovDeg() {
+  // THREE.PerspectiveCamera FOV is vertical; convert to horizontal using aspect
+  const vRad = THREE.MathUtils.degToRad(currentFov);
+  const hRad = 2 * Math.atan(Math.tan(vRad / 2) * camera.aspect);
+  return THREE.MathUtils.radToDeg(hRad);
+}
+
+// Forward geodesic (bearing+distance -> dest lon/lat)
+function destFromBearingDistance(lat, lon, bearingDeg, distMeters) {
+  const R = 6378137;
+  const brng = degToRad(bearingDeg);
+  const φ1 = degToRad(lat), λ1 = degToRad(lon);
+  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(distMeters / R) +
+                       Math.cos(φ1) * Math.sin(distMeters / R) * Math.cos(brng));
+  const λ2 = λ1 + Math.atan2(
+    Math.sin(brng) * Math.sin(distMeters / R) * Math.cos(φ1),
+    Math.cos(distMeters / R) - Math.sin(φ1) * Math.sin(φ2)
+  );
+  return [radToDeg(λ2), radToDeg(φ2)];
+}
+
+// Build a polygon ring for a FOV cone
+function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters = 40, steps = 24) {
+  const half = Math.max(0, Math.min(179, fovDeg/2)); // guard
+  const start = headingDeg - half;
+  const end   = headingDeg + half;
+
+  const ring = [[lon, lat]]; // start at origin
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const brg = start + (end - start) * t;
+    ring.push(destFromBearingDistance(lat, lon, brg, radiusMeters));
+  }
+  ring.push([lon, lat]); // close polygon
+  return ring;
+}
+
+// Update the map polygon to match current yaw + FOV CONE DIMENSION
+function updateViewCone() {
+  if (!map || !map.getSource('view-cone')) return;
+  const img = IMAGE_DATA[currentImageIndex];
+  if (!img) return;
+
+  const headingDeg = normDeg(radToDeg(currentYaw));
+  const fovH = getHorizontalFovDeg();         // use horizontal FOV for the cone
+  const ring = makeViewConeRing(img.lat, img.lon, headingDeg, fovH, /*radius*/ 7, /*steps*/24);
+
+  map.getSource('view-cone').setData({
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [ring] }
+  });
+}
 
 // Updates the box in the top-right with FOV, Yaw, Pitch, Heading, Lat/Lon
 // Updates the box with FOV, dynamic Heading, Pitch, and the frame's original Heading + Lat/Lon
@@ -842,8 +897,8 @@ function updateZoomDisplay() {
   updateUI();
   updateMapMarker();
   updateStatusBox();
-  updateViewRay();
 
+updateViewCone();
   hideLoading();
   showToast('Loaded image ' + (currentImageIndex + 1), 1000);
 }
@@ -874,19 +929,29 @@ function updateZoomDisplay() {
       });
     }
 
-    if (!map.getSource('view-ray')) {
-      map.addSource('view-ray', {
-        type: 'geojson',
-        data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [[0,0],[0,0]] } }
-      });
+if (!map.getSource('view-cone')) {
+  map.addSource('view-cone', {
+    type: 'geojson',
+    data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[0,0],[0,0],[0,0]]] } }
+  });
 
-      map.addLayer({
-        id: 'view-ray',
-        type: 'line',
-        source: 'view-ray',
-        paint: { 'line-color': '#ff6b6b', 'line-width': 3, 'line-opacity': 0.9 }
-      });
-    }
+  map.addLayer({
+    id: 'view-cone-fill',
+    type: 'fill',
+    source: 'view-cone',
+    paint: { 'fill-color': '#ff6b6b', 'fill-opacity': 0.2 }
+  });
+
+  map.addLayer({
+    id: 'view-cone-outline',
+    type: 'line',
+    source: 'view-cone',
+    paint: { 'line-color': '#ff6b6b', 'line-width': 2, 'line-opacity': 0.8 }
+  });
+
+  updateViewCone(); // <- draw once the source exists
+}
+
 
     // Fit once we know coords and style is ready
     if (coordinates.length) {
@@ -966,46 +1031,7 @@ function updateZoomDisplay() {
             return R * c;
         }
 
-        function updateViewRay() {
-  // Make sure map & source exist
-  if (!map || !map.getSource('view-ray')) return;
 
-  const img = IMAGE_DATA[currentImageIndex];
-  if (!img) return;
-
-  // Origin = current frame coordinates
-  const origin = [img.lon, img.lat];
-
-  // Dynamic heading from your current camera yaw (radians -> degrees 0..360)
-  const headingDeg = normDeg(radToDeg(currentYaw));
-
-  // How far the “ray” should extend (meters):
-  const distanceMeters = 25;
-
-  // Great-circle forward calculation
-  const R = 6378137; // Earth radius (m)
-  const d = distanceMeters;
-  const brng = degToRad(headingDeg);
-  const lat1 = degToRad(img.lat);
-  const lon1 = degToRad(img.lon);
-
-  const lat2 = Math.asin(
-    Math.sin(lat1) * Math.cos(d / R) +
-    Math.cos(lat1) * Math.sin(d / R) * Math.cos(brng)
-  );
-
-  const lon2 = lon1 + Math.atan2(
-    Math.sin(brng) * Math.sin(d / R) * Math.cos(lat1),
-    Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2)
-  );
-
-  const dest = [radToDeg(lon2), radToDeg(lat2)];
-
-  map.getSource('view-ray').setData({
-    type: 'Feature',
-    geometry: { type: 'LineString', coordinates: [origin, dest] }
-  });
-}
 
         
         // ===== 7) UI FUNCTIONS =====
@@ -1111,8 +1137,8 @@ panoGroup.rotation.x -= deltaY * 0.01;
 currentYaw = panoGroup.rotation.y;
 currentPitch = panoGroup.rotation.x;
                     updateStatusBox(); // NEW
-                    updateViewRay();
-                    
+           
+                    updateViewCone();
                     previousPosition = currentPosition;
                 }
                 e.preventDefault();
@@ -1151,8 +1177,8 @@ panoGroup.rotation.x -= deltaY * 0.01;
 currentYaw = panoGroup.rotation.y;
 currentPitch = panoGroup.rotation.x;
                     updateStatusBox(); // NEW
-                    updateViewRay();
-                    
+               
+                    updateViewCone();
                     previousPosition = currentPosition;
                 }
             });
