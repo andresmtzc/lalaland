@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DIY Street-View on Mapbox – Starter</title>
+  <!-- Mapbox GL JS -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+  <!-- Pannellum (lightweight 360 viewer) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css" />
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+  <!-- MP4 parser for client-side telemetry attempt -->
+  <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+  <style>
+    :root { --bg:#0b1020; --panel:#0f172a; --accent:#22d3ee; --muted:#94a3b8; }
+    html,body { height:100%; margin:0; background:var(--bg); color:#e2e8f0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    .app { display:grid; grid-template-columns: 1fr min(52vw, 860px); grid-template-rows: 64px 1fr; height:100%; }
+    header { grid-column: 1 / -1; display:flex; align-items:center; gap:12px; padding:0 16px; border-bottom:1px solid #1f2937; background:linear-gradient(180deg, rgba(34,211,238,0.06), rgba(34,211,238,0)); }
+    header h1 { font-size:16px; font-weight:600; letter-spacing:.2px; margin:0; }
+    header .pill { padding:6px 10px; border:1px solid #233045; border-radius:999px; font-size:12px; color:var(--muted); }
+    #map { width:100%; height:100%; }
+    .right { position:relative; background:var(--panel); border-left:1px solid #1f2937; }
+    .right header { position:absolute; inset:0 auto auto 0; height:48px; z-index:5; display:flex; align-items:center; gap:8px; padding:0 12px; border-bottom:1px solid #1f2937; background:rgba(15,23,42,.7); backdrop-filter: blur(8px); }
+    .controls { display:flex; gap:8px; margin-left:auto; }
+    button.icon { background:#0b1220; border:1px solid #263247; color:#cbd5e1; padding:6px 10px; border-radius:10px; cursor:pointer; }
+    button.icon:hover { border-color:#33445f; }
+    #pano { position:absolute; top:48px; left:0; right:0; bottom:0; }
+    .legend { position:absolute; bottom:12px; left:12px; font-size:12px; color:#cbd5e1; background:rgba(2,6,23,.65); border:1px solid #263247; padding:8px 10px; border-radius:10px; z-index:4; }
+    .legend b { color:#e2e8f0; }
+    .toast { position:absolute; top:72px; right:16px; background:#0b1220; border:1px solid #263247; padding:10px 12px; border-radius:10px; font-size:12px; color:#cbd5e1; z-index: 10; display:none; }
+    a.link { color:var(--accent); text-decoration:none; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>DIY Street-View • Mapbox + Pannellum (Video-Seek Mode)</h1>
+      <span class="pill">Click the blue line to SEEK the 360° video (video never plays)</span>
+      <span class="pill">We map click → distance along line → video time</span>
+    </header>
+
+    <div id="map"></div>
+
+    <section class="right">
+      <header>
+        <div id="panoTitle">No video loaded</div>
+        <div class="controls">
+          <label class="icon" for="videoInput" title="Load 360° video">📹 Load Video</label>
+          <input id="videoInput" type="file" accept="video/*" style="display:none" />
+          <label class="icon" for="gpxInput" title="Load GPX track">🗺️ Load GPX</label>
+          <input id="gpxInput" type="file" accept=".gpx,application/gpx+xml" style="display:none" />
+          <button class="icon" id="autoExtract" title="Try to auto-extract GPS from video (client-side)">⚙️ Auto-extract GPX</button>
+          <button class="icon" id="back5" title="Seek −5s">−5s</button>
+          <button class="icon" id="fwd5" title="Seek +5s">+5s</button>
+        </div>
+      </header>
+      <div id="pano"></div>
+      <video id="vid" playsinline muted preload="metadata" crossorigin="anonymous" style="display:none"></video>
+      <div class="legend" id="legend">Click the route to jump around the 360° video. Video stays <b>paused</b>—we only <b>seek</b>.</div>
+      <div class="toast" id="toast"></div>
+    </section>
+  </div>
+
+  <script>
+    // ===== 0) CONFIG =====
+    const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
+
+    // Start empty: no route until GPX or telemetry is loaded
+    let ROUTE_COORDS = [];
+    let ROUTE_TIMES  = null; // ms since route start (optional)
+
+    // ===== 1) MAPBOX INIT =====
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/dark-v11',
+      center: [-100, 25], // neutral center until data loads
+      zoom: 3,
+      attributionControl: true
+    });
+    map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-left');
+
+    // ===== 2) HELPER: distances, bearings, projection =====
+    const R = 6371000; // Earth radius (m)
+    function toRad(d){ return d * Math.PI / 180; }
+    function haversine(a, b){
+      const [lon1, lat1] = a, [lon2, lat2] = b;
+      const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+      const s1 = Math.sin(dLat/2), s2 = Math.sin(dLon/2);
+      const h = s1*s1 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*s2*s2;
+      return 2 * R * Math.asin(Math.sqrt(h));
+    }
+    function bearingDeg(a, b){
+      const [lon1, lat1] = a.map(toRad), [lon2, lat2] = b.map(toRad);
+      const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+      const x = Math.cos(lat1)*Math.cos(lat2)*Math.cos(lon2 - lon1) - Math.sin(lat1)*Math.sin(lat2);
+      return (Math.atan2(y, x) * 180/Math.PI + 360) % 360;
+    }
+
+    // Dynamic route metrics
+    let cumDist = [0];
+    let segBearing = [];
+    function recomputeRouteMetrics(){
+      cumDist = [0];
+      segBearing = [];
+      for (let i=1;i<ROUTE_COORDS.length;i++){
+        const d = haversine(ROUTE_COORDS[i-1], ROUTE_COORDS[i]);
+        cumDist.push(cumDist[i-1] + d);
+        segBearing.push(bearingDeg(ROUTE_COORDS[i-1], ROUTE_COORDS[i]));
+      }
+    }
+    function totalDistance(){ return cumDist[cumDist.length-1] || 0; }
+
+    // Project a click to the nearest point along the polyline (return chainage in meters)
+    function nearestOnRoute(lngLat){
+      function ll2m([lon,lat]){
+        const x = lon * 20037508.34 / 180;
+        const y = Math.log(Math.tan((90+lat)*Math.PI/360)) / (Math.PI/180);
+        return [x, y * 20037508.34 / 180];
+      }
+      const p = ll2m([lngLat.lng, lngLat.lat]);
+      let best = { meters:0, idx:0, frac:0, minDist: Infinity };
+      for(let i=1;i<ROUTE_COORDS.length;i++){
+        const aLL = ROUTE_COORDS[i-1], bLL = ROUTE_COORDS[i];
+        const a = ll2m(aLL), b = ll2m(bLL);
+        const ab = [b[0]-a[0], b[1]-a[1]];
+        const ap = [p[0]-a[0], p[1]-a[1]];
+        const ab2 = ab[0]*ab[0] + ab[1]*ab[1];
+        const t = Math.max(0, Math.min(1, (ap[0]*ab[0] + ap[1]*ab[1]) / ab2));
+        const proj = [a[0] + t*ab[0], a[1] + t*ab[1]];
+        const dx = p[0]-proj[0], dy = p[1]-proj[1];
+        const dist2 = dx*dx + dy*dy;
+        if (dist2 < best.minDist){
+          const segLenMeters = haversine(aLL, bLL);
+          const meters = cumDist[i-1] + segLenMeters * t;
+          best = { meters, idx:i-1, frac:t, minDist: dist2 };
+        }
+      }
+      return best; // {meters, idx, frac}
+    }
+
+    // Map chainage -> time (ms)
+    function chainageToTimeMs(meters, videoDurationMs){
+      if (Array.isArray(ROUTE_TIMES) && ROUTE_TIMES.length === ROUTE_COORDS.length){
+        let i = 0; while (i < cumDist.length-1 && cumDist[i+1] < meters) i++;
+        const d0 = cumDist[i], d1 = cumDist[i+1] ?? cumDist[i];
+        const t0 = ROUTE_TIMES[i], t1 = ROUTE_TIMES[i+1] ?? ROUTE_TIMES[i];
+        if (d1 === d0) return t0;
+        const f = (meters - d0) / (d1 - d0);
+        return t0 + f * (t1 - t0);
+      }
+      const f = Math.max(0, Math.min(1, meters / (totalDistance() || 1)));
+      return f * videoDurationMs;
+    }
+
+    function chainageToBearing(meters){
+      let i = 0; while (i < cumDist.length-1 && cumDist[i+1] < meters) i++;
+      return segBearing[Math.max(0, Math.min(segBearing.length-1, i))] || 0;
+    }
+
+    // ===== 3) Map + sources =====
+    map.on('load', () => {
+      buildRouteLayers();
+
+      // Click to seek
+      map.on('click', (e)=> {
+        if (!ROUTE_COORDS || ROUTE_COORDS.length < 2){
+          showToast('Load a GPX or auto-extract from video to get a route');
+          return;
+        }
+        const n = nearestOnRoute(e.lngLat);
+        if (!isFinite(n.meters)) return;
+        seekToChainage(n.meters);
+      });
+    });
+
+    function buildRouteLayers(){
+      // Remove if no data yet
+      if (!Array.isArray(ROUTE_COORDS) || ROUTE_COORDS.length < 2){
+        if (map.getLayer('route')) map.removeLayer('route');
+        if (map.getSource('route')) map.removeSource('route');
+        return;
+      }
+
+      const srcData = {
+        type:'Feature',
+        geometry:{ type:'LineString', coordinates: ROUTE_COORDS },
+        properties:{}
+      };
+
+      if (map.getSource('route')) {
+        map.getSource('route').setData(srcData);
+      } else {
+        map.addSource('route', { type:'geojson', data: srcData });
+        map.addLayer({ id:'route', type:'line', source:'route',
+          paint:{ 'line-color':'#22d3ee', 'line-width':4, 'line-opacity':0.85 } });
+      }
+
+      // Recompute metrics
+      recomputeRouteMetrics();
+
+      // Fly/fit to route location
+      let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+      ROUTE_COORDS.forEach(c=>{
+        minX=Math.min(minX,c[0]); minY=Math.min(minY,c[1]);
+        maxX=Math.max(maxX,c[0]); maxY=Math.max(maxY,c[1]);
+      });
+      if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)){
+        const spanLng = Math.abs(maxX-minX), spanLat = Math.abs(maxY-minY);
+        if (spanLng < 0.0005 && spanLat < 0.0005){
+          const first = ROUTE_COORDS[0];
+          map.flyTo({ center:first, zoom:17, speed:0.7 });
+        } else {
+          map.fitBounds([[minX,minY],[maxX,maxY]], { padding:60, duration:700 });
+        }
+      }
+    }
+
+    // ===== 4) Pannellum video viewer (video kept paused) =====
+    const vid = document.getElementById('vid');
+    let viewer = null;
+    let videoReady = false;
+
+    vid.addEventListener('loadedmetadata', () => {
+      document.getElementById('panoTitle').textContent = `Video duration: ${vid.duration.toFixed(1)}s`;
+      if (!viewer){
+        viewer = pannellum.viewer('pano', {
+          type: 'equirectangular',
+          panorama: vid,
+          autoLoad: true,
+          yaw: 0,
+          hfov: 95,
+          showControls: true
+        });
+      }
+      videoReady = true;
+      vid.pause(); // ensure paused
+    });
+
+    // Ensure the current frame shows after seeking
+    vid.addEventListener('seeked', ()=> { vid.pause(); });
+    vid.addEventListener('playing', ()=> { vid.pause(); }); // safety
+
+    function seekToChainage(meters){
+      if (!videoReady || !isFinite(vid.duration)) { showToast('Video not ready yet'); return; }
+      const tMs = chainageToTimeMs(meters, vid.duration * 1000);
+      const yaw = chainageToBearing(meters);
+      vid.currentTime = Math.max(0, Math.min(vid.duration - 0.05, tMs/1000));
+      if (viewer) try { viewer.setYaw(yaw); } catch(e){}
+      showToast(`Seek: ${(tMs/1000).toFixed(1)}s • Yaw ${Math.round(yaw)}°`);
+    }
+
+    // Buttons: +/-5s (seek only)
+    document.getElementById('back5').onclick = () => {
+      if (!videoReady) return; vid.currentTime = Math.max(0, vid.currentTime - 5); vid.pause();
+    };
+    document.getElementById('fwd5').onclick = () => {
+      if (!videoReady) return; vid.currentTime = Math.min(vid.duration - 0.05, vid.currentTime + 5); vid.pause();
+    };
+
+    function showToast(msg, ms=1500){
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.style.display = 'block';
+      clearTimeout(t._to); t._to = setTimeout(()=> t.style.display='none', ms);
+    }
+
+    // === Extra: File inputs for Video & GPX ===
+    (function attachLoaders(){
+      const videoInput = document.getElementById('videoInput');
+
+      if (videoInput) videoInput.addEventListener('change', (e)=>{
+        const file = e.target.files?.[0]; if(!file) return;
+        const url = URL.createObjectURL(file);
+        vid.innerHTML=''; const src=document.createElement('source'); src.src=url; src.type=file.type||'video/mp4'; vid.appendChild(src);
+        try{ vid.load(); }catch(_){}
+        const t = document.getElementById('panoTitle'); if (t) t.textContent = `Video: ${file.name}`;
+        showToast('Video loaded. (Optional) Auto-extract or Load GPX to draw route.');
+      });
+
+      const gpxInput = document.getElementById('gpxInput');
+      gpxInput.addEventListener('change', async (e)=>{
+        const file = e.target.files?.[0]; if(!file) return;
+        const text = await file.text();
+        const {coords, times} = parseGpxText(text);
+        if (!coords || coords.length < 2){ showToast('Need at least 2 GPX points'); return; }
+        ROUTE_COORDS = coords;
+        ROUTE_TIMES  = (times && times.length === coords.length) ? times.map(t=> t - times[0]) : null;
+        buildRouteLayers();
+        showToast('GPX loaded');
+      });
+
+      // Client-side attempt to auto-extract telemetry using mp4box.js
+      document.getElementById('autoExtract').addEventListener('click', async ()=>{
+        const file = videoInput.files?.[0];
+        if(!file){ showToast('Load a video first'); return; }
+        try{
+          const {coords, times} = await tryExtractGpsClient(file);
+          if (!coords || coords.length < 2) throw new Error('No GPS track found');
+          ROUTE_COORDS = coords;
+          ROUTE_TIMES  = (times && times.length === coords.length) ? times.map(t=> t - times[0]) : null;
+          buildRouteLayers();
+          showToast('Auto-extracted GPX ✔');
+        } catch(e){
+          console.warn(e);
+          showToast('Could not auto-extract GPS from this video');
+        }
+      });
+    })();
+
+    // === Utilities: GPX parser & client-side MP4 telemetry attempt ===
+    function parseGpxText(text){
+      try{
+        const xml = new DOMParser().parseFromString(text, 'application/xml');
+        const pts = Array.from(xml.getElementsByTagName('trkpt'));
+        const coords = []; const times = [];
+        for (const p of pts){
+          const lat = parseFloat(p.getAttribute('lat')); const lon = parseFloat(p.getAttribute('lon'));
+          if (!isFinite(lat) || !isFinite(lon)) continue;
+          coords.push([lon, lat]);
+          const tEl = p.getElementsByTagName('time')[0];
+          if (tEl && tEl.textContent){
+            const t = Date.parse(tEl.textContent);
+            times.push(isNaN(t)?null:t);
+          }
+        }
+        return { coords, times: times.every(v=>v!=null)?times:null };
+      }catch(e){ return { coords:null, times:null }; }
+    }
+
+    async function tryExtractGpsClient(file){
+      // Best-effort: success depends on how telemetry is written in the MP4
+      const arrayBuf = await file.arrayBuffer();
+      const mp4boxfile = MP4Box.createFile();
+      const tracks = [];
+      const samples = {}; // id -> [samples]
+
+      mp4boxfile.onError = (e)=>console.warn('mp4box error', e);
+      mp4boxfile.onReady = (info)=>{
+        info.tracks.forEach(t=>{
+          tracks.push(t);
+          mp4boxfile.setExtractionOptions(t.id, null, { nbSamples: 0 });
+        });
+        mp4boxfile.start();
+      };
+      mp4boxfile.onSamples = (id, user, arr)=>{ (samples[id]||(samples[id]=[])).push(...arr); };
+
+      arrayBuf.fileStart = 0; mp4boxfile.appendBuffer(arrayBuf); mp4boxfile.flush();
+
+      // Heuristic: look for text/metadata tracks with NMEA ($GPRMC) or JSON {lat,lon,time}
+      const coords = []; const times=[];
+      for (const id in samples){
+        for (const s of samples[id]){
+          try{
+            const text = new TextDecoder().decode(s.data);
+            if (/\$(GPRMC|GPGGA|GNRMC|GNGGA)/.test(text)){
+              const out = nmeaToPoints(text);
+              if (out?.coords?.length){ coords.push(...out.coords); times.push(...out.times); }
+            }
+            const jsonMatch = text.match(/\{[^]*?\}/g);
+            if (jsonMatch){
+              for (const m of jsonMatch){
+                try{
+                  const obj = JSON.parse(m);
+                  const lat = obj.lat||obj.latitude; const lon = obj.lon||obj.longitude;
+                  const t  = Date.parse(obj.time||obj.timestamp||obj.dateTime||'');
+                  if (isFinite(lat) && isFinite(lon)){
+                    coords.push([Number(lon), Number(lat)]);
+                    times.push(isNaN(t)?null:t);
+                  }
+                }catch(_){}
+              }
+            }
+          }catch(_){ /* binary payloads – ignore */ }
+        }
+      }
+
+      if (coords.length < 2) throw new Error('No GPS payload detected');
+
+      const validTimes = times.filter(t=>t!=null);
+      const timesNorm = validTimes.length===times.length ? times.map(t=> t - times[0]) : null;
+      return { coords, times: timesNorm };
+    }
+
+    function nmeaToPoints(text){
+      const lines = text.split(/\r?\n/);
+      const coords = []; const times = [];
+      for (const ln of lines){
+        if (!ln.startsWith('$') || ln.length < 20) continue;
+        const parts = ln.split(',');
+        const type = parts[0].slice(1);
+        if (type.endsWith('RMC') && parts.length>9){
+          const hhmmss = parts[1];
+          const status = parts[2]; if (status!=='A') continue; // A=valid
+          const latRaw = parts[3], latH = parts[4];
+          const lonRaw = parts[5], lonH = parts[6];
+          const dateRaw = parts[9];
+          const lat = dmToDeg(latRaw, latH), lon = dmToDeg(lonRaw, lonH);
+          if (isFinite(lat) && isFinite(lon)){
+            coords.push([lon, lat]);
+            const t = nmeaToUnix(hhmmss, dateRaw);
+            times.push(isNaN(t)?null:t);
+          }
+        }
+      }
+      return { coords, times };
+
+      function dmToDeg(dm, hem){
+        if (!dm || dm==='') return NaN; const v = parseFloat(dm);
+        const deg = Math.floor(v/100); const min = v - deg*100; let out = deg + (min/60);
+        if (hem==='S' || hem==='W') out *= -1; return out;
+      }
+      function nmeaToUnix(hms, dmy){
+        if (!hms || !dmy) return NaN;
+        const hh = hms.slice(0,2), mm = hms.slice(2,4), ss = hms.slice(4,6);
+        const dd = dmy.slice(0,2), mo = dmy.slice(2,4), yy = dmy.slice(4,6);
+        const fullYear = 2000 + parseInt(yy,10);
+        const iso = `${fullYear}-${mo}-${dd}T${hh}:${mm}:${ss}Z`;
+        return Date.parse(iso);
+      }
+    }
+  </script>
+</body>
+</html>
