@@ -178,6 +178,7 @@
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+    pointer-events: none;
 }
 
 .nav-button.ring-button {
@@ -201,6 +202,7 @@
   -ms-user-select: none;
   /* Add a wrapper transform for positioning */
   transform: translateX(-50%);
+    pointer-events: auto;
 }
 
 /* Up button at the top */
@@ -1212,117 +1214,121 @@ function updateUI() {
         }
         
         // ===== 8) EVENT HANDLERS =====
-        function setupEventListeners() {
-            // Navigation buttons
-            document.getElementById('prevImage').addEventListener('click', () => {
-                loadImage(currentImageIndex - 1, true);
-            });
-            
-            document.getElementById('nextImage').addEventListener('click', () => {
-                loadImage(currentImageIndex + 1, true);
-            });
-            
-
-            
-            // Zoom buttons
-            document.getElementById('zoomIn').addEventListener('click', zoomIn);
-            document.getElementById('zoomOut').addEventListener('click', zoomOut);
-            
-
-            
-            // Touch events for mobile dragging
-            const canvas = document.getElementById('canvas');
-            let isDragging = false;
-            let previousPosition = { x: 0, y: 0 };
-            
-            canvas.addEventListener('touchstart', (e) => {
-                if (e.touches.length === 1) {
-                    isDragging = true;
-                    previousPosition = {
-                        x: e.touches[0].clientX,
-                        y: e.touches[0].clientY
-                    };
-                }
-                e.preventDefault();
-            });
-            
-            canvas.addEventListener('touchmove', (e) => {
-                if (e.touches.length === 1 && isDragging && sphere) {
-                    const currentPosition = {
-                        x: e.touches[0].clientX,
-                        y: e.touches[0].clientY
-                    };
-                    
-                    const deltaX = currentPosition.x - previousPosition.x;
-                    const deltaY = currentPosition.y - previousPosition.y;
-                    
-panoGroup.rotation.y -= deltaX * 0.01;
-panoGroup.rotation.x -= deltaY * 0.01;
-                    
-                    // Update current orientation
-currentYaw = panoGroup.rotation.y;
-currentPitch = panoGroup.rotation.x;
-                    updateStatusBox(); // NEW
-           updateNavigationRing();
-                    updateViewCone();
-                    previousPosition = currentPosition;
-                }
-                e.preventDefault();
-            });
-            
-            canvas.addEventListener('touchend', () => {
-                isDragging = false;
-                  canvas.lastPinchDistance = null;
-  updateViewCone();            // <— update when fingers lift
-            });
-            
-            // Pinch to zoom
-            canvas.addEventListener('touchmove', handlePinchZoom);
-            
-            // Mouse events for desktop dragging
-            canvas.addEventListener('mousedown', (e) => {
-                isDragging = true;
-                previousPosition = {
-                    x: e.clientX,
-                    y: e.clientY
-                };
-            });
-            
-            canvas.addEventListener('mousemove', (e) => {
-                if (isDragging && sphere) {
-                    const currentPosition = {
-                        x: e.clientX,
-                        y: e.clientY
-                    };
-                    
-                    const deltaX = currentPosition.x - previousPosition.x;
-                    const deltaY = currentPosition.y - previousPosition.y;
-                    
-panoGroup.rotation.y -= deltaX * 0.01;
-panoGroup.rotation.x -= deltaY * 0.01;
-                    
-                    // Update current orientation
-currentYaw = panoGroup.rotation.y;
-currentPitch = panoGroup.rotation.x;
-                    updateStatusBox(); // NEW
-               updateNavigationRing();
-                    updateViewCone();
-                    previousPosition = currentPosition;
-                }
-            });
-            
-            canvas.addEventListener('mouseup', () => {
-                isDragging = false;
-            });
-            
-            canvas.addEventListener('mouseleave', () => {
-                isDragging = false;
-            });
-            
-            // Mouse wheel zoom
-            canvas.addEventListener('wheel', handleWheelZoom);
+function setupEventListeners() {
+    // Navigation buttons
+    document.getElementById('prevImage').addEventListener('click', () => {
+        loadImage(currentImageIndex - 1, true);
+    });
+    
+    document.getElementById('nextImage').addEventListener('click', () => {
+        loadImage(currentImageIndex + 1, true);
+    });
+    
+    // Zoom buttons
+    document.getElementById('zoomIn').addEventListener('click', zoomIn);
+    document.getElementById('zoomOut').addEventListener('click', zoomOut);
+    
+    // Touch events for mobile dragging
+    const canvas = document.getElementById('canvas');
+    let isDragging = false;
+    let previousPosition = { x: 0, y: 0 };
+    
+    canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+            isDragging = true;
+            previousPosition = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
         }
-        
+        e.preventDefault();
+    });
+    
+    canvas.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1 && isDragging && sphere) {
+            const currentPosition = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
+            
+            const deltaX = currentPosition.x - previousPosition.x;
+            const deltaY = currentPosition.y - previousPosition.y;
+            
+            panoGroup.rotation.y -= deltaX * 0.01;
+            panoGroup.rotation.x -= deltaY * 0.01;
+            
+            currentYaw = panoGroup.rotation.y;
+            currentPitch = panoGroup.rotation.x;
+            updateStatusBox();
+            updateNavigationRing();
+            updateViewCone();
+            previousPosition = currentPosition;
+        }
+        e.preventDefault();
+    });
+    
+    canvas.addEventListener('touchend', () => {
+        isDragging = false;
+        canvas.lastPinchDistance = null;
+        updateViewCone();
+    });
+    
+    // Pinch to zoom
+    canvas.addEventListener('touchmove', handlePinchZoom);
+    
+    // Mouse events for desktop dragging - FIXED VERSION
+    let isMouseDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+    
+    // Only attach mouse events to the canvas, not the window
+    canvas.addEventListener('mousedown', (e) => {
+        isMouseDragging = true;
+        previousMousePosition = {
+            x: e.clientX,
+            y: e.clientY
+        };
+        e.preventDefault();
+    });
+    
+    // Use document instead of window to capture mouse events everywhere
+    document.addEventListener('mousemove', (e) => {
+        if (isMouseDragging && sphere) {
+            const currentPosition = {
+                x: e.clientX,
+                y: e.clientY
+            };
+            
+            const deltaX = currentPosition.x - previousMousePosition.x;
+            const deltaY = currentPosition.y - previousMousePosition.y;
+            
+            panoGroup.rotation.y -= deltaX * 0.01;
+            panoGroup.rotation.x -= deltaY * 0.01;
+            
+            currentYaw = panoGroup.rotation.y;
+            currentPitch = panoGroup.rotation.x;
+            updateStatusBox();
+            updateNavigationRing();
+            updateViewCone();
+            
+            previousMousePosition = currentPosition;
+        }
+    });
+    
+    document.addEventListener('mouseup', () => {
+        isMouseDragging = false;
+    });
+    
+    // Mouse wheel zoom
+    canvas.addEventListener('wheel', handleWheelZoom);
+    
+    // Prevent navigation elements from interfering with drag
+    const navElements = document.querySelectorAll('.navigation-ring, .image-controls');
+    navElements.forEach(element => {
+        element.addEventListener('mousedown', (e) => {
+            e.stopPropagation(); // Prevent drag start
+        });
+    });
+}
         // ===== 9) INITIALIZATION =====
 async function init() {
   try {
