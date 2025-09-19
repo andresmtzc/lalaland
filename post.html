@@ -190,6 +190,15 @@
   <aside class="panel" id="sidebar">
     <h2>Post Settings (4×5)</h2>
 
+<div class="group">
+  <label>Persistence</label>
+  <div class="row">
+    <button id="saveBtn">Save</button>
+    <button id="loadBtn">Load Last</button>
+    <button id="clearSaveBtn">Clear</button>
+  </div>
+</div>
+
     <div class="group">
       <label>Preset Background</label>
       <div class="swatch">
@@ -488,6 +497,147 @@
   function render(){ clear(); drawBackground(); drawText(state.head); drawText(state.sub); drawGuides(); }
 
   // Helpers
+const LS_KEY = 'ig_post_designer_v1';
+
+/** snapshot everything into a plain object and persist */
+function saveToLocal(){
+  // colors in CSS vars
+  const css = getComputedStyle(document.documentElement);
+  const cssEdgeW   = state.voxel.edgeW;
+  const treeFill   = css.getPropertyValue('--tree-fill').trim();
+  const edgeCol    = edgeColor.value;
+  const groundCol  = groundColor.value;
+  const groundIn   = groundInnerColor.value;
+
+  // serialize voxels
+  const voxDump = voxels.map(v => ({
+    x:v.x, y:v.y, level:v.level, base:v.base, active:!!v.active
+  }));
+
+  // serialize trees (store sizes so they don't re-randomize)
+  const treeDump = Array.from(trees.entries()).map(([key, el])=>{
+    const [xStr,yStr] = key.split(',');
+    const trunkH = parseFloat(el.querySelector('.trunk').style.height) || 0;
+    const dia    = parseFloat(el.querySelector('.canopy').style.width)  || 0;
+    return { x:+xStr, y:+yStr, trunkH, dia };
+  });
+
+  const payload = {
+    version: 1,
+    rows, cols, currentLevel, proMode,
+    state: {
+      ...state,
+      head: { ...state.head, font: state.head.font.name },
+      sub:  { ...state.sub,  font: state.sub.font.name }
+    },
+    ui: {
+      vxScale: +vxScale.value, vxX: +vxX.value, vxY: +vxY.value,
+      edgeW: +edgeW.value
+    },
+    colors: { edgeCol, groundCol, groundIn, treeFill },
+    voxels: voxDump,
+    trees: treeDump
+  };
+
+  localStorage.setItem(LS_KEY, JSON.stringify(payload));
+  showToast('Saved!');
+}
+
+/** apply a saved snapshot back into the app */
+function loadFromLocal(){
+  const raw = localStorage.getItem(LS_KEY);
+  if(!raw){ showToast('No save found'); return false; }
+
+  let data;
+  try{ data = JSON.parse(raw); } catch(e){ showToast('Corrupt save'); return false; }
+
+  // 1) restore sizes before building grid
+  if (Number.isFinite(data.cols) && Number.isFinite(data.rows)){
+    cols = data.cols; rows = data.rows;
+    colsInput.value = cols; rowsInput.value = rows;
+  }
+
+  // 2) rebuild grid (hitboxes/faces)
+  initGrid();
+  if (typeof buildGhostHitboxes === 'function') buildGhostHitboxes();
+
+  // 3) colors & css vars
+  if (data.colors){
+    if (data.colors.edgeCol)   { edgeColor.value = data.colors.edgeCol; setEdgeColor(data.colors.edgeCol); }
+    if (data.colors.groundCol) { groundColor.value = data.colors.groundCol; setGround(data.colors.groundCol); }
+    if (data.colors.groundIn)  { groundInnerColor.value = data.colors.groundIn; setGroundInner(data.colors.groundIn); }
+    if (data.colors.treeFill)  { document.documentElement.style.setProperty('--tree-fill', data.colors.treeFill); }
+  }
+
+  // 4) restore state (text, guides, bg, etc.)
+  if (data.state){
+    const s = data.state;
+
+    // headline / subtitle fonts are stored by name
+    const headFont = FONTS.find(f=>f.name===s.head.font) || FONTS[0];
+    const subFont  = FONTS.find(f=>f.name===s.sub.font)  || FONTS[1];
+
+    state.bg = s.bg;              bgColor.value = rgbToHex(state.bg);
+    state.padding = s.padding;    padding.value = s.padding;
+
+    state.grid = { ...s.grid };
+    gridToggle.textContent  = `Grid: ${state.grid.on?'On':'Off'}`;
+    centerToggle.textContent= `Centered: ${state.grid.centered?'On':'Off'}`;
+    gridSpacing.value = state.grid.spacing;
+    gridAlpha.value   = state.grid.alpha;
+
+    state.safeOn = s.safeOn;  safeToggle.textContent = `Safe: ${state.safeOn?'On':'Off'}`;
+    state.thirds = s.thirds;  ruleThirds.classList.toggle('primary', state.thirds);
+
+    state.head = { ...s.head, font: headFont };
+    state.sub  = { ...s.sub,  font: subFont  };
+    hAlign.value = state.head.align; hSize.value = state.head.size; hFont.value = headFont.name;
+    sAlign.value = state.sub.align;  sSize.value = state.sub.size;  sFont.value  = subFont.name;
+
+    // voxel layer transforms / edges
+    state.voxel = { ...s.voxel };
+    vxScale.value = Math.round(state.voxel.scale*100);
+    setVoxelScale(state.voxel.scale);
+    vxX.value = state.voxel.x;  vxY.value = state.voxel.y;  setVoxelPos(state.voxel.x, state.voxel.y);
+    edgeW.value = state.voxel.edgeW; setEdgeWidth(state.voxel.edgeW);
+    setEdges(!!state.voxel.edges);
+  }
+
+  // 5) restore voxels
+  if (Array.isArray(data.voxels)){
+    voxels.forEach(v => { v.active=false; v.level=0; v.base=0; });
+    data.voxels.forEach(sv=>{
+      // ignore if out-of-bounds (in case old save had different size)
+      if (sv.x<0 || sv.x>=cols || sv.y<0 || sv.y>=rows) return;
+      const v = voxels[sv.y*cols + sv.x];
+      if (!v) return;
+      v.level  = +sv.level || 0;
+      v.base   = +sv.base  || 0;
+      v.active = !!sv.active;
+    });
+    buildVoxel(); updateStats();
+  }
+
+  // 6) restore trees
+  clearAllTrees();
+  if (Array.isArray(data.trees)){
+    data.trees.forEach(t=>{
+      placeTreeAt(t.x, t.y, t.trunkH, t.dia);
+    });
+  }
+
+  // 7) re-render canvas
+  render();
+  showToast('Loaded!');
+  return true;
+}
+
+function clearSave(){
+  localStorage.removeItem(LS_KEY);
+  showToast('Save cleared');
+}
+
+
   const $ = (id)=>document.getElementById(id);
   function pointer(e){ const r=canvas.getBoundingClientRect(); return { x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height) }; }
   function clamp(n,min,max){return Math.max(min, Math.min(max, n))}
@@ -497,13 +647,13 @@
 
   const editTree = $('editTree');
 
-function placeTreeAt(x, y){
+function placeTreeAt(x, y, trunkHOverride = null, diaOverride = null){
   const key = tKey(x, y);
   if (trees.has(key)) return;
 
   const box = tileBox(x, y);
-  const trunkH = randInt(TREE_RNG.minTrunk, TREE_RNG.maxTrunk);
-  const dia    = randInt(TREE_RNG.minDia,  TREE_RNG.maxDia);
+  const trunkH = trunkHOverride ?? randInt(TREE_RNG.minTrunk, TREE_RNG.maxTrunk);
+  const dia    = diaOverride ?? randInt(TREE_RNG.minDia,  TREE_RNG.maxDia);
 
   const wrap = document.createElement('div');
   wrap.className = 'tree';
@@ -529,6 +679,7 @@ function placeTreeAt(x, y){
   grid.appendChild(wrap);
   trees.set(key, wrap);
 }
+
 
 function regenerateTreeAt(x, y){
   removeTreeAt(x, y);
@@ -863,6 +1014,11 @@ editTree.addEventListener('click', ()=>{
     }
   }
 }
+ 
+const saveBtn = $('saveBtn'), loadBtn = $('loadBtn'), clearSaveBtn = $('clearSaveBtn');
+if (saveBtn)  saveBtn.addEventListener('click', saveToLocal);
+if (loadBtn)  loadBtn.addEventListener('click', loadFromLocal);
+if (clearSaveBtn) clearSaveBtn.addEventListener('click', clearSave);
 
   function initGrid(){
     clearFaces(); voxels.length=0; grid.innerHTML=''; baseLeft=grid.offsetWidth/1.8;
@@ -872,7 +1028,7 @@ editTree.addEventListener('click', ()=>{
         const hitbox=document.createElement('div'); hitbox.className='hitbox';
         hitbox.style.left=`${(x-y)*offsetX + baseLeft}px`;
         hitbox.style.top =`${(x+y)*offsetY + baseTop}px`;
-
+  
 hitbox.addEventListener('click', ()=>{
   // toggle behavior by mode
   if (state.mode === 'vox'){
