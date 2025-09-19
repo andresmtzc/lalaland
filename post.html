@@ -183,6 +183,13 @@
 
 /* tree-only tiles: keep invisible even on hover */
 .voxel-layer .hitbox.ghost::before { background: transparent !important; }
+
+textarea{
+  width:100%; background:#0f0f0f; color:#e6e6e6;
+  border:1px solid #2a2a2a; padding:10px 12px; border-radius:10px;
+  resize: vertical; min-height:44px; font: inherit; line-height:1.3;
+}
+
 </style>
 </head>
 <body>
@@ -252,7 +259,7 @@
 
     <div class="group">
       <label>Headline</label>
-      <input type="text" id="headline" placeholder="Your bold headline" value="HELLO, IG!" />
+   <textarea id="headline" rows="3" placeholder="Your bold headline">HELLO, IG!</textarea>
       <div class="row">
         <select id="hAlign"><option value="center">Center</option><option value="left">Left</option><option value="right">Right</option></select>
         <input type="number" id="hSize" value="120" min="10" max="300" />
@@ -306,7 +313,7 @@
 
     <div class="group">
       <label>Subtitle</label>
-      <input type="text" id="subtitle" placeholder="Support text" value="Clean, bold, fast." />
+<textarea id="subtitle" rows="3" placeholder="Support text">Clean, bold, fast.</textarea>
       <div class="row">
         <select id="sAlign"><option value="center">Center</option><option value="left">Left</option><option value="right">Right</option></select>
         <input type="number" id="sSize" value="48" min="10" max="160" />
@@ -458,15 +465,99 @@
   function clear(){ ctx.clearRect(0,0,W,H) }
   function drawBackground(){ ctx.fillStyle = state.bg; ctx.fillRect(0,0,W,H); }
   function setAlign(a){ ctx.textAlign = (a==='left'?'left':a==='right'?'right':'center'); }
-  function drawText(obj){
-    const {text,size,color,align,x,y,font,weight,outline,outlineColor,outlineWidth,shadow,shadowOffsetX,shadowOffsetY,shadowBlur,shadowColor,shadowOpacity}=obj;
-    ctx.save();
-    setAlign(align); ctx.textBaseline='middle'; ctx.font=`${weight} ${size}px ${font.family}`;
-    if (shadow){ ctx.save(); ctx.shadowOffsetX=shadowOffsetX; ctx.shadowOffsetY=shadowOffsetY; ctx.shadowBlur=shadowBlur; ctx.shadowColor=hexToRgba(shadowColor, shadowOpacity); ctx.fillStyle=color; ctx.fillText(text,x,y); ctx.restore(); }
-    if (outline){ ctx.save(); ctx.strokeStyle=outlineColor; ctx.lineWidth=outlineWidth; ctx.lineJoin='round'; ctx.strokeText(text,x,y); ctx.restore(); }
-    ctx.fillStyle=color; ctx.fillText(text,x,y);
-    ctx.restore();
+ function drawText(obj){
+  const {
+    text, size, color, align, x, y, font, weight,
+    outline, outlineColor, outlineWidth,
+    shadow, shadowOffsetX, shadowOffsetY, shadowBlur, shadowColor, shadowOpacity
+  } = obj;
+
+  ctx.save();
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `${weight} ${size}px ${font.family}`;
+  setAlign(align);
+
+  const maxWidth = W - 2 * state.padding;
+  const lines = wrapLines(text, maxWidth, ctx);
+  const lineHeight = Math.round(size * 1.15);
+  const totalH = lineHeight * lines.length;
+
+  // vertically center the block around y
+  let startY = y - (totalH - lineHeight) / 2;
+
+  for (let i = 0; i < lines.length; i++) {
+    const ly = startY + i * lineHeight;
+
+    if (shadow) {
+      ctx.save();
+      ctx.shadowOffsetX = shadowOffsetX;
+      ctx.shadowOffsetY = shadowOffsetY;
+      ctx.shadowBlur = shadowBlur;
+      ctx.shadowColor = hexToRgba(shadowColor, shadowOpacity);
+      ctx.fillStyle = color;
+      ctx.fillText(lines[i], xForAlign(align), ly);
+      ctx.restore();
+    }
+
+    if (outline) {
+      ctx.save();
+      ctx.strokeStyle = outlineColor;
+      ctx.lineWidth = outlineWidth;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(lines[i], xForAlign(align), ly);
+      ctx.restore();
+    }
+
+    ctx.fillStyle = color;
+    ctx.fillText(lines[i], xForAlign(align), ly);
   }
+
+  ctx.restore();
+}
+
+function xForAlign(align){
+  if (align === 'left')  return state.padding;
+  if (align === 'right') return W - state.padding;
+  return W / 2; // center
+}
+
+function wrapLines(text, maxWidth, ctx){
+  const paragraphs = String(text ?? '').split('\n');
+  const out = [];
+
+  for (const p of paragraphs){
+    const words = p.split(/\s+/);
+    let line = '';
+
+    for (const w of words){
+      const test = line ? line + ' ' + w : w;
+      const { width } = ctx.measureText(test);
+
+      if (width <= maxWidth){
+        line = test;
+      } else {
+        if (line) out.push(line);
+
+        // if a single word is wider than maxWidth, split by characters
+        if (ctx.measureText(w).width > maxWidth){
+          let chunk = '';
+          for (const ch of w){
+            const t2 = chunk + ch;
+            if (ctx.measureText(t2).width <= maxWidth) chunk = t2;
+            else { out.push(chunk); chunk = ch; }
+          }
+          line = chunk;
+        } else {
+          line = w;
+        }
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+ 
+
   function drawGuides(){
     const pad = state.padding;
     if(state.safeOn){
