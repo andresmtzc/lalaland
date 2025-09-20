@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -90,7 +91,16 @@
     .voxel-layer *{box-sizing:border-box}
     .voxel-layer .info{color:#fff; display:none}
     .voxel-layer .viewport{width:100%; height:100%; display:flex; justify-content:center; align-items:center; position:relative}
-    .voxel-layer .grid-container{position:relative; width:800px; height:400px; transform:scale(.8); transform-origin:center}
+
+  .voxel-layer .grid-container{
+  position:relative;
+  width:800px;
+  height:400px;
+  --grid-scale: 0.8;                 /* <— new */
+  transform: scale(var(--grid-scale));
+  transform-origin: center;
+}
+
     .voxel-layer .controls{display:none}
     .guides-hint{position:absolute; top:12px; right:12px; font-size:12px; color:#a8a8a8; z-index:1000}
 
@@ -181,6 +191,8 @@
   height: 28px;
   border-radius: 50%;
 }
+
+
   </style>
 </head>
 <body>
@@ -1473,31 +1485,148 @@ $('loadFileInput').addEventListener('change', (e) => {
 
 
 
-
 /* ====== Export PNG ====== */
 exportBtn.addEventListener('click', async () => {
+  showToast('Exporting... Please wait');
+
   const shell = $('shell');
-  const prev = { w: shell.style.width, h: shell.style.height };
+  const voxelLayer = document.getElementById('voxel');
+  const gridEl = document.querySelector('.grid-container'); // NEW: reuse this ref
 
-  // Force exact export size
-  shell.style.width  = '1080px';
-  shell.style.height = '1350px';
+  // Store original styles
+  const originalStyles = {
+    shell: {
+      width: shell.style.width,
+      height: shell.style.height,
+      position: shell.style.position,
+      overflow: shell.style.overflow
+    },
+    voxel: {
+      left: voxelLayer.style.left,
+      top: voxelLayer.style.top,
+      transform: voxelLayer.style.transform,
+      width: voxelLayer.style.width,
+      height: voxelLayer.style.height
+    },
+    body: { overflow: document.body.style.overflow },
+    grid: {
+      // Keep the computed custom prop; fallback to '0.8' if blank
+      scaleVar: gridEl ? (getComputedStyle(gridEl).getPropertyValue('--grid-scale') || '0.8') : '0.8'
+    }
+  };
 
-  const canvasOut = await html2canvas(shell, {
-    backgroundColor: null,
-    useCORS: true,
-    scale: 1,
-    ignoreElements: el => el?.hasAttribute?.('data-export-exclude')
-  });
+  try {
+    // Prepare for export
+    document.body.style.overflow = 'hidden';
 
-  const a = document.createElement('a');
-  a.download = 'post_1080x1350.png';
-  a.href = canvasOut.toDataURL('image/png');
-  a.click();
+    // Exact shell dimensions
+    shell.style.width = '1080px';
+    shell.style.height = '1350px';
+    shell.style.position = 'absolute';
+    shell.style.left = '0';
+    shell.style.top = '0';
+    shell.style.overflow = 'visible';
 
-  // restore
-  shell.style.width  = prev.w;
-  shell.style.height = prev.h;
+    // ---- Bake .grid-container scale into the outer #voxel transform (live DOM) ----
+    const pctLeft = (state.voxel.x / W) * 100;
+    const pctTop  = (state.voxel.y / H) * 100;
+
+    let gridScaleNum = 1;
+    if (gridEl) {
+      const cs = getComputedStyle(gridEl);
+      const gs = cs.getPropertyValue('--grid-scale') || '1';
+      gridScaleNum = parseFloat(gs) || 1;
+      gridEl.style.setProperty('--grid-scale', '1'); // neutralize inner for snapshot
+    }
+
+    voxelLayer.style.left = pctLeft + '%';
+    voxelLayer.style.top  = pctTop  + '%';
+    voxelLayer.style.transform =
+      `translate(-50%, -50%) scale(${state.voxel.scale * gridScaleNum})`;
+
+    // Ensure DOM updates
+    await new Promise(r => setTimeout(r, 100));
+
+    const canvasOut = await html2canvas(shell, {
+      backgroundColor: null,
+      useCORS: true,
+      scale: Math.max(2, window.devicePixelRatio || 1),
+      logging: false,
+      ignoreElements: el => el?.hasAttribute?.('data-export-exclude'),
+      foreignObjectRendering: true,
+      width: 1080,
+      height: 1350,
+      x: 0,
+      y: 0,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: document.documentElement.clientWidth,
+      windowHeight: document.documentElement.clientHeight,
+      onclone: function (clonedDoc) {
+        const clonedShell = clonedDoc.getElementById('shell');
+        if (clonedShell) {
+          clonedShell.style.width = '1080px';
+          clonedShell.style.height = '1350px';
+          clonedShell.style.overflow = 'visible';
+        }
+
+        // --- same baking on the cloned DOM ---
+        const clonedGrid = clonedDoc.querySelector('.grid-container');
+        let gridScaleNumClone = 1;
+        if (clonedGrid) {
+          const ccs = clonedDoc.defaultView.getComputedStyle(clonedGrid);
+          const gs = ccs.getPropertyValue('--grid-scale') || '1';
+          gridScaleNumClone = parseFloat(gs) || 1;
+          clonedGrid.style.setProperty('--grid-scale', '1'); // neutralize inner
+        }
+
+        const clonedVoxel = clonedDoc.getElementById('voxel');
+        if (clonedVoxel) {
+          const pctLeft = (state.voxel.x / W) * 100;
+          const pctTop  = (state.voxel.y / H) * 100;
+          clonedVoxel.style.left = pctLeft + '%';
+          clonedVoxel.style.top  = pctTop  + '%';
+          clonedVoxel.style.transform =
+            `translate(-50%, -50%) scale(${state.voxel.scale * gridScaleNumClone})`;
+        }
+      }
+    });
+
+    const a = document.createElement('a');
+    a.download = 'post_1080x1350.png';
+    a.href = canvasOut.toDataURL('image/png');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    showToast('Exported successfully!');
+  } catch (error) {
+    console.error('Export error:', error);
+    showToast('Export failed. Please try again.');
+  } finally {
+    // Restore original styles
+    shell.style.width = originalStyles.shell.width;
+    shell.style.height = originalStyles.shell.height;
+    shell.style.position = originalStyles.shell.position;
+    shell.style.overflow = originalStyles.shell.overflow;
+    shell.style.left = '';
+    shell.style.top = '';
+
+    voxelLayer.style.left = originalStyles.voxel.left;
+    voxelLayer.style.top = originalStyles.voxel.top;
+    voxelLayer.style.transform = originalStyles.voxel.transform;
+    voxelLayer.style.width = originalStyles.voxel.width;
+    voxelLayer.style.height = originalStyles.voxel.height;
+
+    document.body.style.overflow = originalStyles.body.overflow;
+
+    // NEW: restore --grid-scale
+    if (gridEl) {
+      gridEl.style.setProperty('--grid-scale', originalStyles.grid.scaleVar.trim() || '0.8');
+    }
+
+    render();
+  }
 });
 
 
