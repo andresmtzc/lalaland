@@ -55,6 +55,8 @@
     .dot[data-color="orange"]{background:var(--brand-orange)}
     .dot[data-color="offwhite"]{background:var(--off-white)}
     .dot[data-color="offblack"]{background:var(--off-black)}
+    .dot[data-color="teal"]{background:#00D1B2}
+.dot[data-color="gray"]{background:#525252}
     .dot.active{outline:2px solid #fff}
 
     /* Font style controls */
@@ -191,11 +193,13 @@
 
     <div class="group">
       <label>Preset Background</label>
-      <div class="swatch">
-        <div class="dot active" data-color="offwhite" title="Off-White"></div>
-        <div class="dot" data-color="offblack" title="Off-Black"></div>
-        <div class="dot" data-color="orange" title="Brand Orange"></div>
-      </div>
+<div class="swatch">
+  <div class="dot active" data-color="offwhite" title="Off-White"></div>
+  <div class="dot" data-color="offblack" title="Off-Black"></div>
+  <div class="dot" data-color="orange" title="Brand Orange"></div>
+  <div class="dot" data-color="teal" title="Teal"></div>        <!-- NEW -->
+  <div class="dot" data-color="gray" title="Dark Gray"></div>   <!-- NEW -->
+</div>
     </div>
 
     <div class="group row">
@@ -304,6 +308,27 @@
             <input type="range" class="style-slider" id="tShadowOpacity" min="0" max="1" step="0.1" value="0.5"/>
           </div>
         </div>
+        <div class="style-group">
+  <label>Highlighter</label>
+  <div class="style-row">
+    <button class="style-toggle" id="tHLToggle">OFF</button>
+    <label class="row" style="gap:6px; align-items:center;">
+      <input type="color" id="tHLColor" value="#fff200" style="max-width:70px">
+      <input type="range" class="style-slider" id="tHLOpacity" min="0" max="1" step="0.05" value="0.6">
+    </label>
+  </div>
+  <div class="style-row">
+    <input type="range" class="style-slider" id="tHLPX" min="0" max="60" value="16" title="Pad X">
+    <input type="range" class="style-slider" id="tHLPY" min="0" max="60" value="8"  title="Pad Y">
+  </div>
+  <div class="style-row">
+    <input type="range" class="style-slider" id="tHLRadius" min="0" max="40" value="10" title="Radius">
+    <label class="row" style="gap:6px;">
+      <input type="checkbox" id="tHLPerLine" checked>
+      <span style="font-size:10px;color:#9aa0a6;">Per-line</span>
+    </label>
+  </div>
+</div>
       </div>
     </div>
 
@@ -381,20 +406,22 @@ const state = {
   grid: { on:true, centered:true, spacing:120, alpha:.25 },
   safeOn: true,
   thirds: false,
-  head: {
-    id:'head', label:'Headline',
-    text:'HELLO, IG!', size:120, color:OFFBLACK, align:'center', x:W/2, y:H*0.2,
-    font:FONTS[0], weight:400,
-    outline:false, outlineColor:OFFWHITE, outlineWidth:2,
-    shadow:false, shadowOffsetX:4, shadowOffsetY:4, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5
-  },
-  sub: {
-    id:'sub', label:'Subtitle',
-    text:'Clean, bold, fast.', size:48, color:OFFBLACK, align:'center', x:W/2, y:H*0.32,
-    font:FONTS[1], weight:400,
-    outline:false, outlineColor:OFFWHITE, outlineWidth:2,
-    shadow:false, shadowOffsetX:2, shadowOffsetY:2, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5
-  },
+head: {
+  id:'head', label:'Headline',
+  text:'HELLO, IG!', size:120, color:OFFBLACK, align:'center', x:W/2, y:H*0.2,
+  font:FONTS[0], weight:400,
+  outline:false, outlineColor:OFFWHITE, outlineWidth:2,
+  shadow:false, shadowOffsetX:4, shadowOffsetY:4, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5,
+  highlight:{ on:false, color:'#fff200', opacity:0.6, padX:16, padY:8, radius:10, perLine:true }
+},
+sub: {
+  id:'sub', label:'Subtitle',
+  text:'Clean, bold, fast.', size:48, color:OFFBLACK, align:'center', x:W/2, y:H*0.32,
+  font:FONTS[1], weight:400,
+  outline:false, outlineColor:OFFWHITE, outlineWidth:2,
+  shadow:false, shadowOffsetX:2, shadowOffsetY:2, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5,
+  highlight:{ on:false, color:'#fff200', opacity:0.6, padX:16, padY:8, radius:10, perLine:true }
+},
   texts: [],             // filled below
   activeTextId: 'head',  // which text is controlled by the panel
   voxel: { x:W/2, y:H*0.5, scale:1, edges:true, edgeW:3 },
@@ -404,6 +431,15 @@ state.texts = [state.head, state.sub];
 
 /* ====== UI Refs (declare BEFORE using) ====== */
 const $ = (id)=>document.getElementById(id);
+
+//highlighter
+const tHLToggle  = $('tHLToggle');
+const tHLColor   = $('tHLColor');
+const tHLOpacity = $('tHLOpacity');
+const tHLPX      = $('tHLPX');
+const tHLPY      = $('tHLPY');
+const tHLRadius  = $('tHLRadius');
+const tHLPerLine = $('tHLPerLine');
 
 /* toolbar */
 const toolbar     = document.querySelector('.toolbar');
@@ -450,6 +486,19 @@ function showToast(message){
   toast.classList.add('show');
   setTimeout(()=>toast.classList.remove('show'), 1600);
 }
+
+//highlight
+function roundRect(ctx, x, y, w, h, r){
+  const rr = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x,     y + h, rr);
+  ctx.arcTo(x,     y + h, x,     y,     rr);
+  ctx.arcTo(x,     y,     x + w, y,     rr);
+  ctx.closePath();
+}
+
 
 /* ====== Drawing ====== */
 function clear(){ ctx.clearRect(0,0,W,H); }
@@ -509,6 +558,50 @@ function drawText(obj){
   const lineHeight = Math.round(size * 1.15);
   const totalH = lineHeight * lines.length;
   let startY = y - (totalH - lineHeight) / 2;
+
+// === Highlighter (behind text) ===
+if (obj.highlight?.on) {
+  const { color:hlc, opacity:hop, padX, padY, radius, perLine } = obj.highlight;
+
+  const metrics = lines.map(str => {
+    const m = ctx.measureText(str);
+    const asc = m.actualBoundingBoxAscent ?? size * 0.8;
+    const des = m.actualBoundingBoxDescent ?? size * 0.2;
+    return { width: m.width, asc, des };
+  });
+
+  const rects = [];
+  if (perLine) {
+    for (let i = 0; i < lines.length; i++) {
+      const { width, asc, des } = metrics[i];
+      const ly  = startY + i * lineHeight; // baseline
+      const top = ly - asc - padY;
+      const h   = asc + des + padY * 2;
+      let left;
+      if (align === 'center') left = x - width/2 - padX;
+      else if (align === 'right') left = x - width - padX;
+      else left = x - padX;
+      rects.push({ x:left, y:top, w:width + padX*2, h });
+    }
+  } else {
+    const maxW = Math.max(...metrics.map(m => m.width));
+    const asc0 = metrics[0]?.asc ?? size*0.8;
+    const desL = metrics.at(-1)?.des ?? size*0.2;
+    const top  = startY - asc0 - padY;
+    const h    = (lineHeight * (lines.length - 1)) + (asc0 + desL) + padY * 2;
+    let left;
+    if (align === 'center') left = x - maxW/2 - padX;
+    else if (align === 'right') left = x - maxW - padX;
+    else left = x - padX;
+    rects.push({ x:left, y:top, w:maxW + padX*2, h });
+  }
+
+  ctx.save();
+  ctx.fillStyle = hexToRgba(hlc, hop);
+  for (const r of rects) { roundRect(ctx, r.x, r.y, r.w, r.h, radius); ctx.fill(); }
+  ctx.restore();
+}
+// === end Highlighter ===
 
   for (let i = 0; i < lines.length; i++) {
     const ly = startY + i * lineHeight;
@@ -593,7 +686,8 @@ function makeDefaultText(label){
     x: W/2, y: H*0.6,
     font: FONTS[1], weight: 400,
     outline: false, outlineColor: OFFWHITE, outlineWidth: 2,
-    shadow: false, shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 0, shadowColor: '#000000', shadowOpacity: 0.5
+    shadow: false, shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 0, shadowColor: '#000000', shadowOpacity: 0.5,
+    highlight: { on:false, color:'#fff200', opacity:0.6, padX:16, padY:8, radius:10, perLine:true }
   };
 }
 
@@ -662,6 +756,16 @@ function syncPanelToActive(){
   tShadowOffsetY.value = t.shadowOffsetY ?? 2;
   tShadowColor.value = t.shadowColor || '#000000';
   tShadowOpacity.value = t.shadowOpacity ?? 0.5;
+
+  //highlighter
+  tHLToggle.textContent = t.highlight?.on ? 'ON' : 'OFF';
+tHLToggle.classList.toggle('active', !!t.highlight?.on);
+tHLColor.value   = t.highlight?.color   ?? '#fff200';
+tHLOpacity.value = t.highlight?.opacity ?? 0.6;
+tHLPX.value      = t.highlight?.padX    ?? 16;
+tHLPY.value      = t.highlight?.padY    ?? 8;
+tHLRadius.value  = t.highlight?.radius  ?? 10;
+tHLPerLine.checked = t.highlight?.perLine ?? true;
 }
 
 function updateTextFromPanel(){
@@ -684,6 +788,17 @@ function updateTextFromPanel(){
   t.shadowOffsetY = +tShadowOffsetY.value;
   t.shadowColor = tShadowColor.value;
   t.shadowOpacity = +tShadowOpacity.value;
+
+t.highlight = t.highlight || {};
+t.highlight.on      = (tHLToggle.textContent === 'ON');
+t.highlight.color   = tHLColor.value;
+t.highlight.opacity = +tHLOpacity.value;
+t.highlight.padX    = +tHLPX.value;
+t.highlight.padY    = +tHLPY.value;
+t.highlight.radius  = +tHLRadius.value;
+t.highlight.perLine = !!tHLPerLine.checked;
+
+
 
   render();
 }
@@ -740,6 +855,19 @@ tShadowOffsetX.addEventListener('input', updateTextFromPanel);
 tShadowOffsetY.addEventListener('input', updateTextFromPanel);
 tShadowColor.addEventListener('input', updateTextFromPanel);
 tShadowOpacity.addEventListener('input', updateTextFromPanel);
+
+//highlighter
+tHLToggle.addEventListener('click', () => {
+  const t = getActiveText(); if (!t) return;
+  t.highlight = t.highlight || {};
+  t.highlight.on = !t.highlight.on;
+  tHLToggle.textContent = t.highlight.on ? 'ON' : 'OFF';
+  tHLToggle.classList.toggle('active', t.highlight.on);
+  render();
+});
+[tHLColor, tHLOpacity, tHLPX, tHLPY, tHLRadius].forEach(el => el.addEventListener('input', updateTextFromPanel));
+tHLPerLine.addEventListener('change', updateTextFromPanel);
+
 
 /* ====== BG & Guides ====== */
 function clamp(n,min,max){return Math.max(min, Math.min(max, n))}
@@ -1143,13 +1271,15 @@ function buildPayload(){
   });
 
   // texts snapshot
-  const textsDump = state.texts.map(t => ({
-    id:t.id, label:t.label, text:t.text, size:t.size, color:t.color, align:t.align, x:t.x, y:t.y,
-    font: t.font?.name || FONTS[0].name, weight:t.weight,
-    outline:t.outline, outlineColor:t.outlineColor, outlineWidth:t.outlineWidth,
-    shadow:t.shadow, shadowOffsetX:t.shadowOffsetX, shadowOffsetY:t.shadowOffsetY,
-    shadowBlur:t.shadowBlur, shadowColor:t.shadowColor, shadowOpacity:t.shadowOpacity
-  }));
+const textsDump = state.texts.map(t => ({
+  id:t.id, label:t.label, text:t.text, size:t.size, color:t.color, align:t.align, x:t.x, y:t.y,
+  font: t.font?.name || FONTS[0].name, weight:t.weight,
+  outline:t.outline, outlineColor:t.outlineColor, outlineWidth:t.outlineWidth,
+  shadow:t.shadow, shadowOffsetX:t.shadowOffsetX, shadowOffsetY:t.shadowOffsetY,
+  shadowBlur:t.shadowBlur, shadowColor:t.shadowColor, shadowOpacity:t.shadowOpacity,
+  highlight: t.highlight
+}));
+
 
   return {
     schema: "ig-post-designer",
@@ -1318,144 +1448,7 @@ $('loadFileInput').addEventListener('change', (e) => {
 });
 
 
-/* ====== Save / Load ====== */
-const LS_KEY = 'ig_post_designer_v2';
 
-function saveToLocal(){
-  const css = getComputedStyle(document.documentElement);
-
-  const voxDump = voxels.map(v => ({ x:v.x, y:v.y, level:v.level, base:v.base, active:!!v.active }));
-  const treeDump = Array.from(trees.entries()).map(([key, el])=>{
-    const [xStr,yStr] = key.split(',');
-    const trunkH = parseFloat(el.querySelector('.trunk').style.height) || 0;
-    const dia    = parseFloat(el.querySelector('.canopy').style.width)  || 0;
-    return { x:+xStr, y:+yStr, trunkH, dia };
-  });
-
-  const textsDump = state.texts.map(t => ({
-    id:t.id, label:t.label, text:t.text, size:t.size, color:t.color, align:t.align, x:t.x, y:t.y,
-    font: t.font?.name || FONTS[0].name, weight:t.weight,
-    outline:t.outline, outlineColor:t.outlineColor, outlineWidth:t.outlineWidth,
-    shadow:t.shadow, shadowOffsetX:t.shadowOffsetX, shadowOffsetY:t.shadowOffsetY,
-    shadowBlur:t.shadowBlur, shadowColor:t.shadowColor, shadowOpacity:t.shadowOpacity
-  }));
-
-  const payload = {
-    version: 2,
-    rows, cols, currentLevel, proMode,
-    stateMisc: {
-      bg: state.bg,
-      padding: state.padding,
-      grid: state.grid,
-      safeOn: state.safeOn,
-      thirds: state.thirds,
-      voxel: state.voxel
-    },
-    activeTextId: state.activeTextId,
-    texts: textsDump,
-    ui: { vxScale: +vxScale.value, vxX: +vxX.value, vxY: +vxY.value, edgeW: +edgeW.value },
-    colors: {
-      edgeCol: edgeColor.value,
-      groundCol: groundColor.value,
-      groundIn: groundInnerColor.value,
-      treeFill: css.getPropertyValue('--tree-fill').trim()
-    },
-    voxels: voxDump,
-    trees: treeDump
-  };
-
-  localStorage.setItem(LS_KEY, JSON.stringify(payload));
-  showToast('Saved!');
-}
-function loadFromLocal(){
-  const raw = localStorage.getItem(LS_KEY);
-  if(!raw){ showToast('No save found'); return false; }
-  let data;
-  try{ data = JSON.parse(raw); } catch(e){ showToast('Corrupt save'); return false; }
-
-  if (Number.isFinite(data.cols) && Number.isFinite(data.rows)){
-    cols = data.cols; rows = data.rows;
-    colsInput.value = cols; rowsInput.value = rows;
-  }
-  initGrid();
-  if (typeof buildGhostHitboxes === 'function') buildGhostHitboxes();
-
-  if (data.colors){
-    if (data.colors.edgeCol)   { edgeColor.value = data.colors.edgeCol; setEdgeColor(data.colors.edgeCol); }
-    if (data.colors.groundCol) { groundColor.value = data.colors.groundCol; setGround(data.colors.groundCol); }
-    if (data.colors.groundIn)  { groundInnerColor.value = data.colors.groundIn; setGroundInner(data.colors.groundIn); }
-    if (data.colors.treeFill)  { document.documentElement.style.setProperty('--tree-fill', data.colors.treeFill); }
-  }
-
-  if (data.stateMisc){
-    const s = data.stateMisc;
-    state.bg = s.bg;              bgColor.value = rgbToHex(state.bg);
-    state.padding = s.padding;    padding.value = s.padding;
-
-    state.grid = { ...s.grid };
-    gridToggle.textContent  = `Grid: ${state.grid.on?'On':'Off'}`;
-    centerToggle.textContent= `Centered: ${state.grid.centered?'On':'Off'}`;
-    gridSpacing.value = state.grid.spacing;
-    gridAlpha.value   = state.grid.alpha;
-
-    state.safeOn = s.safeOn;  safeToggle.textContent = `Safe: ${state.safeOn?'On':'Off'}`;
-    state.thirds = s.thirds;  ruleThirds.classList.toggle('primary', state.thirds);
-
-    state.voxel = { ...s.voxel };
-    vxScale.value = Math.round(state.voxel.scale*100);
-    document.getElementById('voxel').style.transform=`translate(-50%,-50%) scale(${state.voxel.scale})`;
-    vxX.value = state.voxel.x;  vxY.value = state.voxel.y;
-    const vEl = document.getElementById('voxel');
-    vEl.style.left = (state.voxel.x/W*100)+'%';
-    vEl.style.top  = (state.voxel.y/H*100)+'%';
-    edgeW.value = state.voxel.edgeW; setEdgeWidth(state.voxel.edgeW);
-    setEdges(!!state.voxel.edges);
-  }
-
-  if (Array.isArray(data.texts) && data.texts.length){
-    state.texts = data.texts.map(d => ({
-      ...d,
-      font: FONTS.find(f=>f.name===d.font) || FONTS[0]
-    }));
-    // keep canonical head/sub pointers if they exist
-    const head = state.texts.find(t=>t.id==='head');
-    const sub  = state.texts.find(t=>t.id==='sub');
-    if (head) state.head = head;
-    if (sub)  state.sub  = sub;
-  } else {
-    state.texts = [state.head, state.sub];
-  }
-  state.activeTextId = data.activeTextId || (state.texts[0]?.id);
-
-  rebuildTextButtons();
-  syncPanelToActive();
-
-  if (Array.isArray(data.voxels)){
-    voxels.forEach(v => { v.active=false; v.level=0; v.base=0; });
-    data.voxels.forEach(sv=>{
-      if (sv.x<0 || sv.x>=cols || sv.y<0 || sv.y>=rows) return;
-      const v = voxels[sv.y*cols + sv.x]; if (!v) return;
-      v.level  = +sv.level || 0;
-      v.base   = +sv.base  || 0;
-      v.active = !!sv.active;
-    });
-    buildVoxel(); updateStats();
-  }
-
-  clearAllTrees();
-  if (Array.isArray(data.trees)){
-    data.trees.forEach(t=> placeTreeAt(t.x, t.y, t.trunkH, t.dia));
-  }
-
-  render();
-  showToast('Loaded!');
-  return true;
-}
-function clearSave(){ localStorage.removeItem(LS_KEY); showToast('Save cleared'); }
-
-$('saveBtn').addEventListener('click', saveToLocal);
-$('loadBtn').addEventListener('click', loadFromLocal);
-$('clearSaveBtn').addEventListener('click', clearSave);
 
 /* ====== Export PNG ====== */
 exportBtn.addEventListener('click', async () => {
@@ -1495,24 +1488,43 @@ reset.addEventListener('click', ()=>{
   state.voxel={ x:W/2, y:H*0.5, scale:1, edges:true, edgeW:3 };
   state.mode='text';
 
-  // texts
-  state.head = {
-    id:'head', label:'Headline',
-    text:'HELLO, IG!', size:120, color:OFFBLACK, align:'center', x:W/2, y:H*0.2,
-    font:FONTS[0], weight:400,
-    outline:false, outlineColor:OFFWHITE, outlineWidth:2,
-    shadow:false, shadowOffsetX:4, shadowOffsetY:4, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5
-  };
-  state.sub = {
-    id:'sub', label:'Subtitle',
-    text:'Clean, bold, fast.', size:48, color:OFFBLACK, align:'center', x:W/2, y:H*0.32,
-    font:FONTS[1], weight:400,
-    outline:false, outlineColor:OFFWHITE, outlineWidth:2,
-    shadow:false, shadowOffsetX:2, shadowOffsetY:2, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5
-  };
-  state.texts=[state.head, state.sub];
-  state.activeTextId='head';
-  textSeq = 3;
+// texts
+state.head = {
+  id:'head', label:'Headline',
+  text:'HELLO, IG!', size:120, color:OFFBLACK, align:'center', x:W/2, y:H*0.2,
+  font:FONTS[0], weight:400,
+  outline:false, outlineColor:OFFWHITE, outlineWidth:2,
+  shadow:false, shadowOffsetX:4, shadowOffsetY:4, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5,
+  highlight: {
+    on: false,
+    color: '#fff200',
+    opacity: 0.6,
+    padX: 16,
+    padY: 8,
+    radius: 10,
+    perLine: true
+  }
+};
+state.sub = {
+  id:'sub', label:'Subtitle',
+  text:'Clean, bold, fast.', size:48, color:OFFBLACK, align:'center', x:W/2, y:H*0.32,
+  font:FONTS[1], weight:400,
+  outline:false, outlineColor:OFFWHITE, outlineWidth:2,
+  shadow:false, shadowOffsetX:2, shadowOffsetY:2, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5,
+  highlight: {
+    on: false,
+    color: '#fff200',
+    opacity: 0.6,
+    padX: 16,
+    padY: 8,
+    radius: 10,
+    perLine: true
+  }
+};
+state.texts = [state.head, state.sub];
+state.activeTextId = 'head';
+textSeq = 3;
+
 
   // UI resets
   document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active', i===0));
@@ -1548,7 +1560,12 @@ reset.addEventListener('click', ()=>{
       document.querySelectorAll('.dot').forEach(d=>d.classList.remove('active'));
       dot.classList.add('active');
       const key=dot.getAttribute('data-color');
-      const colorValue = key==='orange'?ORANGE : key==='offblack'?OFFBLACK : OFFWHITE;
+     const colorValue =
+  key==='orange'   ? ORANGE   :
+  key==='offblack' ? OFFBLACK :
+  key==='teal'     ? '#00D1B2':
+  key==='gray'     ? '#525252':
+  OFFWHITE;
       state.bg=colorValue; bgColor.value=rgbToHex(colorValue); render();
     });
   });
