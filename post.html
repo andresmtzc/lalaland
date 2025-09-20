@@ -77,11 +77,11 @@
     .stage-bg{background:#0b0b0b; border:1px dashed #2a2a2a; border-radius:16px; padding:20px; width:100%; height:100%; min-height:80vh}
 
     /* 4:5 canvas holder */
-    .shell{position:relative; aspect-ratio:4/5; width:min(80vh, min(80vw, 900px)); background:var(--off-white); border-radius:12px; box-shadow:0 30px 70px rgba(0,0,0,.5); overflow:hidden; z-index:0}
+    .shell{position:relative; aspect-ratio:4/5; width:min(80vh, min(80vw, 900px)); background:var(--off-white); border-radius:0px; box-shadow:0 30px 70px rgba(0,0,0,.5); overflow:hidden; z-index:0}
     .shell .badge{position:absolute; left:12px; bottom:12px; font-size:12px; color:#777; background:rgba(255,255,255,.04); padding:6px 8px; border:1px solid rgba(255,255,255,.08); border-radius:8px; backdrop-filter:blur(4px); z-index:1000}
 
     /* Canvas */
-    canvas#art{position:absolute; inset:0; width:100%; height:100%; display:block; z-index:1; pointer-events:auto; border-radius:12px}
+    canvas#art{position:absolute; inset:0; width:100%; height:100%; display:block; z-index:1; pointer-events:auto; border-radius:0px}
 
     /* Voxels */
     .voxel-layer{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(1); width:1200px; height:900px; pointer-events:none; z-index:2}
@@ -325,20 +325,17 @@
   <main class="stage-wrap">
     <div class="stage-bg">
       <div class="shell" id="shell">
-        <div class="toolbar">
+        <div class="toolbar" data-export-exclude>
           <button id="selectHead" class="active">Move Headline</button>
           <button id="selectSub">Move Subtitle</button>
           <button id="editVox">Edit Voxels</button>
           <button id="editTree">Place Trees</button>
           <button id="addTextBtn">+ Add Text</button>
         </div>
-        <div class="guides-hint">Drag via sliders • Pro: right-click voxel to carve</div>
+        <div class="guides-hint" data-export-exclude>Drag via sliders • Pro: right-click voxel to carve</div>
 
         <div id="voxel" class="voxel-layer">
-          <div class="info">
-            <div id="areaInfo">Construction size: 0 m²</div>
-            <div id="priceInfo">Estimated price: $0</div>
-          </div>
+
           <div class="viewport">
             <div class="grid-container" id="grid"></div>
           </div>
@@ -347,7 +344,7 @@
         </div>
 
         <canvas id="art" width="1080" height="1350"></canvas>
-        <div class="badge">4×5 • 1080×1350 px</div>
+        <div class="badge" data-export-exclude>4×5 • 1080×1350 px</div>
       </div>
     </div>
   </main>
@@ -1461,15 +1458,31 @@ $('loadBtn').addEventListener('click', loadFromLocal);
 $('clearSaveBtn').addEventListener('click', clearSave);
 
 /* ====== Export PNG ====== */
-exportBtn.addEventListener('click', async ()=>{
-  const hint=document.querySelector('.guides-hint');
-  const prev=hint.style.display;
-  hint.style.display='none';
-  const shell=$('shell');
-  const canvasOut=await html2canvas(shell,{backgroundColor:null,useCORS:true,scale:2});
-  const link=document.createElement('a'); link.download=`post_1080x1350.png`; link.href=canvasOut.toDataURL('image/png'); link.click();
-  hint.style.display=prev||'';
+exportBtn.addEventListener('click', async () => {
+  const shell = $('shell');
+  const prev = { w: shell.style.width, h: shell.style.height };
+
+  // Force exact export size
+  shell.style.width  = '1080px';
+  shell.style.height = '1350px';
+
+  const canvasOut = await html2canvas(shell, {
+    backgroundColor: null,
+    useCORS: true,
+    scale: 1,
+    ignoreElements: el => el?.hasAttribute?.('data-export-exclude')
+  });
+
+  const a = document.createElement('a');
+  a.download = 'post_1080x1350.png';
+  a.href = canvasOut.toDataURL('image/png');
+  a.click();
+
+  // restore
+  shell.style.width  = prev.w;
+  shell.style.height = prev.h;
 });
+
 
 /* ====== Reset ====== */
 reset.addEventListener('click', ()=>{
