@@ -737,15 +737,20 @@ function rebuildTextButtons(){
   updateTextButtonsActive();
 }
 
-addTextBtn.addEventListener('click', ()=>{
-  const label = `Text ${textSeq}`;
-  const t = makeDefaultText(label);
+addTextBtn.addEventListener('click', () => {
+  const { id, label } = nextTextIdLabel();
+  // build a default text object with that id/label
+  const t = {
+    ...makeDefaultText(label),
+    id,
+    label
+  };
   state.texts.push(t);
   addMoveButton(t);
   setActiveById(t.id);
   setMode('text');
-  textSeq++;
 });
+
 
 function setActiveById(id){
   if (!state.texts.some(t => t.id === id)) return;
@@ -1435,6 +1440,32 @@ function loadFromData(data){
   showToast('Project loaded');
   return true;
 }
+
+
+// Return the largest numeric suffix among existing text items (ids like "text7" or labels like "Text 7")
+function getLargestTextNumber() {
+  let max = 2; // head/sub conceptually 1/2
+  for (const t of state.texts) {
+    // from id
+    const m1 = typeof t.id === 'string' && t.id.match(/^text(\d+)$/i);
+    if (m1) { max = Math.max(max, +m1[1]); continue; }
+    // from label (fallback)
+    const m2 = typeof t.label === 'string' && t.label.match(/^text\s+(\d+)$/i);
+    if (m2) { max = Math.max(max, +m2[1]); }
+  }
+  return max;
+}
+
+// Compute a unique id/label for the next text
+function nextTextIdLabel() {
+  let n = getLargestTextNumber() + 1;
+  // ensure uniqueness even if there are weird ids
+  let id = `text${n}`;
+  const existingIds = new Set(state.texts.map(t => t.id));
+  while (existingIds.has(id)) { n++; id = `text${n}`; }
+  return { id, label: `Text ${n}` };
+}
+
 
 // 2.3 Keep your existing local save/load, but refactor to use the helpers
 function saveToLocal(){
