@@ -181,6 +181,12 @@
         <button id="loadBtn">Load Last</button>
         <button id="clearSaveBtn">Clear</button>
       </div>
+      <div class="row">
+  <button id="saveFileBtn">Save to File</button>
+  <button id="loadFileBtn">Load from File</button>
+  <input type="file" id="loadFileInput" accept="application/json" style="display:none"/>
+</div>
+
     </div>
 
     <div class="group">
@@ -1117,6 +1123,203 @@ edgesToggle.addEventListener('click',()=>{ setEdges(!state.voxel.edges); buildVo
 edgeColor.addEventListener('input', e=>setEdgeColor(e.target.value));
 groundColor.addEventListener('input', e=>setGround(e.target.value));
 groundInnerColor.addEventListener('input', e=>setGroundInner(e.target.value));
+
+
+
+/* ====== Unified save/load to support file versions ====== */
+
+// 2.1 Build a complete payload (shared by local + file)
+function buildPayload(){
+  const css = getComputedStyle(document.documentElement);
+
+  // voxels snapshot
+  const voxDump = voxels.map(v => ({
+    x:v.x, y:v.y, level:v.level, base:v.base, active:!!v.active
+  }));
+
+  // trees snapshot (keep trunk height & canopy diameter)
+  const treeDump = Array.from(trees.entries()).map(([key, el])=>{
+    const [xStr,yStr] = key.split(',');
+    const trunkH = parseFloat(el.querySelector('.trunk').style.height) || 0;
+    const dia    = parseFloat(el.querySelector('.canopy').style.width)  || 0;
+    return { x:+xStr, y:+yStr, trunkH, dia };
+  });
+
+  // texts snapshot
+  const textsDump = state.texts.map(t => ({
+    id:t.id, label:t.label, text:t.text, size:t.size, color:t.color, align:t.align, x:t.x, y:t.y,
+    font: t.font?.name || FONTS[0].name, weight:t.weight,
+    outline:t.outline, outlineColor:t.outlineColor, outlineWidth:t.outlineWidth,
+    shadow:t.shadow, shadowOffsetX:t.shadowOffsetX, shadowOffsetY:t.shadowOffsetY,
+    shadowBlur:t.shadowBlur, shadowColor:t.shadowColor, shadowOpacity:t.shadowOpacity
+  }));
+
+  return {
+    schema: "ig-post-designer",
+    version: 2,
+    savedAt: new Date().toISOString(),
+
+    rows, cols, currentLevel, proMode,
+
+    stateMisc: {
+      bg: state.bg,
+      padding: state.padding,
+      grid: state.grid,
+      safeOn: state.safeOn,
+      thirds: state.thirds,
+      voxel: state.voxel
+    },
+
+    activeTextId: state.activeTextId,
+    texts: textsDump,
+
+    ui: { vxScale: +vxScale.value, vxX: +vxX.value, vxY: +vxY.value, edgeW: +edgeW.value },
+
+    colors: {
+      edgeCol: edgeColor.value,
+      groundCol: groundColor.value,
+      groundIn: groundInnerColor.value,
+      treeFill: css.getPropertyValue('--tree-fill').trim()
+    },
+
+    voxels: voxDump,
+    trees: treeDump
+  };
+}
+
+// 2.2 Load from a data object (shared by local + file)
+function loadFromData(data){
+  if (!data || data.schema !== "ig-post-designer") {
+    showToast('Invalid or unknown project file'); return false;
+  }
+
+  // grid size
+  if (Number.isFinite(data.cols) && Number.isFinite(data.rows)){
+    cols = data.cols; rows = data.rows;
+    colsInput.value = cols; rowsInput.value = rows;
+  }
+  initGrid();
+  if (typeof buildGhostHitboxes === 'function') buildGhostHitboxes();
+
+  // colors
+  if (data.colors){
+    if (data.colors.edgeCol)   { edgeColor.value = data.colors.edgeCol; setEdgeColor(data.colors.edgeCol); }
+    if (data.colors.groundCol) { groundColor.value = data.colors.groundCol; setGround(data.colors.groundCol); }
+    if (data.colors.groundIn)  { groundInnerColor.value = data.colors.groundIn; setGroundInner(data.colors.groundIn); }
+    if (data.colors.treeFill)  { document.documentElement.style.setProperty('--tree-fill', data.colors.treeFill); }
+  }
+
+  // misc state
+  if (data.stateMisc){
+    const s = data.stateMisc;
+    state.bg = s.bg;              bgColor.value = rgbToHex(state.bg);
+    state.padding = s.padding;    padding.value = s.padding;
+
+    state.grid = { ...s.grid };
+    gridToggle.textContent  = `Grid: ${state.grid.on?'On':'Off'}`;
+    centerToggle.textContent= `Centered: ${state.grid.centered?'On':'Off'}`;
+    gridSpacing.value = state.grid.spacing;
+    gridAlpha.value   = state.grid.alpha;
+
+    state.safeOn = s.safeOn;  safeToggle.textContent = `Safe: ${state.safeOn?'On':'Off'}`;
+    state.thirds = s.thirds;  ruleThirds.classList.toggle('primary', state.thirds);
+
+    state.voxel = { ...s.voxel };
+    vxScale.value = Math.round(state.voxel.scale*100);
+    $('voxel').style.transform = `translate(-50%,-50%) scale(${state.voxel.scale})`;
+    vxX.value = state.voxel.x;  vxY.value = state.voxel.y;
+    const vEl = $('voxel');
+    vEl.style.left = (state.voxel.x/W*100)+'%';
+    vEl.style.top  = (state.voxel.y/H*100)+'%';
+    edgeW.value = state.voxel.edgeW; setEdgeWidth(state.voxel.edgeW);
+    setEdges(!!state.voxel.edges);
+  }
+
+  // texts
+  if (Array.isArray(data.texts) && data.texts.length){
+    state.texts = data.texts.map(d => ({ ...d, font: FONTS.find(f=>f.name===d.font) || FONTS[0] }));
+    const head = state.texts.find(t=>t.id==='head');
+    const sub  = state.texts.find(t=>t.id==='sub');
+    if (head) state.head = head;
+    if (sub)  state.sub  = sub;
+  } else {
+    state.texts = [state.head, state.sub];
+  }
+  state.activeTextId = data.activeTextId || (state.texts[0]?.id);
+  rebuildTextButtons();
+  syncPanelToActive();
+
+  // voxels
+  if (Array.isArray(data.voxels)){
+    voxels.forEach(v => { v.active=false; v.level=0; v.base=0; });
+    data.voxels.forEach(sv=>{
+      if (sv.x<0 || sv.x>=cols || sv.y<0 || sv.y>=rows) return;
+      const v = voxels[sv.y*cols + sv.x]; if (!v) return;
+      v.level  = +sv.level || 0;
+      v.base   = +sv.base  || 0;
+      v.active = !!sv.active;
+    });
+    buildVoxel(); updateStats();
+  }
+
+  // trees
+  clearAllTrees();
+  if (Array.isArray(data.trees)){
+    data.trees.forEach(t=> placeTreeAt(t.x, t.y, t.trunkH, t.dia));
+  }
+
+  render();
+  showToast('Project loaded');
+  return true;
+}
+
+// 2.3 Keep your existing local save/load, but refactor to use the helpers
+function saveToLocal(){
+  localStorage.setItem(LS_KEY, JSON.stringify(buildPayload()));
+  showToast('Saved locally!');
+}
+function loadFromLocal(){
+  const raw = localStorage.getItem(LS_KEY);
+  if(!raw){ showToast('No local save found'); return false; }
+  try{ return loadFromData(JSON.parse(raw)); }
+  catch(e){ showToast('Corrupt local save'); return false; }
+}
+
+// 2.4 File save / load (many versions)
+function saveToFile(){
+  const payload = buildPayload();
+  const blob = new Blob([JSON.stringify(payload,null,2)], { type:'application/json' });
+  const ts = new Date().toISOString().replace(/[:.]/g,'-');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ig-post-${ts}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('Project file saved');
+}
+
+function loadFromFile(file){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      loadFromData(data);
+    } catch(err){
+      alert('Error reading project file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// 2.5 Wire up the new buttons
+$('saveFileBtn').addEventListener('click', saveToFile);
+$('loadFileBtn').addEventListener('click', () => $('loadFileInput').click());
+$('loadFileInput').addEventListener('change', (e) => {
+  const file = e.target.files?.[0];
+  if (file) loadFromFile(file);
+  e.target.value = ''; // allow re-selecting same file later
+});
+
 
 /* ====== Save / Load ====== */
 const LS_KEY = 'ig_post_designer_v2';
