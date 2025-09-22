@@ -267,6 +267,33 @@
       <div class="row"><span class="mini-label">Ground Inset</span><input type="color" id="groundInnerColor" value="#3a3a3a"/></div>
     </div>
 
+    <!-- Tree Controls -->
+<div class="group" id="treeControls" style="display:none;">
+  <label>Trees</label>
+  <div class="row">
+    <label>Trunk H (min)
+      <input type="number" id="treeTrunkMin" value="18" min="0" max="300">
+    </label>
+    <label>Max
+      <input type="number" id="treeTrunkMax" value="60" min="0" max="300">
+    </label>
+  </div>
+  <div class="row">
+    <label>Canopy Ø (min)
+      <input type="number" id="treeDiaMin" value="28" min="0" max="300">
+    </label>
+    <label>Max
+      <input type="number" id="treeDiaMax" value="82" min="0" max="300">
+    </label>
+  </div>
+  <div class="row">
+    <input type="color" id="treeColor" title="Tree color" value="#00D1B2">
+    <button id="rerollTreesBtn">Regenerate Sizes</button>
+    <button id="deleteTreesBtn">🗑️ Clear Trees</button>
+  </div>
+</div>
+
+
     <!-- Generic Text Panel -->
     <div class="group" id="textControls">
       <label>Text <span id="tWho" style="color:#9aa0a6"></span></label>
@@ -499,6 +526,16 @@ const safeToggle=$('safeToggle'), ruleThirds=$('ruleThirds'), reset=$('reset'), 
 const edgeColor=$('edgeColor'), groundColor=$('groundColor'), groundInnerColor=$('groundInnerColor');
 const edgeW=$('edgeW'), vxScale=$('vxScale'), vxX=$('vxX'), vxY=$('vxY'), snapCenter=$('snapCenter'), edgesToggle=$('edgesToggle');
 const colsInput=$('colsInput'), rowsInput=$('rowsInput'), resizeGridBtn=$('resizeGridBtn'), levelBtn=$('levelBtn'), drawAllBtn=$('drawAllBtn'), deleteBtn=$('deleteBtn'), ideasBtn=$('ideasBtn'), proModeBtn=$('proModeBtn');
+
+/* tree controls */
+const treeControls   = $('treeControls');
+const treeTrunkMin   = $('treeTrunkMin');
+const treeTrunkMax   = $('treeTrunkMax');
+const treeDiaMin     = $('treeDiaMin');
+const treeDiaMax     = $('treeDiaMax');
+const treeColor      = $('treeColor');
+const rerollTreesBtn = $('rerollTreesBtn');
+const deleteTreesBtn = $('deleteTreesBtn');
 
 /* voxel DOM */
 const grid = $('grid'), areaInfo=$('areaInfo'), priceInfo=$('priceInfo');
@@ -956,7 +993,7 @@ function setHitboxesForMode(){
 
 function setMode(mode){
   state.mode = mode; // 'text' | 'vox' | 'tree'
-
+treeControls.style.display = (mode === 'tree') ? '' : 'none';
   // button states
   Object.values(modeButtons).forEach(b => b.classList.remove('active'));
   Object.values(textButtons).forEach(b => b.classList.remove('active'));
@@ -1040,6 +1077,24 @@ const tKey = (x,y)=>`${x},${y}`;
 function randInt(min, max){ return Math.floor(Math.random()*(max-min+1))+min; }
 function tileBox(x, y){ return { left:(x-y)*offsetX + baseLeft, top:(x+y)*offsetY + baseTop }; }
 
+function clampNum(n, lo, hi){ return Math.max(lo, Math.min(hi, n)); }
+function ensureMinMax(minEl, maxEl){
+  let a = +minEl.value, b = +maxEl.value;
+  if (a > b) { [a,b] = [b,a]; minEl.value = a; maxEl.value = b; }
+  return [a,b];
+}
+function updateTreeRngFromInputs(){
+  const [tmin, tmax] = ensureMinMax(treeTrunkMin, treeTrunkMax);
+  const [dmin, dmax] = ensureMinMax(treeDiaMin, treeDiaMax);
+  TREE_RNG.minTrunk = clampNum(tmin, 0, 1000);
+  TREE_RNG.maxTrunk = clampNum(tmax, 0, 1000);
+  TREE_RNG.minDia   = clampNum(dmin, 0, 1000);
+  TREE_RNG.maxDia   = clampNum(dmax, 0, 1000);
+}
+function updateDeleteTreesAvailability() {
+  deleteTreesBtn.disabled = (trees.size === 0);
+}
+
 function placeTreeAt(x,y, trunkHOverride=null, diaOverride=null){
   const key = tKey(x, y);
   if (trees.has(key)) return;
@@ -1070,10 +1125,20 @@ function placeTreeAt(x,y, trunkHOverride=null, diaOverride=null){
   wrap.appendChild(canopy);
   grid.appendChild(wrap);
   trees.set(key, wrap);
+    updateDeleteTreesAvailability();
 }
 function regenerateTreeAt(x,y){ removeTreeAt(x,y); placeTreeAt(x,y); }
-function removeTreeAt(x,y){ const el = trees.get(tKey(x,y)); if (!el) return; el.remove(); trees.delete(tKey(x,y)); }
-function clearAllTrees(){ for (const el of trees.values()) el.remove(); trees.clear(); }
+function removeTreeAt(x,y){
+  const el = trees.get(tKey(x,y)); if (!el) return;
+  el.remove(); trees.delete(tKey(x,y));
+  updateDeleteTreesAvailability();
+}
+
+function clearAllTrees(){
+  for (const el of trees.values()) el.remove();
+  trees.clear();
+  updateDeleteTreesAvailability();
+}
 
 function createFace(x,y,z,type){
   const face=document.createElement('div'); face.className=`face ${type}`;
@@ -1254,6 +1319,33 @@ resizeGridBtn.addEventListener('click',()=>{
   if(isNaN(newRows)||isNaN(newCols)||newRows<1||newCols<1){ alert('Invalid grid size.'); return; }
   rows=newRows; cols=newCols; initGrid(); clearAllTrees();
 });
+
+[treeTrunkMin, treeTrunkMax, treeDiaMin, treeDiaMax].forEach(el=>{
+  el.addEventListener('input', updateTreeRngFromInputs);
+});
+
+treeColor.addEventListener('input', (e)=>{
+  document.documentElement.style.setProperty('--tree-fill', e.target.value);
+  trees.forEach(el=>{
+    el.querySelector('.trunk').style.background = e.target.value;
+    el.querySelector('.canopy').style.background = e.target.value;
+  });
+});
+
+rerollTreesBtn.addEventListener('click', ()=>{
+  const coords = Array.from(trees.keys()).map(k => {
+    const [x,y] = k.split(',').map(Number); return {x,y};
+  });
+  coords.forEach(({x,y}) => regenerateTreeAt(x,y));
+  showToast('Trees regenerated with new sizes');
+  updateDeleteTreesAvailability();
+});
+
+deleteTreesBtn.addEventListener('click', ()=>{
+  clearAllTrees();
+  showToast('All trees removed');
+});
+
 
 document.getElementById('importInput').addEventListener('change',function(e){
   const file=e.target.files[0]; if(!file) return;
@@ -1767,6 +1859,6 @@ textSeq = 3;
   setEdgeColor(edgeColor.value); setGround(groundColor.value); setGroundInner(groundInnerColor.value);
 })();
 </script>
-</body>
+</body> 
 </html>
  
