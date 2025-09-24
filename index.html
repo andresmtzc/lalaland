@@ -1450,6 +1450,23 @@ body.fonts-loaded .side-length-label {
   color: #ff8400;
   background-color:transparent;
 }
+
+/* Ensure info page has natural scrolling */
+#lotModal.info-mode .modal-info {
+  overflow-y: auto !important;
+  scroll-snap-type: none !important;
+}
+
+/* Disable wheel snapping for info page */
+#lotModal.info-mode .modal-info::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keep infinite scroll behavior for lot mode */
+#lotModal.lot-mode .modal-info {
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+}
   </style>
 </head>
  
@@ -2966,10 +2983,73 @@ const headerLotNumber = document.getElementById('headerLotNumber');
 //scroll thumb for info page
 let infoScrollUpdater = null;
 
+// ===== INFINITE SCROLLBAR (for lot list) =====
+function enableInfiniteScrollbar() {
+  const modalInfoEl = document.getElementById('modalInfo');
+  const bar = document.getElementById('customScrollbar');
+  const thumb = document.getElementById('customScrollthumb');
+
+  // Remove any existing listeners
+  disableInfoScrollbar();
+  disableInfiniteScrollbar();
+
+  const update = () => {
+    if (baseLots.length === 0) {
+      thumb.style.height = '0px';
+      thumb.style.transform = 'translateY(0)';
+      return;
+    }
+
+    const containerHeight = modalInfoEl.clientHeight;
+    const contentHeight = modalInfoEl.scrollHeight;
+    const scrollTop = modalInfoEl.scrollTop;
+
+    const rowHeight = contentHeight / lots.length;
+    const bufferHeight = rowHeight * cloneCount;
+    const baseHeight = rowHeight * baseLots.length;
+
+    const thumbHeight = Math.max(20, (containerHeight / contentHeight) * containerHeight);
+    thumb.style.height = `${thumbHeight}px`;
+
+    let baseScrollTop = ((scrollTop - bufferHeight) % baseHeight);
+    if (baseScrollTop < 0) baseScrollTop += baseHeight;
+    baseScrollTop = Math.min(baseScrollTop, baseHeight - containerHeight);
+
+    const scrollRatio = baseScrollTop / (baseHeight - containerHeight);
+    const thumbPosition = scrollRatio * (containerHeight - thumbHeight);
+
+    thumb.style.transform = `translateY(${thumbPosition}px)`;
+  };
+
+  // Store the update function for cleanup
+  window.infiniteScrollUpdater = update;
+  
+  bar.style.display = '';
+  update();
+  
+  // Use the existing scroll handler for infinite scroll
+  modalInfoEl.addEventListener('scroll', handleScroll);
+  window.addEventListener('resize', update);
+}
+
+function disableInfiniteScrollbar() {
+  const modalInfoEl = document.getElementById('modalInfo');
+  if (window.infiniteScrollUpdater) {
+    modalInfoEl.removeEventListener('scroll', handleScroll);
+    window.removeEventListener('resize', window.infiniteScrollUpdater);
+    window.infiniteScrollUpdater = null;
+  }
+}
+
+// ===== NATURAL SCROLLBAR (for info page) =====
 function enableInfoScrollbar() {
   const modalInfoEl = document.getElementById('modalInfo');
-  const bar   = document.getElementById('customScrollbar');
+  const bar = document.getElementById('customScrollbar');
   const thumb = document.getElementById('customScrollthumb');
+
+  // Remove any existing listeners
+  disableInfiniteScrollbar();
+  disableInfoScrollbar();
 
   const update = () => {
     const H = modalInfoEl.scrollHeight;
@@ -2988,19 +3068,22 @@ function enableInfoScrollbar() {
     thumb.style.transform = `translateY(${top}px)`;
   };
 
-  infoScrollUpdater = update;
+  // Store the update function for cleanup
+  window.infoScrollUpdater = update;
+  
   bar.style.display = '';
   update();
+  
   modalInfoEl.addEventListener('scroll', update);
   window.addEventListener('resize', update);
 }
 
 function disableInfoScrollbar() {
   const modalInfoEl = document.getElementById('modalInfo');
-  if (infoScrollUpdater) {
-    modalInfoEl.removeEventListener('scroll', infoScrollUpdater);
-    window.removeEventListener('resize', infoScrollUpdater);
-    infoScrollUpdater = null;
+  if (window.infoScrollUpdater) {
+    modalInfoEl.removeEventListener('scroll', window.infoScrollUpdater);
+    window.removeEventListener('resize', window.infoScrollUpdater);
+    window.infoScrollUpdater = null;
   }
 }
 
@@ -3434,31 +3517,19 @@ const isSold     = state.toLowerCase() === 'sold';
 }
 
 function updateScrollbar() {
-  const containerHeight = modalInfo.clientHeight;
-  const contentHeight = modalInfo.scrollHeight;
-  const scrollTop = modalInfo.scrollTop;
-
-  if (baseLots.length === 0 || contentHeight === 0) {
-    customScrollthumb.style.height = '0px';
-    customScrollthumb.style.transform = 'translateY(0)';
-    return;
+  if (infoMode) {
+    // Info page uses natural scrolling
+    if (window.infoScrollUpdater) {
+      window.infoScrollUpdater();
+    }
+  } else {
+    // Lot list uses infinite scrolling
+    if (window.infiniteScrollUpdater) {
+      window.infiniteScrollUpdater();
+    } else {
+      enableInfiniteScrollbar();
+    }
   }
-
-  const rowHeight = contentHeight / lots.length;
-  const bufferHeight = rowHeight * cloneCount;
-  const baseHeight = rowHeight * baseLots.length;
-
-  const thumbHeight = Math.max(20, (containerHeight / contentHeight) * containerHeight);
-  customScrollthumb.style.height = `${thumbHeight}px`;
-
-  let baseScrollTop = ((scrollTop - bufferHeight) % baseHeight);
-  if (baseScrollTop < 0) baseScrollTop += baseHeight;
-  baseScrollTop = Math.min(baseScrollTop, baseHeight - containerHeight);
-
-  const scrollRatio = baseScrollTop / (baseHeight - containerHeight);
-  const thumbPosition = scrollRatio * (containerHeight - thumbHeight);
-
-  customScrollthumb.style.transform = `translateY(${thumbPosition}px)`;
 }
 
 function scrollToBaseIndex(baseIndex, smooth = true) {
@@ -3808,6 +3879,9 @@ function openModal(lot = null, baseIndex = 0) {
     spinnerEl.style.display = 'none';
     scrollHandlerAttached = false;
     infoMode = false;
+    
+    // ✅ Use natural scrollbar for info page
+    enableInfoScrollbar();
     return;
   }
 
@@ -3820,12 +3894,11 @@ function openModal(lot = null, baseIndex = 0) {
 
     scrollToBaseIndex(scrollToIndex, false);
 
-    // show list once content exists
     setTimeout(() => {
       highlightCenter();
-      updateScrollbar();
-      spinnerEl.style.display = 'none';   // hide spinner after render
-      modalInfoEl.style.opacity = '1';    // fade in the list
+      updateScrollbar(); // This will call enableInfiniteScrollbar via handleScroll
+      spinnerEl.style.display = 'none';
+      modalInfoEl.style.opacity = '1';
     }, 0);
   };
 
@@ -4085,6 +4158,9 @@ function closeModal() {
   // --- 7) Close modal (let CSS transition run)
   modal.classList.remove('show');
   setTimeout(() => { modal.style.display = 'none'; }, 300);
+
+    disableInfiniteScrollbar();
+  disableInfoScrollbar();
 }
 
 
@@ -5730,7 +5806,7 @@ const setupAuthListener = setInterval(function() {
 })();
 </script>
 
-
+ 
  
 
 
