@@ -1467,6 +1467,29 @@ body.fonts-loaded .side-length-label {
   overflow-y: scroll;
   scroll-snap-type: y mandatory;
 }
+
+/* Fix for mobile scrolling in info mode */
+#lotModal.info-mode .modal-info {
+  overflow-y: auto !important;
+  scroll-snap-type: none !important;
+  -webkit-overflow-scrolling: touch !important; /* Important for iOS */
+}
+
+/* Disable all the infinite scroll behaviors for info mode */
+#lotModal.info-mode .modal-info {
+  scroll-snap-type: none;
+}
+
+#lotModal.info-mode .info-row {
+  scroll-snap-align: none;
+  height: auto !important;
+  min-height: 80px;
+}
+
+/* Ensure custom scrollbar is visible */
+.custom-scrollbar {
+  display: block !important;
+}
   </style>
 </head>
  
@@ -2981,28 +3004,34 @@ const detailAvailability = document.getElementById('detailAvailability');
 const headerLotNumber = document.getElementById('headerLotNumber');
 
 //scroll thumb for info page
+let infiniteScrollUpdater = null;
 let infoScrollUpdater = null;
 
 // ===== INFINITE SCROLLBAR (for lot list) =====
 function enableInfiniteScrollbar() {
+  console.log('Enabling INFINITE scrollbar');
   const modalInfoEl = document.getElementById('modalInfo');
   const bar = document.getElementById('customScrollbar');
   const thumb = document.getElementById('customScrollthumb');
 
-  // Remove any existing listeners
+  // Clean up any existing scrollbars first
   disableInfoScrollbar();
-  disableInfiniteScrollbar();
+  if (infiniteScrollUpdater) {
+    disableInfiniteScrollbar();
+  }
 
   const update = () => {
-    if (baseLots.length === 0) {
-      thumb.style.height = '0px';
-      thumb.style.transform = 'translateY(0)';
-      return;
-    }
+    if (!modalInfoEl || baseLots.length === 0) return;
 
     const containerHeight = modalInfoEl.clientHeight;
     const contentHeight = modalInfoEl.scrollHeight;
     const scrollTop = modalInfoEl.scrollTop;
+
+    if (contentHeight === 0) {
+      thumb.style.height = '0px';
+      thumb.style.transform = 'translateY(0)';
+      return;
+    }
 
     const rowHeight = contentHeight / lots.length;
     const bufferHeight = rowHeight * cloneCount;
@@ -3021,37 +3050,43 @@ function enableInfiniteScrollbar() {
     thumb.style.transform = `translateY(${thumbPosition}px)`;
   };
 
-  // Store the update function for cleanup
-  window.infiniteScrollUpdater = update;
+  infiniteScrollUpdater = update;
   
   bar.style.display = '';
   update();
   
-  // Use the existing scroll handler for infinite scroll
+  // Remove any existing scroll listener first
+  modalInfoEl.removeEventListener('scroll', handleScroll);
   modalInfoEl.addEventListener('scroll', handleScroll);
   window.addEventListener('resize', update);
 }
 
 function disableInfiniteScrollbar() {
+  console.log('Disabling INFINITE scrollbar');
   const modalInfoEl = document.getElementById('modalInfo');
-  if (window.infiniteScrollUpdater) {
+  if (infiniteScrollUpdater) {
     modalInfoEl.removeEventListener('scroll', handleScroll);
-    window.removeEventListener('resize', window.infiniteScrollUpdater);
-    window.infiniteScrollUpdater = null;
+    window.removeEventListener('resize', infiniteScrollUpdater);
+    infiniteScrollUpdater = null;
   }
 }
 
 // ===== NATURAL SCROLLBAR (for info page) =====
 function enableInfoScrollbar() {
+  console.log('Enabling INFO scrollbar');
   const modalInfoEl = document.getElementById('modalInfo');
   const bar = document.getElementById('customScrollbar');
   const thumb = document.getElementById('customScrollthumb');
 
-  // Remove any existing listeners
+  // Clean up infinite scroll first
   disableInfiniteScrollbar();
-  disableInfoScrollbar();
+  if (infoScrollUpdater) {
+    disableInfoScrollbar();
+  }
 
   const update = () => {
+    if (!modalInfoEl) return;
+    
     const H = modalInfoEl.scrollHeight;
     const h = modalInfoEl.clientHeight;
     const t = modalInfoEl.scrollTop;
@@ -3068,24 +3103,28 @@ function enableInfoScrollbar() {
     thumb.style.transform = `translateY(${top}px)`;
   };
 
-  // Store the update function for cleanup
-  window.infoScrollUpdater = update;
+  infoScrollUpdater = update;
   
   bar.style.display = '';
   update();
   
+  // Remove any existing scroll listeners first
+  modalInfoEl.removeEventListener('scroll', update);
   modalInfoEl.addEventListener('scroll', update);
   window.addEventListener('resize', update);
 }
 
 function disableInfoScrollbar() {
+  console.log('Disabling INFO scrollbar');
   const modalInfoEl = document.getElementById('modalInfo');
-  if (window.infoScrollUpdater) {
-    modalInfoEl.removeEventListener('scroll', window.infoScrollUpdater);
-    window.removeEventListener('resize', window.infoScrollUpdater);
-    window.infoScrollUpdater = null;
+  if (infoScrollUpdater) {
+    modalInfoEl.removeEventListener('scroll', infoScrollUpdater);
+    window.removeEventListener('resize', infoScrollUpdater);
+    infoScrollUpdater = null;
   }
 }
+
+
 
 
 let cloneCount = 5;
@@ -3516,16 +3555,21 @@ const isSold     = state.toLowerCase() === 'sold';
   updateScrollbar();
 }
 
+// ===== SIMPLIFIED updateScrollbar =====
 function updateScrollbar() {
-  if (infoMode) {
-    // Info page uses natural scrolling
-    if (window.infoScrollUpdater) {
-      window.infoScrollUpdater();
+  const modal = document.getElementById('lotModal');
+  
+  if (modal.classList.contains('info-mode')) {
+    // Info page - use natural scrollbar
+    if (infoScrollUpdater) {
+      infoScrollUpdater();
+    } else {
+      enableInfoScrollbar();
     }
   } else {
-    // Lot list uses infinite scrolling
-    if (window.infiniteScrollUpdater) {
-      window.infiniteScrollUpdater();
+    // Lot list - use infinite scrollbar
+    if (infiniteScrollUpdater) {
+      infiniteScrollUpdater();
     } else {
       enableInfiniteScrollbar();
     }
@@ -3622,7 +3666,15 @@ function highlightCenter(isClamping = false) {
 
 
 
+// ===== FIXED clampScroll FUNCTION =====
 function clampScroll() {
+  const modal = document.getElementById('lotModal');
+  
+  // DON'T clamp if we're in info mode
+  if (modal.classList.contains('info-mode')) {
+    return;
+  }
+  
   if (baseLots.length === 0 || lots.length === 0 || clampCooldown) return;
 
   const { scrollTop, scrollHeight, clientHeight } = modalInfo;
@@ -3658,6 +3710,17 @@ function clampScroll() {
 }
 
 function stopDragging() {
+  const modal = document.getElementById('lotModal');
+  
+  // Only apply infinite scroll snapping in LOT mode
+  if (modal.classList.contains('info-mode')) {
+    isDragging = false;
+    isScrollbarDragging = false;
+    customScrollthumb.classList.remove('active');
+    modalInfo.classList.remove('dragging');
+    return; // No snapping in info mode
+  }
+  
   if (!isDragging && !isScrollbarDragging) return;
   
   isDragging = false;
@@ -3729,6 +3792,14 @@ modalInfo.addEventListener('pointerdown', (e) => {
 });
 
 function handleContentDrag(e) {
+
+const modal = document.getElementById('lotModal');
+
+  // Don't apply infinite scroll drag behavior in info mode
+  if (modal.classList.contains('info-mode')) {
+    return; // Let the browser handle natural scrolling
+  }
+
   if (isDragging) {
     const deltaY = dragStartY - e.clientY;
     modalInfo.scrollTop = dragStartScroll + deltaY;
@@ -3763,29 +3834,38 @@ function stopContentDrag() {
   }
 }
 
+// ===== FIXED handleScroll FUNCTION =====
 function handleScroll() {
-  if (!scrollHandlerAttached) return;
+  const modal = document.getElementById('lotModal');
   
-  requestAnimationFrame(() => {
-    highlightCenter();
-    updateScrollbar();
-    
-    if (!isDragging && !isScrollbarDragging) {
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        clampScroll();
-      }, 100);
-    }
-  });
+  // Always update the scrollbar visual position
+  updateScrollbar();
+  
+  // Only run infinite scroll logic for LOT mode (not info mode)
+  if (modal.classList.contains('lot-mode') && scrollHandlerAttached) {
+    requestAnimationFrame(() => {
+      highlightCenter();
+      
+      if (!isDragging && !isScrollbarDragging) {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+          clampScroll();
+        }, 100);
+      }
+    });
+  }
 }
 
 modalInfo.addEventListener('scroll', handleScroll);
 
 modalInfo.addEventListener('wheel', (e) => {
-    // Allow native scroll in INFO mode
-  if (modal.classList.contains('info-mode')) return;
+  const modal = document.getElementById('lotModal');
+  // Allow natural scrolling in INFO mode
+  if (modal.classList.contains('info-mode')) {
+    return; // Let the browser handle scrolling naturally
+  }
 
-  // List mode behavior (snap / prevent default)
+  // Only apply infinite scroll behavior in LOT mode
   e.preventDefault();
   if(isDragging || isScrollbarDragging) return;
 
@@ -3867,12 +3947,13 @@ function openModal(lot = null, baseIndex = 0) {
 
   // 🔸 INFO MODE short-circuit (your existing block)
   if (infoMode) {
-    modal.classList.add('expanded');
+    modal.classList.add('expanded', 'info-mode');
     modalInfoEl.innerHTML = `
-      <div style="padding:20px; color:#8a8880;">
+      <div style="padding:20px; color:#8a8880; height:2000px;"> <!-- Added height for testing -->
         <h2 style="color:#a17345; margin-bottom:10px;">Sobre Santte 2</h2>
         <p>Bienvenido a Santte 2. Aquí puedes poner descripción, ubicación, beneficios, etc.</p>
         <p>Para más información contáctanos por WhatsApp o visita nuestras oficinas.</p>
+        <div style="height:1000px; background:linear-gradient(#f0f0f0, #e0e0e0);"></div>
       </div>
     `;
     customScrollbarEl.style.display = '';
@@ -3881,12 +3962,18 @@ function openModal(lot = null, baseIndex = 0) {
     infoMode = false;
     
     // ✅ Use natural scrollbar for info page
-    enableInfoScrollbar();
+    setTimeout(() => {
+      enableInfoScrollbar();
+      // Reset scroll position to top
+      modalInfoEl.scrollTop = 0;
+    }, 100);
+    
     return;
   }
 
   // 👇 Normal list flow
   modal.classList.add('lot-mode');
+  modal.classList.remove('info-mode');
   const doScrollAndHighlight = () => {
     const scrollToIndex = lot
       ? baseLots.findIndex(l => l.number === extractLotNumber(lot.name))
