@@ -1490,7 +1490,7 @@ body.fonts-loaded .side-length-label {
 
 
     <div class="header-title">
-      LOTES VENTA — <span id="headerFracc">SANTTE</span><span class="header-lot-number" id="headerLotNumber"></span>
+      <span id="headerFracc">SANTTE</span><span class="header-lot-number" id="headerLotNumber"></span>
     </div>
 
 <!-- AUTH controls -->
@@ -2968,8 +2968,14 @@ let infoScrollUpdater = null;
 
 function enableInfoScrollbar() {
   const modalInfoEl = document.getElementById('modalInfo');
-  const bar   = document.getElementById('customScrollbar');
+  const bar = document.getElementById('customScrollbar');
   const thumb = document.getElementById('customScrollthumb');
+
+  // Clear any existing scroll handlers
+  if (infoScrollUpdater) {
+    modalInfoEl.removeEventListener('scroll', infoScrollUpdater);
+    window.removeEventListener('resize', infoScrollUpdater);
+  }
 
   const update = () => {
     const H = modalInfoEl.scrollHeight;
@@ -2991,8 +2997,13 @@ function enableInfoScrollbar() {
   infoScrollUpdater = update;
   bar.style.display = '';
   update();
+  
+  // Add scroll listeners for smooth scrolling
   modalInfoEl.addEventListener('scroll', update);
   window.addEventListener('resize', update);
+  
+  // Enable normal scrolling behavior for FAQ content
+  modalInfoEl.style.overflowY = 'auto';
 }
 
 function disableInfoScrollbar() {
@@ -3002,6 +3013,9 @@ function disableInfoScrollbar() {
     window.removeEventListener('resize', infoScrollUpdater);
     infoScrollUpdater = null;
   }
+  
+  // Reset overflow if needed
+  modalInfoEl.style.overflowY = '';
 }
 
 
@@ -3693,7 +3707,8 @@ function stopContentDrag() {
 }
 
 function handleScroll() {
-  if (!scrollHandlerAttached) return;
+  // Don't process scroll events in info mode or when scroll handling is disabled
+  if (!scrollHandlerAttached || modal.classList.contains('info-mode')) return;
   
   requestAnimationFrame(() => {
     highlightCenter();
@@ -3813,6 +3828,11 @@ function openModal(lot = null, baseIndex = 0) {
 
   // 👇 Normal list flow
   modal.classList.add('lot-mode');
+
+if (typeof window.restoreModalHeader === 'function') {
+  window.restoreModalHeader();
+}
+
   const doScrollAndHighlight = () => {
     const scrollToIndex = lot
       ? baseLots.findIndex(l => l.number === extractLotNumber(lot.name))
@@ -3999,7 +4019,12 @@ function openModal(lot = null, baseIndex = 0) {
 
 function closeModal() {
 
-  
+  restoreModalHeader();      // <-- add this line
+
+  if (modal.classList.contains('info-mode')) {
+    disableInfoScrollbar();
+  }
+
   const modal = document.getElementById('lotModal');
   if (!modal) return;
 
@@ -4161,6 +4186,7 @@ infoBtn.addEventListener('click', () => {
   modal.classList.add('info-mode');   // <-- add this
 modal.classList.remove('lot-mode');
   // Force expanded mode (your existing behavior)
+    setModalHeaderForInfo();
   modal.classList.add('expanded');
 
   const modalInfo = document.getElementById('modalInfo');
@@ -4175,7 +4201,7 @@ modal.classList.remove('lot-mode');
 
 <h2 style="color:#a17345; margin:0 0 10px 0;">☁️ Bienvenido a <strong>Lalaland</strong></h2>
 
-  <p><em>Así como tus fotos viven en la nube</em>, ahora tu <strong>tierra</strong> también.</p>
+  <p ><em>Así como tus fotos viven en la nube</em>, ahora tu <strong>tierra</strong> también.</p>
 
   <p><strong>Lalaland</strong> es la nube para terrenos.<br>
 
@@ -4445,8 +4471,10 @@ modal.classList.remove('lot-mode');
 
   `;
   customScrollbar.style.display = '';
-  // ✅ enable custom scrollbar for FAQ
-enableInfoScrollbar();
+  scrollHandlerAttached = false; // Disable lot-specific scroll handling
+  
+  // Enable proper scrolling for FAQ content
+  enableInfoScrollbar();
 });
 
 
@@ -5872,7 +5900,36 @@ const setupAuthListener = setInterval(function() {
 </script>
 
 
- 
+<script>
+// === Header text for INFO mode (FIXED SELECTOR) ===
+(() => {
+  const INFO_HEADER_HTML = '☁️ Bienvenido a <strong>Lalaland</strong>';
+  let __savedHeaderHTML = null;
+
+  function getModalHeaderEl() {
+    // Your markup uses .header-title inside .modal-header
+    return document.querySelector('#lotModal .modal-header .header-title')
+        || document.querySelector('#lotModal .modal-header h2')
+        || document.querySelector('#lotModal h2');
+  }
+
+  window.setModalHeaderForInfo = function() {
+    const el = getModalHeaderEl();
+    if (!el) return;
+    if (__savedHeaderHTML == null) __savedHeaderHTML = el.innerHTML; // save once
+    el.innerHTML = INFO_HEADER_HTML;
+  };
+
+  window.restoreModalHeader = function() {
+    const el = getModalHeaderEl();
+    if (!el || __savedHeaderHTML == null) return;
+    el.innerHTML = __savedHeaderHTML;
+    __savedHeaderHTML = null; // clear once restored
+  };
+})();
+</script>
+
+
 
 
 
