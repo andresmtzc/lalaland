@@ -496,7 +496,7 @@
 
 /* Apply to the arrow */
 .wiggle-arrow {
-  animation: arrow-bounce 0.35s ease-in-out infinite alternate;
+  animation: arrow-wiggle 0.35s ease-in-out infinite alternate;
 }
 
 .close-x {
@@ -3269,12 +3269,8 @@ function setupLotClickHandlers() {
 
       if (status === 'sold') return;
 
-      if (status === 'available') {
-        showCta("¡Este lote también tiene mucho potencial\n¿lo vemos juntos? Escríbenos por WhatsApp.");
-        return;
-      }
 
-      if (status === 'featured') {
+      if (status === 'featured' || status === 'available')  {
         // Save map state
         if (map && map.getCenter) {
           preModalView = {
@@ -3329,36 +3325,59 @@ function setupLotClickHandlers() {
   });
 }
 
+
 async function showDetailViewForLot(index, isSwitchingLots = false) {
-  // Only clear previous details if we're not switching between lots
-  if (!isSwitchingLots) {
-    lotDetails.innerHTML = '';
-  }
-  isDetailOpen = true;
-  // Get the pre-fetched lot data
-  const lot = lots[index];
-  const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
+  // ---- DOM refs
+  const modalEl        = document.getElementById('lotModal');
+  const lotDetails     = document.getElementById('lotDetails');
+  const calendlyEl     = document.getElementById('calendlyEmbed');
+  const contentWrapper = document.querySelector('.modal-content-wrapper');
+  const bottomPlusEl   = document.querySelector('.bottom-plus-button');
+  const plusBtnEl      = document.querySelector('.plus-button');
+  const backBtnEl      = document.getElementById('backButton');
+
+  // ---- Data
+  const lot = lots?.[index];
+  if (!lot) return;
+
+  const status = String(lot.availability || '').toLowerCase();
+  if (status === 'sold') return; // never open detail for sold
+
+  const lotMapData = Array.isArray(lotData)
+    ? lotData.find(l => extractLotNumber(l.name) === lot.number)
+    : null;
+
   const detailData = lot.detailData || {};
 
-  // If we're switching lots, remove old labels first
-  if (isSwitchingLots && currentLabeledLot) {
+  // ---- UI prep
+  isDetailOpen = true;
+
+  // Close Calendly if left open
+  if (calendlyEl) calendlyEl.style.display = 'none';
+
+  // Always clear old detail before building a new one (avoid duplicates)
+  if (lotDetails) {
+    lotDetails.classList.remove('active');
+    lotDetails.innerHTML = '';
+  }
+
+  // If switching between lots, remove old side-length labels
+  if (isSwitchingLots && typeof removeSideLengthLabels === 'function' && currentLabeledLot) {
     removeSideLengthLabels();
   }
-  
-  // ✅ ensure lot detail view is NOT in pin-mode
-const modalEl = document.getElementById('lotModal');
-modalEl.classList.remove('pin-mode');
-modal.classList.remove('lot-mode');
 
-// ✅ clear any inline hiding left from pin mode
-const bottomPlusEl = document.querySelector('.bottom-plus-button');
-if (bottomPlusEl) bottomPlusEl.style.display = '';
-const plusBtnEl = document.querySelector('.plus-button');
-if (plusBtnEl) plusBtnEl.style.display = '';
-const backBtnEl = document.getElementById('backButton');
-if (backBtnEl) backBtnEl.style.display = '';
+  // Ensure we are not in pin/lot mode; switch to info (detail) mode
+  if (modalEl) {
+    modalEl.classList.remove('pin-mode', 'lot-mode');
+    modalEl.classList.add('info-mode');
+  }
 
-  // Create container for detail view
+  // Re-show controls that pin mode may hide
+  if (bottomPlusEl) bottomPlusEl.style.display = '';
+  if (plusBtnEl) plusBtnEl.style.display = '';
+  if (backBtnEl) backBtnEl.style.display = '';
+
+  // ---- Build container
   const detailContainer = document.createElement('div');
   detailContainer.className = 'detail-container';
 
@@ -3366,116 +3385,105 @@ if (backBtnEl) backBtnEl.style.display = '';
   const headerSection = document.createElement('div');
   headerSection.className = 'detail-header';
 
-  // Tag row with LALALAND SELECTION and nickname
-const state = (lot.availability ?? '').toString().toLowerCase();
-headerSection.innerHTML = `
-  <div class="tag-row">
-    ${state === 'featured' ? '<div class="featured-tag">SELECCIÓN LALALAND</div>' : ''}
-    <div class="nickname">${detailData.nickname || 'Lot ' + lot.number}</div>
-  </div>
-  ${detailData.subtitle ? `<div class="subtitle-row">${detailData.subtitle}</div>` : ''}
-`;
+  const nickname = detailData.nickname || ('Lot ' + lot.number);
+  const subtitle = detailData.subtitle || (lotMapData?.subtitle || '');
+  const isFeatured = status === 'featured';
+
+  headerSection.innerHTML = `
+    <div class="tag-row">
+      ${isFeatured ? '<div class="featured-tag">SELECCIÓN LALALAND</div>' : ''}
+      <div class="nickname">${nickname}</div>
+    </div>
+    ${subtitle ? `<div class="subtitle-row">${subtitle}</div>` : ''}
+  `;
   detailContainer.appendChild(headerSection);
 
   // ===== PRICE/SIZE ROW =====
   const detailRow = document.createElement('div');
   detailRow.className = 'detail-data-row';
-  
-  // Calculate price per m2
+
   const price = parseFloat(lot.price);
-  const size = parseFloat(lot.size);
+  const size  = parseFloat(lot.size);
   let pricePerM2Formatted = 'N/A';
-  
   if (price > 0 && size > 0) {
-    const pricePerM2 = (price * 1000000) / size;
+    const pricePerM2 = (price * 1_000_000) / size;
     pricePerM2Formatted = `$${pricePerM2.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<sup class="sup">/M2</sup>`;
   }
 
-  // Build the price/size row
   detailRow.innerHTML = `
     <div class="lot-left">
       <div class="lote-label">LOTE</div>
       <div class="lote-number">${lot.number}</div>
     </div>
-    
+
     <div class="lot-middle">
       ${lot.size}<span class="sup">M2</span>
     </div>
-    
+
     <div class="lot-price">
       <div class="price-wrapper">
         <span class="price">$${lot.price}</span>
         <span class="mdp">MDP</span>
       </div>
     </div>
-    
-    <div class="price-per-m2-column">
-      ${pricePerM2Formatted}
-    </div>
+
+    <div class="price-per-m2-column">${pricePerM2Formatted}</div>
   `;
   detailContainer.appendChild(detailRow);
 
-  // ===== IMAGE ROW =====
-  const image = new Image();  // Create an image element
-  image.src = detailData.image || lotMapData.image || 'https://via.placeholder.com/800x400?text=No+Image+Available';
-  image.onload = function() {
-    // This runs once the image is fully loaded
+  // ===== IMAGE + FINALIZE (guard to prevent duplicates) =====
+  const PLACEHOLDER = 'https://via.placeholder.com/800x400?text=Image+Not+Available';
+  let builtOnce = false;
 
-    // Add image to the DOM
+  function finalizeDetailWithImage(src) {
+    if (builtOnce) return;
+    builtOnce = true;
+
+    // Image row
     const extraRow = document.createElement('div');
     extraRow.className = 'detail-extra-row';
     extraRow.innerHTML = `
-      <img src="${image.src}" class="lot-image" onerror="this.src='https://via.placeholder.com/800x400?text=Image+Not+Available'">
+      <img src="${src}" class="lot-image"
+           onerror="this.src='${PLACEHOLDER}'">
     `;
     detailContainer.appendChild(extraRow);
 
-    // Add the Agendar Cita button below the image after the image is loaded
+    // Ensure no duplicate button
+    const prevBtn = document.getElementById('scheduleAppointmentBtn');
+    if (prevBtn) prevBtn.remove();
+
+    // CTA button
     const scheduleButton = document.createElement('button');
     scheduleButton.id = 'scheduleAppointmentBtn';
     scheduleButton.className = 'schedule-appointment-btn';
     scheduleButton.innerText = 'Agendar Visita';
-
     detailContainer.appendChild(scheduleButton);
 
-    // Add to DOM after the image is loaded
+    // Mount and activate
     lotDetails.appendChild(detailContainer);
-
-    // Activate modal view
-    document.querySelector('.modal-content-wrapper').classList.add('show-details');
+    contentWrapper?.classList.add('show-details');
     lotDetails.classList.add('active');
-    backButton.style.display = 'flex';
-    document.querySelector('.plus-button').style.display = 'flex';
-    scrollHandlerAttached = false;
 
-  // Add side length labels if we have map data and zoom is high enough
-  if (lotMapData) {
-    const currentZoom = map.getZoom();
-    if (currentZoom >= 18.8) {
-      // Remove any existing labels first (double safety)
-      if (currentLabeledLot && currentLabeledLot.name !== lotMapData.name) {
-        removeSideLengthLabels();
-      }
-      addSideLengthLabels(lotMapData);
-    }
+    // Calendly hook (once)
+    scheduleButton.addEventListener('click', function () {
+      const lotDetailsEl = document.getElementById('lotDetails');
+      const calendly = document.getElementById('calendlyEmbed');
+      if (lotDetailsEl) lotDetailsEl.style.display = 'none';
+      if (calendly) calendly.style.display = 'block';
+      try { loadCalendlyWidget?.({ lot, detailData: { nickname, subtitle, image: effectiveImage } }); } catch (e) {}
+    }, { once: true });
   }
 
-    // === Step 4: Add the Event Listener for the "Agendar Cita" Button ===
-    document.getElementById('scheduleAppointmentBtn').addEventListener('click', function () {
-      // Hide lot details and show Calendly
-      document.getElementById('lotDetails').style.display = 'none'; // Hide lot details
+  // Effective image (may be empty → handled by onerror)
+  const effectiveImage = detailData.image || lotMapData?.image || PLACEHOLDER;
 
-      // Show Calendly widget
-      document.getElementById('calendlyEmbed').style.display = 'block';
+  const image = new Image();
+  image.onload  = () => finalizeDetailWithImage(image.src);
+  image.onerror = () => finalizeDetailWithImage(PLACEHOLDER);
+  image.src = effectiveImage;
 
-      // Initialize Calendly widget
-      loadCalendlyWidget({ lot, detailData });
-    });
-  };
-
-  // If the image fails to load, use the fallback image
-  image.onerror = function() {
-    image.src = 'https://via.placeholder.com/800x400?text=Image+Not+Available';
-  };
+  // Safety: if neither event fires quickly, still open
+  setTimeout(() => finalizeDetailWithImage(PLACEHOLDER), 1800);
 }
 
 
@@ -3541,9 +3549,10 @@ function render() {
     row.dataset.index = i;
     row.dataset.baseIndex = lot.clone ? -1 : baseLots.findIndex(l => l.number === lot.number);
 
-const state = (lot.availability ?? '').toString();
-const isFeatured = state.toLowerCase() === 'featured';
-const isSold     = state.toLowerCase() === 'sold';
+const state = (lot.availability ?? '').toString().toLowerCase();
+const isFeatured  = state === 'featured';
+const isAvailable = state === 'available';
+const isSold      = state === 'sold';
 
     if (isFeatured) row.classList.add('info-row--featured');
 
@@ -3568,11 +3577,13 @@ const isSold     = state.toLowerCase() === 'sold';
         </div>
       </div>
 
-      <div class="arrow ${isFeatured ? '' : 'arrow-hidden'}">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12">
-          <path d="M4 3 L7 6 L4 9" stroke="#888" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
+<div class="arrow ${isSold ? 'arrow-hidden' : ''}">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12"
+       class="${(isFeatured || isAvailable) ? 'wiggle-arrow' : ''}">
+    <path d="M4 3 L7 6 L4 9" stroke="#888" stroke-width="1" fill="none"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</div>
     `;
 
     if (isFeatured) {
@@ -4379,7 +4390,7 @@ modal.classList.remove('lot-mode');
         
         <p><em>Así como tus fotos viven en la nube</em>, ahora tu <strong>tierra</strong> también.</p>
         
-        <p><strong>Lalaland</strong> es la nube para terrenos: <strong>un solo mapa</strong> donde <strong>compradores</strong>,
+        <p><strong>Lalaland</strong> es la nube para terrenos: el espacio donde <strong>compradores</strong>,
         <strong>agentes</strong>, <strong>vendedores</strong> y <strong>desarrolladores</strong> se conectan con total
         facilidad.</p>
         
@@ -4387,18 +4398,18 @@ modal.classList.remove('lot-mode');
         
         <h2><span class="emoji">🧠</span> Cómo funciona</h2>
         
-        <h3><span class="emoji">1️⃣</span> Envía (Vendedor)</h3>
+        <h3><span class="emoji">1️⃣</span> Envía</h3>
         <p>Manda tu terreno por WhatsApp.<br>
         <span class="emoji">📍</span> Lalaland lo publica en el mapa.</p>
         
-        <h3><span class="emoji">2️⃣</span> Explora (Comprador)</h3>
+        <h3><span class="emoji">2️⃣</span> Explora</h3>
         <p>Busca por ubicación, tamaño y precio.<br>
-        <span class="emoji">✍️</span> ¿No lo ves en el mapa? Pídelo y Lalaland lo consigue para
+        <span class="emoji">✍️</span> ¿No lo ves en el mapa? Solo lo pides, y Lalaland lo consigue para
         ti.</p>
         
-        <h3><span class="emoji">3️⃣</span> Conectan y Cierran</h3>
+        <h3><span class="emoji">3️⃣</span> Conecta y Cierra</h3>
         <p>Hablas directo con el comprador o vendedor.<br>
-        <span class="emoji">⚡</span> Sólo le cobramos comisión al vendedor cuando cierre.</p>
+        <span class="emoji">⚡</span> Sólo le cobramos una comisión al vendedor cuando cierre.</p>
         
         <hr>
         
@@ -4412,24 +4423,24 @@ modal.classList.remove('lot-mode');
             reales.</li>
             <li><span class="emoji">🛡️</span> <strong>100% confiable</strong> -- terrenos verificados, sin duplicados y con
             revisión constante.</li>
-            <li><span class="emoji">🔄</span> <strong>Siempre actualizado</strong> -- disponibilidad en tiempo real.</li>
+            <li><span class="emoji">🔄</span> <strong>Siempre actualizado</strong> -- la disponibilidad es en tiempo real.</li>
             <li><span class="emoji">💰</span> <strong>Precios transparentes</strong> -- claros, comparables y sin costos
             ocultos.</li>
-            <li><span class="emoji">✍️</span> <strong>Pide y aparece</strong> -- si no está, lo
+            <li><span class="emoji">✍️</span> <strong>Pide y aparece</strong> -- si el terreno que buscas no está, lo
             conseguimos para ti.</li>
-            <li><span class="emoji">🔎</span> <strong>Igual que comprar directo, pero mejor </strong> -- mismo precio, con verificación, respaldo y atención inmediata.</li>
         </ul>
         
         <p class="faq-question">Q: ¿Lalaland es gratis?</p>
-        <p><span class="emoji">💸</span><strong>Sí, usar Lalaland no cuesta nada</strong>:<br>navegar, buscar y contactar es gratis.</p>
-        <p>El comprador <em>nunca</em> paga comisión.<br>
-        Solo el vendedor paga una comisión justa al cerrar -- <strong>sin inflar</strong> tu
+        <p><span class="emoji">💸</span>Sí. <strong>Comprar, navegar y publicar no cuesta nada</strong>.</p>
+        <p>El comprador <em>nunca</em> paga comisión.</p>
+        <p>Solo el vendedor paga una comisión justa al cerrar -- <strong>sin inflar</strong> tu
         precio final.</p>
         
         <p class="faq-question">Q: ¿Cómo me protege Lalaland?</p>
-        <p><span class="emoji">🔎</span><strong>Verificamos cada lote</strong> antes de publicarse.<br>
-        <span class="emoji">🚫</span> <em>Trabajamos para prevenir y disminuir fraudes</em>.<br>
-        <span class="emoji">⛔</span> Bloqueamos a quienes hagan malas prácticas.</p>
+        <p><span class="emoji">🔎</span><strong>Verificamos cada lote</strong> antes de publicarse.</p>
+        <p><span class="emoji">🚫</span> <em>Trabajamos para prevenir y disminuir fraudes</em>.</p>
+        <p><span class="emoji">⛔</span> Bloqueamos a quienes hagan malas prácticas.</p>
+        <p><span class="emoji">✅</span> Tú solo ves opciones reales.</p>
         
         <p class="faq-question">Q: ¿Y si me ofrecen mejor precio fuera de Lalaland?</p>
         <p><span class="emoji">👉</span> En Lalaland <strong>nunca pagas de más.</strong><br>
@@ -4437,14 +4448,14 @@ modal.classList.remove('lot-mode');
         <ul>
             <li><span class="emoji">✅</span> Pagas el mismo precio justo.</li>
             <li><span class="emoji">✅</span> El vendedor/agente queda señalado en el sistema.</li>
-            <li><span class="emoji">✅</span> La nube ahora es más confiable para todos.</li>
+            <li><span class="emoji">✅</span> La nube sigue confiable para todos.</li>
         </ul>
         
         <p class="faq-question">Q: ¿Qué significa el estatus de un lote?</p>
-        <p>Solo dos opciones: <span class="emoji">⬜</span><strong>Disponible</strong> o <span class="emoji">✖️</span><strong>Vendido.</strong></p>
+        <p>Solo dos opciones: <strong>Disponible o Vendido.</strong></p>
         
         <p class="faq-question">Q: ¿Cómo contacto a un agente o vendedor?</p>
-        <p><span class="emoji">👉</span>Siempre a través del <strong>WhatsApp oficial de Lalaland</strong>.<br>
+        <p><span class="emoji">👉</span>Siempre desde el <strong>WhatsApp oficial de Lalaland</strong>.<br>
         Todo queda registrado, seguro y transparente.<br>
         Así siempre podremos mejorar nuestro servicio.</p>
         
@@ -4466,14 +4477,14 @@ modal.classList.remove('lot-mode');
         <ul>
             <li><span class="emoji">✅</span> <strong>Publicar es gratis</strong> -- sin costos iniciales.</li>
             <li><span class="emoji">🌎</span> <strong>Tu terreno en el mapa</strong> -- visibilidad inmediata y real.</li>
-            <li><span class="emoji">🎯</span> <strong>Mayor alcance</strong> -- una sola publicación puede activar múltiples
-            solicitudes de compradores (efecto cadena).</li>
             <li><span class="emoji">📢</span> <strong>Impulso publicitario compartido</strong> -- Lalaland invierte en
             promover tus lotes.</li>
-            <li><span class="emoji">🎥</span> <strong>Recorridos 360°</strong> -- experiencias inmersivas en conjuntos grandes.</li>
-           
+            <li><span class="emoji">🎥</span> <strong>Recorridos 360°</strong> -- en conjuntos grandes generamos experiencias
+            inmersivas.</li>
+            <li><span class="emoji">🎯</span> <strong>Mayor alcance</strong> -- una sola publicación puede activar múltiples
+            solicitudes de compradores (efecto cadena).</li>
         </ul>
-         
+        
         <p class="faq-question">Q: ¿Qué envío por WhatsApp?</p>
         <p>Solo lo básico -- nosotros hacemos la magia:</p>
         <ul>
@@ -4481,7 +4492,7 @@ modal.classList.remove('lot-mode');
             <li><span class="emoji">📐</span> <strong>Tamaño</strong> del lote</li>
             <li><span class="emoji">💰</span> <strong>Precio</strong> de venta</li>
             <li><span class="emoji">📝</span> <strong>Fotos</strong> que ya tengas</li>
-            <li><span class="emoji">🗺️</span> <strong>Planos</strong> y disponibilidad</li>
+            <li><span class="emoji">🗺️</span> <strong>Planos</strong></li>
             <li><span class="emoji">💳</span> <strong>Plan de pagos</strong> (mensualidades, financiamiento, etc. -- esto
             vende más rápido de lo que crees)</li>
         </ul>
@@ -4497,49 +4508,56 @@ modal.classList.remove('lot-mode');
         ¿Tienes 20+ lotes en otra zona? <strong>Escríbenos.</strong></p>
         
         <p class="faq-question">Q: ¿Tengo que actualizar el estatus de mis lotes?</p>
-        <p><span class="emoji">👉</span> Sí. Reporta cambios (<span class="emoji">⬜</span><strong>Disponible</strong> o <span class="emoji">✖️</span><strong>Vendido</strong>).<br>
-        Lalaland no cobra comisión por ventas externas -- solo queremos mantener el
+        <p><span class="emoji">👉</span> Sí. Siempre reporta cambios <strong>(Disponible o Vendido).</strong><br>
+        Lalaland no cobra comisión por ventas externas -- solo mantenemos el
         mapa limpio y confiable.</p>
         
         <p class="faq-question">Q: Veo un lote en Lalaland que yo también vendo.</p>
         <p>No pasa nada. <strong>Varios agentes verificados</strong> pueden subir el mismo
-        lote.</p>
-        <p><strong>Ley FOMO</strong>
-        <p><span class="emoji">🥇</span> El <strong>primer agente en enviar</strong> tiene prioridad de lead.<br>
-        <span class="emoji">⏱️</span> Si no responde, se reasigna al siguiente verificado.<br>
-        <span class="emoji">🔄</span> Y así hasta que alguien atienda.</p>
+        lote.<br>
+        Para ser justos:</p>
+        <p><span class="emoji">🥇</span> El <strong>primer agente en subirlo</strong> tiene prioridad de lead.<br>
+        <span class="emoji">⏱️</span> Si no responde o no actualiza estatus,<br>
+        <span class="emoji">🔄</span> El contacto se reasigna al siguiente agente verificado.</p>
+        <p><span class="emoji">👉</span> Criterio: <span class="emoji">🗂️</span> Lote subido → <span class="emoji">🥇</span> Primer agente recibe lead → <span class="emoji">⏱️</span> No
+        responde → <span class="emoji">🔄</span> Reasignado.</p>
         
         <p class="faq-question">Q: Veo un lote en Lalaland del cual yo tengo exclusividad.</p>
-        <p>No te preocupes. Si tienes exclusividad, lo confirmamos
+        <p>No te preocupes. Si tienes exclusividad sobre ese lote, lo confirmamos
         contigo y resolvemos cualquier conflicto.<br>
-        <span class="emoji">✅</span> Siempre tendrás<strong> prioridad.</strong></p>
+        <span class="emoji">✅</span> Siempre mantendrás la <strong>prioridad sobre ese lote</strong>.</p>
         
         <p class="faq-question">Q: ¿Qué pasa si alguien intenta saltarse Lalaland?</p>
         <p>Toda comunicación debe iniciar y mantenerse dentro del <strong>WhatsApp
-        oficial.</strong></p>
-        <p><span class="emoji">🔸</span> Si intentas cerrar <strong>fuera de Lalaland después de recibir nuestro lead.</strong></p>
+        oficial de Lalaland.</strong></p>
+        <p><span class="emoji">⚠️</span> Si intentas cerrar <strong>fuera de Lalaland después de recibir un lead por
+        nuestra plataforma.</strong></p>
         <ul>
-            <li><span class="emoji">🔄</span> El lead se reasigna.</li>
-            <li><span class="emoji">🚫</span> Tu prioridad en lotes queda suspendida.</li>
-            <li><span class="emoji">⛔</span> Pierdes acceso temporal.</li>
+            <li><span class="emoji">🚫</span> Tus lotes quedan suspendidos.</li>
+            <li><span class="emoji">⛔</span> Pierdes el acceso a la plataforma temporalmente.</li>
         </ul>
-        <p><span class="emoji">🔸</span> Si reincides:</p>
+        <p><span class="emoji">🔄</span> Si reincides:</p>
         <ul>
             <li><span class="emoji">❌</span> Suspensión definitiva de tu cuenta.</li>
             <li><span class="emoji">🔒</span> Bloqueo permanente.</li>
-            <li><span class="emoji">➖</span> Cero leads.</li>
+            <li><span class="emoji">0</span> leads.</li>
         </ul>
         
         <p class="faq-question">Q: ¿Qué pasa si no logro cerrar el lead?</p>
         <p>Nada. Nosotros solo ganamos cuando <strong>tú ganas primero.</strong></p>
         
-        <p class="faq-question">Q: ¿Puedo eliminar mi lote?</p>
-        <p>No. Los lotes no se eliminan, se <strong>actualiza su estatus:</strong></p>
+        <p class="faq-question">Q: ¿Puedo eliminar mi publicación cuando quiera?</p>
+        <p>Tienes control sobre tus terrenos, pero con reglas claras:</p>
         <ul>
-            <li><span class="emoji">✅</span> Vendido → márcalo como vendido.</li>
-            <li><span class="emoji">🛑</span> Activo pero no quieres más leads → podemos reasignarlo a otro agente.</li>
+            <li><span class="emoji">✅</span> Si el lote está vendido, <strong>márcalo como vendido</strong>.</li>
+            <li><span class="emoji">🛑</span> Si ya no quieres recibir leads pero el lote sigue activo,
+            <strong>Lalaland puede mantenerlo visible</strong> con otro agente verificado.</li>
+            <li><span class="emoji">📢</span> Si ya invertimos en publicidad para tu lote, <strong>necesitaremos que
+            termine la campaña antes de retirarlo</strong>.</li>
         </ul>
-        <p><span class="emoji">👉</span> Así garantizamos <strong>transparencia</strong> y <strong>confianza</strong> para los compradores.</p>
+        <p><span class="emoji">👉</span> En resumen: siempre puedes actualizar el estatus, pero <strong>no puedes
+        ocultar terrenos disponibles ni comprometer la experiencia de los
+        compradores.</strong></p>
         
         <div class="cta-section">
             <h2><span class="emoji">🚀</span> ¿Listo para unirte a la nube?</h2>
