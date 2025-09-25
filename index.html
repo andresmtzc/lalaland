@@ -3258,23 +3258,61 @@ function setupLotClickHandlers() {
 
   allRows.forEach(row => {
     row.addEventListener('click', async (e) => {
-// If a detail is already open, switch to the new lot instead of ignoring the click
-if (isDetailOpen) {
-  const index = row.dataset.index;
-  // mark that we're switching so labels are cleaned, etc.
-  showDetailViewForLot(Number(index), true);
-  e.stopPropagation();
-  return;
-}
-
       const index = row.dataset.index;
       const lot = lots[index];
       const status = (lot.availability ?? '').toLowerCase();
 
       if (status === 'sold') return;
 
+      // If a detail is already open, switch to the new lot
+      if (isDetailOpen) {
+        // Save the current map state before switching
+        if (map && map.getCenter) {
+          previousMapView = {
+            center: map.getCenter().toArray(),
+            zoom: map.getZoom(),
+            bearing: map.getBearing(),
+            pitch: map.getPitch()
+          };
+        }
 
-      if (status === 'featured' || status === 'available')  {
+        const lotNumber = lot.number;
+        const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
+        
+        if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
+          const [lng, lat] = lotData[lotMapIndex].center;
+          currentLotIndex = lotMapIndex;
+
+          // Animate map to new lot
+          await new Promise(resolve => {
+            map.once('moveend', resolve);
+
+            const isDesktop = window.innerWidth >= 768;
+            const xOffset = isDesktop ? 310 : 0;
+            const yOffset = isDesktop ? 0 : 180;
+
+            map.easeTo({
+              center: [lng, lat],
+              zoom: 18.8,
+              speed: 1.2,
+              curve: 1.5,
+              offset: [xOffset, yOffset]
+            });
+          });
+
+          // Switch to the new lot's detail view
+          showDetailViewForLot(index, true);
+        } else {
+          // Fallback if map data isn't available
+          showDetailViewForLot(index, true);
+        }
+        
+        e.stopPropagation();
+        return; // 🚨 CRITICAL: Exit the function here!
+      }
+
+      // Original code for when detail view is NOT open
+      if (status === 'featured' || status === 'available') {
         // Save map state
         if (map && map.getCenter) {
           preModalView = {
@@ -3304,10 +3342,8 @@ if (isDetailOpen) {
             map.once('moveend', resolve);
 
             const isDesktop = window.innerWidth >= 768;
-            const isExpanded = document.getElementById('lotModal').classList.contains('expanded');
-
-            const xOffset = isDesktop ?  310 : 0; // 👉 more pan on desktop
-            const yOffset = isDesktop ? 0 : 180;  // keep vertical nudged on mobile
+            const xOffset = isDesktop ? 310 : 0;
+            const yOffset = isDesktop ? 0 : 180;
 
             map.easeTo({
               center: [lng, lat],
@@ -3325,6 +3361,8 @@ if (isDetailOpen) {
           showDetailViewForLot(index);
         }
       }
+
+      e.stopPropagation();
     });
   });
 }
@@ -3351,6 +3389,10 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
   const lotMapData = Array.isArray(lotData)
     ? lotData.find(l => extractLotNumber(l.name) === lot.number)
     : null;
+
+
+
+    
 
   const detailData = lot.detailData || {};
 
@@ -3479,43 +3521,70 @@ backButton.addEventListener('click', () => {
   isDetailOpen = false;
   removeSideLengthLabels(); // keep it
 
-  // Check if we're in the Calendly view
+  // If we were in Calendly, just go back to details
   if (calendly && calendly.style.display === 'block') {
-    // Close Calendly and return to lot details
     calendly.style.display = 'none';
     document.getElementById('lotDetails').style.display = 'block';
-    return; // exit here to avoid further actions
+    return;
   }
 
-  // Reset expanded state if needed
+  // Collapse if expanded
   if (modal.classList.contains('expanded')) {
     modal.classList.remove('expanded');
     plusIcon.style.display = 'block';
     minusIcon.style.display = 'none';
   }
 
-  // Return to list view
+  // === Return to LIST mode UI ===
   headerLotNumber.style.display = 'none';
   document.querySelector('.modal-content-wrapper').classList.remove('show-details');
   lotDetails.classList.remove('active');
   backButton.style.display = 'none';
   document.querySelector('.plus-button').style.display = 'none';
   modal.classList.add('lot-mode');
-  
-  //return to index
-  if (lastOpenedBaseIndex != null) {
-  requestAnimationFrame(() => {
-    scrollToBaseIndex(lastOpenedBaseIndex, false); // false = no smooth scroll, just snap center
-  });
-}
+  modal.classList.remove('info-mode');
 
-  // Re-enable scrolling
+  // Recenter the list on the last opened lot (your current behavior)
+  if (typeof lastOpenedBaseIndex === 'number') {
+    requestAnimationFrame(() => {
+      scrollToBaseIndex(lastOpenedBaseIndex, false);
+    });
+  }
+
+  // === Re-arm scrolling + hover ===
+  // 1) Ensure the custom (infinite) scrollbar is active again
+  try {
+    enableInfiniteScrollbar();   // reattach scroll -> handleScroll
+  } catch {}
+
+  // 2) Force one pass of highlight + thumb sync
+  try {
+    highlightCenter();           // computes centered row/lot
+    updateScrollbar();
+  } catch {}
+
+  // 3) Normalize map hover feature-state to match current selection
+  try {
+    if (typeof hoveredId !== 'undefined' && hoveredId !== null && map?.getSource('lots-final')) {
+      map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+      hoveredId = null;
+    }
+    // Use your existing selection helpers (added later in the file)
+    const sel = (typeof getSelectedLot === 'function') ? getSelectedLot() : null;
+    const lotName = sel?.lotName || window.selectedLotName;
+    if (lotName && map?.getSource('lots-final')) {
+      const mapIndex = lotData.findIndex(l => l.name === lotName);
+      if (mapIndex !== -1) {
+        map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
+        hoveredId = mapIndex;
+      }
+    }
+  } catch {}
+
+  // Finally allow scroll handler to run
   scrollHandlerAttached = true;
 
-  // Remove side length labels
-  removeSideLengthLabels();
-
-  // Return to previous map zoom state
+  // Restore previous map view if you stored one for details
   if (previousMapView && map) {
     map.flyTo({
       center: previousMapView.center,
@@ -3528,6 +3597,8 @@ backButton.addEventListener('click', () => {
     previousMapView = null;
   }
 });
+
+
 
 
 function render() {
@@ -3945,18 +4016,52 @@ modalInfo.addEventListener('wheel', (e) => {
   });
 });
 
-function openModal(lot = null, baseIndex = 0) {
-  const wasHidden = !modal.classList.contains('show');
 
- // If we're in PIN mode, block only when NOT switching to Info
-  const isPinMode = document.getElementById('lotModal')?.classList.contains('pin-mode');
+
+function openModal(lot = null, baseIndex = 0) {
+  const modal = document.getElementById('lotModal');
+  const wasHidden = !modal.classList.contains('show');
+  
+  // Check if we're just switching lots in an already-open modal
+  const isJustSwitchingLots = wasHidden === false && lot && !infoMode && !modal.classList.contains('pin-mode');
+  
+  // If we're in PIN mode, block only when NOT switching to Info
+  const isPinMode = modal.classList.contains('pin-mode');
   if (isPinMode && !infoMode) return;
   if (isPinMode && infoMode) {
     // we are explicitly switching from pin to info
-    document.getElementById('lotModal').classList.remove('pin-mode');
+    modal.classList.remove('pin-mode');
   }
 
-  // 🧹 Reset modal state (your existing code)
+  // If just switching lots, handle it efficiently without resetting everything
+  if (isJustSwitchingLots) {
+    // Just scroll to the new lot without refreshing everything
+    const scrollToIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+    if (scrollToIndex !== -1) {
+      scrollToBaseIndex(scrollToIndex, true);
+      
+      // Update map highlight
+      const mapIndex = lotData.findIndex(l => l.name === lot.name);
+      if (mapIndex !== -1 && map) {
+        if (hoveredId !== null) {
+          map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+        }
+        map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
+        hoveredId = mapIndex;
+        currentLotIndex = mapIndex;
+      }
+      
+      // Add side length labels if zoom is high enough
+      const currentZoom = map.getZoom();
+      if (currentZoom >= 18.8) {
+        removeSideLengthLabels();
+        addSideLengthLabels(lot);
+      }
+    }
+    return; // Exit early - no need to reset the modal
+  }
+
+  // 🧹 Reset modal state (only when actually opening/closing modal, not switching lots)
   headerLotNumber.style.display = 'none';
   document.querySelector('.modal-content-wrapper').classList.remove('show-details');
   lotDetails.classList.remove('active');
@@ -3974,12 +4079,13 @@ function openModal(lot = null, baseIndex = 0) {
   const spinnerEl = document.getElementById('loadingSpinner');
 
   if (!infoMode) {
-    // Pre-clear to avoid flashing old info content
-    modalInfoEl.innerHTML = '';
-    customScrollbarEl.style.display = '';   // make sure scrollbar is back for list
-    spinnerEl.style.display = 'block';      // show spinner immediately
-    modalInfoEl.style.opacity = '0';        // hide list container until rendered
-    
+    // Only clear content if modal wasn't already open or we're not just switching lots
+    if (wasHidden || !lot) {
+      modalInfoEl.innerHTML = '';
+      customScrollbarEl.style.display = '';   // make sure scrollbar is back for list
+      spinnerEl.style.display = 'block';      // show spinner immediately
+      modalInfoEl.style.opacity = '0';        // hide list container until rendered
+    }
   }
 
   // Now show the modal
@@ -4031,27 +4137,27 @@ function openModal(lot = null, baseIndex = 0) {
     }, 0);
   };
 
+  // Only fetch and render if needed
   if (!isDataLoaded) {
     fetchLots().then(() => {
-
-  // ⤵️ Apply fraccionamiento filter based on clicked lot (and update header)
-  (function applyFraccFilter() {
-    try {
-      const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
-        || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
-      const modalEl = document.getElementById('lotModal');
-      if (modalEl) modalEl.dataset.fracc = fracc;
-      const headerFraccEl = document.getElementById('headerFracc');
-      if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
-      if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
-        // Filter baseLots by fraccionamiento
-        baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
-        updateLotsArray();
-      }
-    } catch (e) {
-      console.warn('Fraccionamiento filter failed:', e);
-    }
-  })();
+      // ⤵️ Apply fraccionamiento filter based on clicked lot (and update header)
+      (function applyFraccFilter() {
+        try {
+          const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
+            || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
+          const modalEl = document.getElementById('lotModal');
+          if (modalEl) modalEl.dataset.fracc = fracc;
+          const headerFraccEl = document.getElementById('headerFracc');
+          if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
+          if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
+            // Filter baseLots by fraccionamiento
+            baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
+            updateLotsArray();
+          }
+        } catch (e) {
+          console.warn('Fraccionamiento filter failed:', e);
+        }
+      })();
 
       render();
       requestAnimationFrame(() => {
@@ -4059,142 +4165,57 @@ function openModal(lot = null, baseIndex = 0) {
       });
     });
   } else {
+    // Only re-render if content was cleared (modal was hidden)
+    if (wasHidden || !lot) {
+      // ⤵️ Apply fraccionamiento filter based on clicked lot (and update header)
+      (function applyFraccFilter() {
+        try {
+          const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
+            || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
+          const modalEl = document.getElementById('lotModal');
+          if (modalEl) modalEl.dataset.fracc = fracc;
+          const headerFraccEl = document.getElementById('headerFracc');
+          if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
+          if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
+            // Filter baseLots by fraccionamiento
+            baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
+            updateLotsArray();
+          }
+        } catch (e) {
+          console.warn('Fraccionamiento filter failed:', e);
+        }
+      })();
 
-  // ⤵️ Apply fraccionamiento filter based on clicked lot (and update header)
-  (function applyFraccFilter() {
-    try {
-      const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
-        || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
-      const modalEl = document.getElementById('lotModal');
-      if (modalEl) modalEl.dataset.fracc = fracc;
-      const headerFraccEl = document.getElementById('headerFracc');
-      if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
-      if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
-        // Filter baseLots by fraccionamiento
-        baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
-        updateLotsArray();
+      render();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(doScrollAndHighlight);
+      });
+    } else {
+      // Modal is already open with content - just scroll to the lot
+      const scrollToIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+      if (scrollToIndex !== -1) {
+        scrollToBaseIndex(scrollToIndex, true);
+        
+        // Update map highlight
+        const mapIndex = lotData.findIndex(l => l.name === lot.name);
+        if (mapIndex !== -1 && map) {
+          if (hoveredId !== null) {
+            map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+          }
+          map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
+          hoveredId = mapIndex;
+          currentLotIndex = mapIndex;
+        }
+        
+        // Ensure UI is ready
+        spinnerEl.style.display = 'none';
+        modalInfoEl.style.opacity = '1';
+        highlightCenter();
+        updateScrollbar();
       }
-    } catch (e) {
-      console.warn('Fraccionamiento filter failed:', e);
     }
-  })();
-
-    render();
-    requestAnimationFrame(() => {
-      requestAnimationFrame(doScrollAndHighlight);
-    });
   }
 }
-
-
-
-
-//LOT UNIT CONTROLS SORTING
-(() => {
-  const modal = document.getElementById('lotModal');
-  const unitControls = document.getElementById('unitControls');
-  if (!modal || !unitControls) return;
-
-  let currentMode = modal.dataset.mode || 'num';
-  const btns = Array.from(unitControls.querySelectorAll('.unit-btn'));
-  
-  // Store original unsorted list
-  let unsortedBaseLots = [];
-
-  // Function to sort the lots based on mode
-  function sortLots(mode) {
-    if (!baseLots.length) return;
-    
-    // Save original order if not already saved
-    if (unsortedBaseLots.length === 0) {
-      unsortedBaseLots = [...baseLots];
-    }
-    
-    let sortedLots;
-    
-    switch(mode) {
-      case 'num':
-        // Restore original order (lot number ascending)
-        sortedLots = [...unsortedBaseLots].sort((a, b) => a.number - b.number);
-        break;
-        
-      case 'area':
-        // Sort by size (largest to smallest) - filter out sold lots
-        sortedLots = unsortedBaseLots.filter(lot => {
-          const status = (lot.availability || '').toString().toLowerCase();
-          return status !== 'sold';
-        }).sort((a, b) => {
-          const sizeA = parseFloat(a.size) || 0;
-          const sizeB = parseFloat(b.size) || 0;
-          return sizeB - sizeA;
-        });
-        break;
-        
-      case 'price':
-        // Sort by price (highest to lowest) - filter out sold lots
-        sortedLots = unsortedBaseLots.filter(lot => {
-          const status = (lot.availability || '').toString().toLowerCase();
-          return status !== 'sold';
-        }).sort((a, b) => {
-          const priceA = parseFloat(a.price) || 0;
-          const priceB = parseFloat(b.price) || 0;
-          return priceB - priceA;
-        });
-        break;
-        
-      default:
-        return;
-    }
-    
-    // Apply fraccionamiento filter if set (read from modal dataset)
-    const fracc = (modal.dataset.fracc || '').toString().trim();
-    if (fracc) {
-      sortedLots = sortedLots.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
-    }
-
-    // Update the baseLots array with sorted data
-    baseLots = sortedLots;
-    
-    // Update the display
-    updateLotsArray();
-    render();
-    
-    // Scroll to the correct position (accounting for clones)
-    if (modalInfo && lots.length > 0) {
-      const rowHeight = modalInfo.scrollHeight / lots.length;
-      const bufferHeight = rowHeight * cloneCount;
-      modalInfo.scrollTop = bufferHeight;
-      
-      highlightCenter();
-      updateScrollbar();
-    }
-  }
-
-  // Function to set the display mode
-  function setMode(mode) {
-    currentMode = mode;
-    modal.dataset.mode = mode;
-
-    // Toggle the active button styling
-    btns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-    
-    // Sort the lots based on the selected mode
-    sortLots(mode);
-  }
-
-  // Attach event listeners to each button to toggle mode
-  btns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      setMode(btn.dataset.mode);
-    });
-  });
-
-  // Initialize by setting the correct mode
-  // But don't sort on initial load - wait until user clicks a button
-  btns.forEach(b => b.classList.toggle('active', b.dataset.mode === currentMode));
-})();
-
-
 
 
 
@@ -4374,14 +4395,12 @@ modal.classList.remove('lot-mode');
 
   modalInfo.innerHTML = `
   
-
-
- <div class="faq-section">
+    <div class="faq-section">
         <h2 style="margin-top:-10px;"><span class="emoji">☁️</span> Bienvenido a Lalaland</h2>
         
         <p><em>Así como tus fotos viven en la nube</em>, ahora tu <strong>tierra</strong> también.</p>
         
-        <p><strong>Lalaland</strong> es la nube para terrenos: <strong>un solo mapa</strong> donde <strong>compradores</strong>,
+        <p><strong>Lalaland</strong> es la nube para terrenos: el espacio donde <strong>compradores</strong>,
         <strong>agentes</strong>, <strong>vendedores</strong> y <strong>desarrolladores</strong> se conectan con total
         facilidad.</p>
         
@@ -4389,18 +4408,18 @@ modal.classList.remove('lot-mode');
         
         <h2><span class="emoji">🧠</span> Cómo funciona</h2>
         
-        <h3><span class="emoji">1️⃣</span> Envía (Vendedor)</h3>
+        <h3><span class="emoji">1️⃣</span> Envía</h3>
         <p>Manda tu terreno por WhatsApp.<br>
         <span class="emoji">📍</span> Lalaland lo publica en el mapa.</p>
         
-        <h3><span class="emoji">2️⃣</span> Explora (Comprador)</h3>
+        <h3><span class="emoji">2️⃣</span> Explora</h3>
         <p>Busca por ubicación, tamaño y precio.<br>
-        <span class="emoji">✍️</span> ¿No lo ves en el mapa? Pídelo y Lalaland lo consigue para
+        <span class="emoji">✍️</span> ¿No lo ves en el mapa? Solo lo pides, y Lalaland lo consigue para
         ti.</p>
         
-        <h3><span class="emoji">3️⃣</span> Conectan y Cierran</h3>
+        <h3><span class="emoji">3️⃣</span> Conecta y Cierra</h3>
         <p>Hablas directo con el comprador o vendedor.<br>
-        <span class="emoji">⚡</span> Sólo le cobramos comisión al vendedor cuando cierre.</p>
+        <span class="emoji">⚡</span> Sólo le cobramos una comisión al vendedor cuando cierre.</p>
         
         <hr>
         
@@ -4414,25 +4433,25 @@ modal.classList.remove('lot-mode');
             reales.</li>
             <li><span class="emoji">🛡️</span> <strong>100% confiable</strong> -- terrenos verificados, sin duplicados y con
             revisión constante.</li>
-            <li><span class="emoji">🔄</span> <strong>Siempre actualizado</strong> -- disponibilidad en tiempo real.</li>
+            <li><span class="emoji">🔄</span> <strong>Siempre actualizado</strong> -- la disponibilidad es en tiempo real.</li>
             <li><span class="emoji">💰</span> <strong>Precios transparentes</strong> -- claros, comparables y sin costos
             ocultos.</li>
-            <li><span class="emoji">✍️</span> <strong>Pide y aparece</strong> -- si no está, lo
+            <li><span class="emoji">✍️</span> <strong>Pide y aparece</strong> -- si el terreno que buscas no está, lo
             conseguimos para ti.</li>
-            <li><span class="emoji">🔎</span> <strong>Igual que comprar directo, pero mejor </strong> -- mismo precio, con verificación, respaldo y atención inmediata.</li>
             <li><span class="emoji">🟧</span> <strong>Selección Lalaland</strong> -- terrenos <strong>escogidos por arquitectos</strong> que saben reconocer lo <strong>extraordinario</strong>.</li>
         </ul>
         
         <p class="faq-question">Q: ¿Lalaland es gratis?</p>
-        <p><span class="emoji">💸</span><strong>Sí, usar Lalaland no cuesta nada</strong>:<br>navegar, buscar y contactar es gratis.</p>
-        <p>El comprador <em>nunca</em> paga comisión.<br>
-        Solo el vendedor paga una comisión justa al cerrar -- <strong>sin inflar</strong> tu
+        <p><span class="emoji">💸</span>Sí. <strong>Comprar, navegar y publicar no cuesta nada</strong>.</p>
+        <p>El comprador <em>nunca</em> paga comisión.</p>
+        <p>Solo el vendedor paga una comisión justa al cerrar -- <strong>sin inflar</strong> tu
         precio final.</p>
         
         <p class="faq-question">Q: ¿Cómo me protege Lalaland?</p>
-        <p><span class="emoji">🔎</span><strong>Verificamos cada lote</strong> antes de publicarse.<br>
-        <span class="emoji">🚫</span> <em>Trabajamos para prevenir y disminuir fraudes</em>.<br>
-        <span class="emoji">⛔</span> Bloqueamos a quienes hagan malas prácticas.</p>
+        <p><span class="emoji">🔎</span><strong>Verificamos cada lote</strong> antes de publicarse.</p>
+        <p><span class="emoji">🚫</span> <em>Trabajamos para prevenir y disminuir fraudes</em>.</p>
+        <p><span class="emoji">⛔</span> Bloqueamos a quienes hagan malas prácticas.</p>
+        <p><span class="emoji">✅</span> Tú solo ves opciones reales.</p>
         
         <p class="faq-question">Q: ¿Y si me ofrecen mejor precio fuera de Lalaland?</p>
         <p><span class="emoji">👉</span> En Lalaland <strong>nunca pagas de más.</strong><br>
@@ -4440,14 +4459,14 @@ modal.classList.remove('lot-mode');
         <ul>
             <li><span class="emoji">✅</span> Pagas el mismo precio justo.</li>
             <li><span class="emoji">✅</span> El vendedor/agente queda señalado en el sistema.</li>
-            <li><span class="emoji">✅</span> La nube ahora es más confiable para todos.</li>
+            <li><span class="emoji">✅</span> La nube sigue confiable para todos.</li>
         </ul>
         
         <p class="faq-question">Q: ¿Qué significa el estatus de un lote?</p>
-        <p>Solo dos opciones: <span class="emoji">⬜</span><strong>Disponible</strong> o <span class="emoji">✖️</span><strong>Vendido.</strong></p>
+        <p>Solo dos opciones: <strong>Disponible o Vendido.</strong></p>
         
         <p class="faq-question">Q: ¿Cómo contacto a un agente o vendedor?</p>
-        <p><span class="emoji">👉</span>Siempre a través del <strong>WhatsApp oficial de Lalaland</strong>.<br>
+        <p><span class="emoji">👉</span>Siempre desde el <strong>WhatsApp oficial de Lalaland</strong>.<br>
         Todo queda registrado, seguro y transparente.<br>
         Así siempre podremos mejorar nuestro servicio.</p>
         
@@ -4469,14 +4488,14 @@ modal.classList.remove('lot-mode');
         <ul>
             <li><span class="emoji">✅</span> <strong>Publicar es gratis</strong> -- sin costos iniciales.</li>
             <li><span class="emoji">🌎</span> <strong>Tu terreno en el mapa</strong> -- visibilidad inmediata y real.</li>
-            <li><span class="emoji">🎯</span> <strong>Mayor alcance</strong> -- una sola publicación puede activar múltiples
-            solicitudes de compradores (efecto cadena).</li>
             <li><span class="emoji">📢</span> <strong>Impulso publicitario compartido</strong> -- Lalaland invierte en
             promover tus lotes.</li>
-            <li><span class="emoji">🎥</span> <strong>Recorridos 360°</strong> -- experiencias inmersivas en conjuntos grandes.</li>
-           
+            <li><span class="emoji">🎥</span> <strong>Recorridos 360°</strong> -- en conjuntos grandes generamos experiencias
+            inmersivas.</li>
+            <li><span class="emoji">🎯</span> <strong>Mayor alcance</strong> -- una sola publicación puede activar múltiples
+            solicitudes de compradores (efecto cadena).</li>
         </ul>
-         
+        
         <p class="faq-question">Q: ¿Qué envío por WhatsApp?</p>
         <p>Solo lo básico -- nosotros hacemos la magia:</p>
         <ul>
@@ -4484,7 +4503,7 @@ modal.classList.remove('lot-mode');
             <li><span class="emoji">📐</span> <strong>Tamaño</strong> del lote</li>
             <li><span class="emoji">💰</span> <strong>Precio</strong> de venta</li>
             <li><span class="emoji">📝</span> <strong>Fotos</strong> que ya tengas</li>
-            <li><span class="emoji">🗺️</span> <strong>Planos</strong> y disponibilidad</li>
+            <li><span class="emoji">🗺️</span> <strong>Planos</strong></li>
             <li><span class="emoji">💳</span> <strong>Plan de pagos</strong> (mensualidades, financiamiento, etc. -- esto
             vende más rápido de lo que crees)</li>
         </ul>
@@ -4500,49 +4519,56 @@ modal.classList.remove('lot-mode');
         ¿Tienes 20+ lotes en otra zona? <strong>Escríbenos.</strong></p>
         
         <p class="faq-question">Q: ¿Tengo que actualizar el estatus de mis lotes?</p>
-        <p><span class="emoji">👉</span> Sí. Reporta cambios (<span class="emoji">⬜</span><strong>Disponible</strong> o <span class="emoji">✖️</span><strong>Vendido</strong>).<br>
-        Lalaland no cobra comisión por ventas externas -- solo queremos mantener el
+        <p><span class="emoji">👉</span> Sí. Siempre reporta cambios <strong>(Disponible o Vendido).</strong><br>
+        Lalaland no cobra comisión por ventas externas -- solo mantenemos el
         mapa limpio y confiable.</p>
         
         <p class="faq-question">Q: Veo un lote en Lalaland que yo también vendo.</p>
         <p>No pasa nada. <strong>Varios agentes verificados</strong> pueden subir el mismo
-        lote.</p>
-        <p><strong>Ley FOMO</strong>
-        <p><span class="emoji">🥇</span> El <strong>primer agente en enviar</strong> tiene prioridad de lead.<br>
-        <span class="emoji">⏱️</span> Si no responde, se reasigna al siguiente verificado.<br>
-        <span class="emoji">🔄</span> Y así hasta que alguien atienda.</p>
+        lote.<br>
+        Para ser justos:</p>
+        <p><span class="emoji">🥇</span> El <strong>primer agente en subirlo</strong> tiene prioridad de lead.<br>
+        <span class="emoji">⏱️</span> Si no responde o no actualiza estatus,<br>
+        <span class="emoji">🔄</span> El contacto se reasigna al siguiente agente verificado.</p>
+        <p><span class="emoji">👉</span> Criterio: <span class="emoji">🗂️</span> Lote subido → <span class="emoji">🥇</span> Primer agente recibe lead → <span class="emoji">⏱️</span> No
+        responde → <span class="emoji">🔄</span> Reasignado.</p>
         
         <p class="faq-question">Q: Veo un lote en Lalaland del cual yo tengo exclusividad.</p>
-        <p>No te preocupes. Si tienes exclusividad, lo confirmamos
+        <p>No te preocupes. Si tienes exclusividad sobre ese lote, lo confirmamos
         contigo y resolvemos cualquier conflicto.<br>
-        <span class="emoji">✅</span> Siempre tendrás<strong> prioridad.</strong></p>
+        <span class="emoji">✅</span> Siempre mantendrás la <strong>prioridad sobre ese lote</strong>.</p>
         
         <p class="faq-question">Q: ¿Qué pasa si alguien intenta saltarse Lalaland?</p>
         <p>Toda comunicación debe iniciar y mantenerse dentro del <strong>WhatsApp
-        oficial.</strong></p>
-        <p><span class="emoji">🔸</span> Si intentas cerrar <strong>fuera de Lalaland después de recibir nuestro lead.</strong></p>
+        oficial de Lalaland.</strong></p>
+        <p><span class="emoji">⚠️</span> Si intentas cerrar <strong>fuera de Lalaland después de recibir un lead por
+        nuestra plataforma.</strong></p>
         <ul>
-            <li><span class="emoji">🔄</span> El lead se reasigna.</li>
-            <li><span class="emoji">🚫</span> Tu prioridad en lotes queda suspendida.</li>
-            <li><span class="emoji">⛔</span> Pierdes acceso temporal.</li>
+            <li><span class="emoji">🚫</span> Tus lotes quedan suspendidos.</li>
+            <li><span class="emoji">⛔</span> Pierdes el acceso a la plataforma temporalmente.</li>
         </ul>
-        <p><span class="emoji">🔸</span> Si reincides:</p>
+        <p><span class="emoji">🔄</span> Si reincides:</p>
         <ul>
             <li><span class="emoji">❌</span> Suspensión definitiva de tu cuenta.</li>
             <li><span class="emoji">🔒</span> Bloqueo permanente.</li>
-            <li><span class="emoji">➖</span> Cero leads.</li>
+            <li><span class="emoji">0</span> leads.</li>
         </ul>
         
         <p class="faq-question">Q: ¿Qué pasa si no logro cerrar el lead?</p>
         <p>Nada. Nosotros solo ganamos cuando <strong>tú ganas primero.</strong></p>
         
-        <p class="faq-question">Q: ¿Puedo eliminar mi lote?</p>
-        <p>No. Los lotes no se eliminan, se <strong>actualiza su estatus:</strong></p>
+        <p class="faq-question">Q: ¿Puedo eliminar mi publicación cuando quiera?</p>
+        <p>Tienes control sobre tus terrenos, pero con reglas claras:</p>
         <ul>
-            <li><span class="emoji">✅</span> Vendido → márcalo como vendido.</li>
-            <li><span class="emoji">🛑</span> Activo pero no quieres más leads → podemos reasignarlo a otro agente.</li>
+            <li><span class="emoji">✅</span> Si el lote está vendido, <strong>márcalo como vendido</strong>.</li>
+            <li><span class="emoji">🛑</span> Si ya no quieres recibir leads pero el lote sigue activo,
+            <strong>Lalaland puede mantenerlo visible</strong> con otro agente verificado.</li>
+            <li><span class="emoji">📢</span> Si ya invertimos en publicidad para tu lote, <strong>necesitaremos que
+            termine la campaña antes de retirarlo</strong>.</li>
         </ul>
-        <p><span class="emoji">👉</span> Así garantizamos <strong>transparencia</strong> y <strong>confianza</strong> para los compradores.</p>
+        <p><span class="emoji">👉</span> En resumen: siempre puedes actualizar el estatus, pero <strong>no puedes
+        ocultar terrenos disponibles ni comprometer la experiencia de los
+        compradores.</strong></p>
         
         <div class="cta-section">
             <h2><span class="emoji">🚀</span> ¿Listo para unirte a la nube?</h2>
@@ -4563,8 +4589,6 @@ modal.classList.remove('lot-mode');
             </a>
         </div>
     </div>
-
-     
 
   `;
   customScrollbar.style.display = '';
