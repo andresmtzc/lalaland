@@ -3327,7 +3327,6 @@ function setupLotClickHandlers() {
 
 
 async function showDetailViewForLot(index, isSwitchingLots = false) {
-  // ---- DOM refs
   const modalEl        = document.getElementById('lotModal');
   const lotDetails     = document.getElementById('lotDetails');
   const calendlyEl     = document.getElementById('calendlyEmbed');
@@ -3336,12 +3335,12 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
   const plusBtnEl      = document.querySelector('.plus-button');
   const backBtnEl      = document.getElementById('backButton');
 
-  // ---- Data
+  // ---- data
   const lot = lots?.[index];
   if (!lot) return;
 
   const status = String(lot.availability || '').toLowerCase();
-  if (status === 'sold') return; // never open detail for sold
+  if (status === 'sold') return;
 
   const lotMapData = Array.isArray(lotData)
     ? lotData.find(l => extractLotNumber(l.name) === lot.number)
@@ -3349,39 +3348,31 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
 
   const detailData = lot.detailData || {};
 
-  // ---- UI prep
+  // ---- prep
   isDetailOpen = true;
-
-  // Close Calendly if left open
   if (calendlyEl) calendlyEl.style.display = 'none';
 
-  // Always clear old detail before building a new one (avoid duplicates)
-  if (lotDetails) {
-    lotDetails.classList.remove('active');
-    lotDetails.innerHTML = '';
-  }
+  // Clear only lotDetails content (but not other UI like back button)
+  lotDetails.classList.remove('active');
+  lotDetails.innerHTML = '';
 
-  // If switching between lots, remove old side-length labels
   if (isSwitchingLots && typeof removeSideLengthLabels === 'function' && currentLabeledLot) {
     removeSideLengthLabels();
   }
 
-  // Ensure we are not in pin/lot mode; switch to info (detail) mode
-  if (modalEl) {
-    modalEl.classList.remove('pin-mode', 'lot-mode');
-    modalEl.classList.add('info-mode');
-  }
+  // Ensure modal is in info/detail mode
+  modalEl.classList.remove('pin-mode', 'lot-mode');
+  modalEl.classList.add('info-mode');
 
-  // Re-show controls that pin mode may hide
   if (bottomPlusEl) bottomPlusEl.style.display = '';
   if (plusBtnEl) plusBtnEl.style.display = '';
-  if (backBtnEl) backBtnEl.style.display = '';
+  if (backBtnEl) backBtnEl.style.display = 'flex';
 
-  // ---- Build container
+  // ---- build
   const detailContainer = document.createElement('div');
   detailContainer.className = 'detail-container';
 
-  // ===== HEADER SECTION =====
+  // Header
   const headerSection = document.createElement('div');
   headerSection.className = 'detail-header';
 
@@ -3398,7 +3389,7 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
   `;
   detailContainer.appendChild(headerSection);
 
-  // ===== PRICE/SIZE ROW =====
+  // Price/size row
   const detailRow = document.createElement('div');
   detailRow.className = 'detail-data-row';
 
@@ -3431,60 +3422,29 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
   `;
   detailContainer.appendChild(detailRow);
 
-  // ===== IMAGE + FINALIZE (guard to prevent duplicates) =====
-  const PLACEHOLDER = 'https://via.placeholder.com/800x400?text=Image+Not+Available';
-  let builtOnce = false;
+  // CTA button
+  const prevBtn = document.getElementById('scheduleAppointmentBtn');
+  if (prevBtn) prevBtn.remove();
 
-  function finalizeDetailWithImage(src) {
-    if (builtOnce) return;
-    builtOnce = true;
+  const scheduleButton = document.createElement('button');
+  scheduleButton.id = 'scheduleAppointmentBtn';
+  scheduleButton.className = 'schedule-appointment-btn';
+  scheduleButton.innerText = 'Agendar Visita';
+  detailContainer.appendChild(scheduleButton);
 
-    // Image row
-    const extraRow = document.createElement('div');
-    extraRow.className = 'detail-extra-row';
-    extraRow.innerHTML = `
-      <img src="${src}" class="lot-image"
-           onerror="this.src='${PLACEHOLDER}'">
-    `;
-    detailContainer.appendChild(extraRow);
+  // Mount and activate
+  lotDetails.appendChild(detailContainer);
+  contentWrapper?.classList.add('show-details');
+  lotDetails.classList.add('active');
 
-    // Ensure no duplicate button
-    const prevBtn = document.getElementById('scheduleAppointmentBtn');
-    if (prevBtn) prevBtn.remove();
-
-    // CTA button
-    const scheduleButton = document.createElement('button');
-    scheduleButton.id = 'scheduleAppointmentBtn';
-    scheduleButton.className = 'schedule-appointment-btn';
-    scheduleButton.innerText = 'Agendar Visita';
-    detailContainer.appendChild(scheduleButton);
-
-    // Mount and activate
-    lotDetails.appendChild(detailContainer);
-    contentWrapper?.classList.add('show-details');
-    lotDetails.classList.add('active');
-
-    // Calendly hook (once)
-    scheduleButton.addEventListener('click', function () {
-      const lotDetailsEl = document.getElementById('lotDetails');
-      const calendly = document.getElementById('calendlyEmbed');
-      if (lotDetailsEl) lotDetailsEl.style.display = 'none';
-      if (calendly) calendly.style.display = 'block';
-      try { loadCalendlyWidget?.({ lot, detailData: { nickname, subtitle, image: effectiveImage } }); } catch (e) {}
-    }, { once: true });
-  }
-
-  // Effective image (may be empty → handled by onerror)
-  const effectiveImage = detailData.image || lotMapData?.image || PLACEHOLDER;
-
-  const image = new Image();
-  image.onload  = () => finalizeDetailWithImage(image.src);
-  image.onerror = () => finalizeDetailWithImage(PLACEHOLDER);
-  image.src = effectiveImage;
-
-  // Safety: if neither event fires quickly, still open
-  setTimeout(() => finalizeDetailWithImage(PLACEHOLDER), 1800);
+  // Calendly hook
+  scheduleButton.addEventListener('click', function () {
+    lotDetails.style.display = 'none';
+    if (calendlyEl) calendlyEl.style.display = 'block';
+    try { loadCalendlyWidget?.({ lot, detailData: { nickname, subtitle } }); } catch (e) {}
+  }, { once: true });
 }
+
 
 
 
