@@ -1389,6 +1389,8 @@ groundInnerColor.addEventListener('input', e=>setGroundInner(e.target.value));
 
 /* ====== Unified save/load to support file versions ====== */
 
+const LS_KEY = 'ig-post-designer-local';
+
 // 2.1 Build a complete payload (shared by local + file)
 function buildPayload(){
   const css = getComputedStyle(document.documentElement);
@@ -1407,15 +1409,14 @@ function buildPayload(){
   });
 
   // texts snapshot
-const textsDump = state.texts.map(t => ({
-  id:t.id, label:t.label, text:t.text, size:t.size, color:t.color, align:t.align, x:t.x, y:t.y,
-  font: t.font?.name || FONTS[0].name, weight:t.weight,
-  outline:t.outline, outlineColor:t.outlineColor, outlineWidth:t.outlineWidth,
-  shadow:t.shadow, shadowOffsetX:t.shadowOffsetX, shadowOffsetY:t.shadowOffsetY,
-  shadowBlur:t.shadowBlur, shadowColor:t.shadowColor, shadowOpacity:t.shadowOpacity,
-  highlight: t.highlight
-}));
-
+  const textsDump = state.texts.map(t => ({
+    id:t.id, label:t.label, text:t.text, size:t.size, color:t.color, align:t.align, x:t.x, y:t.y,
+    font: t.font?.name || FONTS[0].name, weight:t.weight,
+    outline:t.outline, outlineColor:t.outlineColor, outlineWidth:t.outlineWidth,
+    shadow:t.shadow, shadowOffsetX:t.shadowOffsetX, shadowOffsetY:t.shadowOffsetY,
+    shadowBlur:t.shadowBlur, shadowColor:t.shadowColor, shadowOpacity:t.shadowOpacity,
+    highlight: t.highlight
+  }));
 
   return {
     schema: "ig-post-designer",
@@ -1425,7 +1426,7 @@ const textsDump = state.texts.map(t => ({
     rows, cols, currentLevel, proMode,
 
     stateMisc: {
-      bg: state.bg,
+      bg: state.bg,                    // can be null for transparent
       padding: state.padding,
       grid: state.grid,
       safeOn: state.safeOn,
@@ -1472,10 +1473,40 @@ function loadFromData(data){
     if (data.colors.treeFill)  { document.documentElement.style.setProperty('--tree-fill', data.colors.treeFill); }
   }
 
-  // misc state
+  // misc state (with transparent support)
   if (data.stateMisc){
     const s = data.stateMisc;
-    state.bg = s.bg;              bgColor.value = rgbToHex(state.bg);
+
+    if (s.bg == null || s.bg === 'transparent'){
+      state.bg = null;                 // true transparent
+      bgColor.disabled = true;
+      // reflect in UI swatch
+      const sw = document.querySelector('#bgSwatch');
+      if (sw){
+        sw.querySelectorAll('.dot').forEach(d=>d.classList.remove('active'));
+        const tDot = sw.querySelector('.dot[data-color="transparent"]');
+        tDot?.classList.add('active');
+      }
+    } else {
+      state.bg = s.bg;
+      bgColor.disabled = false;
+      bgColor.value = rgbToHex(state.bg);
+      // reflect in UI swatch (best-effort)
+      const sw = document.querySelector('#bgSwatch');
+      if (sw){
+        sw.querySelectorAll('.dot').forEach(d=>d.classList.remove('active'));
+        const map = {
+          [ORANGE]:'orange',
+          [OFFBLACK]:'offblack',
+          [OFFWHITE]:'offwhite',
+          '#00D1B2':'teal',
+          '#525252':'gray'
+        };
+        const key = map[(state.bg||'').toLowerCase?.() || state.bg] || 'offwhite';
+        sw.querySelector(`.dot[data-color="${key}"]`)?.classList.add('active');
+      }
+    }
+
     state.padding = s.padding;    padding.value = s.padding;
 
     state.grid = { ...s.grid };
@@ -1536,33 +1567,7 @@ function loadFromData(data){
   return true;
 }
 
-
-// Return the largest numeric suffix among existing text items (ids like "text7" or labels like "Text 7")
-function getLargestTextNumber() {
-  let max = 2; // head/sub conceptually 1/2
-  for (const t of state.texts) {
-    // from id
-    const m1 = typeof t.id === 'string' && t.id.match(/^text(\d+)$/i);
-    if (m1) { max = Math.max(max, +m1[1]); continue; }
-    // from label (fallback)
-    const m2 = typeof t.label === 'string' && t.label.match(/^text\s+(\d+)$/i);
-    if (m2) { max = Math.max(max, +m2[1]); }
-  }
-  return max;
-}
-
-// Compute a unique id/label for the next text
-function nextTextIdLabel() {
-  let n = getLargestTextNumber() + 1;
-  // ensure uniqueness even if there are weird ids
-  let id = `text${n}`;
-  const existingIds = new Set(state.texts.map(t => t.id));
-  while (existingIds.has(id)) { n++; id = `text${n}`; }
-  return { id, label: `Text ${n}` };
-}
-
-
-// 2.3 Keep your existing local save/load, but refactor to use the helpers
+// 2.3 Local save/load
 function saveToLocal(){
   localStorage.setItem(LS_KEY, JSON.stringify(buildPayload()));
   showToast('Saved locally!');
@@ -1610,14 +1615,13 @@ $('loadFileInput').addEventListener('change', (e) => {
 });
 
 
-
 /* ====== Export PNG ====== */
 exportBtn.addEventListener('click', async () => {
   showToast('Exporting... Please wait');
 
   const shell = $('shell');
   const voxelLayer = document.getElementById('voxel');
-  const gridEl = document.querySelector('.grid-container'); // NEW: reuse this ref
+  const gridEl = document.querySelector('.grid-container'); // reuse this ref
 
   // Store original styles
   const originalStyles = {
@@ -1636,7 +1640,6 @@ exportBtn.addEventListener('click', async () => {
     },
     body: { overflow: document.body.style.overflow },
     grid: {
-      // Keep the computed custom prop; fallback to '0.8' if blank
       scaleVar: gridEl ? (getComputedStyle(gridEl).getPropertyValue('--grid-scale') || '0.8') : '0.8'
     }
   };
@@ -1653,7 +1656,7 @@ exportBtn.addEventListener('click', async () => {
     shell.style.top = '0';
     shell.style.overflow = 'visible';
 
-    // ---- Bake .grid-container scale into the outer #voxel transform (live DOM) ----
+    // Bake .grid-container scale into the outer #voxel transform
     const pctLeft = (state.voxel.x / W) * 100;
     const pctTop  = (state.voxel.y / H) * 100;
 
@@ -1674,7 +1677,7 @@ exportBtn.addEventListener('click', async () => {
     await new Promise(r => setTimeout(r, 100));
 
     const canvasOut = await html2canvas(shell, {
-      backgroundColor: null,
+      backgroundColor: null, // keep PNG transparent if state.bg is null
       useCORS: true,
       scale: Math.max(2, window.devicePixelRatio || 1),
       logging: false,
@@ -1696,7 +1699,7 @@ exportBtn.addEventListener('click', async () => {
           clonedShell.style.overflow = 'visible';
         }
 
-        // --- same baking on the cloned DOM ---
+        // same baking on the cloned DOM
         const clonedGrid = clonedDoc.querySelector('.grid-container');
         let gridScaleNumClone = 1;
         if (clonedGrid) {
@@ -1746,7 +1749,7 @@ exportBtn.addEventListener('click', async () => {
 
     document.body.style.overflow = originalStyles.body.overflow;
 
-    // NEW: restore --grid-scale
+    // restore --grid-scale
     if (gridEl) {
       gridEl.style.setProperty('--grid-scale', originalStyles.grid.scaleVar.trim() || '0.8');
     }
@@ -1759,55 +1762,41 @@ exportBtn.addEventListener('click', async () => {
 /* ====== Reset ====== */
 reset.addEventListener('click', ()=>{
   // core state
-  state.bg=OFFWHITE;
-  state.padding=90;
+  state.bg = OFFWHITE;       // solid again
+  state.padding = 90;
   state.grid={on:true, centered:true, spacing:120, alpha:.25};
   state.safeOn=true;
   state.thirds=false;
   state.voxel={ x:W/2, y:H*0.5, scale:1, edges:true, edgeW:3 };
   state.mode='text';
 
-// texts
-state.head = {
-  id:'head', label:'Headline',
-  text:'HELLO, IG!', size:120, color:OFFBLACK, align:'center', x:W/2, y:H*0.2,
-  font:FONTS[0], weight:400,
-  outline:false, outlineColor:OFFWHITE, outlineWidth:2,
-  shadow:false, shadowOffsetX:4, shadowOffsetY:4, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5,
-  highlight: {
-    on: false,
-    color: '#fff200',
-    opacity: 0.6,
-    padX: 16,
-    padY: 8,
-    radius: 10,
-    perLine: true
-  }
-};
-state.sub = {
-  id:'sub', label:'Subtitle',
-  text:'Clean, bold, fast.', size:48, color:OFFBLACK, align:'center', x:W/2, y:H*0.32,
-  font:FONTS[1], weight:400,
-  outline:false, outlineColor:OFFWHITE, outlineWidth:2,
-  shadow:false, shadowOffsetX:2, shadowOffsetY:2, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5,
-  highlight: {
-    on: false,
-    color: '#fff200',
-    opacity: 0.6,
-    padX: 16,
-    padY: 8,
-    radius: 10,
-    perLine: true
-  }
-};
-state.texts = [state.head, state.sub];
-state.activeTextId = 'head';
-textSeq = 3;
-
+  // texts
+  state.head = {
+    id:'head', label:'Headline',
+    text:'HELLO, IG!', size:120, color:OFFBLACK, align:'center', x:W/2, y:H*0.2,
+    font:FONTS[0], weight:400,
+    outline:false, outlineColor:OFFWHITE, outlineWidth:2,
+    shadow:false, shadowOffsetX:4, shadowOffsetY:4, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5,
+    highlight: { on:false, color:'#fff200', opacity:0.6, padX:16, padY:8, radius:10, perLine:true }
+  };
+  state.sub = {
+    id:'sub', label:'Subtitle',
+    text:'Clean, bold, fast.', size:48, color:OFFBLACK, align:'center', x:W/2, y:H*0.32,
+    font:FONTS[1], weight:400,
+    outline:false, outlineColor:OFFWHITE, outlineWidth:2,
+    shadow:false, shadowOffsetX:2, shadowOffsetY:2, shadowBlur:0, shadowColor:'#000000', shadowOpacity:0.5,
+    highlight: { on:false, color:'#fff200', opacity:0.6, padX:16, padY:8, radius:10, perLine:true }
+  };
+  state.texts = [state.head, state.sub];
+  state.activeTextId = 'head';
+  textSeq = 3;
 
   // UI resets
-  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active', i===0));
+  bgColor.disabled = false;      // re-enable picker
   bgColor.value='#fcfaf3';
+  // Only toggle active within the BG swatch
+  document.querySelectorAll('#bgSwatch .dot').forEach((d,i)=>d.classList.toggle('active', i===0));
+
   vxScale.value=100; vxX.value=W/2; vxY.value=H*0.5;
   document.getElementById('voxel').style.transform=`translate(-50%,-50%) scale(1)`;
   const vEl = document.getElementById('voxel'); vEl.style.left='50%'; vEl.style.top='50%';
@@ -1831,22 +1820,43 @@ textSeq = 3;
   render();
 });
 
+
 /* ====== Init ====== */
 (function init(){
-  // color swatches
-  document.querySelectorAll('.dot').forEach(dot=>{
-    dot.addEventListener('click',()=>{
-      document.querySelectorAll('.dot').forEach(d=>d.classList.remove('active'));
+  // BG swatch (scoped) — includes Transparent mode
+  document.querySelectorAll('#bgSwatch .dot').forEach(dot=>{
+    dot.addEventListener('click', ()=>{
+      // toggle active only inside this swatch row
+      dot.parentNode.querySelectorAll('.dot').forEach(d=>d.classList.remove('active'));
       dot.classList.add('active');
-      const key=dot.getAttribute('data-color');
-     const colorValue =
-  key==='orange'   ? ORANGE   :
-  key==='offblack' ? OFFBLACK :
-  key==='teal'     ? '#00D1B2':
-  key==='gray'     ? '#525252':
-  OFFWHITE;
-      state.bg=colorValue; bgColor.value=rgbToHex(colorValue); render();
+
+      const key = dot.getAttribute('data-color');
+      if (key === 'transparent'){
+        state.bg = null;        // true transparent
+        bgColor.disabled = true;
+      } else {
+        const colorValue =
+          key==='orange'   ? ORANGE   :
+          key==='offblack' ? OFFBLACK :
+          key==='teal'     ? '#00D1B2':
+          key==='gray'     ? '#525252':
+          OFFWHITE;
+        state.bg = colorValue;
+        bgColor.disabled = false;
+        bgColor.value = rgbToHex(colorValue);
+      }
+      render();
     });
+  });
+
+  // Guard: if user picks a custom color while Transparent is active, switch off transparent
+  bgColor.addEventListener('input', ()=>{
+    const transparentDot = document.querySelector('#bgSwatch .dot[data-color="transparent"]');
+    if (transparentDot?.classList.contains('active')){
+      transparentDot.classList.remove('active');
+      document.querySelector('#bgSwatch .dot[data-color="offwhite"]')?.classList.add('active');
+      bgColor.disabled = false;
+    }
   });
 
   initGrid();
@@ -1861,6 +1871,7 @@ textSeq = 3;
   setEdges(true);
   setEdgeColor(edgeColor.value); setGround(groundColor.value); setGroundInner(groundInnerColor.value);
 })();
+
 </script>
 </body> 
 </html>
