@@ -2050,7 +2050,8 @@ let currentLotIndex = -1;
 let sideLengthLabels = []; // Array to store side length label elements
 let currentLabeledLot = null; // Track which lot has labels
 let isDetailOpen = false;
- 
+let lastOpenedBaseIndex = null;
+
 // Initialize map
 fetch('https://lalaland.mx/mapbox.txt')
   .then(r => r.text())
@@ -3335,6 +3336,8 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
   const plusBtnEl      = document.querySelector('.plus-button');
   const backBtnEl      = document.getElementById('backButton');
 
+
+
   // ---- data
   const lot = lots?.[index];
   if (!lot) return;
@@ -3437,6 +3440,22 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
   contentWrapper?.classList.add('show-details');
   lotDetails.classList.add('active');
 
+// 🔹 Show lot dimensions like before
+if (lotMapData) {
+  const currentZoom = map.getZoom();
+  if (currentZoom >= 18.8) {
+    if (currentLabeledLot && currentLabeledLot.name !== lotMapData.name) {
+      removeSideLengthLabels();
+    }
+    addSideLengthLabels(lotMapData);
+    currentLabeledLot = lotMapData;
+  }
+}
+
+//index to scroll
+  const baseIndex = baseLots.findIndex(l => l.number === lot.number);
+lastOpenedBaseIndex = baseIndex;
+
   // Calendly hook
   scheduleButton.addEventListener('click', function () {
     lotDetails.style.display = 'none';
@@ -3479,6 +3498,13 @@ backButton.addEventListener('click', () => {
   backButton.style.display = 'none';
   document.querySelector('.plus-button').style.display = 'none';
   modal.classList.add('lot-mode');
+  
+  //return to index
+  if (lastOpenedBaseIndex != null) {
+  requestAnimationFrame(() => {
+    scrollToBaseIndex(lastOpenedBaseIndex, false); // false = no smooth scroll, just snap center
+  });
+}
 
   // Re-enable scrolling
   scrollHandlerAttached = true;
@@ -5140,6 +5166,9 @@ PS.openPinInModal = async function (pin) {
     </div>
   `;
   lotDetails.appendChild(container);
+
+
+
 
   // photo click => fullscreen viewer (available for all users)
   const imgEl = container.querySelector(`#ps-photo-${pin.id}`);
