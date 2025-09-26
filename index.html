@@ -5634,6 +5634,8 @@ function refreshFeaturedLayer() {
     };
   }
 })();
+
+
 </script>
 
 
@@ -6051,5 +6053,97 @@ const setupAuthListener = setInterval(function() {
 
 
 
+<script>
+// LOT UNIT CONTROLS SORTING (hide sold in all modes)
+(() => {
+  const modal = document.getElementById('lotModal');
+  const unitControls = document.getElementById('unitControls');
+  if (!modal || !unitControls) return;
+
+  // Config toggles (set to false if you ever want to show sold in a mode)
+  const HIDE_SOLD_IN_NUM   = true;
+  const HIDE_SOLD_IN_NAME  = true;
+  const HIDE_SOLD_IN_AREA  = true;
+  const HIDE_SOLD_IN_PRICE = true;
+
+  let currentMode = modal.dataset.mode || 'num';
+  const btns = Array.from(unitControls.querySelectorAll('.unit-btn'));
+  let unsortedBaseLots = [];
+
+  // Robust sold detector
+  function isSold(lot) {
+    if (lot.sold === true) return true;
+    const fields = [
+      lot.availability, lot.status, lot.state,
+      lot.availability_status, lot.sale_status, lot.disponibilidad
+    ];
+    for (const v of fields) {
+      if (typeof v === 'string') {
+        const s = v.normalize('NFKD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase();
+        if (/(^|[^a-z])(sold|vendido|ocupado)([^a-z]|$)/.test(s)) return true;
+      }
+    }
+    return false;
+  }
+
+  function sortLots(mode) {
+    if (!Array.isArray(baseLots) || baseLots.length === 0) return;
+    if (unsortedBaseLots.length === 0) unsortedBaseLots = [...baseLots];
+
+    // Base set depending on mode + hide-sold toggles
+    let set = [...unsortedBaseLots];
+    if (mode === 'num'   && HIDE_SOLD_IN_NUM)   set = set.filter(l => !isSold(l));
+    if ((mode === 'name' || mode === 'alpha' || mode === 'alphabet') && HIDE_SOLD_IN_NAME) set = set.filter(l => !isSold(l));
+    if (mode === 'area'  && HIDE_SOLD_IN_AREA)  set = set.filter(l => !isSold(l));
+    if (mode === 'price' && HIDE_SOLD_IN_PRICE) set = set.filter(l => !isSold(l));
+
+    // Sort
+    switch (mode) {
+      case 'num':
+        set.sort((a, b) => (a.number || 0) - (b.number || 0));
+        break;
+      case 'name':
+      case 'alpha':
+      case 'alphabet':
+        set.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true, sensitivity: 'base' }));
+        break;
+      case 'area':
+        set.sort((a, b) => (parseFloat(b.size)  || 0) - (parseFloat(a.size)  || 0));
+        break;
+      case 'price':
+        set.sort((a, b) => (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0));
+        break;
+      default:
+        return;
+    }
+
+    // Respect fraccionamiento filter if present
+    const fracc = (modal.dataset.fracc || '').toString().trim();
+    if (fracc) {
+      set = set.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
+    }
+
+    baseLots = set;
+    if (typeof updateLotsArray === 'function') updateLotsArray();
+    if (typeof render === 'function') render();
+
+    try {
+      if (typeof highlightCenter === 'function') highlightCenter();
+      if (typeof updateScrollbar === 'function') updateScrollbar();
+    } catch {}
+  }
+
+  function setMode(mode) {
+    currentMode = mode;
+    modal.dataset.mode = mode;
+    btns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    sortLots(mode);
+  }
+
+  btns.forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+  btns.forEach(b => b.classList.toggle('active', b.dataset.mode === currentMode));
+})();
+</script>
+ 
 </body>
-</html> 
+</html>  
