@@ -4035,7 +4035,32 @@ function openModal(lot = null, baseIndex = 0) {
 
   // If just switching lots, handle it efficiently without resetting everything
   if (isJustSwitchingLots) {
-    // Just scroll to the new lot without refreshing everything
+    // ⤵️ Apply fraccionamiento filter FIRST when switching between different fraccionamientos
+    (function applyFraccFilter() {
+      try {
+        const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
+          || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
+        const modalEl = document.getElementById('lotModal');
+        const currentFracc = modalEl?.dataset.fracc || '';
+        
+        // Only re-filter if the fraccionamiento has changed
+        if (fracc !== currentFracc) {
+          if (modalEl) modalEl.dataset.fracc = fracc;
+          const headerFraccEl = document.getElementById('headerFracc');
+          if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
+          if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
+            // Filter baseLots by fraccionamiento
+            baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
+            updateLotsArray();
+            render(); // Re-render the list with the new filtered lots
+          }
+        }
+      } catch (e) {
+        console.warn('Fraccionamiento filter failed:', e);
+      }
+    })();
+
+    // Just scroll to the new lot after filtering
     const scrollToIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
     if (scrollToIndex !== -1) {
       scrollToBaseIndex(scrollToIndex, true);
