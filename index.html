@@ -1532,6 +1532,61 @@ body.fonts-loaded .side-length-label {
             font-size: 1.2em;
             margin-right: 5px;
         }
+
+/* Unit controls styles */
+.unit-controls {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  gap: 6px;
+  z-index: 3;
+}
+
+.unit-btn {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  transition: all 0.3s ease;
+  font-size: 10px;
+  line-height: 1;
+  color: #888; /* Start gray */
+  user-select: none;
+}
+
+/* Hover state */
+.unit-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #666;
+}
+
+/* Active (clicked) state - orange */
+.unit-btn.active {
+  color: #ff8400; /* Orange color */
+  background-color: transparent;
+}
+
+/* Make the m² text read nicely */
+.unit-btn sup {
+  font-size: 0.7em;
+  line-height: 1;
+  vertical-align: top;
+  transform: translateY(-0.1em);
+  display: inline-block;
+}
+
+#lotModal.lot-mode .unit-controls {
+  display: flex;
+}
+
   </style>
 </head>
  
@@ -4179,10 +4234,11 @@ function openModal(lot = null, baseIndex = 0) {
             baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
             updateLotsArray();
           }
+              resetUnitButtons();
         } catch (e) {
           console.warn('Fraccionamiento filter failed:', e);
         }
-      })();
+      })(); 
 
       render();
       requestAnimationFrame(() => {
@@ -4199,6 +4255,8 @@ function openModal(lot = null, baseIndex = 0) {
             || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
           const modalEl = document.getElementById('lotModal');
           if (modalEl) modalEl.dataset.fracc = fracc;
+
+          if (window.resetUnitButtons) window.resetUnitButtons();
           const headerFraccEl = document.getElementById('headerFracc');
           if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
           if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
@@ -4247,7 +4305,8 @@ function openModal(lot = null, baseIndex = 0) {
 
 function closeModal() {
 
-  
+  if (window.resetUnitButtons) window.resetUnitButtons();
+
   const modal = document.getElementById('lotModal');
   if (!modal) return;
 
@@ -6066,7 +6125,7 @@ const setupAuthListener = setInterval(function() {
   const HIDE_SOLD_IN_AREA  = true;
   const HIDE_SOLD_IN_PRICE = true;
 
-  let currentMode = modal.dataset.mode || 'num';
+  let currentMode = null; // Start with no active mode
   const btns = Array.from(unitControls.querySelectorAll('.unit-btn'));
 
   // Robust sold detector
@@ -6130,18 +6189,55 @@ const setupAuthListener = setInterval(function() {
   }
 
   function setMode(mode) {
-    currentMode = mode;
-    modal.dataset.mode = mode;
-    btns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-    sortLots(mode);
+    // Remove active class from all buttons
+    btns.forEach(b => b.classList.remove('active'));
+    
+    // If clicking the same mode, toggle it off (back to default order)
+    if (currentMode === mode) {
+      currentMode = null;
+      modal.dataset.mode = '';
+      
+      // Reset to original order (re-apply fracc filter but no sorting)
+      resetToDefaultOrder();
+    } else {
+      // Set new active mode
+      currentMode = mode;
+      modal.dataset.mode = mode;
+      
+      // Add active class to clicked button
+      const activeBtn = btns.find(b => b.dataset.mode === mode);
+      if (activeBtn) activeBtn.classList.add('active');
+      
+      sortLots(mode);
+    }
   }
 
+  // Function to reset to default order (when fracc changes or mode is toggled off)
+  function resetToDefaultOrder() {
+    const fracc = (modal.dataset.fracc || '').toString().trim();
+    if (Array.isArray(window.baseLotsAll)) {
+      baseLots = window.baseLotsAll.filter(l => 
+        !fracc || (l.fraccionamiento || '').toString().trim() === fracc
+      );
+      updateLotsArray();
+      if (typeof render === 'function') render();
+      if (typeof highlightCenter === 'function') highlightCenter();
+      if (typeof updateScrollbar === 'function') updateScrollbar();
+    }
+  }
+
+  // Public function to reset buttons (call this when fracc changes)
+  window.resetUnitButtons = function() {
+    currentMode = null;
+    modal.dataset.mode = '';
+    btns.forEach(btn => btn.classList.remove('active'));
+    resetToDefaultOrder();
+  };
+
   btns.forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
-  btns.forEach(b => b.classList.toggle('active', b.dataset.mode === currentMode));
- 
-  // Make sure the current mode is applied initially
-  setTimeout(() => sortLots(currentMode), 100);
 })();
+
+
 </script>
  
 </body> 
