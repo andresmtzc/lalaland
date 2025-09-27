@@ -581,41 +581,56 @@ function requestConeUpdateAfterZoom(delay = 180) {
         // ===== 2) THREE.JS SETUP =====
         let scene, camera, renderer, sphere;
         
-        function initThreeJS() {
-            // Set up scene
-            scene = new THREE.Scene();
-            panoGroup = new THREE.Group();
-scene.add(panoGroup);
-            // Set up camera with initial FOV
-            const canvas = document.getElementById('canvas');
-            camera = new THREE.PerspectiveCamera(currentFov, canvas.offsetWidth / canvas.offsetHeight, 0.1, 1000);
-            camera.position.set(0, 0, 0.1);
-            
-            // Set up renderer
-            renderer = new THREE.WebGLRenderer({ 
-                canvas: canvas, 
-                antialias: true,
-                preserveDrawingBuffer: true
-            });
-            renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
-            
-            // Handle window resize
-            window.addEventListener('resize', onWindowResize);
-            
-            // Update zoom level display
-            updateZoomDisplay();
-            
-            // Start animation loop
-            animate();
-        }
+        function setRendererSize() {
+  const canvas = document.getElementById('canvas');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2); // cap at 2 for perf
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+}
+
+function canvasAspect() {
+  const canvas = document.getElementById('canvas');
+  return canvas.clientWidth / canvas.clientHeight;
+}
+
+function initThreeJS() {
+  scene = new THREE.Scene();
+  panoGroup = new THREE.Group();
+  scene.add(panoGroup);
+
+  const canvas = document.getElementById('canvas');
+
+  // Camera uses client sizes (not offset) for accuracy on mobile
+  camera = new THREE.PerspectiveCamera(currentFov, canvasAspect(), 0.1, 1000);
+  camera.position.set(0, 0, 0.1);
+
+  // High-quality renderer; preserveDrawingBuffer=false for better perf
+  renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: false,
+    powerPreference: 'high-performance',
+    preserveDrawingBuffer: false
+  });
+
+  // IMPORTANT for Three r0.132: sRGB
+  renderer.outputEncoding = THREE.sRGBEncoding;
+
+  // Size at device pixel ratio
+  setRendererSize();
+
+  window.addEventListener('resize', onWindowResize);
+
+  updateZoomDisplay();
+  animate();
+}
         
-        function onWindowResize() {
-            const canvas = document.getElementById('canvas');
-            camera.aspect = canvas.offsetWidth / canvas.offsetHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
-            updateViewCone();
-        }
+ function onWindowResize() {
+  camera.aspect = canvasAspect();
+  camera.updateProjectionMatrix();
+  setRendererSize();
+  updateViewCone();
+}
         
 function animate() {
     requestAnimationFrame(animate);
@@ -751,7 +766,7 @@ function updateNavigationRing() {
     if (!ring) return;
     
     const RING_OFFSET_DEG = 70; // tweak this to rotate the whole circle
-    
+
     // Convert yaw to degrees for full 360° rotation with 90° offset . starting offset circle //ROTATE HERE TO FIX RING
     const yawDegrees = THREE.MathUtils.radToDeg(currentYaw) + RING_OFFSET_DEG;
     
@@ -984,6 +999,27 @@ function updateZoomDisplay() {
             img.src = url;
         }
         
+function isPOT(n) { return (n & (n - 1)) === 0; }
+
+function setupTexture(img) {
+  const tex = new THREE.Texture(img);
+  // For Three r0.132
+  tex.encoding = THREE.sRGBEncoding;
+
+  const pot = isPOT(img.width) && isPOT(img.height);
+  if (pot) {
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  } else {
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+  }
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+
        function applyImageToScene(img, imageData, preserveOrientation) {
   // Remove previous sphere (but keep the group)
   if (sphere) {
@@ -996,10 +1032,9 @@ function updateZoomDisplay() {
   const geometry = new THREE.SphereGeometry(100, 60, 40);
   geometry.scale(-1, 1, 1);
 
-  const texture = new THREE.Texture(img);
-  texture.needsUpdate = true;
+const texture = setupTexture(img);
+const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
 
-  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
   sphere = new THREE.Mesh(geometry, material);
 
   // Add sphere inside the group
