@@ -612,6 +612,7 @@ function initThreeJS() {
     powerPreference: 'high-performance',
     preserveDrawingBuffer: false
   });
+  window.renderer = renderer; 
 
   // IMPORTANT for Three r0.132: sRGB
   renderer.outputEncoding = THREE.sRGBEncoding;
@@ -1378,6 +1379,176 @@ function setupEventListeners() {
         });
     });
 }
+
+
+/* === DROP-IN: Live DPR Tweaker + A/B compare + FPS === */
+(function(){
+  // stored settings
+  let DPR_CAP = parseFloat(localStorage.getItem('pano_dpr_cap') || '6'); // allow up to 4×
+  let RENDER_SCALE = parseFloat(localStorage.getItem('pano_render_scale') || '6');
+  let CURRENT_DPR = 1;
+
+  // override the earlier setRendererSize (last definition wins)
+  window.setRendererSize = function(){
+    const canvas = document.getElementById('canvas');
+    const device = window.devicePixelRatio || 1;
+    const dpr = Math.min(device * RENDER_SCALE, DPR_CAP);
+    if (renderer) { // use the real variable
+      renderer.setPixelRatio(dpr);
+      renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+    }
+    CURRENT_DPR = dpr;
+    updateDPRPanel();
+  };
+
+  // augment updateStatusBox to show DPR (no manual edits needed)
+  const _origUSB = window.updateStatusBox;
+  window.updateStatusBox = function(){
+    if (typeof _origUSB === 'function') _origUSB();
+    try {
+      const el = document.getElementById('zoom-level');
+      if (!el) return;
+      let line = el.querySelector('[data-dpr-line]');
+      if (!line) {
+        line = document.createElement('div');
+        line.setAttribute('data-dpr-line','');
+        el.appendChild(line);
+      }
+      line.innerHTML = `<strong>DPR</strong>: ${fmt(CURRENT_DPR,2)} (cap ${fmt(DPR_CAP,2)}, scale ${fmt(RENDER_SCALE,2)})`;
+    } catch {}
+  };
+
+  // floating panel UI
+  const panel = document.createElement('div');
+  panel.id = 'dprPanel';
+  panel.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:50;background:rgba(2,6,23,.85);border:1px solid #263247;border-radius:10px;padding:10px 12px;color:#cbd5e1;font:12px/1.2 ui-sans-serif,system-ui;backdrop-filter:blur(6px);';
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <strong style="font-size:12px;">Quality</strong>
+      <button id="dprHide" style="margin-left:auto;background:transparent;border:1px solid #263247;color:#94a3b8;border-radius:6px;padding:2px 6px;cursor:pointer">hide</button>
+    </div>
+    <div style="display:grid;grid-template-columns:64px 1fr auto;gap:6px;align-items:center;margin-bottom:6px;">
+      <div>Scale</div>
+      <input id="scaleRange" type="range" min="0.5" max="6" step="0.05">
+      <div id="scaleVal"></div>
+      <div>Cap</div>
+      <input id="capRange" type="range" min="1" max="6" step="0.25">
+      <div id="capVal"></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+      <button id="presetLow"    style="border:1px solid #263247;background:transparent;color:#cbd5e1;border-radius:6px;padding:4px 6px;cursor:pointer">Low 2×</button>
+      <button id="presetNative" style="border:1px solid #263247;background:transparent;color:#cbd5e1;border-radius:6px;padding:4px 6px;cursor:pointer">Native</button>
+      <button id="preset4x"     style="border:1px solid #263247;background:transparent;color:#cbd5e1;border-radius:6px;padding:4px 6px;cursor:pointer">4×</button>
+      <button id="abToggle"     style="border:1px solid #263247;background:transparent;color:#22d3ee;border-radius:6px;padding:4px 6px;cursor:pointer;margin-left:auto">A↔B</button>
+    </div>
+    <div id="dprStats" style="font-variant-numeric:tabular-nums;"></div>
+  `;
+  document.body.appendChild(panel);
+
+  const scaleRange = panel.querySelector('#scaleRange');
+  const capRange   = panel.querySelector('#capRange');
+  const scaleVal   = panel.querySelector('#scaleVal');
+  const capVal     = panel.querySelector('#capVal');
+  const stats      = panel.querySelector('#dprStats');
+
+  function persist(){
+    localStorage.setItem('pano_render_scale', String(RENDER_SCALE));
+    localStorage.setItem('pano_dpr_cap', String(DPR_CAP));
+  }
+
+  function updateDPRPanel(){
+    if (!panel.isConnected) return;
+    scaleRange.value = String(RENDER_SCALE);
+    capRange.value   = String(DPR_CAP);
+    scaleVal.textContent = RENDER_SCALE.toFixed(2);
+    capVal.textContent   = DPR_CAP.toFixed(2);
+    const dev = (window.devicePixelRatio || 1).toFixed(2);
+    stats.innerHTML = `device: <b>${dev}</b> &nbsp;effective: <b>${(CURRENT_DPR||1).toFixed(2)}</b> &nbsp;fps: <b>${fpsEMA.toFixed(0)}</b>`;
+  }
+
+  // UI listeners
+  scaleRange.addEventListener('input', ()=>{
+    RENDER_SCALE = parseFloat(scaleRange.value);
+    persist(); setRendererSize(); updateStatusBox?.();
+  });
+  capRange.addEventListener('input', ()=>{
+    DPR_CAP = parseFloat(capRange.value);
+    persist(); setRendererSize(); updateStatusBox?.();
+  });
+  panel.querySelector('#presetLow').addEventListener('click', ()=>{
+    RENDER_SCALE=1; DPR_CAP=2; persist(); setRendererSize(); updateStatusBox?.();
+  });
+  panel.querySelector('#presetNative').addEventListener('click', ()=>{
+    RENDER_SCALE=1; DPR_CAP=3.01; persist(); setRendererSize(); updateStatusBox?.();
+  });
+  panel.querySelector('#preset4x').addEventListener('click', ()=>{
+    RENDER_SCALE=1; DPR_CAP=4; persist(); setRendererSize(); updateStatusBox?.();
+  });
+  panel.querySelector('#dprHide').addEventListener('click', ()=>{
+    panel.style.display='none';
+    showToast?.('Quality panel: press Q to show', 1000);
+  });
+
+  // A/B profiles (toggle with B, save with Shift+click)
+  function saveProfile(slot){ localStorage.setItem('pano_profile_'+slot, JSON.stringify({RENDER_SCALE,DPR_CAP})); showToast?.(`Saved ${slot}`, 800); }
+  function loadProfile(slot){
+    const s = localStorage.getItem('pano_profile_'+slot);
+    if (!s) return false;
+    try { const o=JSON.parse(s); RENDER_SCALE=o.RENDER_SCALE; DPR_CAP=o.DPR_CAP; persist(); setRendererSize(); updateStatusBox?.(); return true; } catch { return false; }
+  }
+  function toggleAB(){
+    const cur  = localStorage.getItem('pano_ab_cur') || 'A';
+    const next = (cur==='A')?'B':'A';
+    if (!loadProfile(next)) showToast?.(`No ${next} saved (Shift-click A↔B to save)`, 1200, true);
+    localStorage.setItem('pano_ab_cur', next);
+    showToast?.(`Profile ${next}`, 800);
+  }
+  panel.querySelector('#abToggle').addEventListener('click', (e)=>{
+    if (e.shiftKey) {
+      const cur = localStorage.getItem('pano_ab_cur') || 'A';
+      saveProfile(cur);
+    } else {
+      toggleAB();
+    }
+  });
+
+  // Hotkeys: Q show/hide, +/- scale, Ctrl/Cmd +/- cap, 1..4 presets, B toggle A/B
+  document.addEventListener('keydown', (e)=>{
+    const t = e.target; if (t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable)) return;
+    if (e.key==='q' || e.key==='Q') { panel.style.display = (panel.style.display==='none' ? 'block' : 'none'); }
+    let changed=false;
+    if (!e.ctrlKey && !e.metaKey) {
+      if (e.key==='+'||e.key==='='){ RENDER_SCALE=Math.min(RENDER_SCALE+0.25,6); changed=true; }
+      if (e.key==='-'||e.key==='_'){ RENDER_SCALE=Math.max(RENDER_SCALE-0.25,0.5); changed=true; }
+    } else {
+      if (e.key==='+'||e.key==='='){ DPR_CAP=Math.min(DPR_CAP+0.5,6); changed=true; }
+      if (e.key==='-'||e.key==='_'){ DPR_CAP=Math.max(DPR_CAP-0.5,1); changed=true; }
+    }
+    if (changed){ persist(); setRendererSize(); updateStatusBox?.(); showToast?.(`DPR=${(CURRENT_DPR||1).toFixed(2)} (cap ${DPR_CAP}, scale ${RENDER_SCALE.toFixed(2)})`, 900); }
+    if (e.key==='1'){ RENDER_SCALE=1; DPR_CAP=2; persist(); setRendererSize(); updateStatusBox?.(); }
+    if (e.key==='2'){ RENDER_SCALE=1; DPR_CAP=3.01; persist(); setRendererSize(); updateStatusBox?.(); }
+    if (e.key==='3'){ RENDER_SCALE=1.25; DPR_CAP=3.5; persist(); setRendererSize(); updateStatusBox?.(); }
+    if (e.key==='4'){ RENDER_SCALE=1; DPR_CAP=4; persist(); setRendererSize(); updateStatusBox?.(); }
+    if (e.key==='b'||e.key==='B'){ toggleAB(); }
+  });
+
+  // simple FPS meter (EMA)
+  let last = performance.now(), fpsEMA = 60;
+  function fpsLoop(){
+    const now = performance.now(), dt = now - last; last = now;
+    const fps = 1000/dt; fpsEMA = 0.1*fps + 0.9*fpsEMA;
+    updateDPRPanel();
+    requestAnimationFrame(fpsLoop);
+  }
+  requestAnimationFrame(fpsLoop);
+ 
+  // init panel + make sure DPR is applied once
+  updateDPRPanel();
+  setTimeout(()=>{ setRendererSize(); updateStatusBox?.(); }, 0);
+})();
+
+
+
         // ===== 9) INITIALIZATION =====
 async function init() {
   try {
