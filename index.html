@@ -2888,7 +2888,7 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
 
   // ⏳ Fade in after tiny delay to ensure features are added first
   setTimeout(() => {
-    map.setPaintProperty('sold-x-layer', 'line-opacity', 1);
+    map.setPaintProperty('sold-x-layer', 'line-opacity', 0.49);
   }, 10);
 }
 
@@ -3043,24 +3043,42 @@ function animateLots(map, cb) {
     }, i * delay);
   });
 
-  // Add final lots layer (initially transparent but visible)
-  const finalGeojson = {
-    type: "FeatureCollection",
-    features: lotData.map((lot, i) => lotFeature(lot, i))  // <- pass index here!
-  };
-  map.addSource("lots-final", { type: "geojson", data: finalGeojson });
-  map.addLayer({
-    id: "lots-final",
-    type: "line",
-    source: "lots-final",
-    layout: { visibility: "visible" },
-    paint: {
-      "line-color": "#fff",
-      "line-width": 1,
-      "line-opacity": 0,
-      "line-opacity-transition": { duration: fadeDuration },
-    },
-  });
+// Add final lots layer (initially transparent but visible)
+const finalGeojson = {
+  type: "FeatureCollection",
+  features: lotData.map((lot, i) => lotFeature(lot, i))
+};
+map.addSource("lots-final", { type: "geojson", data: finalGeojson });
+
+// Create TWO separate layers instead of one
+map.addLayer({
+  id: "lots-final-available",
+  type: "line",
+  source: "lots-final",
+  layout: { visibility: "visible" },
+  paint: {
+    "line-color": "#fff",
+    "line-width": 1.5,
+    "line-opacity": 1,
+    "line-opacity-transition": { duration: fadeDuration },
+  },
+  filter: ["!=", ["get", "availability"], "Sold"] // Show only available lots
+});
+ 
+map.addLayer({
+  id: "lots-final-sold",
+  type: "line",
+  source: "lots-final",
+  layout: { visibility: "visible" },
+  paint: {
+    "line-color": "#fff",
+    "line-width": 1,
+    "line-opacity": 0.49, // Semi-transparent for sold lots
+    "line-opacity-transition": { duration: fadeDuration },
+  },
+  filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
+});
+
   map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
     id: "lots-final-click",
     type: "fill",
@@ -3106,8 +3124,11 @@ function lotFeature(lot, index) {
   return {
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [c] },
-    properties: { name: lot.name },
-    id: index  // unique id for feature state
+    properties: { 
+      name: lot.name,
+      availability: lot.availability || 'Available' // Add this line
+    },
+    id: index
   };
 }
 
