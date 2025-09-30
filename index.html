@@ -3030,8 +3030,10 @@ function animateLots(map, cb) {
       features: g.map((idx) => lotFeature(lotData[idx])),
     };
     map.addSource(`lot-group-${i}`, { type: "geojson", data: geojson });
+    
+    // Add BOTH layers for this group
     map.addLayer({
-      id: `lot-group-${i}`,
+      id: `lot-group-${i}-available`,
       type: "line",
       source: `lot-group-${i}`,
       paint: {
@@ -3040,56 +3042,73 @@ function animateLots(map, cb) {
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
       },
+      filter: ["!=", ["get", "availability"], "Sold"]
     });
+    
+    map.addLayer({
+      id: `lot-group-${i}-sold`, 
+      type: "line",
+      source: `lot-group-${i}`,
+      paint: {
+        "line-color": "#fff",
+        "line-width": 1,
+        "line-opacity": 0,
+        "line-opacity-transition": { duration: fadeDuration },
+      },
+      filter: ["==", ["get", "availability"], "Sold"]
+    });
+    
     setTimeout(() => {
-      map.setPaintProperty(`lot-group-${i}`, "line-opacity", 1);
-
-      // ✅ ADD THIS: Draw Xs for sold lots in this group
+      // Fade in BOTH layers for this group
+      map.setPaintProperty(`lot-group-${i}-available`, "line-opacity", 1);
+      map.setPaintProperty(`lot-group-${i}-sold`, "line-opacity", 0.24); // ⬅️ 0.24 for group layer
+      
+      // Draw Xs for sold lots in this group
       const soldInGroup = g
         .map(idx => lotData[idx])
         .filter(lot => (lot.availability ?? '').toLowerCase() === 'sold');
-
+      
       if (soldInGroup.length > 0) {
-        addSoldXs(map, soldInGroup, fadeDurationXs); // ⬅ match fade timing
-      } 
+        addSoldXs(map, soldInGroup, fadeDurationXs);
+      }
     }, i * delay);
   });
 
-// Add final lots layer (initially transparent but visible)
-const finalGeojson = {
-  type: "FeatureCollection",
-  features: lotData.map((lot, i) => lotFeature(lot, i))
-};
-map.addSource("lots-final", { type: "geojson", data: finalGeojson });
+  // Add final lots layer (initially transparent but visible)
+  const finalGeojson = {
+    type: "FeatureCollection",
+    features: lotData.map((lot, i) => lotFeature(lot, i))
+  };
+  map.addSource("lots-final", { type: "geojson", data: finalGeojson });
 
-// Create TWO separate layers instead of one
-map.addLayer({
-  id: "lots-final-available",
-  type: "line",
-  source: "lots-final",
-  layout: { visibility: "visible" },
-  paint: {
-    "line-color": "#fff",
-    "line-width": 1.5,
-    "line-opacity": 1,
-    "line-opacity-transition": { duration: fadeDuration },
-  },
-  filter: ["!=", ["get", "availability"], "Sold"] // Show only available lots
-});
- 
-map.addLayer({
-  id: "lots-final-sold",
-  type: "line",
-  source: "lots-final",
-  layout: { visibility: "visible" },
-  paint: {
-    "line-color": "#fff",
-    "line-width": 1,
-    "line-opacity": 0.49, // Semi-transparent for sold lots
-    "line-opacity-transition": { duration: fadeDuration },
-  },
-  filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
-});
+  // Create TWO separate layers instead of one
+  map.addLayer({
+    id: "lots-final-available",
+    type: "line",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "line-color": "#fff",
+      "line-width": 1.5,
+      "line-opacity": 0,
+      "line-opacity-transition": { duration: fadeDuration },
+    },
+    filter: ["!=", ["get", "availability"], "Sold"] // Show only available lots
+  });
+  
+  map.addLayer({
+    id: "lots-final-sold",
+    type: "line",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "line-color": "#fff",
+      "line-width": 1,
+      "line-opacity": 0,
+      "line-opacity-transition": { duration: fadeDuration },
+    },
+    filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
+  });
 
   map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
     id: "lots-final-click",
@@ -3104,28 +3123,37 @@ map.addLayer({
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
-    // Fade in final lots
-    map.setPaintProperty("lots-final", "line-opacity", 1);
+    // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
+    map.setPaintProperty("lots-final-available", "line-opacity", 1);
+    map.setPaintProperty("lots-final-sold", "line-opacity", 0.25); // ⬅️ 0.25 for final layer during transition
 
     setTimeout(() => {
       // Fade out all lot groups simultaneously
       groupArr.forEach((_, i) => {
-        const id = `lot-group-${i}`;
-        if (map.getLayer(id)) {
-          map.setPaintProperty(id, "line-opacity", 0);
-        }
+        const availableId = `lot-group-${i}-available`;
+        const soldId = `lot-group-${i}-sold`;
+        
+        if (map.getLayer(availableId)) map.setPaintProperty(availableId, "line-opacity", 0);
+        if (map.getLayer(soldId)) map.setPaintProperty(soldId, "line-opacity", 0);
       });
 
-      // Remove all lot groups after fade out duration and call callback
+      // AFTER group layers fade out, update final sold layer to full 0.49
       setTimeout(() => {
+        map.setPaintProperty("lots-final-sold", "line-opacity", 0.49); // ⬅️ UPDATE TO FULL 0.49
+         
+        // Remove all lot groups
         groupArr.forEach((_, i) => {
-          const id = `lot-group-${i}`;
-          if (map.getLayer(id)) map.removeLayer(id);
-          if (map.getSource(id)) map.removeSource(id);
+          const availableId = `lot-group-${i}-available`;
+          const soldId = `lot-group-${i}-sold`;
+          const sourceId = `lot-group-${i}`;
+          
+          if (map.getLayer(availableId)) map.removeLayer(availableId);
+          if (map.getLayer(soldId)) map.removeLayer(soldId);
+          if (map.getSource(sourceId)) map.removeSource(sourceId);
         });
         if (cb) cb();
       }, fadeDuration);
-    }, finalDelay + fadeDuration); // Wait for fade-in and extra delay before fading out groups
+    }, finalDelay + fadeDuration);
   }, groups * delay + duration);
 }
 
@@ -6781,7 +6809,7 @@ Zoom: ${zoom}
 })();
 
 </script>
-
+  
 
 </body> 
 </html>  
