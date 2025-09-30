@@ -19,6 +19,11 @@
   </script>
 
   <style>
+:root{
+  --btn: 48px;        /* center & dot size */
+  --orbit-diam: 200px;/* diameter of the orbit circle */
+}
+
     html, body { margin:0; padding:0; font-family: 'Barlow Condensed', Arial, sans-serif; 
       height: 100vh;
        
@@ -1645,18 +1650,20 @@ body.fonts-loaded .side-length-label {
 
 
 /* Community Search Circular Menu */
-.community-circle-menu {
+.community-circle-menu{
   position: absolute;
-  bottom: 64px; /* Position above search button */
-  left: calc(50% - 80px); /* Center the menu */
+  bottom: calc(0px + 0px);  /* 48 = altura del reset; sepáralo un poco */
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 9998;
-  display: none;
-  width: 120px;
-  height: 120px;
+  width: var(--orbit-diam);
+  height: var(--orbit-diam);
+  pointer-events: none;     
+    opacity: 0; /* ⬅️ HIDDEN BY DEFAULT */
 }
 
 .community-circle-menu.active {
-  display: block;
+opacity:1;
 }
 
 @keyframes circle-pop-in {
@@ -1674,26 +1681,27 @@ body.fonts-loaded .side-length-label {
   }
 }
 
-.community-option {
+.community-option{
   position: absolute;
-  width: 40px;
-  height: 40px;
+  width: var(--btn);
+  height: var(--btn);
+  transform: translate(-50%, -50%);
   border-radius: 50%;
   background: #fcfaf3;
-  border: 0px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-family: 'Barlow Condensed';
-  font-size: 10px;
+  border: 0;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  display: flex; align-items: center; justify-content: center;
+  font: 600 10px/1 system-ui, sans-serif;
   color: #8a8880;
-  
-  /* Use the modified animation WITHOUT translate */
-  animation: circle-pop-in 0.35s cubic-bezier(0.25, 1.25, 0.5, 1) forwards;
+  cursor: pointer;
+  pointer-events: auto;
+    font-family: 'Barlow Condensed', sans-serif; /* Add this */
+  text-transform:uppercase;
+    animation: circle-pop-in 0.35s cubic-bezier(0.25, 1.25, 0.5, 1) forwards;
   opacity: 0; /* Start hidden */
 }
+
+
 
 /* First button - no delay */
 .community-option[data-community="santte1"] {
@@ -1710,17 +1718,21 @@ body.fonts-loaded .side-length-label {
   color: white;
 }
 
-/* 8 CIRCLES AROUND CENTER (60px, 60px) 
-.community-option[data-position="1"] { top: 0px; left: 60px; }   
+@keyframes circle-pop-in {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4); /* ⬅️ KEEP TRANSFORM HERE */
+    opacity: 0;
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(1.1); /* ⬅️ KEEP TRANSFORM HERE */
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1); /* ⬅️ KEEP TRANSFORM HERE */
+    opacity: 1;
+  }
+}
 
-.community-option[data-position="3"] { top: 60px; left: 120px; } 
-.community-option[data-position="4"] { top: 95px; left: 95px; }  
-.community-option[data-position="5"] { top: 120px; left: 60px; } 
-.community-option[data-position="6"] { top: 95px; left: 25px; }  
-.community-option[data-position="7"] { top: 60px; left: 0px; }  
-  */
-.community-option[data-position="2"] { top: 25px; left: 95px; } 
-.community-option[data-position="8"] { top: 25px; left: 25px; }
 
 /* Hide floating UI whenever the modal is open */
 body.modal-open .lalaland-button,
@@ -1895,12 +1907,8 @@ body.modal-open #cameraButton {
     </svg>
   </button>
   
-<div id="communityCircleMenu" class="community-circle-menu">
-  <!-- Only keep these two -->
-  <button class="community-option" data-community="santte2" data-position="8" title="Santte 2">Santte2</button>
-  <button class="community-option" data-community="santte1" data-position="2" title="Santte 1">Santte1</button>
-</div>
-</div>
+<div id="communityCircleMenu" class="community-circle-menu"></div>
+
  
  <!-- Drive button -->
 <button id="driveBtn" class="gps-button" title="Drive" style="bottom: 200px;">
@@ -6651,5 +6659,102 @@ Zoom: ${zoom}
   ro.observe(modal);
 })();
 </script>
+
+<script>
+(function(){
+  function setupCommunitySearchMenu() {
+    const searchBtn  = document.getElementById('communitySearchBtn');
+    const circleMenu = document.getElementById('communityCircleMenu');
+    if (!searchBtn || !circleMenu) return;
+
+    // 1) Config - Keep 8 positions but only show 2 buttons
+    const communities = [
+      { id:'santte2', label:'Santte 2', center:[-100.157213,25.462513], zoom:16.7, fracc:'santte2', position: 7 }, // C8 position
+      { id:'santte1', label:'Santte 1', center:[-100.15994,25.461823],  zoom:16.5, fracc:'santte1', position: 1 }  // Santte 2 position
+    ];
+    const N = 8;                 // Keep 8 positions in the circle
+    const baseDeg = 0;           // 0° rotation
+    const zeroAtTop = true;      // 0° at top
+    const rootStyles = getComputedStyle(document.documentElement);
+    const btnPx  = parseFloat(rootStyles.getPropertyValue('--btn')) || 56;
+    const diamPx = parseFloat(rootStyles.getPropertyValue('--orbit-diam')) || 160;
+    const radius = (diamPx / 2) - (btnPx / 2);
+
+    // 2) Build buttons - create all 8 positions but only make 2 visible
+    circleMenu.innerHTML = '';
+    
+    for (let i = 0; i < N; i++) {
+  const b = document.createElement('button');
+  b.className = 'community-option';
+  b.type = 'button';
+  
+  // Find if this position should have a visible button
+  const community = communities.find(c => c.position === i);
+  
+  if (community) {
+    // This position gets a visible button
+    b.dataset.community = community.id; // ← ADD THIS LINE
+    b.textContent = community.label;
+    b.style.display = 'flex'; // Make visible
+  } else {
+    // Empty position - hidden
+    b.style.display = 'none'; // Hide this position
+  }
+      
+      circleMenu.appendChild(b);
+
+      // Position all buttons (visible and hidden) in the circle
+      const step = 360 / N;
+      const theta = baseDeg + i*step + (zeroAtTop ? -90 : 0);
+      const rad = theta * Math.PI / 180;
+      const cx = circleMenu.clientWidth / 2;
+      const cy = circleMenu.clientHeight / 2;
+      b.style.left = (cx + radius * Math.cos(rad)) + 'px';
+      b.style.top  = (cy + radius * Math.sin(rad)) + 'px';
+
+      // Only add click handler to visible buttons
+      if (community) {
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const c = community;
+          if (c.center && window.map) {
+            map.flyTo({ center: c.center, zoom: c.zoom || 16.5, speed: 1.2, curve: 1.5 });
+            const modal = document.getElementById('lotModal');
+            if (modal && modal.classList.contains('show')) {
+              modal.dataset.fracc = c.fracc || '';
+              if (typeof window.resetUnitButtons === 'function') window.resetUnitButtons();
+            }
+            if (typeof window.showToaster === 'function') showToaster(`Navegando a ${c.label}`);
+          }
+          circleMenu.classList.remove('active');
+          menuActive = false;
+        });
+      }
+    }
+
+    // 3) Toggle open/close
+    let menuActive = false;
+    searchBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menuActive = !menuActive;
+      circleMenu.classList.toggle('active', menuActive);
+    });
+
+    document.addEventListener('click', () => {
+      if (!menuActive) return;
+      menuActive = false;
+      circleMenu.classList.remove('active');
+    });
+
+    circleMenu.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  // call after map/layers are ready
+  setupCommunitySearchMenu();
+})();
+
+</script>
+
+
 </body> 
 </html>  
