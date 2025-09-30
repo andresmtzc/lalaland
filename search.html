@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Orbiting Dots — Center Size Slider</title>
+<style>
+  :root{
+    --stage: 520px;      /* canvas size */
+    --btn: 120px;        /* center button size */
+    --orbit-radius: 160; /* starting radius (px) */
+    --dot: 18px;         /* dot size */
+    --rotate-deg: 0deg;  /* rotation applied to all dots */
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: #0a0a0a;
+    color: #eaeaea;
+    font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+
+  .wrap {
+    min-height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+
+  .panel { width: min(100%, 900px); }
+
+  .controls {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    margin-bottom: 18px;
+  }
+  .control {
+    background: #141414;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 12px 14px;
+  }
+  .control label {
+    display: block;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #9aa0a6;
+    margin-bottom: 8px;
+  }
+  .control input[type="range"]{ width:100%; }
+
+  .stage {
+    width: var(--stage);
+    height: var(--stage);
+    position: relative;
+    margin-inline: auto;
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  .rotator {
+    position: absolute;
+    inset: 0;
+    transform-origin: 50% 50%;
+    transform: rotate(var(--rotate-deg));
+    transition: transform .12s ease;
+  }
+
+  .orbit-guide {
+    position: absolute;
+    width: calc(var(--orbit-radius) * 2px);
+    height: calc(var(--orbit-radius) * 2px);
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 1px dashed #2c2c2c;
+  }
+
+  .dot {
+    position: absolute;
+    width: var(--dot);
+    height: var(--dot);
+    border-radius: 50%;
+    background: #60a5fa;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+    transform: translate(-50%, -50%);
+    transition: background .12s ease, transform .12s ease;
+  }
+
+  .dot[aria-pressed="true"]{
+    background: #ffffff;
+    transform: translate(-50%, -50%) scale(1.06);
+    box-shadow: 0 0 0 6px rgba(255,255,255,.16);
+  }
+
+  .center-btn {
+    position: absolute;
+    width: var(--btn);
+    height: var(--btn);
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #ffffff;
+    color: #0a0a0a;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    pointer-events: none; /* purely visual */
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+
+      <div class="controls">
+        <div class="control">
+          <label for="count">Count: <span id="countOut">8</span></label>
+          <input id="count" type="range" min="0" max="72" value="8" />
+        </div>
+        <div class="control">
+          <label for="radius">Radius: <span id="radiusOut">160</span> px</label>
+          <input id="radius" type="range" min="40" max="240" value="160" />
+        </div>
+        <div class="control">
+          <label for="size">Dot size: <span id="sizeOut">18</span> px</label>
+          <input id="size" type="range" min="8" max="120" value="18" />
+        </div>
+        <div class="control">
+          <label for="rotation">Rotation: <span id="rotationOut">0</span>°</label>
+          <input id="rotation" type="range" min="0" max="360" value="0" />
+        </div>
+        <div class="control">
+          <label for="center">Center size: <span id="centerOut">120</span> px</label>
+          <input id="center" type="range" min="40" max="200" value="120" />
+        </div>
+      </div>
+
+      <div class="stage" id="stage" aria-label="Orbit stage">
+        <div class="rotator" id="rotator">
+          <div class="orbit-guide" id="guide"></div>
+          <!-- dots injected here -->
+        </div>
+        <div class="center-btn" id="centerBtn"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const rotator   = document.getElementById('rotator');
+  const stage     = document.getElementById('stage');
+  const guide     = document.getElementById('guide');
+  const centerBtn = document.getElementById('centerBtn');
+
+  const countIn    = document.getElementById('count');
+  const radiusIn   = document.getElementById('radius');
+  const sizeIn     = document.getElementById('size');
+  const rotationIn = document.getElementById('rotation');
+  const centerIn   = document.getElementById('center');
+
+  const countOut    = document.getElementById('countOut');
+  const radiusOut   = document.getElementById('radiusOut');
+  const sizeOut     = document.getElementById('sizeOut');
+  const rotationOut = document.getElementById('rotationOut');
+  const centerOut   = document.getElementById('centerOut');
+
+  let count    = +countIn.value;
+  let radius   = +radiusIn.value;
+  let dotSize  = +sizeIn.value;
+  let rotation = +rotationIn.value;
+  let center   = +centerIn.value;
+  let dots = [];
+
+  function setCSSVar(name, value){
+    document.documentElement.style.setProperty(name, value);
+  }
+  function updateOutputs(){
+    countOut.textContent    = count;
+    radiusOut.textContent   = radius;
+    sizeOut.textContent     = dotSize;
+    rotationOut.textContent = rotation;
+    centerOut.textContent   = center;
+  }
+
+  function rebuildDots(){
+    dots.forEach(d => d.el.remove());
+    dots = [];
+    for(let i=0; i<count; i++){
+      const el = document.createElement('button');
+      el.className = 'dot';
+      el.setAttribute('aria-pressed','false');
+      el.addEventListener('click', () => {
+        const pressed = el.getAttribute('aria-pressed') === 'true';
+        dots.forEach(d => d.el.setAttribute('aria-pressed','false'));
+        el.setAttribute('aria-pressed', pressed ? 'false' : 'true');
+      });
+      rotator.appendChild(el);
+      dots.push({el,i});
+    }
+    applySizes();
+    positionDots();
+  }
+
+  function applySizes(){
+    setCSSVar('--orbit-radius', radius);
+    setCSSVar('--dot', dotSize+'px');
+    setCSSVar('--btn', center+'px');
+    centerBtn.style.width = center+'px';
+    centerBtn.style.height = center+'px';
+    sizeIn.max = center; // keep dot size slider tied to center size
+  }
+
+  function positionDots(){
+    const N = Math.max(1,count);
+    const cx = stage.clientWidth/2;
+    const cy = stage.clientHeight/2;
+    dots.forEach(({el,i})=>{
+      const angle = (2*Math.PI*i)/N;
+      const x = cx + radius*Math.cos(angle);
+      const y = cy + radius*Math.sin(angle);
+      el.style.left = x+'px';
+      el.style.top  = y+'px';
+    });
+  }
+
+  countIn.oninput = e=>{count=+e.target.value;updateOutputs();rebuildDots();}
+  radiusIn.oninput= e=>{radius=+e.target.value;updateOutputs();applySizes();positionDots();}
+  sizeIn.oninput  = e=>{dotSize=+e.target.value;updateOutputs();applySizes();}
+  rotationIn.oninput = e=>{
+    rotation=+e.target.value;updateOutputs();
+    setCSSVar('--rotate-deg',rotation+'deg');
+  };
+  centerIn.oninput = e=>{
+    center=+e.target.value;updateOutputs();applySizes();
+  };
+
+  updateOutputs();
+  rebuildDots();
+  setCSSVar('--rotate-deg', rotation+'deg');
+  window.addEventListener('resize', positionDots);
+})();
+</script>
+</body>
+</html>
