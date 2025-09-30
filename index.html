@@ -1664,6 +1664,7 @@ body.fonts-loaded .side-length-label {
 
 .community-circle-menu.active {
 opacity:1;
+  pointer-events: auto; /* Add this line */
 }
 
 @keyframes circle-pop-in {
@@ -1694,7 +1695,7 @@ opacity:1;
   font: 600 10px/1 system-ui, sans-serif;
   color: #8a8880;
   cursor: pointer;
-  pointer-events: auto;
+  pointer-events: none;
     font-family: 'Barlow Condensed', sans-serif; /* Add this */
   text-transform:uppercase;
     animation: circle-pop-in 0.35s cubic-bezier(0.25, 1.25, 0.5, 1) forwards;
@@ -1702,6 +1703,9 @@ opacity:1;
   opacity: 0;
 }
 
+.community-circle-menu.active .community-option {
+  pointer-events: auto; /* Only clickable when menu is active */
+}
 
 .community-circle-menu.active .community-option[data-community="santte1"] {
   animation: circle-pop-in 0.35s cubic-bezier(0.25, 1.25, 0.5, 1) forwards;
@@ -2507,51 +2511,59 @@ map.on('click', 'lots-final-click', (e) => {
     });
 
     // SINGLE CLICK HANDLER - REMOVED THE DUPLICATE
-    map.on('click', 'lots-final-click', (e) => {
-      if (e.features.length === 0) return;
+map.on('click', 'lots-final-click', (e) => {
+  if (e.features.length === 0) return;
 
-      const feature = e.features[0];
-      const lotName = feature.properties.name;
-      const lot = lotData.find(l => l.name === lotName);
-      if (!lot) return;
+  const feature = e.features[0];
+  const lotName = feature.properties.name;
+  const lot = lotData.find(l => l.name === lotName);
+  if (!lot) return;
+
+  // Remove previous hover
+  if (hoveredId !== null) {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+    hoveredId = null;
+  }
+
+  // Find index
+  const idx = lotData.findIndex(l => l.name === lot.name);
+  if (idx !== -1) {
+    map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
+    hoveredId = idx;
+    currentLotIndex = idx;
+  }
+
+  // Remove any existing labels
+  removeSideLengthLabels();
+  
+  // 🟢 FIX: Check if we're already in detail view
+  const modal = document.getElementById('lotModal');
+  const isInDetailView = modal.classList.contains('info-mode') && isDetailOpen;
+  
+  if (isInDetailView) {
+    // We're in detail view - update the current detail view with new lot
+    const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+    if (baseIndex !== -1) {
+      // Update the detail view with the new lot
+      showDetailViewForLot(baseIndex + cloneCount, true); // true = isSwitchingLots
+    }
+  } else {
+    // Normal case - open modal
+    openModal(lot);
+  }
+
+  // Add side length labels if zoom is high enough
+  const currentZoom = map.getZoom();
+  if (currentZoom >= 18.8) {
+    addSideLengthLabels(lot);
+  }
+
+  // Prevent the event from bubbling to avoid duplicate handling
+  e.preventDefault();
+  e.originalEvent.stopPropagation();
+});
 
 
-      
-      // Remove previous hover
-      if (hoveredId !== null) {
-        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-        hoveredId = null;
-      }
-
-      // Find index
-      const idx = lotData.findIndex(l => l.name === lot.name);
-      if (idx !== -1) {
-        map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
-        hoveredId = idx;
-        currentLotIndex = idx;
-      }
-
-      // Remove any existing labels
-      removeSideLengthLabels();
-      
-      openModal(lot);
-
-      // 🟩 Scroll modal to correct lot
-      const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-      if (baseIndex !== -1) {
-        scrollToBaseIndex(baseIndex, true);
-      }
-      
-      // Add side length labels if zoom is high enough
-      const currentZoom = map.getZoom();
-      if (currentZoom >= 18.8) {
-        addSideLengthLabels(lot);
-      }
-
-      // Prevent the event from bubbling to avoid duplicate handling
-      e.preventDefault();
-      e.originalEvent.stopPropagation();
-    });
     // ===== END MAP INTERACTIONS =====
 
     // ===== REVEAL PINS VERY LAST =====
