@@ -11,113 +11,133 @@
 </head>
 <body>
   <p>Redirecting…</p>
-  <script>
-    (function(){
-      // ===== Config =====
-      const TOPIC_URL = "https://ntfy.sh/lalaland-webapp-clicks-track";
-      const LINKS = {
-        main: "https://lalaland.mx",
-        yt: "https://www.youtube.com/@yourchannel",
-        store: "https://yourstore.example.com",
-        portfolio: "https://myname.github.io/portfolio"
-      };
+<script>
+(function(){
+  const TOPIC_URL = "https://ntfy.sh/lalaland-webapp-clicks-track";
+  const LINKS = {
+    mapa: "https://lalaland.mx",
+    yt: "https://www.youtube.com/@yourchannel",
+    store: "https://yourstore.example.com",
+    portfolio: "https://myname.github.io/portfolio"
+  };
 
-      // ===== Parse link param & pick destination =====
-      const params = new URLSearchParams(location.search);
-      const link = (params.get("link") || "main").toLowerCase();
-      const dest = LINKS[link] || LINKS.main;
+  const params = new URLSearchParams(location.search);
+  const link = (params.get("link") || "main").toLowerCase();
+  const dest = LINKS[link] || LINKS.main;
 
-      // ===== Device & browser detection =====
-      function parseUA(ua) {
-        const low = ua.toLowerCase();
-        let device = "Desktop";
-        if (/iphone/.test(low)) device = "iPhone";
-        else if (/ipad/.test(low)) device = "iPad";
-        else if (/android/.test(low)) device = "Android";
+  // Device & browser detection
+  function parseUA(ua) {
+    const low = ua.toLowerCase();
+    let device = "Desktop";
+    if (/iphone/.test(low)) device = "iPhone";
+    else if (/ipad/.test(low)) device = "iPad";
+    else if (/android/.test(low)) device = "Android";
+    let browser = "Unknown";
+    if (low.includes("edg/")) browser = "Edge";
+    else if (low.includes("chrome/")) browser = "Chrome";
+    else if (low.includes("safari/") && !low.includes("chrome/")) browser = "Safari";
+    else if (low.includes("firefox/")) browser = "Firefox";
+    if (low.includes("instagram")) browser += " (IG in-app)";
+    return { device, browser };
+  }
 
-        let browser = "Unknown";
-        if (low.includes("edg/")) browser = "Edge";
-        else if (low.includes("chrome/")) browser = "Chrome";
-        else if (low.includes("safari/") && !low.includes("chrome/")) browser = "Safari";
-        else if (low.includes("firefox/")) browser = "Firefox";
-        if (low.includes("instagram")) browser += " (IG in-app)";
-        return { device, browser };
-      }
+  const ua = navigator.userAgent;
+  const { device, browser } = parseUA(ua);
+  const screenSize = `${screen.width}x${screen.height}`;
+  const lang = navigator.language || "unknown";
+  const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
+  const title = `IG Click → ${link}`;
+  const click_id = (crypto.randomUUID ? crypto.randomUUID()
+                   : Date.now().toString(36) + Math.random().toString(36).slice(2,8));
 
-      const ua = navigator.userAgent;
-      const { device, browser } = parseUA(ua);
-      const screenSize = `${screen.width}x${screen.height}`;
-      const lang = navigator.language || "unknown";
-      const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
-      const title = `IG Click → ${link}`;
-      const click_id = (crypto.randomUUID ? crypto.randomUUID()
-                        : Date.now().toString(36) + Math.random().toString(36).slice(2,8));
+  function beaconText(lines){
+    try {
+      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+      navigator.sendBeacon(TOPIC_URL, blob);
+    } catch(_) {}
+  }
+  function fetchText(lines, hdrs){
+    try {
+      fetch(TOPIC_URL, {
+        method: "POST",
+        keepalive: true,
+        headers: Object.assign({
+          "Content-Type": "text/plain",
+          "Title": title,
+          "Priority": "high"
+        }, hdrs || {}),
+        body: lines.join(" ")
+      }).catch(()=>{});
+    } catch(_) {}
+  }
 
-      // ===== Send helpers =====
-      function beaconText(lines){
-        try {
-          const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-          navigator.sendBeacon(TOPIC_URL, blob);
-        } catch(_) {}
-      }
-      function fetchText(lines, hdrs){
-        try {
-          fetch(TOPIC_URL, {
-            method: "POST",
-            keepalive: true,
-            headers: Object.assign({
-              "Content-Type": "text/plain",
-              "Title": title,
-              "Priority": "high"
-            }, hdrs || {}),
-            body: lines.join(" ")
-          }).catch(()=>{});
-        } catch(_) {}
-      }
+  // Start geo race immediately
+  const geoRace = (function(){
+    const f = (u)=>fetch(u, { cache:"no-store", mode:"cors" }).then(r=>r.ok?r.json():Promise.reject());
+    // Providers with good CORS:
+    const p1 = f("https://get.geojs.io/v1/ip/geo.json"); // geojs
+    const p2 = f("https://ipapi.co/json/");               // ipapi
+    const p3 = f("https://ipwho.is/");                    // ipwhois
+    // 1000ms hard timeout (so we don’t hang if all are slow)
+    const timeout = new Promise((_,rej)=>setTimeout(()=>rej(new Error("geo-timeout")), 1000));
+    return Promise.any([p1, p2, p3, timeout]).then(g=>{
+      const city = g.city || g.city_name || "unknown";
+      const country = g.country_name || g.country || g.country_code || "unknown";
+      return { city, country };
+    });
+  })();
 
-      // ===== 1) Instant base ping (never waits) =====
-      const baseLines = [
-        title,
-        `click_id=${click_id}`,
-        `link=${link}`,
-        `lang=${lang}`,
-        `screen=${screenSize}`,
-        `mobile=${isMobile}`,
-        `device=${device}`,
-        `browser=${browser}`
-      ];
-      beaconText(baseLines);         // most robust in IG webview
-      fetchText(baseLines);          // pretty title/header path
+  // Base message lines (no time; ntfy timestamps it)
+  const baseLines = [
+    title,
+    `click_id=${click_id}`,
+    `link=${link}`,
+    `lang=${lang}`,
+    `screen=${screenSize}`,
+    `mobile=${isMobile}`,
+    `device=${device}`,
+    `browser=${browser}`
+  ];
 
-      // ===== 2) Fast geo lookup (short timeout), then send a geo-update =====
-      (async function geoUpdate(){
-        const timeout = (ms)=>new Promise((_,rej)=>setTimeout(()=>rej(new Error("geo-timeout")), ms));
-        const tryJson = (u)=>fetch(u, { cache: "no-store" }).then(r=>r.ok?r.json():Promise.reject());
-        try {
-          const g = await Promise.race([
-            tryJson("https://ipapi.co/json/"),
-            tryJson("https://ipwho.is/"),
-            timeout(500)
-          ]);
-          const city = g.city || g.city_name || "unknown";
-          const country = g.country_name || g.country || g.country_code || "unknown";
+  // Send base ping immediately (beacon + pretty header path)
+  beaconText(baseLines);
+  fetchText(baseLines);
 
-          const geoTitle = `IG Click (geo) → ${link}`;
-          const geoLines = [
-            geoTitle,
-            `click_id=${click_id}`,
-            `link=${link}`,
-            `city=${city}`,
-            `country=${country}`
-          ];
-          beaconText(geoLines);
-          fetchText(geoLines, { "Title": geoTitle, "Priority": "default" });
-        } catch(_) { /* no geo, ignore */ }
-      })();
+  // Give geo up to 300ms to land; if it does, send a combined "geo" message before redirect.
+  const geoWindowMs = 300;
+  let combinedSent = false;
 
-      // ===== 3) Redirect immediately =====
-      location.replace(dest);
-    })();
-  </script>
+  Promise.race([
+    geoRace.then(({city, country})=>{
+      combinedSent = true;
+      const geoTitle = `IG Click (geo) → ${link}`;
+      const geoLines = baseLines.concat([`city=${city}`, `country=${country}`]);
+      beaconText([geoTitle, ...geoLines.slice(1)]); // include same fields + geo
+      fetchText(geoLines, { "Title": geoTitle, "Priority": "default" });
+    }),
+    new Promise(res=>setTimeout(res, geoWindowMs))
+  ]).finally(()=>{
+    // Redirect now
+    location.replace(dest);
+
+    // If geo didn’t make it into the combined message, try a late geo-update (best-effort)
+    if (!combinedSent) {
+      geoRace.then(({city, country})=>{
+        const geoTitle = `IG Click (geo) → ${link}`;
+        const lines = [
+          geoTitle,
+          `click_id=${click_id}`,
+          `link=${link}`,
+          `city=${city}`,
+          `country=${country}`
+        ];
+        beaconText(lines);
+        fetchText(lines, { "Title": geoTitle, "Priority": "default" });
+      }).catch(()=>{});
+    }
+  });
+})();
+</script>
+
 </body>
 </html>
