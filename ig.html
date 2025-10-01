@@ -11,6 +11,7 @@
 </head>
 <body>
   <p>Redirecting…</p>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.10.0/dist/umd/supabase.js"></script>
   <script>
 (function(){
   const TOPIC_URL = "https://ntfy.sh/lalaland-webapp-clicks-track";
@@ -79,84 +80,118 @@
     eventDuration = (endTime - startTime) / 1000; // Duration in seconds
   }
 
-  // ===== Send helpers =====
-  function beaconText(lines){
-    try {
-      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-      navigator.sendBeacon(TOPIC_URL, blob);
-    } catch(_) {}
-  }
-  function fetchText(lines, hdrs){
-    try {
-      fetch(TOPIC_URL, {
-        method: "POST",
-        keepalive: true,
-        headers: Object.assign({
-          "Content-Type": "text/plain",
-          "Title": title,
-          "Priority": "high"
-        }, hdrs || {}),
-        body: lines.join(" ")
-      }).catch(()=>{});
-    } catch(_) {}
-  }
+  // ===== Load Supabase Configuration from explicit URL (sb_config.json) =====
+  fetch('https://lalaland.mx/sb_config.json')  // Change the URL to your actual location
+    .then(response => response.json())
+    .then(config => {
+      const supabase = supabase.createClient(config.url, config.key);  // Initialize Supabase client using loaded config
 
-  // ===== 1) Collect geo data with timeout (300ms) =====
-  const geoTimeout = new Promise((_,rej)=>setTimeout(()=>rej(new Error("geo-timeout")), 300));
-  const geoRace = (function(){
-    const f = (u)=>fetch(u, { cache:"no-store", mode:"cors" }).then(r=>r.ok?r.json():Promise.reject());
-    // Using fast geo service providers
-    const p1 = f("https://get.geojs.io/v1/ip/geo.json"); // geojs
-    const p2 = f("https://ipwho.is/");                  // ipwhois
-    const p3 = f("https://ipapi.co/json/");             // ipapi
-    return Promise.race([p1, p2, p3, geoTimeout]).then(g=>{
-      const city = g.city || g.city_name || "unknown";
-      const country = g.country_name || g.country || g.country_code || "unknown";
-      return { city, country };
+      // Function to insert notification into Supabase
+      async function sendToSupabase(notificationData) {
+        const { data, error } = await supabase
+          .from('igtrack')  // Make sure the table name is 'igtrack'
+          .insert([notificationData]);
+
+        if (error) {
+          console.error('Error inserting notification into Supabase:', error);
+        } else {
+          console.log('Notification successfully inserted:', data);
+        }
+      }
+
+      // ===== Send helpers =====
+      function beaconText(lines){
+        try {
+          const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+          navigator.sendBeacon(TOPIC_URL, blob);
+        } catch(_) {}
+      }
+      function fetchText(lines, hdrs){
+        try {
+          fetch(TOPIC_URL, {
+            method: "POST",
+            keepalive: true,
+            headers: Object.assign({
+              "Content-Type": "text/plain",
+              "Title": title,
+              "Priority": "high"
+            }, hdrs || {}),
+            body: lines.join(" ")
+          }).catch(()=>{});
+        } catch(_) {}
+      }
+
+      // ===== 1) Collect geo data with timeout (300ms) =====
+      const geoTimeout = new Promise((_,rej)=>setTimeout(()=>rej(new Error("geo-timeout")), 300));
+      const geoRace = (function(){
+        const f = (u)=>fetch(u, { cache:"no-store", mode:"cors" }).then(r=>r.ok?r.json():Promise.reject());
+        // Using fast geo service providers
+        const p1 = f("https://get.geojs.io/v1/ip/geo.json"); // geojs
+        const p2 = f("https://ipwho.is/");                  // ipwhois
+        const p3 = f("https://ipapi.co/json/");             // ipapi
+        return Promise.race([p1, p2, p3, geoTimeout]).then(g=>{
+          const city = g.city || g.city_name || "unknown";
+          const country = g.country_name || g.country || g.country_code || "unknown";
+          return { city, country };
+        });
+      })();
+
+      // ===== 2) Wait for geo, then send notification =====
+      geoRace.then(({city, country})=>{
+        const geoLines = [
+          title,
+          `click_id=${click_id}`,
+          `link=${link}`,
+          `lang=${lang}`,
+          `screen=${screenSize}`,
+          `mobile=${isMobile}`,
+          `device=${device}`,
+          `browser=${browser}`,
+          `city=${city}`,
+          `country=${country}`,
+          `click_time=${clickTime}`,
+          `event_duration=${eventDuration}`
+        ];
+
+        // Send to Supabase
+        sendToSupabase({
+          click_id, link, lang, screen: screenSize, mobile: isMobile, device, browser, city, country, clickTime, eventDuration
+        });
+
+        beaconText(geoLines);
+        fetchText(geoLines);
+      }).catch(()=>{
+        // If geo fails (timeout or no response), just send basic info without geo
+        const basicLines = [
+          title,
+          `click_id=${click_id}`,
+          `link=${link}`,
+          `lang=${lang}`,
+          `screen=${screenSize}`,
+          `mobile=${isMobile}`,
+          `device=${device}`,
+          `browser=${browser}`,
+          `click_time=${clickTime}`,
+          `event_duration=${eventDuration}`
+        ];
+
+        // Send to Supabase
+        sendToSupabase({
+          click_id, link, lang, screen: screenSize, mobile: isMobile, device, browser, clickTime, eventDuration
+        });
+
+        beaconText(basicLines);
+        fetchText(basicLines);
+      }).finally(()=>{
+        // Redirect immediately after notification (don't wait for geo)
+        calculateEventDuration();  // Calculate event duration after redirect
+        location.replace(dest);
+      });
+    })
+    .catch(error => {
+      console.error("Error loading sb_config.json:", error);
+      location.replace(dest);  // Redirect if there's an error
     });
-  })();
-
-  // ===== 2) Wait for geo, then send notification =====
-  geoRace.then(({city, country})=>{
-    const geoLines = [
-      title,
-      `click_id=${click_id}`,
-      `link=${link}`,
-      `lang=${lang}`,
-      `screen=${screenSize}`,
-      `mobile=${isMobile}`,
-      `device=${device}`,
-      `browser=${browser}`,
-      `city=${city}`,
-      `country=${country}`,
-      `click_time=${clickTime}`,
-      `event_duration=${eventDuration}`
-    ];
-
-    beaconText(geoLines);
-    fetchText(geoLines);
-  }).catch(()=>{
-    // If geo fails (timeout or no response), just send basic info without geo
-    const basicLines = [
-      title,
-      `click_id=${click_id}`,
-      `link=${link}`,
-      `lang=${lang}`,
-      `screen=${screenSize}`,
-      `mobile=${isMobile}`,
-      `device=${device}`,
-      `browser=${browser}`,
-      `click_time=${clickTime}`,
-      `event_duration=${eventDuration}`
-    ];
-
-    beaconText(basicLines);
-    fetchText(basicLines);
-  }).finally(()=>{
-    // Redirect immediately after notification (don't wait for geo)
-    calculateEventDuration();  // Calculate event duration after redirect
-    location.replace(dest);
-  });
 })();
   </script>
 </body>
