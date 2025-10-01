@@ -15,54 +15,77 @@
   <p>Redirecting…</p>
   <script>
     (async function(){
-      // ===== 1) LINKS MAP =====
+      // 1) Map your link keys to destinations
       const LINKS = {
-        main: "https://lalaland.mx",   // your main domain
+        main: "https://lalaland.mx",
         yt: "https://www.youtube.com/@yourchannel",
         store: "https://yourstore.example.com",
         portfolio: "https://myname.github.io/portfolio"
       };
 
-      // ===== 2) Read query param =====
-      const params = new URLSearchParams(window.location.search);
+      // 2) Read ?link=... (default -> main)
+      const params = new URLSearchParams(location.search);
       const link = (params.get("link") || "main").toLowerCase();
       const dest = LINKS[link] || LINKS.main;
 
-      // ===== 3) Collect info =====
+      // 3) Collect client info
       const ua = navigator.userAgent;
-      const screen = `${window.screen.width}x${window.screen.height}`;
+      const screenSize = `${screen.width}x${screen.height}`;
       const lang = navigator.language || "unknown";
       const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
 
-      let geo = {};
+      // Optional IP → city/country (may fail/timeout in IG webview; safe to ignore)
+      let city = "unknown", country = "unknown";
       try {
-        const resp = await fetch("https://ipapi.co/json/");
-        if(resp.ok) geo = await resp.json();
-      } catch(e){}
+        const r = await Promise.race([
+          fetch("https://ipapi.co/json/"),
+          new Promise((_, rej)=>setTimeout(()=>rej(new Error("geo timeout")), 900))
+        ]);
+        if (r && r.ok) {
+          const g = await r.json();
+          city = g.city || city;
+          country = g.country_name || country;
+        }
+      } catch (_) {}
 
-      // ===== 4) Send ntfy notification =====
+      // 4) Build payload + dynamic Title
+      const title = `IG Click → ${link}`;
       const payload = {
         event: "IG bio click",
         link,
         time: new Date().toISOString(),
         ua,
-        screen,
+        screen: screenSize,
         lang,
         isMobile,
-        city: geo.city || "unknown",
-        country: geo.country_name || "unknown"
+        city,
+        country
       };
 
+      // 5) Post to ntfy with dynamic Title (keepalive so it sends during navigation)
       try {
-        navigator.sendBeacon(
-          "https://ntfy.sh/lalaland-webapp-clicks-track",
-          new Blob([JSON.stringify(payload)], { type: "application/json" })
-        );
-      } catch(e) {
-        console.error("ntfy send failed", e);
+        fetch("https://ntfy.sh/lalaland-webapp-clicks-track", {
+          method: "POST",
+          keepalive: true, // important for redirects/unload
+          headers: {
+            "Content-Type": "application/json",
+            "Title": title,
+            "Priority": "high"
+          },
+          body: JSON.stringify(payload)
+        }).catch(()=>{});
+      } catch (_) {
+        // Fallback: minimal beacon without custom headers (title will be in body text)
+        try {
+          const text = `${title}\n${JSON.stringify(payload)}`;
+          navigator.sendBeacon(
+            "https://ntfy.sh/lalaland-webapp-clicks-track",
+            new Blob([text], { type: "text/plain" })
+          );
+        } catch (_) {}
       }
 
-      // ===== 5) Redirect =====
+      // 6) Redirect immediately
       location.replace(dest);
     })();
   </script>
