@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Redirecting…</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body {
+      background:#0b1220; color:#fff; font-family:system-ui,sans-serif;
+      display:flex; align-items:center; justify-content:center; height:100vh;
+    }
+  </style>
+</head>
+<body>
+  <p>Redirecting…</p>
+  <script>
+    (async function(){
+      // ===== 1) LINKS MAP =====
+      const LINKS = {
+        main: "https://lalaland.mx",   // your main domain
+        yt: "https://www.youtube.com/@yourchannel",
+        store: "https://yourstore.example.com",
+        portfolio: "https://myname.github.io/portfolio"
+      };
+
+      // ===== 2) Read query param =====
+      const params = new URLSearchParams(window.location.search);
+      const link = (params.get("link") || "main").toLowerCase();
+      const dest = LINKS[link] || LINKS.main;
+
+      // ===== 3) Collect info =====
+      const ua = navigator.userAgent;
+      const screen = `${window.screen.width}x${window.screen.height}`;
+      const lang = navigator.language || "unknown";
+      const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
+
+      let geo = {};
+      try {
+        const resp = await fetch("https://ipapi.co/json/");
+        if(resp.ok) geo = await resp.json();
+      } catch(e){}
+
+      // ===== 4) Send ntfy notification =====
+      const payload = {
+        event: "IG bio click",
+        link,
+        time: new Date().toISOString(),
+        ua,
+        screen,
+        lang,
+        isMobile,
+        city: geo.city || "unknown",
+        country: geo.country_name || "unknown"
+      };
+
+      try {
+        navigator.sendBeacon(
+          "https://ntfy.sh/lalaland-webapp-clicks-track",
+          new Blob([JSON.stringify(payload)], { type: "application/json" })
+        );
+      } catch(e) {
+        console.error("ntfy send failed", e);
+      }
+
+      // ===== 5) Redirect =====
+      location.replace(dest);
+    })();
+  </script>
+</body>
+</html>
