@@ -13,7 +13,8 @@
   <p>Redirecting…</p>
   <script>
     (function(){
-      // 1) Destinations
+      // ===== Config =====
+      const TOPIC_URL = "https://ntfy.sh/lalaland-webapp-clicks-track";
       const LINKS = {
         main: "https://lalaland.mx",
         yt: "https://www.youtube.com/@yourchannel",
@@ -21,48 +22,100 @@
         portfolio: "https://myname.github.io/portfolio"
       };
 
-      // 2) Parse link key
+      // ===== Parse link param & pick destination =====
       const params = new URLSearchParams(location.search);
       const link = (params.get("link") || "main").toLowerCase();
       const dest = LINKS[link] || LINKS.main;
 
-      // 3) Minimal info (avoid anything slow)
+      // ===== Device & browser detection =====
+      function parseUA(ua) {
+        const low = ua.toLowerCase();
+        let device = "Desktop";
+        if (/iphone/.test(low)) device = "iPhone";
+        else if (/ipad/.test(low)) device = "iPad";
+        else if (/android/.test(low)) device = "Android";
+
+        let browser = "Unknown";
+        if (low.includes("edg/")) browser = "Edge";
+        else if (low.includes("chrome/")) browser = "Chrome";
+        else if (low.includes("safari/") && !low.includes("chrome/")) browser = "Safari";
+        else if (low.includes("firefox/")) browser = "Firefox";
+        if (low.includes("instagram")) browser += " (IG in-app)";
+        return { device, browser };
+      }
+
       const ua = navigator.userAgent;
+      const { device, browser } = parseUA(ua);
       const screenSize = `${screen.width}x${screen.height}`;
       const lang = navigator.language || "unknown";
       const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
       const title = `IG Click → ${link}`;
-      const topicUrl = "https://ntfy.sh/lalaland-webapp-clicks-track";
+      const click_id = (crypto.randomUUID ? crypto.randomUUID()
+                        : Date.now().toString(36) + Math.random().toString(36).slice(2,8));
 
-      // 4) Beacon first: plain text (most reliable in IG)
-      try {
-        const text = [
-          title,
-          `link=${link}`,
-          `lang=${lang}`,
-          `screen=${screenSize}`,
-          `mobile=${isMobile}`,
-          `time=${new Date().toISOString()}`
-        ].join("\n");
-        const ok = navigator.sendBeacon(topicUrl, new Blob([text], { type: "text/plain" }));
-      } catch (_) {}
+      // ===== Send helpers =====
+      function beaconText(lines){
+        try {
+          const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+          navigator.sendBeacon(TOPIC_URL, blob);
+        } catch(_) {}
+      }
+      function fetchText(lines, hdrs){
+        try {
+          fetch(TOPIC_URL, {
+            method: "POST",
+            keepalive: true,
+            headers: Object.assign({
+              "Content-Type": "text/plain",
+              "Title": title,
+              "Priority": "high"
+            }, hdrs || {}),
+            body: lines.join(" ")
+          }).catch(()=>{});
+        } catch(_) {}
+      }
 
-      // 5) Also try keepalive fetch with headers (for pretty Title)
-      try {
-        fetch(topicUrl, {
-          method: "POST",
-          keepalive: true,
-          headers: {
-            "Content-Type": "text/plain",
-            "Title": title,
-            "Priority": "high",
-            // "Tags": "ig,click," + link, // optional
-          },
-          body: `link=${link} lang=${lang} screen=${screenSize} mobile=${isMobile} time=${new Date().toISOString()}`
-        }).catch(()=>{});
-      } catch (_) {}
+      // ===== 1) Instant base ping (never waits) =====
+      const baseLines = [
+        title,
+        `click_id=${click_id}`,
+        `link=${link}`,
+        `lang=${lang}`,
+        `screen=${screenSize}`,
+        `mobile=${isMobile}`,
+        `device=${device}`,
+        `browser=${browser}`
+      ];
+      beaconText(baseLines);         // most robust in IG webview
+      fetchText(baseLines);          // pretty title/header path
 
-      // 6) Redirect immediately, don't await anything
+      // ===== 2) Fast geo lookup (short timeout), then send a geo-update =====
+      (async function geoUpdate(){
+        const timeout = (ms)=>new Promise((_,rej)=>setTimeout(()=>rej(new Error("geo-timeout")), ms));
+        const tryJson = (u)=>fetch(u, { cache: "no-store" }).then(r=>r.ok?r.json():Promise.reject());
+        try {
+          const g = await Promise.race([
+            tryJson("https://ipapi.co/json/"),
+            tryJson("https://ipwho.is/"),
+            timeout(500)
+          ]);
+          const city = g.city || g.city_name || "unknown";
+          const country = g.country_name || g.country || g.country_code || "unknown";
+
+          const geoTitle = `IG Click (geo) → ${link}`;
+          const geoLines = [
+            geoTitle,
+            `click_id=${click_id}`,
+            `link=${link}`,
+            `city=${city}`,
+            `country=${country}`
+          ];
+          beaconText(geoLines);
+          fetchText(geoLines, { "Title": geoTitle, "Priority": "default" });
+        } catch(_) { /* no geo, ignore */ }
+      })();
+
+      // ===== 3) Redirect immediately =====
       location.replace(dest);
     })();
   </script>
