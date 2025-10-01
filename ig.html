@@ -21,109 +21,143 @@
     portfolio: "https://myname.github.io/portfolio"
   };
 
-      const params = new URLSearchParams(location.search);
-      const link = (params.get("link") || "main").toLowerCase();
-      const dest = LINKS[link] || LINKS.main;
+  const params = new URLSearchParams(location.search);
+  const link = (params.get("link") || "main").toLowerCase();
+  const dest = LINKS[link] || LINKS.main;
 
-      // ===== Device & browser detection =====
-      function parseUA(ua) {
-        const low = ua.toLowerCase();
-        let device = "Desktop";
-        if (/iphone/.test(low)) device = "iPhone";
-        else if (/ipad/.test(low)) device = "iPad";
-        else if (/android/.test(low)) device = "Android";
-        let browser = "Unknown";
-        if (low.includes("edg/")) browser = "Edge";
-        else if (low.includes("chrome/")) browser = "Chrome";
-        else if (low.includes("safari/") && !low.includes("chrome/")) browser = "Safari";
-        else if (low.includes("firefox/")) browser = "Firefox";
-        if (low.includes("instagram")) browser += " (IG in-app)";
-        return { device, browser };
-      }
+  // ===== Device & browser detection =====
+  function parseUA(ua) {
+    const low = ua.toLowerCase();
+    let device = "Desktop";
+    if (/iphone/.test(low)) device = "iPhone";
+    else if (/ipad/.test(low)) device = "iPad";
+    else if (/android/.test(low)) device = "Android";
+    let browser = "Unknown";
+    if (low.includes("edg/")) browser = "Edge";
+    else if (low.includes("chrome/")) browser = "Chrome";
+    else if (low.includes("safari/") && !low.includes("chrome/")) browser = "Safari";
+    else if (low.includes("firefox/")) browser = "Firefox";
+    if (low.includes("instagram")) browser += " (IG in-app)";
+    return { device, browser };
+  }
 
-      const ua = navigator.userAgent;
-      const { device, browser } = parseUA(ua);
-      const screenSize = `${screen.width}x${screen.height}`;
-      const lang = navigator.language || "unknown";
-      const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
-      const title = `Instagram Bio Link Click → ${link}`;
-      const click_id = (crypto.randomUUID ? crypto.randomUUID()
+  const ua = navigator.userAgent;
+  const { device, browser } = parseUA(ua);
+  const screenSize = `${screen.width}x${screen.height}`;
+  const lang = navigator.language || "unknown";
+  const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
+  const title = `Instagram Bio Link Click → ${link}`;
+  const click_id = (crypto.randomUUID ? crypto.randomUUID()
                    : Date.now().toString(36) + Math.random().toString(36).slice(2,8));
 
-      // ===== Send helpers =====
-      function beaconText(lines){
-        try {
-          const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-          navigator.sendBeacon(TOPIC_URL, blob);
-        } catch(_) {}
-      }
-      function fetchText(lines, hdrs){
-        try {
-          fetch(TOPIC_URL, {
-            method: "POST",
-            keepalive: true,
-            headers: Object.assign({
-              "Content-Type": "text/plain",
-              "Title": title,
-              "Priority": "high"
-            }, hdrs || {}),
-            body: lines.join(" ")
-          }).catch(()=>{});
-        } catch(_) {}
-      }
+  // ===== Get current time in Mexico City Time (CST) =====
+  function getMexicoCityTime() {
+    const options = {
+      timeZone: 'America/Mexico_City',
+      hour12: false,
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+    };
+    const formatter = new Intl.DateTimeFormat('en-US', options);
+    return formatter.format(new Date());
+  }
 
-      // ===== 1) Collect geo data with timeout (300ms) =====
-      const geoTimeout = new Promise((_,rej)=>setTimeout(()=>rej(new Error("geo-timeout")), 300));
-      const geoRace = (function(){
-        const f = (u)=>fetch(u, { cache:"no-store", mode:"cors" }).then(r=>r.ok?r.json():Promise.reject());
-        // Using fast geo service providers
-        const p1 = f("https://get.geojs.io/v1/ip/geo.json"); // geojs
-        const p2 = f("https://ipwho.is/");                  // ipwhois
-        const p3 = f("https://ipapi.co/json/");             // ipapi
-        return Promise.race([p1, p2, p3, geoTimeout]).then(g=>{
-          const city = g.city || g.city_name || "unknown";
-          const country = g.country_name || g.country || g.country_code || "unknown";
-          return { city, country };
-        });
-      })();
+  const clickTime = getMexicoCityTime();  // Capturing time in CST
 
-      // ===== 2) Wait for geo, then send notification =====
-      geoRace.then(({city, country})=>{
-        const geoLines = [
-          title,
-          `click_id=${click_id}`,
-          `link=${link}`,
-          `lang=${lang}`,
-          `screen=${screenSize}`,
-          `mobile=${isMobile}`,
-          `device=${device}`,
-          `browser=${browser}`,
-          `city=${city}`,
-          `country=${country}`
-        ];
+  // ===== Calculate event duration =====
+  const startTime = new Date();
+  let eventDuration = 0; // in seconds
 
-        beaconText(geoLines);
-        fetchText(geoLines);
-      }).catch(()=> {
-        // If geo fails (timeout or no response), just send basic info without geo
-        const basicLines = [
-          title,
-          `click_id=${click_id}`,
-          `link=${link}`,
-          `lang=${lang}`,
-          `screen=${screenSize}`,
-          `mobile=${isMobile}`,
-          `device=${device}`,
-          `browser=${browser}`
-        ];
+  // Function to calculate duration
+  function calculateEventDuration() {
+    const endTime = new Date();
+    eventDuration = (endTime - startTime) / 1000; // Duration in seconds
+  }
 
-        beaconText(basicLines);
-        fetchText(basicLines);
-      }).finally(()=>{
-        // Redirect immediately after notification (don't wait for geo)
-        location.replace(dest);
-      });
-    })();
+  // ===== Send helpers =====
+  function beaconText(lines){
+    try {
+      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+      navigator.sendBeacon(TOPIC_URL, blob);
+    } catch(_) {}
+  }
+  function fetchText(lines, hdrs){
+    try {
+      fetch(TOPIC_URL, {
+        method: "POST",
+        keepalive: true,
+        headers: Object.assign({
+          "Content-Type": "text/plain",
+          "Title": title,
+          "Priority": "high"
+        }, hdrs || {}),
+        body: lines.join(" ")
+      }).catch(()=>{});
+    } catch(_) {}
+  }
+
+  // ===== 1) Collect geo data with timeout (300ms) =====
+  const geoTimeout = new Promise((_,rej)=>setTimeout(()=>rej(new Error("geo-timeout")), 300));
+  const geoRace = (function(){
+    const f = (u)=>fetch(u, { cache:"no-store", mode:"cors" }).then(r=>r.ok?r.json():Promise.reject());
+    // Using fast geo service providers
+    const p1 = f("https://get.geojs.io/v1/ip/geo.json"); // geojs
+    const p2 = f("https://ipwho.is/");                  // ipwhois
+    const p3 = f("https://ipapi.co/json/");             // ipapi
+    return Promise.race([p1, p2, p3, geoTimeout]).then(g=>{
+      const city = g.city || g.city_name || "unknown";
+      const country = g.country_name || g.country || g.country_code || "unknown";
+      return { city, country };
+    });
+  })();
+
+  // ===== 2) Wait for geo, then send notification =====
+  geoRace.then(({city, country})=>{
+    const geoLines = [
+      title,
+      `click_id=${click_id}`,
+      `link=${link}`,
+      `lang=${lang}`,
+      `screen=${screenSize}`,
+      `mobile=${isMobile}`,
+      `device=${device}`,
+      `browser=${browser}`,
+      `city=${city}`,
+      `country=${country}`,
+      `click_time=${clickTime}`,
+      `event_duration=${eventDuration}`
+    ];
+
+    beaconText(geoLines);
+    fetchText(geoLines);
+  }).catch(()=>{
+    // If geo fails (timeout or no response), just send basic info without geo
+    const basicLines = [
+      title,
+      `click_id=${click_id}`,
+      `link=${link}`,
+      `lang=${lang}`,
+      `screen=${screenSize}`,
+      `mobile=${isMobile}`,
+      `device=${device}`,
+      `browser=${browser}`,
+      `click_time=${clickTime}`,
+      `event_duration=${eventDuration}`
+    ];
+
+    beaconText(basicLines);
+    fetchText(basicLines);
+  }).finally(()=>{
+    // Redirect immediately after notification (don't wait for geo)
+    calculateEventDuration();  // Calculate event duration after redirect
+    location.replace(dest);
+  });
+})();
   </script>
 </body>
 </html>
