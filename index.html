@@ -1670,21 +1670,21 @@ body.fonts-loaded .side-length-label {
 }
 
 .share-button:hover svg {
-  stroke: #666;
+  stroke: #ff8400;
 }
 
 .share-button svg {
   width: 14px;
   height: 14px;
   transition: transform 0.4s ease;
-  stroke: #888;
+  stroke: #ff8400;
   stroke-width: 1.5px;
   transform-origin: center;
   transform-box: fill-box;
 }
 
 .share-button:hover svg {
-  transform: rotate(-15deg);
+  transform: rotate(360deg);
 }
 
 /* Hide share button in list mode */
@@ -1858,13 +1858,16 @@ body.modal-open #cameraButton {
   </button>
 </div>
 
-<!-- 🟢 SHARE BUTTON (NEW) -->
-    <div class="header-control share-button" id="shareButton" title="Share this lot">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
-        <path d="M12 10.5 L12 13.5 L2 13.5 L2 4.5 L5 4.5 M8 1.5 L12 5.5 L8 9.5 M12 5.5 L4 5.5" 
-              fill="none" stroke="#888" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
+<!-- 🟢 CLASSIC SHARE BUTTON ICON -->
+<div class="header-control share-button" id="shareButton" title="Share this lot">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+    <circle cx="4" cy="8" r="1.5" fill="none" stroke="#ff8400" stroke-width="1.2"/>
+    <circle cx="12" cy="4" r="1.5" fill="none" stroke="#ff8400" stroke-width="1.2"/>
+    <circle cx="12" cy="12" r="1.5" fill="none" stroke="#ff8400" stroke-width="1.2"/>
+    <path d="M5.5 9 L10.5 5 M5.5 7 L10.5 11" 
+          fill="none" stroke="#ff8400" stroke-width="1.2" stroke-linecap="round"/>
+  </svg>
+</div>
 
     <div class="header-control close-x" onclick="closeModal()">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
@@ -7219,33 +7222,72 @@ function shareCurrentLot() {
   
   // Create share URL
   const shareUrl = `${window.location.origin}${window.location.pathname}?lot=${encodeURIComponent(lotName)}`;
+  const shareText = `Check out Lote ${lotNumber} in Lalaland`;
   
-  // Try Web Share API first (mobile devices)
+  console.log('🔗 Share attempt:', { lotName, lotNumber, shareUrl });
+  
+  // 🟢 IMPROVED WEB SHARE API
   if (navigator.share) {
-    navigator.share({
-      title: `Lote ${lotNumber} - Lalaland`,
-      text: `Check out this lot in Lalaland`,
-      url: shareUrl
-    }).then(() => {
-      console.log('Share successful');
-    }).catch((error) => {
-      console.log('Share failed:', error);
-      fallbackShare(shareUrl);
-    });
+    console.log('📱 Web Share API available');
+    
+    // Add small delay to ensure user gesture context is preserved
+    setTimeout(() => {
+      navigator.share({
+        title: `Lote ${lotNumber} - Lalaland`,
+        text: shareText,
+        url: shareUrl
+      }).then(() => {
+        console.log('✅ Share successful');
+        showToaster('Shared successfully! 📤');
+      }).catch((error) => {
+        console.log('❌ Share failed or cancelled:', error);
+        // Don't show error if user cancelled
+        if (error.name !== 'AbortError') {
+          fallbackShare(shareUrl, lotNumber);
+        }
+      });
+    }, 100);
+    
   } else {
-    // Fallback for desktop
-    fallbackShare(shareUrl);
+    console.log('📱 Web Share API not available');
+    fallbackShare(shareUrl, lotNumber);
   }
 }
 
-function fallbackShare(url) {
-  // Copy to clipboard
-  navigator.clipboard.writeText(url).then(() => {
-    showToaster('Link copied to clipboard! 📋');
-  }).catch(() => {
-    // Final fallback - prompt
-    prompt('Copy this link to share:', url);
-  });
+function fallbackShare(url, lotNumber) {
+  // 🟢 IMPROVED FALLBACK WITH BETTER UX
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => {
+      showToaster(`Link to Lote ${lotNumber} copied! 📋`);
+    }).catch(() => {
+      // Clipboard failed, use prompt
+      copyViaPrompt(url, lotNumber);
+    });
+  } else {
+    // No clipboard API
+    copyViaPrompt(url, lotNumber);
+  }
+}
+
+function copyViaPrompt(url, lotNumber) {
+  const input = document.createElement('input');
+  input.value = url;
+  document.body.appendChild(input);
+  input.select();
+  input.setSelectionRange(0, 99999);
+  
+  try {
+    const successful = document.execCommand('copy');
+    document.body.removeChild(input);
+    if (successful) {
+      showToaster(`Link to Lote ${lotNumber} copied! 📋`);
+    } else {
+      showToaster(`Select and copy this link:\n${url}`);
+    }
+  } catch (err) {
+    document.body.removeChild(input);
+    showToaster(`Share this link:\n${url}`);
+  }
 }
 
 // Initialize share button when page loads
