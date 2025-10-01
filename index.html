@@ -6815,7 +6815,7 @@ Zoom: ${zoom}
   
 
 <script>
-// DEEP LINKING FOR SPECIFIC LOTS - WITH MAP ZOOM AND DIMENSIONS
+// DEEP LINKING FOR SPECIFIC LOTS - COORDINATED ZOOM AND MODAL
 (function() {
   // Wait for everything to be ready
   setTimeout(() => {
@@ -6842,57 +6842,59 @@ Zoom: ${zoom}
         if (lot) {
           console.log('🔗 Found lot:', lot.name, 'Center:', lot.center);
           
-          // 🟢 FIRST: ZOOM MAP TO THE LOT
+          // 🟢 COMBINE ZOOM AND MODAL OPENING
           if (lot.center && map) {
             const [lng, lat] = lot.center;
             const isDesktop = window.innerWidth >= 768;
             const xOffset = isDesktop ? 310 : 0;
             const yOffset = isDesktop ? 0 : 180;
             
-            map.flyTo({
-              center: [lng, lat],
-              zoom: 18.8,
-              speed: 1.2,
-              curve: 1.5,
-              offset: [xOffset, yOffset]
-            });
-            
-            // 🟢 ADD SIDE LENGTH LABELS IMMEDIATELY
-            setTimeout(() => {
-              removeSideLengthLabels();
-              addSideLengthLabels(lot);
-            }, 1200); // Wait for flyTo to complete
-          }
-          
-          // Wait a bit more for map to be fully ready and zoomed
-          setTimeout(() => {
+            // 🟢 OPEN MODAL FIRST (this will trigger the panBy)
             openModal(lot);
-            // Show detail view after modal opens
+            
+            // 🟢 THEN ZOOM TO THE LOT (accounting for modal offset)
             setTimeout(() => {
-              const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-              if (baseIndex !== -1) {
-                // 🟢 HIDE THE PLUS BUTTON WHEN OPENING FROM DEEP LINK
-                const plusButton = document.querySelector('.plus-button');
-                if (plusButton) {
-                  plusButton.style.display = 'none';
-                }
+              map.flyTo({
+                center: [lng, lat],
+                zoom: 18.8,
+                speed: 1.2,
+                curve: 1.5,
+                offset: [xOffset, yOffset]
+              });
+              
+              // Wait for zoom to complete, then show detail and dimensions
+              map.once('moveend', () => {
+                console.log('🔗 Map zoom completed with modal open');
                 
-                showDetailViewForLot(baseIndex + cloneCount);
+                // 🟢 ADD SIDE LENGTH LABELS
+                removeSideLengthLabels();
+                addSideLengthLabels(lot);
                 
-                // 🟢 UPDATE CURRENT LOT INDEX FOR PROPER HIGHLIGHTING
-                const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
-                if (lotMapIndex !== -1) {
-                  currentLotIndex = lotMapIndex;
-                  // Update map hover state
-                  if (hoveredId !== null) {
-                    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+                // Show detail view
+                setTimeout(() => {
+                  const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+                  if (baseIndex !== -1) {
+                    // 🟢 HIDE THE PLUS BUTTON
+                    const plusButton = document.querySelector('.plus-button');
+                    if (plusButton) plusButton.style.display = 'none';
+                    
+                    showDetailViewForLot(baseIndex + cloneCount);
+                    
+                    // 🟢 UPDATE CURRENT LOT INDEX
+                    const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
+                    if (lotMapIndex !== -1) {
+                      currentLotIndex = lotMapIndex;
+                      if (hoveredId !== null) {
+                        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+                      }
+                      map.setFeatureState({ source: 'lots-final', id: lotMapIndex }, { hover: true });
+                      hoveredId = lotMapIndex;
+                    }
                   }
-                  map.setFeatureState({ source: 'lots-final', id: lotMapIndex }, { hover: true });
-                  hoveredId = lotMapIndex;
-                }
-              }
-            }, 600);
-          }, 1800); // Increased delay to ensure map zoom completes
+                }, 400);
+              });
+            }, 100); // Small delay to ensure modal pan starts first
+          }
         } else {
           console.warn('Lot not found:', lotName);
         }
@@ -6920,14 +6922,17 @@ Zoom: ${zoom}
         const lot = lotData.find(l => l.name === lotName) || 
                    lotData.find(l => extractLotNumber(l.name) === lotName.replace(/^lot/i, ''));
         
-        if (lot) {
-          // 🟢 ZOOM MAP TO THE NEW LOT
-          if (lot.center && map) {
-            const [lng, lat] = lot.center;
-            const isDesktop = window.innerWidth >= 768;
-            const xOffset = isDesktop ? 310 : 0;
-            const yOffset = isDesktop ? 0 : 180;
-            
+        if (lot && lot.center && map) {
+          const [lng, lat] = lot.center;
+          const isDesktop = window.innerWidth >= 768;
+          const xOffset = isDesktop ? 310 : 0;
+          const yOffset = isDesktop ? 0 : 180;
+          
+          const modal = document.getElementById('lotModal');
+          const isModalOpen = modal.classList.contains('show');
+          
+          if (isModalOpen) {
+            // 🟢 MODAL IS ALREADY OPEN - JUST UPDATE THE VIEW
             map.flyTo({
               center: [lng, lat],
               zoom: 18.8,
@@ -6936,79 +6941,69 @@ Zoom: ${zoom}
               offset: [xOffset, yOffset]
             });
             
-            // 🟢 UPDATE SIDE LENGTH LABELS
-            setTimeout(() => {
+            map.once('moveend', () => {
               removeSideLengthLabels();
               addSideLengthLabels(lot);
-            }, 1200);
-          }
-          
-          const modal = document.getElementById('lotModal');
-          const isModalOpen = modal.classList.contains('show');
-          
-          if (isModalOpen && isDetailOpen) {
-            // Update existing detail view
-            const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-            if (baseIndex !== -1) {
-              // 🟢 HIDE PLUS BUTTON AND UPDATE LOT INDEX
-              const plusButton = document.querySelector('.plus-button');
-              if (plusButton) plusButton.style.display = 'none';
               
-              const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
-              if (lotMapIndex !== -1) {
-                currentLotIndex = lotMapIndex;
-                if (hoveredId !== null) {
-                  map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-                }
-                map.setFeatureState({ source: 'lots-final', id: lotMapIndex }, { hover: true });
-                hoveredId = lotMapIndex;
-              }
-              
-              showDetailViewForLot(baseIndex + cloneCount, true);
-            }
-          } else if (isModalOpen) {
-            // Modal is open but in list view - switch to detail
-            const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-            if (baseIndex !== -1) {
-              // 🟢 HIDE PLUS BUTTON AND UPDATE LOT INDEX
-              const plusButton = document.querySelector('.plus-button');
-              if (plusButton) plusButton.style.display = 'none';
-              
-              const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
-              if (lotMapIndex !== -1) {
-                currentLotIndex = lotMapIndex;
-                if (hoveredId !== null) {
-                  map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-                }
-                map.setFeatureState({ source: 'lots-final', id: lotMapIndex }, { hover: true });
-                hoveredId = lotMapIndex;
-              }
-              
-              showDetailViewForLot(baseIndex + cloneCount);
-            }
-          } else {
-            // Modal is closed - open it
-            openModal(lot);
-            setTimeout(() => {
-              const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-              if (baseIndex !== -1) {
-                // 🟢 HIDE PLUS BUTTON AND UPDATE LOT INDEX
-                const plusButton = document.querySelector('.plus-button');
-                if (plusButton) plusButton.style.display = 'none';
-                
-                const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
-                if (lotMapIndex !== -1) {
-                  currentLotIndex = lotMapIndex;
-                  if (hoveredId !== null) {
-                    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+              // Update detail view if in detail mode
+              if (isDetailOpen) {
+                const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+                if (baseIndex !== -1) {
+                  const plusButton = document.querySelector('.plus-button');
+                  if (plusButton) plusButton.style.display = 'none';
+                  
+                  const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
+                  if (lotMapIndex !== -1) {
+                    currentLotIndex = lotMapIndex;
+                    if (hoveredId !== null) {
+                      map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+                    }
+                    map.setFeatureState({ source: 'lots-final', id: lotMapIndex }, { hover: true });
+                    hoveredId = lotMapIndex;
                   }
-                  map.setFeatureState({ source: 'lots-final', id: lotMapIndex }, { hover: true });
-                  hoveredId = lotMapIndex;
+                  
+                  showDetailViewForLot(baseIndex + cloneCount, true);
                 }
-                
-                showDetailViewForLot(baseIndex + cloneCount);
               }
-            }, 500);
+            });
+          } else {
+            // 🟢 MODAL IS CLOSED - OPEN IT FIRST, THEN ZOOM
+            openModal(lot);
+            
+            setTimeout(() => {
+              map.flyTo({
+                center: [lng, lat],
+                zoom: 18.8,
+                speed: 1.2,
+                curve: 1.5,
+                offset: [xOffset, yOffset]
+              });
+              
+              map.once('moveend', () => {
+                removeSideLengthLabels();
+                addSideLengthLabels(lot);
+                
+                setTimeout(() => {
+                  const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+                  if (baseIndex !== -1) {
+                    const plusButton = document.querySelector('.plus-button');
+                    if (plusButton) plusButton.style.display = 'none';
+                    
+                    const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
+                    if (lotMapIndex !== -1) {
+                      currentLotIndex = lotMapIndex;
+                      if (hoveredId !== null) {
+                        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+                      }
+                      map.setFeatureState({ source: 'lots-final', id: lotMapIndex }, { hover: true });
+                      hoveredId = lotMapIndex;
+                    }
+                    
+                    showDetailViewForLot(baseIndex + cloneCount);
+                  }
+                }, 400);
+              });
+            }, 100);
           }
         }
       } else {
@@ -7019,66 +7014,6 @@ Zoom: ${zoom}
 
     // Listen for URL changes
     window.addEventListener('popstate', handleURLChange);
-
-    // Update your existing click handlers
-    // 1. Map click handler
-    const originalMapClick = map._listeners?.click?.find(l => l.layer === 'lots-final-click');
-    if (originalMapClick) {
-      map.off('click', 'lots-final-click', originalMapClick.listener);
-      map.on('click', 'lots-final-click', (e) => {
-        if (e.features.length === 0) return;
-
-        const feature = e.features[0];
-        const lotName = feature.properties.name;
-        const lot = lotData.find(l => l.name === lotName);
-        if (!lot) return;
-
-        // Update URL
-        updateLotURL(lot.name);
-
-        // Your existing click handler code continues here...
-        // Remove previous hover
-        if (hoveredId !== null) {
-          map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-          hoveredId = null;
-        }
-
-        // Find index
-        const idx = lotData.findIndex(l => l.name === lot.name);
-        if (idx !== -1) {
-          map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
-          hoveredId = idx;
-          currentLotIndex = idx;
-        }
-
-        // Remove any existing labels
-        removeSideLengthLabels();
-        
-        // Check if we're already in detail view
-        const modal = document.getElementById('lotModal');
-        const isInDetailView = modal.classList.contains('info-mode') && isDetailOpen;
-        
-        if (isInDetailView) {
-          // We're in detail view - update the current detail view with new lot
-          const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-          if (baseIndex !== -1) {
-            showDetailViewForLot(baseIndex + cloneCount, true);
-          }
-        } else {
-          // Normal case - open modal
-          openModal(lot);
-        }
-
-        // Add side length labels if zoom is high enough
-        const currentZoom = map.getZoom();
-        if (currentZoom >= 18.8) {
-          addSideLengthLabels(lot);
-        }
-
-        e.preventDefault();
-        e.originalEvent.stopPropagation();
-      });
-    }
 
     // Update closeModal to clear URL
     const originalCloseModal = window.closeModal;
@@ -7092,7 +7027,7 @@ Zoom: ${zoom}
     // Initialize - open lot from URL if present
     openInitialLotModal();
 
-    console.log('🔗 Deep linking initialized - includes map zoom and dimensions');
+    console.log('🔗 Deep linking initialized - coordinated zoom and modal');
   }, 2000);
 })();
 </script>
