@@ -12,8 +12,8 @@
 <body>
   <p>Redirecting…</p>
   <script>
-    (async function(){
-      // 1) Map keys -> destinations
+    (function(){
+      // 1) Destinations
       const LINKS = {
         main: "https://lalaland.mx",
         yt: "https://www.youtube.com/@yourchannel",
@@ -21,54 +21,48 @@
         portfolio: "https://myname.github.io/portfolio"
       };
 
-      // 2) Read ?link=..., default main
+      // 2) Parse link key
       const params = new URLSearchParams(location.search);
       const link = (params.get("link") || "main").toLowerCase();
       const dest = LINKS[link] || LINKS.main;
 
-      // 3) Collect lightweight info (avoid slow IP APIs)
+      // 3) Minimal info (avoid anything slow)
       const ua = navigator.userAgent;
       const screenSize = `${screen.width}x${screen.height}`;
       const lang = navigator.language || "unknown";
       const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
-
-      // 4) Build ntfy JSON payload (no custom headers needed)
-      const payload = {
-        // ntfy JSON fields:
-        title: `IG Click → ${link}`,
-        message: `link=${link} lang=${lang} screen=${screenSize} mobile=${isMobile}`,
-        priority: "high",
-        tags: ["ig","click", link],
-        // your extra data (appears in payload body on ntfy web/app)
-        data: {
-          time: new Date().toISOString(),
-          ua, screen: screenSize, lang, isMobile
-        }
-      };
+      const title = `IG Click → ${link}`;
       const topicUrl = "https://ntfy.sh/lalaland-webapp-clicks-track";
 
-      // 5) Try Beacon first (best for redirects). If it fails, use keepalive fetch.
-      let sent = false;
+      // 4) Beacon first: plain text (most reliable in IG)
       try {
-        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-        sent = navigator.sendBeacon(topicUrl, blob);
+        const text = [
+          title,
+          `link=${link}`,
+          `lang=${lang}`,
+          `screen=${screenSize}`,
+          `mobile=${isMobile}`,
+          `time=${new Date().toISOString()}`
+        ].join("\n");
+        const ok = navigator.sendBeacon(topicUrl, new Blob([text], { type: "text/plain" }));
       } catch (_) {}
 
-      if (!sent) {
-        try {
-          await Promise.race([
-            fetch(topicUrl, {
-              method: "POST",
-              keepalive: true,
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload)
-            }),
-            new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 400))
-          ]);
-        } catch (_) {}
-      }
+      // 5) Also try keepalive fetch with headers (for pretty Title)
+      try {
+        fetch(topicUrl, {
+          method: "POST",
+          keepalive: true,
+          headers: {
+            "Content-Type": "text/plain",
+            "Title": title,
+            "Priority": "high",
+            // "Tags": "ig,click," + link, // optional
+          },
+          body: `link=${link} lang=${lang} screen=${screenSize} mobile=${isMobile} time=${new Date().toISOString()}`
+        }).catch(()=>{});
+      } catch (_) {}
 
-      // 6) Redirect immediately (no await)
+      // 6) Redirect immediately, don't await anything
       location.replace(dest);
     })();
   </script>
