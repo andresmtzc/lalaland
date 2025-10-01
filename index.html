@@ -6815,7 +6815,7 @@ Zoom: ${zoom}
   
 
 <script>
-// DEEP LINKING FOR SPECIFIC LOTS - COORDINATED ZOOM AND MODAL
+// DEEP LINKING FOR SPECIFIC LOTS - WAITS FOR LOT ANIMATION
 (function() {
   // Wait for everything to be ready
   setTimeout(() => {
@@ -6842,59 +6842,67 @@ Zoom: ${zoom}
         if (lot) {
           console.log('🔗 Found lot:', lot.name, 'Center:', lot.center);
           
-          // 🟢 COMBINE ZOOM AND MODAL OPENING
-          if (lot.center && map) {
-            const [lng, lat] = lot.center;
-            const isDesktop = window.innerWidth >= 768;
-            const xOffset = isDesktop ? 310 : 0;
-            const yOffset = isDesktop ? 0 : 180;
+          // 🟢 WAIT FOR LOT ANIMATION TO COMPLETE BEFORE OPENING MODAL
+          const lotAnimationDuration = 20 * 80 + 500 + 200; // groups * delay + fadeDuration + finalDelay
+          console.log('🔗 Waiting for lot animation to complete:', lotAnimationDuration + 'ms');
+          
+          setTimeout(() => {
+            console.log('🔗 Lot animation complete, opening modal...');
             
-            // 🟢 OPEN MODAL FIRST (this will trigger the panBy)
-            openModal(lot);
-            
-            // 🟢 THEN ZOOM TO THE LOT (accounting for modal offset)
-            setTimeout(() => {
-              map.flyTo({
-                center: [lng, lat],
-                zoom: 18.8,
-                speed: 1.2,
-                curve: 1.5,
-                offset: [xOffset, yOffset]
-              });
+            // 🟢 COMBINE ZOOM AND MODAL OPENING
+            if (lot.center && map) {
+              const [lng, lat] = lot.center;
+              const isDesktop = window.innerWidth >= 768;
+              const xOffset = isDesktop ? 310 : 0;
+              const yOffset = isDesktop ? 0 : 180;
               
-              // Wait for zoom to complete, then show detail and dimensions
-              map.once('moveend', () => {
-                console.log('🔗 Map zoom completed with modal open');
+              // 🟢 OPEN MODAL FIRST (this will trigger the panBy)
+              openModal(lot);
+              
+              // 🟢 THEN ZOOM TO THE LOT (accounting for modal offset)
+              setTimeout(() => {
+                map.flyTo({
+                  center: [lng, lat],
+                  zoom: 18.8,
+                  speed: 1.2,
+                  curve: 1.5,
+                  offset: [xOffset, yOffset]
+                });
                 
-                // 🟢 ADD SIDE LENGTH LABELS
-                removeSideLengthLabels();
-                addSideLengthLabels(lot);
-                
-                // Show detail view
-                setTimeout(() => {
-                  const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-                  if (baseIndex !== -1) {
-                    // 🟢 HIDE THE PLUS BUTTON
-                    const plusButton = document.querySelector('.plus-button');
-                    if (plusButton) plusButton.style.display = 'none';
-                    
-                    showDetailViewForLot(baseIndex + cloneCount);
-                    
-                    // 🟢 UPDATE CURRENT LOT INDEX
-                    const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
-                    if (lotMapIndex !== -1) {
-                      currentLotIndex = lotMapIndex;
-                      if (hoveredId !== null) {
-                        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+                // Wait for zoom to complete, then show detail and dimensions
+                map.once('moveend', () => {
+                  console.log('🔗 Map zoom completed with modal open');
+                  
+                  // 🟢 ADD SIDE LENGTH LABELS
+                  removeSideLengthLabels();
+                  addSideLengthLabels(lot);
+                  
+                  // Show detail view
+                  setTimeout(() => {
+                    const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+                    if (baseIndex !== -1) {
+                      // 🟢 HIDE THE PLUS BUTTON
+                      const plusButton = document.querySelector('.plus-button');
+                      if (plusButton) plusButton.style.display = 'none';
+                      
+                      showDetailViewForLot(baseIndex + cloneCount);
+                      
+                      // 🟢 UPDATE CURRENT LOT INDEX
+                      const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
+                      if (lotMapIndex !== -1) {
+                        currentLotIndex = lotMapIndex;
+                        if (hoveredId !== null) {
+                          map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+                        }
+                        map.setFeatureState({ source: 'lots-final', id: lotMapIndex }, { hover: true });
+                        hoveredId = lotMapIndex;
                       }
-                      map.setFeatureState({ source: 'lots-final', id: lotMapIndex }, { hover: true });
-                      hoveredId = lotMapIndex;
                     }
-                  }
-                }, 400);
-              });
-            }, 100); // Small delay to ensure modal pan starts first
-          }
+                  }, 400);
+                });
+              }, 100); // Small delay to ensure modal pan starts first
+            }
+          }, lotAnimationDuration); // Wait for lot animation to finish
         } else {
           console.warn('Lot not found:', lotName);
         }
@@ -6915,7 +6923,7 @@ Zoom: ${zoom}
       window.history.replaceState(null, '', url);
     }
 
-    // Handle URL changes
+    // Handle URL changes - for browser navigation AFTER initial load
     function handleURLChange() {
       const lotName = getLotFromURL();
       if (lotName) {
@@ -7027,7 +7035,7 @@ Zoom: ${zoom}
     // Initialize - open lot from URL if present
     openInitialLotModal();
 
-    console.log('🔗 Deep linking initialized - coordinated zoom and modal');
+    console.log('🔗 Deep linking initialized - waits for lot animation');
   }, 2000);
 })();
 </script>
