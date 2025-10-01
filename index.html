@@ -6810,38 +6810,33 @@ Zoom: ${zoom}
 
 </script>
   
+
 <script>
-// DEEP LINKING FOR SPECIFIC LOTS
+// DEEP LINKING FOR SPECIFIC LOTS - QUERY PARAMETER VERSION (WORKS EVERYWHERE)
 (function() {
   // Wait for everything to be ready
   setTimeout(() => {
-
-        function getLotFromURL() {
-      const hash = window.location.hash;
-      const path = window.location.pathname;
-      
-      // Try hash format first: #lot=Lot105
-      if (hash.startsWith('#lot=')) {
-        return decodeURIComponent(hash.slice(5));
-      }
-      
-      // Try path format: /lot=Lot105 (Opera mobile fix)
-      if (path.startsWith('/lot=')) {
-        return decodeURIComponent(path.slice(5));
-      }
-      
-      return null;
+    
+    function getLotFromURL() {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get('lot');
     }
 
-  
-    // Open lot from URL hash on page load
+    // Open lot from URL on page load
     function openInitialLotModal() {
-      const hash = window.location.hash;
-      if (hash.startsWith('#lot=')) {
-        const lotName = decodeURIComponent(hash.slice(5));
-        const lot = lotData.find(l => l.name === lotName);
+      const lotName = getLotFromURL();
+      if (lotName) {
+        console.log('🔗 Opening lot from URL:', lotName);
+        
+        // Try to find the lot - handle different naming formats
+        let lot = lotData.find(l => l.name === lotName);
+        if (!lot) {
+          // Try without "Lot" prefix
+          const cleanName = lotName.replace(/^lot/i, '');
+          lot = lotData.find(l => extractLotNumber(l.name) === cleanName);
+        }
+        
         if (lot) {
-          console.log('🔗 Opening lot from URL:', lotName);
           // Wait a bit more for map to be fully ready
           setTimeout(() => {
             openModal(lot);
@@ -6857,7 +6852,7 @@ Zoom: ${zoom}
                   addSideLengthLabels(lot);
                 }
               }
-         }, 600);
+            }, 600);
           }, 1500);
         } else {
           console.warn('Lot not found:', lotName);
@@ -6865,12 +6860,21 @@ Zoom: ${zoom}
       }
     }
 
-    // Update URL when selecting lots
-    function updateLotHash(lotName) {
-      window.location.hash = `lot=${encodeURIComponent(lotName)}`;
+    // Update URL when selecting lots (use query parameter)
+    function updateLotURL(lotName) {
+      const url = new URL(window.location);
+      url.searchParams.set('lot', lotName);
+      window.history.replaceState(null, '', url);
     }
 
-    // Handle browser navigation (both hash and path changes)
+    // Clear lot from URL when closing modal
+    function clearLotURL() {
+      const url = new URL(window.location);
+      url.searchParams.delete('lot');
+      window.history.replaceState(null, '', url);
+    }
+
+    // Handle URL changes
     function handleURLChange() {
       const lotName = getLotFromURL();
       if (lotName) {
@@ -6910,48 +6914,8 @@ Zoom: ${zoom}
       }
     }
 
-    // Listen for both hash changes and popstate (for path changes)
-    window.addEventListener('hashchange', handleURLChange);
+    // Listen for URL changes
     window.addEventListener('popstate', handleURLChange);
-
-    // Handle browser back/forward
-    window.addEventListener('hashchange', function() {
-      const hash = window.location.hash;
-      if (hash.startsWith('#lot=')) {
-        const lotName = decodeURIComponent(hash.slice(5));
-        const lot = lotData.find(l => l.name === lotName);
-        if (lot) {
-          const modal = document.getElementById('lotModal');
-          const isModalOpen = modal.classList.contains('show');
-          
-          if (isModalOpen && isDetailOpen) {
-            // Update existing detail view
-            const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-            if (baseIndex !== -1) {
-              showDetailViewForLot(baseIndex + cloneCount, true);
-            }
-          } else if (isModalOpen) {
-            // Modal is open but in list view - switch to detail
-            const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-            if (baseIndex !== -1) {
-              showDetailViewForLot(baseIndex + cloneCount);
-            }
-          } else {
-            // Modal is closed - open it
-            openModal(lot);
-            setTimeout(() => {
-              const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-              if (baseIndex !== -1) {
-                showDetailViewForLot(baseIndex + cloneCount);
-              }
-            }, 500);
-          }
-        }
-      } else if (hash === '') {
-        // Hash cleared - close modal
-        closeModal();
-      }
-    });
 
     // Update your existing click handlers
     // 1. Map click handler
@@ -6966,8 +6930,8 @@ Zoom: ${zoom}
         const lot = lotData.find(l => l.name === lotName);
         if (!lot) return;
 
-        // Update URL hash
-        updateLotHash(lot.name);
+        // Update URL
+        updateLotURL(lot.name);
 
         // Your existing click handler code continues here...
         // Remove previous hover
@@ -7013,13 +6977,44 @@ Zoom: ${zoom}
       });
     }
 
-    // 2. Also update the list row click handler in setupLotClickHandlers
-    // You'll need to add updateLotHash(lotMapData.name); in that function
+    // 2. Update list row click handler
+    const originalSetupLotClickHandlers = window.setupLotClickHandlers;
+    if (originalSetupLotClickHandlers) {
+      window.setupLotClickHandlers = function() {
+        originalSetupLotClickHandlers();
+        
+        // Add URL update to existing row click handlers
+        const allRows = document.querySelectorAll('.info-row');
+        allRows.forEach(row => {
+          const originalClick = row.onclick;
+          row.onclick = function(e) {
+            const index = this.dataset.index;
+            const lot = lots[index];
+            if (lot && lot.number) {
+              const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
+              if (lotMapData) {
+                updateLotURL(lotMapData.name);
+              }
+            }
+            if (originalClick) originalClick.call(this, e);
+          };
+        });
+      };
+    }
+
+    // Update closeModal to clear URL
+    const originalCloseModal = window.closeModal;
+    window.closeModal = function() {
+      clearLotURL();
+      if (originalCloseModal) {
+        originalCloseModal();
+      }
+    };
 
     // Initialize - open lot from URL if present
     openInitialLotModal();
 
-   console.log('🔗 Deep linking initialized - supports both #lot= and /lot= formats');
+    console.log('🔗 Deep linking initialized - use ?lot=Lot105 format');
   }, 2000);
 })();
 </script>
