@@ -5,17 +5,15 @@
   <title>Redirecting…</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body {
-      background:#0b1220; color:#fff; font-family:system-ui,sans-serif;
-      display:flex; align-items:center; justify-content:center; height:100vh;
-    }
+    body { background:#0b1220; color:#fff; font-family:system-ui,sans-serif;
+           display:flex; align-items:center; justify-content:center; height:100vh; }
   </style>
 </head>
 <body>
   <p>Redirecting…</p>
   <script>
     (async function(){
-      // 1) Map your link keys to destinations
+      // 1) Map keys -> destinations
       const LINKS = {
         main: "https://lalaland.mx",
         yt: "https://www.youtube.com/@yourchannel",
@@ -23,69 +21,54 @@
         portfolio: "https://myname.github.io/portfolio"
       };
 
-      // 2) Read ?link=... (default -> main)
+      // 2) Read ?link=..., default main
       const params = new URLSearchParams(location.search);
       const link = (params.get("link") || "main").toLowerCase();
       const dest = LINKS[link] || LINKS.main;
 
-      // 3) Collect client info
+      // 3) Collect lightweight info (avoid slow IP APIs)
       const ua = navigator.userAgent;
       const screenSize = `${screen.width}x${screen.height}`;
       const lang = navigator.language || "unknown";
       const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
 
-      // Optional IP → city/country (may fail/timeout in IG webview; safe to ignore)
-      let city = "unknown", country = "unknown";
-      try {
-        const r = await Promise.race([
-          fetch("https://ipapi.co/json/"),
-          new Promise((_, rej)=>setTimeout(()=>rej(new Error("geo timeout")), 900))
-        ]);
-        if (r && r.ok) {
-          const g = await r.json();
-          city = g.city || city;
-          country = g.country_name || country;
+      // 4) Build ntfy JSON payload (no custom headers needed)
+      const payload = {
+        // ntfy JSON fields:
+        title: `IG Click → ${link}`,
+        message: `link=${link} lang=${lang} screen=${screenSize} mobile=${isMobile}`,
+        priority: "high",
+        tags: ["ig","click", link],
+        // your extra data (appears in payload body on ntfy web/app)
+        data: {
+          time: new Date().toISOString(),
+          ua, screen: screenSize, lang, isMobile
         }
+      };
+      const topicUrl = "https://ntfy.sh/lalaland-webapp-clicks-track";
+
+      // 5) Try Beacon first (best for redirects). If it fails, use keepalive fetch.
+      let sent = false;
+      try {
+        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+        sent = navigator.sendBeacon(topicUrl, blob);
       } catch (_) {}
 
-      // 4) Build payload + dynamic Title
-      const title = `IG Click → ${link}`;
-      const payload = {
-        event: "IG bio click",
-        link,
-        time: new Date().toISOString(),
-        ua,
-        screen: screenSize,
-        lang,
-        isMobile,
-        city,
-        country
-      };
-
-      // 5) Post to ntfy with dynamic Title (keepalive so it sends during navigation)
-      try {
-        fetch("https://ntfy.sh/lalaland-webapp-clicks-track", {
-          method: "POST",
-          keepalive: true, // important for redirects/unload
-          headers: {
-            "Content-Type": "application/json",
-            "Title": title,
-            "Priority": "high"
-          },
-          body: JSON.stringify(payload)
-        }).catch(()=>{});
-      } catch (_) {
-        // Fallback: minimal beacon without custom headers (title will be in body text)
+      if (!sent) {
         try {
-          const text = `${title}\n${JSON.stringify(payload)}`;
-          navigator.sendBeacon(
-            "https://ntfy.sh/lalaland-webapp-clicks-track",
-            new Blob([text], { type: "text/plain" })
-          );
+          await Promise.race([
+            fetch(topicUrl, {
+              method: "POST",
+              keepalive: true,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            }),
+            new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 400))
+          ]);
         } catch (_) {}
       }
 
-      // 6) Redirect immediately
+      // 6) Redirect immediately (no await)
       location.replace(dest);
     })();
   </script>
