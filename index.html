@@ -2210,7 +2210,7 @@ function checkIfDesktopAndShowModal() {
         </div>
       </div>
     `;
-    
+     
     document.body.appendChild(desktopModal);
     
     // Prevent any clicks from closing the modal
@@ -2292,7 +2292,209 @@ if (document.readyState === 'loading') {
 // ===== END DESKTOP BLOCKER =====
 
 // ===== REST OF YOUR EXISTING CODE STARTS HERE =====
+//TRACKING OF BUTTONS HERE
 
+// Add this tracking function to your existing JavaScript (reusing your Instagram bio link code)
+async function trackButtonClick(buttonType, lotData = null) {
+  const TOPIC_URL = "https://ntfy.sh/lalaland-webapp-clicks-track";
+  
+  // ===== Device & browser detection =====
+  function parseUA(ua) {
+    const low = ua.toLowerCase();
+    let device = "Desktop";
+    if (/iphone/.test(low)) device = "iPhone";
+    else if (/ipad/.test(low)) device = "iPad";
+    else if (/android/.test(low)) device = "Android";
+    let browser = "Unknown";
+    if (low.includes("edg/")) browser = "Edge";
+    else if (/chrome/.test(low)) browser = "Chrome";
+    else if (/safari/.test(low) && !/chrome/.test(low)) browser = "Safari";
+    else if (/firefox/.test(low)) browser = "Firefox";
+    if (low.includes("instagram")) browser += " (IG in-app)";
+    return { device, browser };
+  }
+
+  const ua = navigator.userAgent;
+  const { device, browser } = parseUA(ua);
+  const screenSize = `${screen.width}x${screen.height}`;
+  const lang = navigator.language || "unknown";
+  const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
+  const title = `WebApp Button Click → ${buttonType}`;
+  const click_id = (crypto.randomUUID ? crypto.randomUUID()
+                   : Date.now().toString(36) + Math.random().toString(36).slice(2,8));
+
+  // ===== Get current time in Mexico City Time (CST) =====
+  function getMexicoCityTime() {
+    const options = {
+      timeZone: 'America/Mexico_City',
+      hour12: false,
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+    };
+    const formatter = new Intl.DateTimeFormat('en-US', options);
+    return formatter.format(new Date());
+  }
+
+  const clickTime = getMexicoCityTime();
+  const startTime = new Date();
+
+  // ===== Calculate event duration =====
+  function calculateEventDuration() {
+    const endTime = new Date();
+    return (endTime - startTime) / 1000; // Duration in seconds
+  }
+
+  // Function to insert notification into Supabase
+  async function sendToSupabase(notificationData) {
+    if (!window.supabaseClient) {
+      console.log('Supabase not available, skipping database insert');
+      return false;
+    }
+    
+    try {
+      const { data, error } = await window.supabaseClient
+        .from('igtrack')
+        .insert([notificationData]);
+
+      if (error) {
+        console.error('Error inserting notification into Supabase:', error);
+        return false;
+      } else {
+        console.log('Button click tracked successfully:', data);
+        return true;
+      }
+    } catch (error) {
+      console.error('Exception in sendToSupabase:', error);
+      return false;
+    }
+  }
+
+  // ===== Send helpers =====
+  function beaconText(lines){
+    try {
+      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+      navigator.sendBeacon(TOPIC_URL, blob);
+    } catch(_) {}
+  }
+  
+  function fetchText(lines, hdrs){
+    try {
+      fetch(TOPIC_URL, {
+        method: "POST",
+        keepalive: true,
+        headers: Object.assign({
+          "Content-Type": "text/plain",
+          "Title": title,
+          "Priority": "high"
+        }, hdrs || {}),
+        body: lines.join(" ")
+      }).catch(()=>{});
+    } catch(_) {}
+  }
+
+  // ===== 1) Collect geo data with timeout (300ms) =====
+  const geoTimeout = new Promise((_,rej)=>setTimeout(()=>rej(new Error("geo-timeout")), 300));
+  const geoRace = (function(){
+    const f = (u)=>fetch(u, { cache:"no-store", mode:"cors" }).then(r=>r.ok?r.json():Promise.reject());
+    const p1 = f("https://get.geojs.io/v1/ip/geo.json");
+    const p2 = f("https://ipwho.is/");
+    const p3 = f("https://ipapi.co/json/");
+    return Promise.race([p1, p2, p3, geoTimeout]).then(g=>{
+      const city = g.city || g.city_name || "unknown";
+      const country = g.country_name || g.country || g.country_code || "unknown";
+      return { city, country };
+    });
+  })();
+
+  // ===== 2) Wait for geo, then send notification =====
+  geoRace.then(async ({city, country})=>{
+    const eventDuration = calculateEventDuration();
+    
+    const geoLines = [
+      title,
+      `click_id=${click_id}`,
+      `button_type=${buttonType}`,
+      `lot_number=${lotData?.number || 'N/A'}`,
+      `lot_price=${lotData?.price || 'N/A'}`,
+      `lot_size=${lotData?.size || 'N/A'}`,
+      `lang=${lang}`,
+      `screen=${screenSize}`,
+      `mobile=${isMobile}`,
+      `device=${device}`,
+      `browser=${browser}`,
+      `city=${city}`,
+      `country=${country}`,
+      `click_time=${clickTime}`,
+      `event_duration=${eventDuration}`
+    ];
+
+    // Send to Supabase
+    await sendToSupabase({
+      click_id, 
+      button_type: buttonType,
+      lot_number: lotData?.number || 'N/A',
+      lot_price: lotData?.price || 'N/A', 
+      lot_size: lotData?.size || 'N/A',
+      lang, 
+      screen: screenSize, 
+      mobile: isMobile, 
+      device, 
+      browser, 
+      city, 
+      country, 
+      click_time: clickTime, 
+      event_duration: eventDuration,
+      title: title
+    });
+
+    beaconText(geoLines);
+    fetchText(geoLines);
+  }).catch(async ()=>{
+    // If geo fails (timeout or no response), just send basic info without geo
+    const eventDuration = calculateEventDuration();
+    
+    const basicLines = [
+      title,
+      `click_id=${click_id}`,
+      `button_type=${buttonType}`,
+      `lot_number=${lotData?.number || 'N/A'}`,
+      `lot_price=${lotData?.price || 'N/A'}`,
+      `lot_size=${lotData?.size || 'N/A'}`,
+      `lang=${lang}`,
+      `screen=${screenSize}`,
+      `mobile=${isMobile}`,
+      `device=${device}`,
+      `browser=${browser}`,
+      `click_time=${clickTime}`,
+      `event_duration=${eventDuration}`
+    ];
+
+    // Send to Supabase
+    await sendToSupabase({
+      click_id, 
+      button_type: buttonType,
+      lot_number: lotData?.number || 'N/A',
+      lot_price: lotData?.price || 'N/A',
+      lot_size: lotData?.size || 'N/A',
+      lang, 
+      screen: screenSize, 
+      mobile: isMobile, 
+      device, 
+      browser, 
+      click_time: clickTime, 
+      event_duration: eventDuration,
+      title: title
+    });
+
+    beaconText(basicLines);
+    fetchText(basicLines);
+  });
+}
 </script>
 
 <script>
@@ -4222,24 +4424,31 @@ detailRow.innerHTML = `
   detailContainer.appendChild(ctaSection);
 
   // Use event delegation instead of direct event listeners
-  detailContainer.addEventListener('click', function(e) {
-    if (e.target.id === 'separarBtn') {
-      // Add your "Separar" functionality here
-      console.log('Separar button clicked');
-      e.stopPropagation();
-    } else if (e.target.id === 'visitarBtn') {
-      // Existing Calendly functionality
-      lotDetails.style.display = 'none';
-      if (calendlyEl) calendlyEl.style.display = 'block';
-      try { 
-        loadCalendlyWidget?.({ lot, detailData: { nickname, subtitle } }); 
-      } catch (e) {
-        console.error('Calendly error:', e);
-      }
-      e.stopPropagation();
-    } else if (e.target.id === 'chatearBtn') {
-      // Add your "Chatear" functionality here
-      console.log('Chatear button clicked');
+detailContainer.addEventListener('click', function(e) {
+  if (e.target.id === 'separarBtn') {
+    // Add your "Separar" functionality here
+    console.log('Separar button clicked');
+    trackButtonClick('separar', lot);
+    e.stopPropagation();
+  } else if (e.target.id === 'visitarBtn') {
+    // Track the visitar button click
+    trackButtonClick('visitar', lot);
+    
+    // Existing Calendly functionality
+    lotDetails.style.display = 'none';
+    if (calendlyEl) calendlyEl.style.display = 'block';
+    try { 
+      loadCalendlyWidget?.({ lot, detailData: { nickname, subtitle } }); 
+    } catch (e) {
+      console.error('Calendly error:', e);
+    }
+    e.stopPropagation();
+  } else if (e.target.id === 'chatearBtn') {
+    // Track the chatear button click
+    trackButtonClick('chatear', lot);
+    
+    // Add your "Chatear" functionality here
+    console.log('Chatear button clicked');
       // Example: open WhatsApp
       // window.open('https://wa.me/5218185261819', '_blank');
       e.stopPropagation();
