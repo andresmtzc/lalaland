@@ -2292,6 +2292,291 @@ if (document.readyState === 'loading') {
 // ===== END DESKTOP BLOCKER =====
 
 // ===== REST OF YOUR EXISTING CODE STARTS HERE =====
+//button tracking here
+// ===== SIMPLIFIED TRACKING SYSTEM - USING EXISTING IGTRACK TABLE =====
+(async function() {
+  const TOPIC_URL = "https://ntfy.sh/lalaland-webapp-clicks-track";
+  
+  // Initialize Supabase client for tracking
+  let supabaseClient = null;
+  try {
+    const configResponse = await fetch('https://lalaland.mx/sb_config.json');
+    if (configResponse.ok) {
+      const config = await configResponse.json();
+      if (config.url && config.key) {
+        supabaseClient = window.supabase.createClient(config.url, config.key);
+        console.log('✅ Tracking: Supabase client initialized');
+      }
+    }
+  } catch (error) {
+    console.log('⚠️ Tracking: Supabase config not available, will use ntfy only');
+  }
+
+  // Device & browser detection (from your working code)
+  function parseUA(ua) {
+    const low = ua.toLowerCase();
+    let device = "Desktop";
+    if (/iphone/.test(low)) device = "iPhone";
+    else if (/ipad/.test(low)) device = "iPad";
+    else if (/android/.test(low)) device = "Android";
+    let browser = "Unknown";
+    if (low.includes("edg/")) browser = "Edge";
+    else if (/chrome/.test(low)) browser = "Chrome";
+    else if (/safari/.test(low) && !/chrome/.test(low)) browser = "Safari";
+    else if (/firefox/.test(low)) browser = "Firefox";
+    if (low.includes("instagram")) browser += " (IG in-app)";
+    return { device, browser };
+  }
+
+  function getMexicoCityTime() {
+    const options = {
+      timeZone: 'America/Mexico_City',
+      hour12: false,
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+    };
+    const formatter = new Intl.DateTimeFormat('en-US', options);
+    return formatter.format(new Date());
+  }
+
+  // Function to get current lot information
+  function getCurrentLotInfo() {
+    try {
+      // Method 1: Get from detail modal
+      const lotDetails = document.querySelector('.detail-container');
+      if (lotDetails) {
+        const lotNumber = lotDetails.querySelector('.lote-number')?.textContent?.trim();
+        const lotLabel = lotDetails.querySelector('.lote-label')?.textContent?.trim();
+        const lotSize = lotDetails.querySelector('.lot-middle')?.textContent?.trim();
+        const lotPrice = lotDetails.querySelector('.price')?.textContent?.trim();
+        
+        if (lotNumber) {
+          return {
+            lot_number: lotNumber,
+            lot_label: lotLabel,
+            lot_size: lotSize,
+            lot_price: lotPrice,
+            source: 'detail_modal'
+          };
+        }
+      }
+
+      // Method 2: Get from modal header
+      const headerLotNumber = document.getElementById('headerLotNumber')?.textContent?.trim();
+      if (headerLotNumber) {
+        return {
+          lot_number: headerLotNumber,
+          source: 'modal_header'
+        };
+      }
+
+      // Method 3: Get from active/centered lot in list
+      const activeRow = document.querySelector('.info-row.active');
+      if (activeRow) {
+        const lotNumber = activeRow.querySelector('.lote-number')?.textContent?.trim();
+        const lotSize = activeRow.querySelector('.lot-middle')?.textContent?.trim();
+        const lotPrice = activeRow.querySelector('.price')?.textContent?.trim();
+        
+        if (lotNumber) {
+          return {
+            lot_number: lotNumber,
+            lot_size: lotSize,
+            lot_price: lotPrice,
+            source: 'active_list_row'
+          };
+        }
+      }
+
+      // Method 4: Get from URL hash
+      const hash = window.location.hash;
+      if (hash.startsWith('#lot=')) {
+        const lotName = decodeURIComponent(hash.slice(5));
+        return {
+          lot_name: lotName,
+          lot_number: extractLotNumber(lotName),
+          source: 'url_hash'
+        };
+      }
+
+      // Method 5: Get from global variables
+      if (window.currentLotIndex !== undefined && window.currentLotIndex !== -1 && window.lotData) {
+        const currentLot = window.lotData[window.currentLotIndex];
+        if (currentLot) {
+          return {
+            lot_name: currentLot.name,
+            lot_number: extractLotNumber(currentLot.name),
+            source: 'global_variable'
+          };
+        }
+      }
+
+      return { source: 'unknown' };
+    } catch (error) {
+      console.error('Error getting lot info:', error);
+      return { source: 'error', error: error.message };
+    }
+  }
+
+  // Helper function to extract lot number (reuse your existing function)
+  function extractLotNumber(lotName) {
+    if (!lotName) return 'unknown';
+    const withoutLotPrefix = lotName.replace(/^lot/i, '');
+    return withoutLotPrefix;
+  }
+
+  // Main tracking function - USES EXISTING IGTRACK TABLE
+  async function trackClick(eventName, additionalData = {}) {
+    const ua = navigator.userAgent;
+    const { device, browser } = parseUA(ua);
+    const screenSize = `${screen.width}x${screen.height}`;
+    const lang = navigator.language || "unknown";
+    const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
+    const clickTime = getMexicoCityTime();
+    const click_id = crypto.randomUUID ? crypto.randomUUID() : 
+                    Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+
+    // Get current lot information
+    const lotInfo = getCurrentLotInfo();
+
+    const trackingData = {
+      click_id,
+      event: eventName,
+      lang,
+      screen: screenSize,
+      mobile: isMobile,
+      device,
+      browser,
+      click_time: clickTime,
+      url: window.location.href,
+      ...lotInfo,
+      ...additionalData
+    };
+
+    console.log('📊 Tracking:', eventName, trackingData);
+
+    // Send to ntfy
+    try {
+      const title = `Lalaland: ${eventName} - Lot ${lotInfo.lot_number || 'Unknown'}`;
+      const lines = [
+        title,
+        `click_id=${click_id}`,
+        `event=${eventName}`,
+        `lot_number=${lotInfo.lot_number || 'unknown'}`,
+        `lot_name=${lotInfo.lot_name || 'unknown'}`,
+        `lot_size=${lotInfo.lot_size || 'unknown'}`,
+        `lot_price=${lotInfo.lot_price || 'unknown'}`,
+        `source=${lotInfo.source || 'unknown'}`,
+        `lang=${lang}`,
+        `screen=${screenSize}`,
+        `mobile=${isMobile}`,
+        `device=${device}`,
+        `browser=${browser}`,
+        `click_time=${clickTime}`,
+        ...Object.entries(additionalData).map(([k, v]) => `${k}=${v}`)
+      ];
+
+      // Send via beacon
+      try {
+        const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+        navigator.sendBeacon(TOPIC_URL, blob);
+      } catch(_) {}
+
+      // Send via fetch
+      try {
+        await fetch(TOPIC_URL, {
+          method: "POST",
+          keepalive: true,
+          headers: {
+            "Content-Type": "text/plain",
+            "Title": title,
+            "Priority": "default"
+          },
+          body: lines.join(" ")
+        });
+      } catch(_) {}
+    } catch (error) {
+      console.error('ntfy send failed:', error);
+    }
+
+    // Send to Supabase - USING EXISTING IGTRACK TABLE
+    if (supabaseClient) {
+      try {
+        await supabaseClient
+          .from('igtrack')
+          .insert([{
+            click_id: trackingData.click_id,
+            link: eventName, // Using event name as "link"
+            lang: trackingData.lang,
+            screen: trackingData.screen,
+            mobile: trackingData.mobile,
+            device: trackingData.device,
+            browser: trackingData.browser,
+            city: 'web_app', // Differentiate from Instagram links
+            country: 'web_app',
+            click_time: trackingData.click_time,
+            event_duration: 0, // Not applicable for in-app events
+            title: `Lalaland App: ${eventName} - ${lotInfo.lot_number || 'No Lot'}`,
+            // New columns for lot tracking
+            event_type: eventName,
+            lot_number: lotInfo.lot_number,
+            lot_name: lotInfo.lot_name,
+            event_data: trackingData // Store all data as JSON
+          }]);
+      } catch (error) {
+        console.error('Supabase insert failed:', error);
+      }
+    }
+  }
+
+  // ===== TRACK SPECIFIC BUTTONS =====
+
+  // Track info button (cloud SVG)
+  document.addEventListener('DOMContentLoaded', function() {
+    const infoBtn = document.getElementById('lalalandInfoBtn');
+    if (infoBtn) {
+      infoBtn.addEventListener('click', function() {
+        const lotInfo = getCurrentLotInfo();
+        trackClick('info_button_clicked', {
+          button_type: 'cloud_info',
+          location: 'map_floating_button',
+          current_lot_context: lotInfo.lot_number || 'no_lot_selected'
+        });
+      });
+    }
+  });
+
+  // Track detail modal buttons using event delegation
+  document.addEventListener('click', function(e) {
+    // Track "Visitar" button
+    if (e.target.id === 'visitarBtn' || e.target.closest('#visitarBtn')) {
+      const lotInfo = getCurrentLotInfo();
+      
+      trackClick('visitar_button_clicked', {
+        button_type: 'visitar_calendly',
+        location: 'detail_modal',
+        action: 'schedule_visit',
+      });
+    }
+
+    // Track "Chatear" button  
+    if (e.target.id === 'chatearBtn' || e.target.closest('#chatearBtn')) {
+      const lotInfo = getCurrentLotInfo();
+      
+      trackClick('chatear_button_clicked', {
+        button_type: 'chatear_whatsapp',
+        location: 'detail_modal', 
+        action: 'start_chat',
+      });
+    }
+  });
+
+  console.log('✅ Enhanced tracking system loaded - using existing igtrack table');
+})();
 
 </script>
 
@@ -7732,4 +8017,4 @@ function initChatAvailability() {
 
 
 </body> 
-</html>  
+</html>   
