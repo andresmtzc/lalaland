@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-GPX Editor with Mapbox</title>
+    
+    <!-- Mapbox CSS -->
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css" rel="stylesheet">
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1;
+            width: 320px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        button {
+            padding: 8px 12px;
+            margin: 2px;
+            border: 1px solid #ddd;
+            background: #f8f9fa;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #e9ecef;
+        }
+        button.active {
+            background: #4285F4;
+            color: white;
+            border-color: #4285F4;
+        }
+        .track-active {
+            background: #e6f3ff !important;
+            border-color: #4285F4 !important;
+        }
+        .status {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        .slider-container {
+            margin: 10px 0;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #4285F4;
+            cursor: pointer;
+        }
+        .slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #4285F4;
+            cursor: pointer;
+            border: none;
+        }
+        .tracks-list {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            margin-top: 5px;
+        }
+        .track-item {
+            padding: 5px 8px;
+            margin: 2px 0;
+            border: 1px solid #eee;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .track-item:hover {
+            background: #f8f9fa;
+        }
+        .track-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .track-info {
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+        }
+        .track-actions {
+            display: flex;
+            gap: 4px;
+        }
+        .small-btn {
+            padding: 2px 6px;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="controls">
+        <div class="control-group">
+            <input type="file" id="gpx-file" accept=".gpx" multiple>
+            <div class="tracks-list" id="tracks-list">
+                <!-- Tracks will be listed here -->
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <button onclick="toggleEditMode()" id="edit-btn">Edit Mode: OFF</button>
+            <button onclick="clearAllRoutes()">Clear All</button>
+        </div>
+        
+        <div class="control-group">
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Point Density:</span>
+                    <span id="density-value">100%</span>
+                </div>
+                <input type="range" min="1" max="100" value="100" class="slider" id="density-slider">
+                <div class="slider-label">
+                    <small id="points-count">0 points</small>
+                    <small id="original-count"></small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <button onclick="toggleCatmullRom()" id="catmull-btn">Catmull-Rom: OFF</button>
+            <button onclick="resetCurrentTrack()">Reset Current</button>
+        </div>
+        
+        <div class="control-group">
+            <button onclick="addPointMode()">Add Points</button>
+            <button onclick="removePointMode()">Remove Points</button>
+            <button onclick="movePointMode()">Move Points</button>
+        </div>
+        
+        <div class="status" id="status">Ready - Load GPX files to start</div>
+    </div>
+
+    <!-- Mapbox JS -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
+    <script>
+        // Initialize Mapbox
+        mapboxgl.accessToken = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
+
+        // Global variables
+        let map;
+        let isEditMode = false;
+        let currentMode = 'view';
+        let allTracks = new Map(); // Map of trackId -> trackData
+        let currentTrackId = null; // Currently selected track
+        let currentDensity = 100;
+        let isDragging = false;
+        let dragPointId = -1;
+        let nextPointId = 1000;
+        let nextTrackId = 1;
+        let isCatmullRomEnabled = false;
+        let wasCatmullRomEnabledBeforeEdit = false;
+
+        // Color palette for tracks
+        const trackColors = [
+            '#EA4335', '#4285F4', '#34A853', '#FBBC05', '#FF6D01',
+            '#46BDC6', '#9334E6', '#E67C73', '#109D58', '#3F51B5'
+        ];
+
+        // Initialize map
+        map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/outdoors-v12',
+            center: [0, 0],
+            zoom: 1,
+            cooperativeGestures: false
+        });
+
+        // Wait for map to load
+        map.on('load', () => {
+            console.log('Map loaded successfully');
+            document.getElementById('gpx-file').addEventListener('change', handleGPXUpload);
+            
+            // Setup density slider
+            const densitySlider = document.getElementById('density-slider');
+            densitySlider.addEventListener('input', handleDensityChange);
+            
+            // Create sources for tracks
+            map.addSource('tracks-line', {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+            });
+
+            map.addSource('control-points', {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+            });
+
+            // Add tracks line layer
+            map.addLayer({
+                id: 'gpx-tracks-line',
+                type: 'line',
+                source: 'tracks-line',
+                paint: {
+                    'line-color': ['get', 'color'],
+                    'line-width': ['case',
+                        ['==', ['get', 'isActive'], true], 4,
+                        2
+                    ],
+                    'line-opacity': ['case',
+                        ['==', ['get', 'isActive'], true], 0.8,
+                        0.5
+                    ]
+                }
+            });
+
+            // Add control points layer (visible only for active track in edit mode)
+            map.addLayer({
+                id: 'gpx-control-points',
+                type: 'circle',
+                source: 'control-points',
+                paint: {
+                    'circle-radius': 6,
+                    'circle-color': '#EA4335',
+                    'circle-stroke-width': 2,
+                    'circle-stroke-color': '#ffffff',
+                    'circle-opacity': ['case', 
+                        ['all', 
+                            ['==', ['get', 'isActive'], true],
+                            ['==', ['get', 'isEditMode'], true]
+                        ], 1, 0
+                    ]
+                }
+            });
+
+            setupMapInteractions();
+        });
+
+        // Setup map interactions
+        function setupMapInteractions() {
+            map.on('mouseup', () => {
+                if (isDragging) {
+                    setTimeout(() => {
+                        isDragging = false;
+                        dragPointId = -1;
+                        map.getCanvas().style.cursor = 'move';
+                        enableMapInteractions();
+                    }, 50);
+                }
+            });
+        }
+
+        // Handle multiple GPX file upload
+        function handleGPXUpload(event) {
+            const files = Array.from(event.target.files);
+            if (files.length === 0) return;
+
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const gpxContent = e.target.result;
+                    parseGPX(gpxContent, file.name);
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        // Parse GPX and add as new track
+        function parseGPX(gpxContent, fileName) {
+            try {
+                const parser = new DOMParser();
+                const gpxDoc = parser.parseFromString(gpxContent, 'text/xml');
+                const geojson = toGeoJSON.gpx(gpxDoc);
+                
+                console.log('GPX parsed:', geojson);
+                
+                // Extract coordinates from LineString features
+                let coordinates = [];
+                geojson.features.forEach(feature => {
+                    if (feature.geometry.type === 'LineString') {
+                        coordinates = feature.geometry.coordinates;
+                    }
+                });
+                
+                if (coordinates.length === 0) {
+                    alert(`No route found in ${fileName}`);
+                    return;
+                }
+                
+                // Create new track
+                const trackId = `track-${nextTrackId++}`;
+                const trackColor = trackColors[(nextTrackId - 2) % trackColors.length];
+                
+                const trackData = {
+                    id: trackId,
+                    name: fileName.replace('.gpx', ''),
+                    color: trackColor,
+                    originalPoints: coordinates.map((coord, index) => ({
+                        id: index,
+                        coordinates: coord,
+                        originalIndex: index
+                    })),
+                    activePoints: [],
+                    density: 100,
+                    isActive: false
+                };
+                
+                // Apply initial density
+                applyDensityFilterToTrack(trackData, currentDensity);
+                
+                // Add to tracks map
+                allTracks.set(trackId, trackData);
+                
+                // If this is the first track, select it
+                if (allTracks.size === 1) {
+                    selectTrack(trackId);
+                }
+                
+                // Update UI
+                updateTracksList();
+                updateAllTracksVisualization();
+                
+                setStatus(`Loaded ${fileName} with ${trackData.originalPoints.length} points`);
+                
+            } catch (error) {
+                console.error('Error parsing GPX:', error);
+                alert(`Error parsing ${fileName}. Please check the file format.`);
+            }
+        }
+
+        // Apply density filter to a specific track
+        function applyDensityFilterToTrack(trackData, densityPercent) {
+            const totalPoints = trackData.originalPoints.length;
+            const targetCount = Math.max(2, Math.floor((totalPoints * densityPercent) / 100));
+            
+            if (targetCount >= totalPoints) {
+                trackData.activePoints = trackData.originalPoints.map(p => ({...p}));
+            } else {
+                trackData.activePoints = selectPointsEvenlyImproved(trackData.originalPoints, targetCount);
+            }
+            
+            trackData.density = densityPercent;
+        }
+
+        // Select points evenly distributed
+        function selectPointsEvenlyImproved(points, targetCount) {
+            if (points.length <= targetCount) return points.map(p => ({...p}));
+            if (targetCount <= 2) return [points[0], points[points.length - 1]].map(p => ({...p}));
+            
+            const selected = [];
+            const totalSegments = targetCount - 1;
+            const segmentSize = (points.length - 1) / totalSegments;
+            
+            selected.push({...points[0]});
+            
+            for (let i = 1; i < targetCount - 1; i++) {
+                const index = Math.round(i * segmentSize);
+                const safeIndex = Math.min(Math.max(index, 1), points.length - 2);
+                selected.push({...points[safeIndex]});
+            }
+            
+            selected.push({...points[points.length - 1]});
+            
+            return removeDuplicatesPreserveOrder(selected);
+        }
+
+        // Remove duplicates while preserving order
+        function removeDuplicatesPreserveOrder(points) {
+            const unique = [];
+            const seenIds = new Set();
+            
+            for (const point of points) {
+                if (!seenIds.has(point.id)) {
+                    unique.push(point);
+                    seenIds.add(point.id);
+                }
+            }
+            
+            return unique;
+        }
+
+        // Select a track for editing
+        function selectTrack(trackId) {
+            // Deselect previous track
+            if (currentTrackId && allTracks.has(currentTrackId)) {
+                allTracks.get(currentTrackId).isActive = false;
+            }
+            
+            // Select new track
+            currentTrackId = trackId;
+            const track = allTracks.get(trackId);
+            track.isActive = true;
+            
+            // Update density slider to match selected track
+            currentDensity = track.density;
+            document.getElementById('density-slider').value = currentDensity;
+            document.getElementById('density-value').textContent = currentDensity + '%';
+            
+            // Update point counts
+            document.getElementById('points-count').textContent = track.activePoints.length + ' points';
+            document.getElementById('original-count').textContent = 'of ' + track.originalPoints.length;
+            
+            // Reset edit mode and smoothing
+            if (isEditMode) {
+                disableEditing();
+                isEditMode = false;
+                document.getElementById('edit-btn').textContent = 'Edit Mode: OFF';
+                document.getElementById('edit-btn').classList.remove('active');
+            }
+            
+            isCatmullRomEnabled = false;
+            document.getElementById('catmull-btn').textContent = 'Catmull-Rom: OFF';
+            document.getElementById('catmull-btn').classList.remove('active');
+            
+            updateTracksList();
+            updateAllTracksVisualization();
+            setStatus(`Selected: ${track.name}`);
+        }
+
+        // Remove a track
+        function removeTrack(trackId) {
+            allTracks.delete(trackId);
+            
+            // If we removed the current track, select another one or clear
+            if (currentTrackId === trackId) {
+                currentTrackId = null;
+                if (allTracks.size > 0) {
+                    selectTrack(Array.from(allTracks.keys())[0]);
+                } else {
+                    // No tracks left
+                    document.getElementById('points-count').textContent = '0 points';
+                    document.getElementById('original-count').textContent = '';
+                    isCatmullRomEnabled = false;
+                    document.getElementById('catmull-btn').textContent = 'Catmull-Rom: OFF';
+                    document.getElementById('catmull-btn').classList.remove('active');
+                }
+            }
+            
+            updateTracksList();
+            updateAllTracksVisualization();
+        }
+
+        // Update tracks list UI
+        function updateTracksList() {
+            const tracksList = document.getElementById('tracks-list');
+            tracksList.innerHTML = '';
+            
+            allTracks.forEach((track, trackId) => {
+                const trackItem = document.createElement('div');
+                trackItem.className = `track-item ${track.isActive ? 'track-active' : ''}`;
+                trackItem.innerHTML = `
+                    <div class="track-info">
+                        <div class="track-color" style="background-color: ${track.color}"></div>
+                        <span title="${track.name}">${track.name.length > 20 ? track.name.substring(0, 20) + '...' : track.name}</span>
+                    </div>
+                    <div class="track-actions">
+                        <button class="small-btn" onclick="selectTrack('${trackId}')">Edit</button>
+                        <button class="small-btn" onclick="removeTrack('${trackId}')">×</button>
+                    </div>
+                `;
+                tracksList.appendChild(trackItem);
+            });
+        }
+
+        // Get current track data
+        function getCurrentTrack() {
+            return currentTrackId ? allTracks.get(currentTrackId) : null;
+        }
+
+        // Get coordinates from active points of current track
+        function getCurrentTrackCoordinates() {
+            const track = getCurrentTrack();
+            return track ? track.activePoints.map(point => point.coordinates) : [];
+        }
+
+        // Update visualization of all tracks
+        function updateAllTracksVisualization(fitBounds = false) {
+            if (!map.getSource('tracks-line')) return;
+
+            const features = [];
+            let activeTrackCoordinates = [];
+            
+            // Create features for all tracks
+            allTracks.forEach(track => {
+                let displayCoordinates;
+                
+                if (track.isActive && isCatmullRomEnabled) {
+                    // Use Catmull-Rom for active track if enabled
+                    displayCoordinates = catmullRomSmooth(
+                        track.activePoints.map(p => p.coordinates), 
+                        15, 
+                        0.5
+                    );
+                    activeTrackCoordinates = displayCoordinates;
+                } else {
+                    // Use straight lines
+                    displayCoordinates = track.activePoints.map(p => p.coordinates);
+                    if (track.isActive) {
+                        activeTrackCoordinates = displayCoordinates;
+                    }
+                }
+                
+                features.push({
+                    type: 'Feature',
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: displayCoordinates
+                    },
+                    properties: {
+                        trackId: track.id,
+                        color: track.color,
+                        isActive: track.isActive
+                    }
+                });
+            });
+            
+            // Update tracks line source
+            map.getSource('tracks-line').setData({
+                type: 'FeatureCollection',
+                features: features
+            });
+
+            // Update control points for active track
+            const track = getCurrentTrack();
+            if (track && isEditMode) {
+                const controlPointFeatures = track.activePoints.map((point, index) => {
+                    return {
+                        type: 'Feature',
+                        geometry: {
+                            type: 'Point',
+                            coordinates: point.coordinates
+                        },
+                        properties: {
+                            id: point.id,
+                            trackId: track.id,
+                            isActive: true,
+                            isEditMode: isEditMode
+                        }
+                    };
+                });
+
+                map.getSource('control-points').setData({
+                    type: 'FeatureCollection',
+                    features: controlPointFeatures
+                });
+            } else {
+                // Clear control points if no active track or not in edit mode
+                map.getSource('control-points').setData({
+                    type: 'FeatureCollection',
+                    features: []
+                });
+            }
+
+            // Fit bounds to active track if requested
+            if (fitBounds && activeTrackCoordinates.length > 0) {
+                const bounds = activeTrackCoordinates.reduce((bounds, coord) => {
+                    return bounds.extend(coord);
+                }, new mapboxgl.LngLatBounds(activeTrackCoordinates[0], activeTrackCoordinates[0]));
+
+                map.fitBounds(bounds, { padding: 50, duration: 500 });
+            }
+        }
+
+        // Handle density slider change for current track
+        function handleDensityChange(e) {
+            currentDensity = parseInt(e.target.value);
+            document.getElementById('density-value').textContent = currentDensity + '%';
+            
+            const track = getCurrentTrack();
+            if (track) {
+                wasCatmullRomEnabledBeforeEdit = isCatmullRomEnabled;
+                
+                applyDensityFilterToTrack(track, currentDensity);
+                updateAllTracksVisualization(false);
+                
+                // Update point counts
+                document.getElementById('points-count').textContent = track.activePoints.length + ' points';
+                document.getElementById('original-count').textContent = 'of ' + track.originalPoints.length;
+                
+                if (wasCatmullRomEnabledBeforeEdit) {
+                    setTimeout(() => enableCatmullRom(), 10);
+                }
+            }
+        }
+
+        // Catmull-Rom smoothing
+        function catmullRomSmooth(points, segments = 20, tension = 0.5) {
+            if (points.length < 3) return points;
+            
+            const smoothed = [points[0]];
+            
+            for (let i = 0; i < points.length - 1; i++) {
+                const p0 = i > 0 ? points[i - 1] : points[i];
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                const p3 = i < points.length - 2 ? points[i + 2] : p2;
+                
+                for (let t = 1; t <= segments; t++) {
+                    const percentage = t / segments;
+                    
+                    const x = catmullRom(percentage, p0[0], p1[0], p2[0], p3[0], tension);
+                    const y = catmullRom(percentage, p0[1], p1[1], p2[1], p3[1], tension);
+                    
+                    smoothed.push([x, y]);
+                }
+            }
+            
+            smoothed.push(points[points.length - 1]);
+            return smoothed;
+        }
+
+        function catmullRom(t, p0, p1, p2, p3, tension) {
+            const v0 = (p2 - p0) * tension;
+            const v1 = (p3 - p1) * tension;
+            const t2 = t * t;
+            const t3 = t * t2;
+            
+            return (2 * p1 - 2 * p2 + v0 + v1) * t3 + 
+                   (-3 * p1 + 3 * p2 - 2 * v0 - v1) * t2 + 
+                   v0 * t + p1;
+        }
+
+        // Toggle Catmull-Rom for current track
+        function toggleCatmullRom() {
+            const track = getCurrentTrack();
+            if (!track) {
+                setStatus('Please select a track first!');
+                return;
+            }
+            
+            if (isCatmullRomEnabled) {
+                disableCatmullRom();
+            } else {
+                enableCatmullRom();
+            }
+        }
+
+        function enableCatmullRom() {
+            isCatmullRomEnabled = true;
+            document.getElementById('catmull-btn').textContent = 'Catmull-Rom: ON';
+            document.getElementById('catmull-btn').classList.add('active');
+            updateAllTracksVisualization(false);
+            setStatus('Catmull-Rom smoothing applied to current track');
+        }
+
+        function disableCatmullRom() {
+            isCatmullRomEnabled = false;
+            document.getElementById('catmull-btn').textContent = 'Catmull-Rom: OFF';
+            document.getElementById('catmull-btn').classList.remove('active');
+            updateAllTracksVisualization(false);
+            setStatus('Catmull-Rom smoothing disabled');
+        }
+
+        // Toggle edit mode for current track
+        function toggleEditMode() {
+            const track = getCurrentTrack();
+            if (!track) {
+                setStatus('Please select a track first!');
+                return;
+            }
+
+            isEditMode = !isEditMode;
+            const btn = document.getElementById('edit-btn');
+            
+            if (isEditMode) {
+                btn.textContent = 'Edit Mode: ON';
+                btn.classList.add('active');
+                enableEditing();
+                setStatus(`Editing: ${track.name}`);
+            } else {
+                btn.textContent = 'Edit Mode: OFF';
+                btn.classList.remove('active');
+                disableEditing();
+                setStatus('Edit mode disabled');
+            }
+            
+            updateAllTracksVisualization(false);
+        }
+
+        // Enable editing functionality
+        function enableEditing() {
+            map.getCanvas().style.cursor = 'crosshair';
+        }
+
+        // Disable editing functionality
+        function disableEditing() {
+            map.getCanvas().style.cursor = '';
+            currentMode = 'view';
+            
+            map.off('click', handlePointAdd);
+            map.off('click', handlePointRemove);
+            map.off('mousedown', startPointDrag);
+            map.off('mousemove', handlePointDrag);
+            map.off('mouseup', stopPointDrag);
+        }
+
+        // Set current editing mode
+        function addPointMode() {
+            if (!isEditMode || !getCurrentTrack()) return;
+            currentMode = 'add';
+            map.getCanvas().style.cursor = 'crosshair';
+            setStatus('Add Points: Click on map to add points to current track');
+            
+            wasCatmullRomEnabledBeforeEdit = isCatmullRomEnabled;
+            
+            map.off('click', handlePointRemove);
+            map.off('mousedown', startPointDrag);
+            map.off('mousemove', handlePointDrag);
+            map.off('mouseup', stopPointDrag);
+            map.off('click', handlePointAdd);
+            map.on('click', handlePointAdd);
+        }
+
+        function removePointMode() {
+            if (!isEditMode || !getCurrentTrack()) return;
+            currentMode = 'remove';
+            map.getCanvas().style.cursor = 'not-allowed';
+            setStatus('Remove Points: Click on points to remove them');
+            
+            wasCatmullRomEnabledBeforeEdit = isCatmullRomEnabled;
+            
+            map.off('mousedown', startPointDrag);
+            map.off('mousemove', handlePointDrag);
+            map.off('mouseup', stopPointDrag);
+            map.off('click', handlePointAdd);
+            map.off('click', handlePointRemove);
+            map.on('click', handlePointRemove);
+        }
+
+        function movePointMode() {
+            if (!isEditMode || !getCurrentTrack()) return;
+            currentMode = 'move';
+            map.getCanvas().style.cursor = 'move';
+            setStatus('Move Points: Click and drag points to move them');
+            
+            wasCatmullRomEnabledBeforeEdit = isCatmullRomEnabled;
+            
+            map.off('click', handlePointAdd);
+            map.off('click', handlePointRemove);
+            map.off('mousedown', startPointDrag);
+            map.off('mousemove', handlePointDrag);
+            map.off('mouseup', stopPointDrag);
+            
+            enablePointDragging();
+        }
+
+        // Handle adding points to current track
+        function handlePointAdd(e) {
+            if (currentMode !== 'add') return;
+            const track = getCurrentTrack();
+            if (!track) return;
+            
+            if (isCatmullRomEnabled) {
+                disableCatmullRom();
+            }
+            
+            const newPoint = {
+                id: nextPointId++,
+                coordinates: [e.lngLat.lng, e.lngLat.lat],
+                originalIndex: -1
+            };
+            
+            const insertIndex = findBestInsertPosition(newPoint.coordinates, track.activePoints);
+            track.activePoints.splice(insertIndex, 0, newPoint);
+            
+            updateAllTracksVisualization(false);
+            
+            if (wasCatmullRomEnabledBeforeEdit) {
+                setTimeout(() => enableCatmullRom(), 10);
+            }
+            
+            document.getElementById('points-count').textContent = track.activePoints.length + ' points';
+            setStatus(`Point added. Total: ${track.activePoints.length}`);
+        }
+
+        // Find best position to insert point
+        function findBestInsertPosition(newCoord, points) {
+            if (points.length < 2) return points.length;
+            
+            let bestIndex = points.length - 1;
+            let minDistance = Infinity;
+            
+            for (let i = 0; i < points.length - 1; i++) {
+                const segmentStart = points[i].coordinates;
+                const segmentEnd = points[i + 1].coordinates;
+                const distance = distanceToSegment(newCoord, segmentStart, segmentEnd);
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    bestIndex = i + 1;
+                }
+            }
+            
+            return bestIndex;
+        }
+
+        // Calculate distance from point to line segment
+        function distanceToSegment(point, segmentStart, segmentEnd) {
+            const A = point[0] - segmentStart[0];
+            const B = point[1] - segmentStart[1];
+            const C = segmentEnd[0] - segmentStart[0];
+            const D = segmentEnd[1] - segmentStart[1];
+
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+
+            if (lenSq !== 0) param = dot / lenSq;
+
+            let xx, yy;
+
+            if (param < 0) {
+                xx = segmentStart[0];
+                yy = segmentStart[1];
+            } else if (param > 1) {
+                xx = segmentEnd[0];
+                yy = segmentEnd[1];
+            } else {
+                xx = segmentStart[0] + param * C;
+                yy = segmentStart[1] + param * D;
+            }
+
+            const dx = point[0] - xx;
+            const dy = point[1] - yy;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // Handle removing points from current track
+        function handlePointRemove(e) {
+            if (currentMode !== 'remove') return;
+            const track = getCurrentTrack();
+            if (!track) return;
+            
+            if (isCatmullRomEnabled) {
+                disableCatmullRom();
+            }
+            
+            const features = map.queryRenderedFeatures(e.point, {
+                layers: ['gpx-control-points']
+            });
+            
+            if (features.length > 0) {
+                const pointId = features[0].properties.id;
+                const pointIndex = track.activePoints.findIndex(p => p.id === pointId);
+                
+                if (pointIndex !== -1 && track.activePoints.length > 2) {
+                    track.activePoints.splice(pointIndex, 1);
+                    updateAllTracksVisualization(false);
+                    
+                    if (wasCatmullRomEnabledBeforeEdit) {
+                        setTimeout(() => enableCatmullRom(), 10);
+                    }
+                    
+                    document.getElementById('points-count').textContent = track.activePoints.length + ' points';
+                    setStatus(`Point removed. Total: ${track.activePoints.length}`);
+                } else if (track.activePoints.length <= 2) {
+                    setStatus('Cannot remove point - track must have at least 2 points');
+                }
+            }
+        }
+
+        // Enable point dragging
+        function enablePointDragging() {
+            map.on('mousedown', 'gpx-control-points', startPointDrag);
+            map.on('mousemove', handlePointDrag);
+            map.on('mouseup', stopPointDrag);
+        }
+
+        function startPointDrag(e) {
+            if (currentMode !== 'move') return;
+            const track = getCurrentTrack();
+            if (!track) return;
+            
+            if (isCatmullRomEnabled) {
+                disableCatmullRom();
+            }
+            
+            e.preventDefault();
+            isDragging = true;
+            dragPointId = e.features[0].properties.id;
+            map.getCanvas().style.cursor = 'grabbing';
+            disableMapInteractions();
+        }
+
+        function handlePointDrag(e) {
+            if (!isDragging || dragPointId === -1) return;
+            const track = getCurrentTrack();
+            if (!track) return;
+            
+            const pointIndex = track.activePoints.findIndex(p => p.id === dragPointId);
+            if (pointIndex !== -1) {
+                track.activePoints[pointIndex].coordinates = [e.lngLat.lng, e.lngLat.lat];
+                updateAllTracksVisualization(false);
+            }
+        }
+
+        function stopPointDrag() {
+            if (isDragging) {
+                isDragging = false;
+                dragPointId = -1;
+                map.getCanvas().style.cursor = 'move';
+                enableMapInteractions();
+                
+                if (wasCatmullRomEnabledBeforeEdit) {
+                    setTimeout(() => enableCatmullRom(), 10);
+                }
+                
+                setStatus('Point moved');
+            }
+        }
+
+        // Reset current track to original
+        function resetCurrentTrack() {
+            const track = getCurrentTrack();
+            if (track) {
+                applyDensityFilterToTrack(track, 100);
+                currentDensity = 100;
+                document.getElementById('density-slider').value = 100;
+                document.getElementById('density-value').textContent = '100%';
+                document.getElementById('points-count').textContent = track.activePoints.length + ' points';
+                updateAllTracksVisualization(false);
+                setStatus(`Reset ${track.name} to original`);
+            }
+        }
+
+        // Clear all tracks
+        function clearAllRoutes() {
+            allTracks.clear();
+            currentTrackId = null;
+            resetState();
+            updateTracksList();
+            updateAllTracksVisualization(false);
+            setStatus('All tracks cleared');
+        }
+
+        // Reset state
+        function resetState() {
+            currentDensity = 100;
+            isCatmullRomEnabled = false;
+            wasCatmullRomEnabledBeforeEdit = false;
+            document.getElementById('density-slider').value = 100;
+            document.getElementById('density-value').textContent = '100%';
+            document.getElementById('catmull-btn').textContent = 'Catmull-Rom: OFF';
+            document.getElementById('catmull-btn').classList.remove('active');
+            document.getElementById('points-count').textContent = '0 points';
+            document.getElementById('original-count').textContent = '';
+        }
+
+        function setStatus(message) {
+            document.getElementById('status').textContent = message;
+        }
+
+        // Map interaction control functions
+        function disableMapInteractions() {
+            if (isDragging) {
+                map.dragPan.disable();
+                map.scrollZoom.disable();
+                map.dragRotate.disable();
+                map.boxZoom.disable();
+                map.doubleClickZoom.disable();
+            }
+        }
+
+        function enableMapInteractions() {
+            if (!isDragging) {
+                map.dragPan.enable();
+                map.scrollZoom.enable();
+                map.dragRotate.enable();
+                map.boxZoom.enable();
+                map.doubleClickZoom.enable();
+            }
+        }
+    </script>
+</body>
+</html>
