@@ -263,21 +263,23 @@
             </div>
         </div>
 
+
         <div class="control-group">
-            <div class="slider-label">
-                <span>Photo Marbles:</span>
-                <div>
-                    <button class="small-btn" onclick="addMarble()">+</button>
-                    <button class="small-btn" onclick="removeMarble()">-</button>
-                    <button class="small-btn" onclick="initializeMarbles()">Rebuild</button>
-                    <small id="marble-count">0 marbles</small>
-                </div>
-            </div>
-            <div class="slider-label">
-                <small>Spacing: <span id="marble-spacing">10</span>m</small>
-                <input type="range" min="1" max="50" value="10" class="slider" id="marble-spacing-slider">
-            </div>
+    <div class="slider-label">
+        <span>Marble Controls:</span>
+        <div>
+            <button class="small-btn" onclick="addMarble()">+</button>
+            <button class="small-btn" onclick="removeMarble()">-</button>
+            <button class="small-btn" onclick="initializeMarbles()">Rebuild</button>
+            <button class="small-btn" onclick="lockSelectedMarble()">🔒 Lock</button>
+            <small id="marble-count">0 marbles</small>
         </div>
+    </div>
+    <div class="slider-label">
+        <small>Spacing: <span id="marble-spacing">10</span>m</small>
+        <input type="range" min="1" max="50" value="10" class="slider" id="marble-spacing-slider">
+    </div>
+</div>
         
         <div class="control-group">
             <div class="export-buttons">
@@ -1327,8 +1329,7 @@ function disableCatmullRom() {
 
 // ========== MARBLE SYSTEM FUNCTIONS ==========
 
-// Initialize marbles for current track - ALWAYS with start and end marbles
-// Initialize marbles for current track
+// Also fix the initialization to ensure start/end are properly marked
 function initializeMarbles() {
     const track = getCurrentTrack();
     if (!track) {
@@ -1729,6 +1730,7 @@ function redistributeMarbles() {
         }
 
        // Update marble display to show locks and stable indices
+// Fix the marble color logic in updateMarbleDisplay
 function updateMarbleDisplay() {
     if (map.getSource('marbles')) {
         map.removeLayer('marbles-layer');
@@ -1763,23 +1765,23 @@ function updateMarbleDisplay() {
         }
     });
     
-    // Different styles based on state
+    // FIXED COLOR LOGIC: Fixed marbles (start/end) should be RED, locked middle marbles ORANGE
     map.addLayer({
         id: 'marbles-layer',
         type: 'circle',
         source: 'marbles',
         paint: {
             'circle-radius': ['case',
-                ['==', ['get', 'isDragging'], true], 4,
-                ['==', ['get', 'isLocked'], true], 3.5,    // Larger for locked
-                ['==', ['get', 'isFixed'], true], 3,       // Fixed start/end
-                2.5                                        // Normal unlocked
+                ['==', ['get', 'isDragging'], true], 7,
+                ['==', ['get', 'isFixed'], true], 6,       // Fixed start/end
+                ['==', ['get', 'isLocked'], true], 5,      // Locked middle marbles
+                4                                          // Normal unlocked
             ],
             'circle-color': ['case',
-                ['==', ['get', 'isDragging'], true], '#FFD700',
-                ['==', ['get', 'isLocked'], true], '#FF6B35',    // Orange for locked
-                ['==', ['get', 'isFixed'], true], '#FF0000',     // Red for fixed
-                '#8B4513'                                        // Brown for normal
+                ['==', ['get', 'isDragging'], true], '#FFD700',      // Gold when dragging
+                ['==', ['get', 'isFixed'], true], '#FF0000',         // RED for fixed start/end
+                ['==', ['get', 'isLocked'], true], '#FF6B35',        // ORANGE for locked middle
+                '#8B4513'                                            // Brown for normal unlocked
             ],
             'circle-stroke-width': 0,
             'circle-stroke-color': 'transparent'
@@ -1790,13 +1792,13 @@ function updateMarbleDisplay() {
     enableMarbleDragging();
 }
 
-// Enhanced marble dragging with middle-click to toggle lock
+// Fix the enableMarbleDragging function - remove reference to non-existent function
 function enableMarbleDragging() {
     // Remove existing listeners
     map.off('mousedown', 'marbles-layer', startMarbleDrag);
     map.off('mousemove', handleMarbleDrag);
     map.off('mouseup', stopMarbleDrag);
-    map.off('click', 'marbles-layer', handleMarbleClick);
+    map.off('click', 'marbles-layer'); // Remove all click listeners
     
     // Add new listeners
     map.on('mousedown', 'marbles-layer', (e) => {
@@ -1809,15 +1811,28 @@ function enableMarbleDragging() {
     map.on('mousemove', handleMarbleDrag);
     map.on('mouseup', stopMarbleDrag);
     
-    // Middle-click to toggle lock
+    // SIMPLIFIED: Use regular click with modifier key for locking
     map.on('click', 'marbles-layer', (e) => {
-        if (e.originalEvent.button === 1) { // Middle click
+        // Use Ctrl+Click or Cmd+Click to toggle lock (more reliable than middle click)
+        if (e.originalEvent.ctrlKey || e.originalEvent.metaKey) {
             e.preventDefault();
             if (e.features.length > 0) {
                 toggleMarbleLock(e.features[0].properties.id);
             }
         }
     });
+    
+    // Alternative: Add a button to the UI for locking/unlocking
+    // This is more user-friendly than middle-click
+}
+
+// Add this function for the lock button
+function lockSelectedMarble() {
+    if (dragMarbleIndex !== -1 && dragMarbleIndex > 0 && dragMarbleIndex < marbles.length - 1) {
+        toggleMarbleLock(marbles[dragMarbleIndex].id);
+    } else {
+        setStatus('Select a middle marble first by clicking on it');
+    }
 }
 
         // Export single track by ID
