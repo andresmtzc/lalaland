@@ -7,6 +7,8 @@
     
     <!-- Mapbox CSS -->
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css" rel="stylesheet">
+    <!-- Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
     
     <style>
         body { 
@@ -20,7 +22,7 @@
             top: 0; 
             bottom: 0; 
             width: 100%; 
-        }
+        } 
         #controls {
             position: absolute;
             top: 10px;
@@ -269,6 +271,179 @@
     max-height: calc(50vh - 80px); /* Adjusted for split screen */
     overflow-y: auto;
 }
+
+/* === NEW 360 VIEWER STYLES === */
+#viewer-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 50%;
+    background: #0b1020;
+    z-index: 0;
+}
+
+#canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+}
+
+.viewer-controls {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px 20px;
+    border-radius: 20px;
+    z-index: 1000;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    color: white;
+    font-size: 14px;
+}
+
+.viewer-controls button {
+    background: #4285F4;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.viewer-controls button:hover {
+    background: #3367d6;
+}
+
+.image-controls {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 20;
+}
+
+.navigation-ring {
+    position: relative;
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+}
+
+.nav-button.ring-button {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.7);
+    color: #22d3ee;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    cursor: pointer;
+    transform: translateX(-50%);
+}
+
+#nextImageBtn.ring-button {
+    top: 15px;
+    left: 50%;
+}
+
+#prevImageBtn.ring-button {
+    bottom: 15px;
+    left: 50%;
+}
+
+.nav-button.ring-button:hover {
+    transform: translateX(-50%) scale(1.2);
+}
+
+.time {
+    position: absolute;
+    right: 20px;
+    bottom: 20px;
+    color: #22d3ee;
+    font-weight: 600;
+    font-size: 14px;
+    z-index: 25;
+}
+
+.zoom-controls {
+    position: absolute;
+    right: 10px;
+    top: 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 5;
+}
+
+.zoom-btn {
+    width: 40px;
+    height: 40px;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid #ccc;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.zoom-btn:hover {
+    background: rgba(0,0,0,0.9);
+}
+
+#viewer-loading {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 100;
+    background: rgba(0,0,0,0.7);
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    color: white;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255,255,255,0.1);
+    border-radius: 50%;
+    border-top: 4px solid #22d3ee;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 10px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* View cone on map */
+.mapboxgl-marker.view-cone {
+    z-index: 10;
+}
     </style>
 </head>
 <body>
@@ -375,14 +550,39 @@
     <div class="status" id="status">Ready - Load GPX files to start</div>
 </div>
 
-<!-- NEW: 360 Viewer Container -->
+<!-- NEW 360 VIEWER -->
 <div id="viewer-container">
-    <div id="viewer-controls">
+    <canvas id="canvas"></canvas>
+    
+    <!-- Loading spinner -->
+    <div class="loading" id="viewer-loading">
+        <div class="spinner"></div>
+        <div id="loading-text">Loading 360° image...</div>
+    </div>
+    
+    <!-- Navigation controls -->
+    <div class="viewer-controls">
         <button onclick="previousImage()">← Previous</button>
         <span id="viewer-info">No images loaded</span>
         <button onclick="nextImage()">Next →</button>
     </div>
-    <div id="panorama-viewer"></div>
+    
+    <!-- Navigation ring -->
+    <div class="image-controls">
+        <div class="navigation-ring">
+            <button class="nav-button ring-button" id="nextImageBtn">▲</button>
+            <button class="nav-button ring-button" id="prevImageBtn">▼</button>
+        </div>
+    </div>
+    
+    <!-- Image counter -->
+    <div class="time" id="time">-/-</div>
+    
+    <!-- Zoom controls -->
+    <div class="zoom-controls">
+        <button class="zoom-btn" id="zoomIn">+</button>
+        <button class="zoom-btn" id="zoomOut">-</button>
+    </div>
 </div>
 
     <!-- Mapbox JS -->
@@ -408,6 +608,11 @@
     let nextTrackId = 1;
     let isCatmullRomEnabled = false;
     let wasCatmullRomEnabledBeforeEdit = false;
+    // ===== 360 VIEWER VARIABLES =====
+let scene, camera, renderer, sphere, panoGroup;
+let currentYaw = 0, currentPitch = 0, currentFov = 75;
+let viewerInitialized = false;
+let viewConeMarker = null;
 
     // Marble system variables - now track-specific
     let isDraggingMarble = false;
@@ -529,6 +734,29 @@
                 }
             });
 
+            // Add a symbol layer for image numbers on marbles
+map.addLayer({
+    id: 'marble-labels',
+    type: 'symbol',
+    source: 'marbles',
+    layout: {
+        'text-field': ['case',
+            ['==', ['get', 'hasImage'], true],
+            ['concat', ['get', 'imageIndex']],
+            '' // No text for marbles without images
+        ],
+        'text-size': 10,
+        'text-offset': [1, 0],
+        'text-anchor': 'center'
+    },
+    paint: {
+        'text-color': '#FFFFFF',
+        'text-halo-color': '#000000',
+        'text-halo-width': 1
+    }
+});
+  // Add marble navigation buttons
+    addMarbleNavigationButtons();
             setupMapInteractions();
         });
 
@@ -536,19 +764,7 @@
         initializeViewer();
     }
 
-    // Initialize 360 viewer
-    function initializeViewer() {
-        // Simple 360 viewer using CSS 3D transforms
-        const panoramaViewer = document.getElementById('panorama-viewer');
-        panoramaViewer.innerHTML = `
-            <div id="pano-image" style="width: 100%; height: 100%; background-size: cover; background-position: center;"></div>
-            <div id="no-image" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #666; font-size: 18px;">
-                No 360 image loaded. Click "Load Images" to add images.
-            </div>
-        `;
-        
-        updateViewerDisplay();
-    }
+
 
     // Setup map interactions
     function setupMapInteractions() {
@@ -1670,24 +1886,56 @@
     }
 
     // UPDATED: Handle marble click to show assigned image
-    function handleMarbleClick(e) {
-        if (e.features.length > 0) {
-            const marbleId = e.features[0].properties.id;
-            
-            // If Ctrl/Cmd click, toggle lock
-            if (e.originalEvent.ctrlKey || e.originalEvent.metaKey) {
-                toggleMarbleLock(marbleId);
-                return;
-            }
-            
-            // Regular click - select the marble and show assigned image
-            selectMarble(marbleId);
-            showMarbleImage(marbleId);
-        } else {
-            // Clicked elsewhere - deselect
-            deselectMarble();
+function handleMarbleClick(e) {
+    if (e.features.length > 0) {
+        const marbleId = e.features[0].properties.id;
+        
+        // If Ctrl/Cmd click, toggle lock
+        if (e.originalEvent.ctrlKey || e.originalEvent.metaKey) {
+            toggleMarbleLock(marbleId);
+            return;
         }
+        
+        // Regular click - select marble AND show its image
+        selectMarble(marbleId);
+        showMarbleImage(marbleId); // This now shows the 360 image
+        
+        // Also enable keyboard navigation between marbles
+        enableMarbleNavigation();
+    } else {
+        deselectMarble();
     }
+}
+
+// Add marble keyboard navigation
+function enableMarbleNavigation() {
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            navigateToAdjacentMarble(e.key === 'ArrowDown');
+        }
+    });
+}
+
+function navigateToAdjacentMarble(goForward) {
+    const track = getCurrentTrack();
+    if (!track || !selectedMarbleId) return;
+    
+    const marbles = track.marbles;
+    const currentIndex = marbles.findIndex(m => m.id === selectedMarbleId);
+    
+    if (currentIndex === -1) return;
+    
+    let nextIndex = goForward ? currentIndex + 1 : currentIndex - 1;
+    
+    // Wrap around
+    if (nextIndex < 0) nextIndex = marbles.length - 1;
+    if (nextIndex >= marbles.length) nextIndex = 0;
+    
+    const nextMarble = marbles[nextIndex];
+    selectMarble(nextMarble.id);
+    showMarbleImage(nextMarble.id);
+}
 
     function selectMarble(marbleId) {
         selectedMarbleId = marbleId;
@@ -1958,20 +2206,24 @@
         };
     }
 
-    function updateMarbleDisplay() {
-        const track = getCurrentTrack();
-        const marbles = track ? track.marbles : [];
+function updateMarbleDisplay() {
+    const track = getCurrentTrack();
+    const marbles = track ? track.marbles : [];
+    
+    if (marbles.length === 0) {
+        map.getSource('marbles').setData({
+            type: 'FeatureCollection',
+            features: []
+        });
+        document.getElementById('marble-count').textContent = '0 marbles';
+        return;
+    }
+    
+    const marbleFeatures = marbles.map((marble, index) => {
+        const hasImage = marble.assignedImage !== null;
+        const imageIndex = hasImage ? marble.assignedImage + 1 : 0;
         
-        if (marbles.length === 0) {
-            map.getSource('marbles').setData({
-                type: 'FeatureCollection',
-                features: []
-            });
-            document.getElementById('marble-count').textContent = '0 marbles';
-            return;
-        }
-        
-        const marbleFeatures = marbles.map((marble, index) => ({
+        return {
             type: 'Feature',
             geometry: {
                 type: 'Point',
@@ -1984,18 +2236,24 @@
                 isLocked: marble.isLocked || false,
                 isFixed: marble.isFixed || false,
                 isSelected: (marble.id === selectedMarbleId),
-                hasImage: marble.assignedImage !== null
+                hasImage: hasImage,
+                imageIndex: imageIndex // Add this for tooltips
             }
-        }));
-        
-        map.getSource('marbles').setData({
-            type: 'FeatureCollection',
-            features: marbleFeatures
-        });
-        
-        document.getElementById('marble-count').textContent = `${marbles.length} marbles`;
-        enableMarbleDragging();
-    }
+        };
+    });
+    
+    map.getSource('marbles').setData({
+        type: 'FeatureCollection',
+        features: marbleFeatures
+    });
+    
+    // Update marble count with image info
+    const marblesWithImages = marbles.filter(m => m.assignedImage !== null).length;
+    document.getElementById('marble-count').textContent = 
+        `${marbles.length} marbles (${marblesWithImages} with images)`;
+    
+    enableMarbleDragging();
+}
 
     function enableMarbleDragging() {
         // Clear existing handlers to avoid duplicates
@@ -2040,190 +2298,117 @@
 
     // ========== 360 VIEWER FUNCTIONS ==========
 
-      async function load360Images() {
-        try {
-            setStatus('Loading 360 images from frames folder...');
-            
-            // Since manifest returns 404, we'll create the images directly from the known pattern
-            createImagesFromFramesFolder();
-            
-        } catch (error) {
-            console.error('Error loading images:', error);
-            setStatus(`Error: ${error.message}. Using fallback method.`);
-            
-            // Fallback
-            createImagesFromFramesFolder();
+async function load360Images() {
+    try {
+        setStatus('Loading 360 images from frames folder...');
+        createImagesFromFramesFolder();
+        
+        if (currentImages.length > 0) {
+            setStatus(`Loaded ${currentImages.length} images`);
+            assignImagesToMarbles(); // This should assign images to marbles
+            showImageByIndex(0); // Show first image
         }
+    } catch (error) {
+        console.error('Error loading 360 images:', error);
+        setStatus('Error loading 360 images');
     }
+}
 
     function createImagesFromFramesFolder() {
-        // Create images based on the filenames from your JSON
-        currentImages = [];
-        const totalImages = 61;
+    // Clear existing images
+    currentImages = [];
+    
+    // Use the exact image URLs from your beta
+    const filenames = [
+        'santte1a-00.00.00.901.jpeg',
+        'santte1a-00.00.03.036.jpeg',
+        'santte1a-00.00.05.105.jpeg',
+        'santte1a-00.00.06.907.jpeg',
+        'santte1a-00.00.08.242.jpeg',
+        'santte1a-00.00.10.975.jpeg',
+        'santte1a-00.00.13.347.jpeg',
+        'santte1a-00.00.14.381.jpeg',
+        'santte1a-00.00.16.450.jpeg',
+        'santte1a-00.00.18.819.jpeg',
+        'santte1a-00.00.20.354.jpeg',
+        'santte1a-00.00.22.356.jpeg',
+        'santte1a-00.00.24.424.jpeg',
+        'santte1a-00.00.25.692.jpeg',
+        'santte1a-00.00.29.096.jpeg',
+        'santte1a-00.00.30.030.jpeg',
+        'santte1a-00.00.31.732.jpeg',
+        'santte1a-00.00.34.268.jpeg',
+        'santte1a-00.00.35.802.jpeg',
+        'santte1a-00.00.37.638.jpeg',
+        'santte1a-00.00.40.073.jpeg',
+        'santte1a-00.00.41.708.jpeg',
+        'santte1a-00.00.43.310.jpeg',
+        'santte1a-00.00.45.679.jpeg',
+        'santte1a-00.00.47.614.jpeg',
+        'santte1a-00.00.49.683.jpeg',
+        'santte1a-00.00.51.618.jpeg',
+        'santte1a-00.00.53.186.jpeg',
+        'santte1a-00.00.55.122.jpeg',
+        'santte1a-00.00.58.191.jpeg',
+        'santte1a-00.00.59.359.jpeg',
+        'santte1a-00.01.01.028.jpeg',
+        'santte1a-00.01.03.030.jpeg',
+        'santte1a-00.01.05.039.jpeg',
+        'santte1a-00.01.07.034.jpeg',
+        'santte1a-00.01.09.002.jpeg',
+        'santte1a-00.01.10.704.jpeg',
+        'santte1a-00.01.12.673.jpeg',
+        'santte1a-00.01.14.474.jpeg',
+        'santte1a-00.01.16.410.jpeg',
+        'santte1a-00.01.18.412.jpeg',
+        'santte1a-00.01.21.281.jpeg',
+        'santte1a-00.01.22.849.jpeg',
+        'santte1a-00.01.24.384.jpeg',
+        'santte1a-00.01.25.852.jpeg',
+        'santte1a-00.01.28.288.jpeg',
+        'santte1a-00.01.30.390.jpeg',
+        'santte1a-00.01.32.025.jpeg',
+        'santte1a-00.01.33.894.jpeg',
+        'santte1a-00.01.35.862.jpeg',
+        'santte1a-00.01.37.764.jpeg',
+        'santte1a-00.01.40.100.jpeg',
+        'santte1a-00.01.41.201.jpeg',
+        'santte1a-00.01.43.704.jpeg',
+        'santte1a-00.01.45.706.jpeg',
+        'santte1a-00.01.47.741.jpeg',
+        'santte1a-00.01.49.276.jpeg',
+        'santte1a-00.01.51.378.jpeg',
+        'santte1a-00.01.53.180.jpeg',
+        'santte1a-00.01.55.115.jpeg',
+        'santte1a-00.01.57.050.jpeg'
+    ];
+    
+    // Base URL
+    const baseUrl = 'https://lalaland.mx/frames/';
+    
+    // Create image objects WITHOUT coordinates
+    for (let i = 0; i < filenames.length; i++) {
+        const filename = filenames[i];
+        const imageUrl = baseUrl + filename;
         
-        // Base URL for images
-        const baseUrl = 'https://lalaland.mx/frames/';
-        
-        // Use the actual filenames from your JSON data
-        const filenames = [
-            'santte1a-00.00.00.901.jpeg',
-            'santte1a-00.00.03.036.jpeg',
-            'santte1a-00.00.05.105.jpeg',
-            'santte1a-00.00.06.907.jpeg',
-            'santte1a-00.00.08.242.jpeg',
-            'santte1a-00.00.10.975.jpeg',
-            'santte1a-00.00.13.347.jpeg',
-            'santte1a-00.00.14.381.jpeg',
-            'santte1a-00.00.16.450.jpeg',
-            'santte1a-00.00.18.819.jpeg',
-            'santte1a-00.00.20.354.jpeg',
-            'santte1a-00.00.22.356.jpeg',
-            'santte1a-00.00.24.424.jpeg',
-            'santte1a-00.00.25.692.jpeg',
-            'santte1a-00.00.29.096.jpeg',
-            'santte1a-00.00.30.030.jpeg',
-            'santte1a-00.00.31.732.jpeg',
-            'santte1a-00.00.34.268.jpeg',
-            'santte1a-00.00.35.802.jpeg',
-            'santte1a-00.00.37.638.jpeg',
-            'santte1a-00.00.40.073.jpeg',
-            'santte1a-00.00.41.708.jpeg',
-            'santte1a-00.00.43.310.jpeg',
-            'santte1a-00.00.45.679.jpeg',
-            'santte1a-00.00.47.614.jpeg',
-            'santte1a-00.00.49.683.jpeg',
-            'santte1a-00.00.51.618.jpeg',
-            'santte1a-00.00.53.186.jpeg',
-            'santte1a-00.00.55.122.jpeg',
-            'santte1a-00.00.58.191.jpeg',
-            'santte1a-00.00.59.359.jpeg',
-            'santte1a-00.01.01.028.jpeg',
-            'santte1a-00.01.03.030.jpeg',
-            'santte1a-00.01.05.039.jpeg',
-            'santte1a-00.01.07.034.jpeg',
-            'santte1a-00.01.09.002.jpeg',
-            'santte1a-00.01.10.704.jpeg',
-            'santte1a-00.01.12.673.jpeg',
-            'santte1a-00.01.14.474.jpeg',
-            'santte1a-00.01.16.410.jpeg',
-            'santte1a-00.01.18.412.jpeg',
-            'santte1a-00.01.21.281.jpeg',
-            'santte1a-00.01.22.849.jpeg',
-            'santte1a-00.01.24.384.jpeg',
-            'santte1a-00.01.25.852.jpeg',
-            'santte1a-00.01.28.288.jpeg',
-            'santte1a-00.01.30.390.jpeg',
-            'santte1a-00.01.32.025.jpeg',
-            'santte1a-00.01.33.894.jpeg',
-            'santte1a-00.01.35.862.jpeg',
-            'santte1a-00.01.37.764.jpeg',
-            'santte1a-00.01.40.100.jpeg',
-            'santte1a-00.01.41.201.jpeg',
-            'santte1a-00.01.43.704.jpeg',
-            'santte1a-00.01.45.706.jpeg',
-            'santte1a-00.01.47.741.jpeg',
-            'santte1a-00.01.49.276.jpeg',
-            'santte1a-00.01.51.378.jpeg',
-            'santte1a-00.01.53.180.jpeg',
-            'santte1a-00.01.55.115.jpeg',
-            'santte1a-00.01.57.050.jpeg'
-        ];
-        
-        for (let i = 0; i < totalImages; i++) {
-            const filename = filenames[i];
-            const imageUrl = baseUrl + filename;
-            
-            currentImages.push({
-                url: imageUrl,
-                index: i,
-                filename: filename,
-                timestamp: `Image ${i + 1}`,
-                sequence: i,
-                yaw: 0,
-                pitch: 0,
-                fov: 80
-            });
-        }
-        
-        currentImageIndex = -1;
-        updateImageCount();
-        assignImagesToMarbles();
-        
-        setStatus(`Loaded ${currentImages.length} images from frames folder`);
-        
-        // Show first image if available
-        if (currentImages.length > 0) {
-            showImage(0);
-        }
+        currentImages.push({
+            url: imageUrl,
+            index: i,
+            filename: filename,
+            timestamp: `Image ${i + 1}`,
+            sequence: i
+            // NO lat/lon coordinates - we'll use marble positions instead
+        });
     }
+    
+    currentImageIndex = -1;
+    setStatus(`Loaded ${currentImages.length} images from frames folder`);
+    
+    // Start preloading images in background
+    startBackgroundPreload();
+}
 
-    function createImagesFromPattern() {
-        // Create images based on the known pattern from your JSON
-        currentImages = [];
-        const totalImages = 61;
-        
-        // Try different possible base URLs
-        const baseUrls = [
-            'https://lalaland.mx/frames/santte1a/',
-            'https://lalaland.mx/frames/',
-            'https://lalaland.mx/'
-        ];
-        
-        // Sample filenames from your JSON to detect pattern
-        const sampleFilenames = [
-            'santte1a-00.00.00.901.jpeg',
-            'santte1a-00.00.03.036.jpeg', 
-            'santte1a-00.00.05.105.jpeg'
-        ];
-        
-        for (let i = 0; i < totalImages; i++) {
-            // Try to construct filename based on pattern
-            const sequence = i.toString().padStart(5, '0');
-            let filename;
-            let imageUrl;
-            
-            // Try different filename patterns
-            const possiblePatterns = [
-                `santte1a-${sequence}.jpeg`,
-                `img${i + 1}.jpg`,
-                `image${i + 1}.jpg`,
-                `${i + 1}.jpg`
-            ];
-            
-            for (const pattern of possiblePatterns) {
-                for (const baseUrl of baseUrls) {
-                    const testUrl = baseUrl + pattern;
-                    // We'll assume this might work and let the image loading handle 404s
-                    filename = pattern;
-                    imageUrl = testUrl;
-                    break;
-                }
-                if (imageUrl) break;
-            }
-            
-            currentImages.push({
-                url: imageUrl || `https://lalaland.mx/frames/img${i + 1}.jpg`,
-                index: i,
-                filename: filename || `image_${i + 1}.jpg`,
-                timestamp: `Image ${i + 1}`,
-                sequence: i,
-                yaw: 0,
-                pitch: 0,
-                fov: 80
-            });
-        }
-        
-        currentImageIndex = -1;
-        updateImageCount();
-        assignImagesToMarbles();
-        
-        setStatus(`Created ${currentImages.length} images using fallback pattern`);
-        
-        // Show first image if available
-        if (currentImages.length > 0) {
-            showImage(0);
-        }
-    } 
+
 
     function clear360Images() {
         currentImages = [];
@@ -2234,128 +2419,55 @@
     }
 
     function assignImagesToMarbles() {
-        const track = getCurrentTrack();
-        if (!track) {
-            setStatus('No track selected - cannot assign images to marbles');
-            return;
-        }
-        
-        const marbles = track.marbles;
-        if (marbles.length === 0) {
-            setStatus('No marbles created - create marbles first');
-            return;
-        }
-        
-        // Clear previous assignments
-        marbles.forEach(marble => {
-            marble.assignedImage = null;
-        });
-        
-        // Assign images to marbles in chronological order
-        // First marble gets first image, second marble gets second image, etc.
-        const minMarbles = Math.min(marbles.length, currentImages.length);
-        for (let i = 0; i < minMarbles; i++) {
-            marbles[i].assignedImage = i;
-        }
-        
-        updateMarbleDisplay();
-        
-        if (minMarbles < marbles.length) {
-            setStatus(`Assigned ${minMarbles} images to ${marbles.length} marbles (${marbles.length - minMarbles} marbles without images)`);
-        } else {
-            setStatus(`Perfect! All ${minMarbles} images assigned to marbles`);
-        }
+    const track = getCurrentTrack();
+    if (!track) {
+        setStatus('No track selected - cannot assign images to marbles');
+        return;
     }
+    
+    const marbles = track.marbles;
+    if (marbles.length === 0) {
+        setStatus('No marbles created - create marbles first');
+        return;
+    }
+    
+    // Clear previous assignments
+    marbles.forEach(marble => {
+        marble.assignedImage = null;
+    });
+    
+    // Assign images to marbles in 1:1 order
+    // Marble 1 → Image 1, Marble 2 → Image 2, etc.
+    const assignmentCount = Math.min(marbles.length, currentImages.length);
+    
+    for (let i = 0; i < assignmentCount; i++) {
+        marbles[i].assignedImage = i; // Direct 1:1 mapping
+    }
+    
+    // Update marble display to show which have images
+    updateMarbleDisplay();
+    
+    // Show assignment summary
+    if (marbles.length > currentImages.length) {
+        setStatus(`Assigned ${assignmentCount} images to ${marbles.length} marbles (${marbles.length - assignmentCount} marbles without images)`);
+    } else if (marbles.length < currentImages.length) {
+        setStatus(`Assigned ${assignmentCount} images to ${marbles.length} marbles (${currentImages.length - assignmentCount} images unused)`);
+    } else {
+        setStatus(`Perfect! All ${assignmentCount} images assigned to marbles`);
+    }
+    
+    return assignmentCount;
+}
 
-    function showMarbleImage(marbleId) {
-        const track = getCurrentTrack();
-        if (!track) return;
-        
-        const marble = track.marbles.find(m => m.id === marbleId);
-        if (!marble) return;
-        
-        if (marble.assignedImage === null) {
-            setStatus(`Marble ${marble.index + 1} has no image assigned`);
-            return;
-        }
-        
-        const imageIndex = marble.assignedImage;
-        showImage(imageIndex);
-        
-        const image = currentImages[imageIndex];
-        setStatus(`Showing image ${imageIndex + 1}/${currentImages.length} (${image.filename}) for marble ${marble.index + 1}`);
-    }
 
-    function showImage(index) {
-        if (index < 0 || index >= currentImages.length) {
-            console.warn('Invalid image index:', index);
-            return;
-        }
-        
-        currentImageIndex = index;
-        const image = currentImages[index];
-        
-        const panoImage = document.getElementById('pano-image');
-        const noImage = document.getElementById('no-image');
-        
-        if (panoImage && noImage) {
-            // Preload image to check if it exists
-            const img = new Image();
-            img.onload = function() {
-                panoImage.style.backgroundImage = `url('${image.url}')`;
-                panoImage.style.display = 'block';
-                noImage.style.display = 'none';
-                updateViewerInfo();
-            };
-            img.onerror = function() {
-                console.error('Failed to load image:', image.url);
-                panoImage.style.display = 'none';
-                noImage.style.display = 'flex';
-                noImage.innerHTML = `Failed to load: ${image.filename}`;
-                setStatus(`Error: Could not load image ${index + 1}`);
-            };
-            img.src = image.url;
-        }
-    }
 
-    function previousImage() {
-        if (currentImages.length === 0) return;
-        const newIndex = (currentImageIndex - 1 + currentImages.length) % currentImages.length;
-        showImage(newIndex);
-    }
 
-    function nextImage() {
-        if (currentImages.length === 0) return;
-        const newIndex = (currentImageIndex + 1) % currentImages.length;
-        showImage(newIndex);
-    }
 
-    function updateViewerDisplay() {
-        const panoImage = document.getElementById('pano-image');
-        const noImage = document.getElementById('no-image');
-        
-        if (panoImage && noImage) {
-            if (currentImages.length > 0 && currentImageIndex >= 0) {
-                panoImage.style.backgroundImage = `url('${currentImages[currentImageIndex].url}')`;
-                panoImage.style.display = 'block';
-                noImage.style.display = 'none';
-            } else {
-                panoImage.style.display = 'none';
-                noImage.style.display = 'flex';
-                noImage.innerHTML = 'No 360 image loaded.<br>Images will load automatically when you create marbles.';
-            }
-        }
-    }
 
-    function updateViewerInfo() {
-        const viewerInfo = document.getElementById('viewer-info');
-        if (viewerInfo && currentImageIndex >= 0) {
-            const image = currentImages[currentImageIndex];
-            viewerInfo.textContent = `Image ${currentImageIndex + 1}/${currentImages.length} - ${image.filename}`;
-        } else if (viewerInfo) {
-            viewerInfo.textContent = 'No images loaded';
-        }
-    }
+
+
+
+
 
     function updateImageCount() {
         const imageCount = document.getElementById('image-count');
@@ -2469,6 +2581,481 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
+
+    // ===== 360 VIEWER INITIALIZATION =====
+function initThreeJSViewer() {
+    if (viewerInitialized) return;
+    
+    // Scene setup
+    scene = new THREE.Scene();
+    panoGroup = new THREE.Group();
+    scene.add(panoGroup);
+
+    // Camera
+    const canvas = document.getElementById('canvas');
+    camera = new THREE.PerspectiveCamera(currentFov, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+    camera.position.set(0, 0, 0.1);
+
+    // Renderer
+    renderer = new THREE.WebGLRenderer({ 
+        canvas: canvas,
+        antialias: true,
+        alpha: false
+    });
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    
+    // Event listeners
+    setupViewerEventListeners();
+    
+    // Start animation loop
+    animateViewer();
+    viewerInitialized = true;
+    
+    console.log('Three.js viewer initialized');
+}
+
+function animateViewer() {
+    requestAnimationFrame(animateViewer);
+    updateNavigationRing();
+    if (renderer && scene && camera) {
+        renderer.render(scene, camera);
+    }
+}
+
+function updateNavigationRing() {
+    const ring = document.querySelector('.navigation-ring');
+    if (!ring || !sphere) return;
+    
+    // Rotate ring to match view
+    const yawDegrees = THREE.MathUtils.radToDeg(currentYaw) + 90;
+    ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
+}
+
+// ===== IMAGE DISPLAY =====
+function showImageInViewer(imageUrl, imageData) {
+    showViewerLoading('Loading 360° image...');
+    
+    // Initialize viewer if needed
+    if (!viewerInitialized) {
+        initThreeJSViewer();
+    }
+    
+    // Remove old sphere
+    if (sphere) {
+        panoGroup.remove(sphere);
+        sphere.geometry.dispose();
+        sphere.material.dispose();
+    }
+    
+    // Load and display new image
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = function() {
+        const geometry = new THREE.SphereGeometry(100, 60, 40);
+        geometry.scale(-1, 1, 1); // Flip inside out
+        
+        const texture = new THREE.Texture(img);
+        texture.needsUpdate = true;
+        
+        const material = new THREE.MeshBasicMaterial({ 
+            map: texture, 
+            side: THREE.DoubleSide 
+        });
+        
+        sphere = new THREE.Mesh(geometry, material);
+        panoGroup.add(sphere);
+        
+        // Reset orientation
+        panoGroup.rotation.set(0, 0, 0);
+        currentYaw = 0;
+        currentPitch = 0;
+        
+        hideViewerLoading();
+        updateViewCone(imageData);
+        updateNavigationRing();
+    };
+    
+    img.onerror = function() {
+        hideViewerLoading();
+        setStatus('Failed to load 360 image');
+    };
+    
+    img.src = imageUrl;
+}
+
+// ===== IMAGE NAVIGATION =====
+function nextImage() {
+    if (currentImageIndex < currentImages.length - 1) {
+        currentImageIndex++;
+        showImageByIndex(currentImageIndex);
+    }
+    updateNavigationButtons();
+}
+
+function previousImage() {
+    if (currentImageIndex > 0) {
+        currentImageIndex--;
+        showImageByIndex(currentImageIndex);
+    }
+    updateNavigationButtons();
+}
+
+function showImageByIndex(index, preserveOrientation = false) {
+    if (index >= 0 && index < currentImages.length) {
+        const image = currentImages[index];
+        showImageInViewer(image.url, image);
+        currentImageIndex = index;
+        updateViewerUI();
+        
+        // Highlight the marble that has this image
+        highlightMarbleWithImage(index);
+    }
+}
+
+function updateViewerUI() {
+    document.getElementById('time').textContent = `${currentImageIndex + 1}/${currentImages.length}`;
+    document.getElementById('viewer-info').textContent = `Image ${currentImageIndex + 1}/${currentImages.length}`;
+}
+
+function updateNavigationButtons() {
+    const prevBtn = document.getElementById('prevImageBtn');
+    const nextBtn = document.getElementById('nextImageBtn');
+    
+    if (prevBtn) prevBtn.disabled = currentImageIndex <= 0;
+    if (nextBtn) nextBtn.disabled = currentImageIndex >= currentImages.length - 1;
+}
+
+// ===== MARBLE-IMAGE CONNECTION =====
+function highlightMarbleWithImage(imageIndex) {
+    const track = getCurrentTrack();
+    if (!track) return;
+    
+    // Find marble with this image
+    const marble = track.marbles.find(m => m.assignedImage === imageIndex);
+    if (marble) {
+        selectMarble(marble.id);
+        // Center map on this marble
+        map.flyTo({
+            center: marble.position,
+            zoom: 17,
+            duration: 1000
+        });
+    }
+}
+
+// ENHANCED: Click marble to show image
+function showMarbleImage(marbleId) {
+    const track = getCurrentTrack();
+    if (!track) return;
+    
+    const marble = track.marbles.find(m => m.id === marbleId);
+    if (!marble) return;
+    
+    if (marble.assignedImage === null) {
+        setStatus(`Marble ${marble.index + 1} has no image assigned`);
+        return;
+    }
+    
+    const imageIndex = marble.assignedImage;
+    showImageByIndex(imageIndex, true);
+    setStatus(`Showing image ${imageIndex + 1}/${currentImages.length} for marble ${marble.index + 1}`);
+}
+
+// ===== VIEW CONE =====
+function updateViewCone(imageData) {
+    if (!map || !imageData) return;
+    
+    // Remove old cone
+    if (viewConeMarker) {
+        viewConeMarker.remove();
+    }
+    
+    // Get the marble that has this image to position the cone
+    const track = getCurrentTrack();
+    if (!track) return;
+    
+    const marble = track.marbles.find(m => m.assignedImage === currentImageIndex);
+    if (!marble) return;
+    
+    // Create view cone element
+    const coneElement = document.createElement('div');
+    coneElement.innerHTML = `
+        <div style="width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 20px solid rgba(255, 107, 107, 0.7); transform-origin: center bottom;"></div>
+    `;
+    
+    // Add to map at marble position
+    viewConeMarker = new mapboxgl.Marker(coneElement)
+        .setLngLat(marble.position)
+        .addTo(map);
+    
+    // Rotate cone based on current view
+    updateViewConeRotation();
+}
+
+function updateViewConeRotation() {
+    if (!viewConeMarker) return;
+    
+    const coneElement = viewConeMarker.getElement();
+    const arrow = coneElement.querySelector('div');
+    if (arrow) {
+        const degrees = THREE.MathUtils.radToDeg(currentYaw);
+        arrow.style.transform = `rotate(${degrees}deg)`;
+    }
+}
+
+// ===== VIEWER CONTROLS =====
+function setupViewerEventListeners() {
+    const canvas = document.getElementById('canvas');
+    
+    // Mouse drag to look around
+    let isDragging = false;
+    let lastX = 0, lastY = 0;
+    
+    canvas.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        canvas.style.cursor = 'grabbing';
+    });
+    
+    canvas.addEventListener('mousemove', (e) => {
+        if (isDragging && sphere) {
+            const deltaX = e.clientX - lastX;
+            const deltaY = e.clientY - lastY;
+            
+            panoGroup.rotation.y -= deltaX * 0.01;
+            panoGroup.rotation.x -= deltaY * 0.01;
+            
+            currentYaw = panoGroup.rotation.y;
+            currentPitch = panoGroup.rotation.x;
+            
+            lastX = e.clientX;
+            lastY = e.clientY;
+            
+            updateNavigationRing();
+            updateViewConeRotation();
+        }
+    });
+    
+    canvas.addEventListener('mouseup', () => {
+        isDragging = false;
+        canvas.style.cursor = 'grab';
+    });
+    
+    canvas.addEventListener('mouseenter', () => {
+        canvas.style.cursor = 'grab';
+    });
+    
+    canvas.addEventListener('mouseleave', () => {
+        isDragging = false;
+        canvas.style.cursor = 'default';
+    });
+    
+    // Zoom controls
+    document.getElementById('zoomIn').addEventListener('click', zoomIn);
+    document.getElementById('zoomOut').addEventListener('click', zoomOut);
+    
+    // Navigation buttons
+    document.getElementById('nextImageBtn').addEventListener('click', nextImage);
+    document.getElementById('prevImageBtn').addEventListener('click', previousImage);
+    
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') previousImage();
+        if (e.key === 'ArrowRight') nextImage();
+    });
+}
+
+function zoomIn() {
+    if (currentFov > 30) {
+        currentFov -= 5;
+        camera.fov = currentFov;
+        camera.updateProjectionMatrix();
+    }
+}
+
+function zoomOut() {
+    if (currentFov < 120) {
+        currentFov += 5;
+        camera.fov = currentFov;
+        camera.updateProjectionMatrix();
+    }
+}
+
+// ===== LOADING FUNCTIONS =====
+function showViewerLoading(message) {
+    const loading = document.getElementById('viewer-loading');
+    const loadingText = document.getElementById('loading-text');
+    if (loading && loadingText) {
+        loadingText.textContent = message;
+        loading.style.display = 'block';
+    }
+}
+
+function hideViewerLoading() {
+    const loading = document.getElementById('viewer-loading');
+    if (loading) loading.style.display = 'none';
+}
+
+// Function to get marble by image index
+function getMarbleByImageIndex(imageIndex) {
+    const track = getCurrentTrack();
+    if (!track) return null;
+    
+    return track.marbles.find(marble => marble.assignedImage === imageIndex);
+}
+
+// Function to navigate to next/previous marble WITH image
+function navigateToMarbleWithImage(direction) {
+    const track = getCurrentTrack();
+    if (!track) return;
+    
+    const marbles = track.marbles;
+    const marblesWithImages = marbles.filter(m => m.assignedImage !== null);
+    
+    if (marblesWithImages.length === 0) {
+        setStatus('No marbles have images assigned');
+        return;
+    }
+    
+    let currentIndex = 0;
+    if (selectedMarbleId) {
+        const currentMarble = marbles.find(m => m.id === selectedMarbleId);
+        if (currentMarble && currentMarble.assignedImage !== null) {
+            currentIndex = marblesWithImages.findIndex(m => m.id === selectedMarbleId);
+        }
+    }
+    
+    let newIndex;
+    if (direction === 'next') {
+        newIndex = (currentIndex + 1) % marblesWithImages.length;
+    } else {
+        newIndex = (currentIndex - 1 + marblesWithImages.length) % marblesWithImages.length;
+    }
+    
+    const nextMarble = marblesWithImages[newIndex];
+    selectMarble(nextMarble.id);
+    showMarbleImage(nextMarble.id);
+}
+
+// Update keyboard navigation to only navigate marbles with images
+function enableMarbleNavigation() {
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            navigateToMarbleWithImage(e.key === 'ArrowDown' ? 'next' : 'prev');
+        }
+    });
+}
+
+// Add buttons to navigate marbles with images
+function addMarbleNavigationButtons() {
+    // Add these buttons to your controls HTML or create them dynamically
+    const marbleNavHTML = `
+        <div class="control-group">
+            <div class="slider-label">
+                <span>Marble Navigation:</span>
+                <div>
+                    <button class="small-btn" onclick="navigateToMarbleWithImage('prev')">← Prev</button>
+                    <button class="small-btn" onclick="navigateToMarbleWithImage('next')">Next →</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add to controls (you might need to adjust the selector based on your HTML structure)
+    const controls = document.getElementById('controls');
+    const exportGroup = controls.querySelector('.export-buttons').parentElement;
+    exportGroup.insertAdjacentHTML('beforebegin', marbleNavHTML);
+}
+
+// ===== MISSING: IMAGE PRELOADING SYSTEM =====
+let preloadedImages = {}; // ADD THIS VARIABLE at the top with other globals
+
+function startBackgroundPreload(concurrency = 3) {
+    if (currentImages.length <= 1) return;
+    
+    const order = buildPreloadOrder(currentImageIndex, currentImages.length);
+    runPreloadPool(order, concurrency);
+}
+
+function buildPreloadOrder(center, total) {
+    const seq = [];
+    for (let step = 1; step < total; step++) {
+        const fwd = center + step;
+        const back = center - step;
+        if (fwd < total) seq.push(fwd);
+        if (back >= 0) seq.push(back);
+    }
+    return seq;
+}
+
+function runPreloadPool(indexes, concurrency) {
+    let i = 0;
+    const workers = Array.from({ length: Math.min(concurrency, indexes.length) }, async () => {
+        while (i < indexes.length) {
+            const idx = indexes[i++];
+            await preloadOne(idx).catch(() => {});
+        }
+    });
+    
+    Promise.all(workers).then(() => {
+        console.log('Background preload complete');
+    });
+}
+
+function preloadOne(index) {
+    return new Promise((resolve) => {
+        const item = currentImages[index];
+        if (!item) return resolve();
+
+        const src = item.url;
+        if (preloadedImages[src]) return resolve(); // already cached
+
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+            preloadedImages[src] = img;
+            resolve();
+        };
+        img.onerror = () => resolve(); // swallow errors; keep going
+        img.src = src;
+
+        if (img.decode) img.decode().catch(() => {});
+    });
+}
+
+// ===== MISSING: UPDATE VIEWER DISPLAY =====
+function updateViewerDisplay() {
+    const panoImage = document.getElementById('pano-image');
+    const noImage = document.getElementById('no-image');
+    
+    if (panoImage && noImage) {
+        if (currentImages.length > 0 && currentImageIndex >= 0) {
+            panoImage.style.display = 'block';
+            noImage.style.display = 'none';
+        } else {
+            panoImage.style.display = 'none';
+            noImage.style.display = 'flex';
+        }
+    }
+}
+
+// ===== MISSING: INITIALIZE VIEWER =====
+function initializeViewer() {
+    // Simple initialization - the Three.js viewer will be initialized when images are loaded
+    console.log('Viewer container ready');
+}
+
+// ===== MISSING: SHOW IMAGE (legacy function) =====
+function showImage(index) {
+    // This is called by the old viewer controls, redirect to new system
+    showImageByIndex(index);
+}
+
+
+
+
 
     // Initialize the application
     initializeApp();
