@@ -604,6 +604,8 @@ let currentYaw = 0, currentPitch = 0, currentFov = 75;
 let viewerInitialized = false;
 let viewConeMarker = null;
 
+
+
     // Marble system variables - now track-specific
     let isDraggingMarble = false;
     let dragMarbleIndex = -1;
@@ -2370,10 +2372,16 @@ async function load360Images() {
         createImagesFromFramesFolder();
         
         if (currentImages.length > 0) {
-            setStatus(`Loaded ${currentImages.length} images`);
-            assignImagesToMarbles(); // This should assign images to marbles
-            showImageByIndex(0); // Show first image
+            setStatus(`Loaded ${currentImages.length} images - assigning to marbles`);
+            assignImagesToMarbles();
+            
+            // AUTO-SHOW FIRST IMAGE
+            showImageByIndex(0);
+            
+            // START BACKGROUND PRELOADING OF ALL IMAGES
+            startBackgroundPreload(3); // ← ADD THIS LINE
         }
+        
     } catch (error) {
         console.error('Error loading 360 images:', error);
         setStatus('Error loading 360 images');
@@ -2701,80 +2709,42 @@ function updateNavigationRing() {
 function showImageInViewer(imageUrl, imageData) {
     showViewerLoading('Loading 360° image...');
     
-    console.log('Loading image:', imageUrl); // Debug log
+    console.log('Loading image:', imageUrl);
     
     // Initialize viewer if needed
     if (!viewerInitialized) {
         initThreeJSViewer();
     }
     
-    // Remove old sphere
-    if (sphere) {
-        panoGroup.remove(sphere);
-        if (sphere.geometry) sphere.geometry.dispose();
-        if (sphere.material) {
-            if (sphere.material.map) sphere.material.map.dispose();
-            sphere.material.dispose();
-        }
+    // Check if image is already preloaded (double-check)
+    if (preloadedImages[imageUrl]) {
+        console.log('Image preloaded - instant display');
+        hideViewerLoading();
+        applyImageToSphere(preloadedImages[imageUrl], imageData);
+        preloadAdjacentImages();
+        return;
     }
     
-    // Load and display new image
+    // Load new image
     const img = new Image();
     img.crossOrigin = "Anonymous";
     
     img.onload = function() {
-        console.log('Image loaded successfully:', imageUrl); // Debug log
-        
-        try {
-            const geometry = new THREE.SphereGeometry(100, 60, 40);
-            geometry.scale(-1, 1, 1); // Flip inside out
-            
-            const texture = new THREE.Texture(img);
-            texture.needsUpdate = true;
-            
-            const material = new THREE.MeshBasicMaterial({ 
-                map: texture, 
-                side: THREE.DoubleSide 
-            });
-            
-            sphere = new THREE.Mesh(geometry, material);
-            panoGroup.add(sphere);
-            
-            // Reset orientation
-            panoGroup.rotation.set(0, 0, 0);
-            currentYaw = 0;
-            currentPitch = 0;
-            
-            hideViewerLoading();
-            updateNavigationRing();
-            setStatus(`Loaded image ${currentImageIndex + 1}`);
-            
-        } catch (error) {
-            console.error('Error creating sphere:', error);
-            hideViewerLoading();
-            setStatus('Error creating 3D sphere');
-        }
+        console.log('Image loaded successfully:', imageUrl);
+        preloadedImages[imageUrl] = img; // Add to cache
+        hideViewerLoading();
+        applyImageToSphere(img, imageData);
+        preloadAdjacentImages();
     };
     
     img.onerror = function() {
-        console.error('Failed to load image:', imageUrl); // Debug log
+        console.error('Failed to load image:', imageUrl);
         hideViewerLoading();
         setStatus('Failed to load 360 image: ' + imageUrl);
-        
-        // Try to load next image if this one fails
-        if (currentImageIndex < currentImages.length - 1) {
-            setTimeout(() => {
-                currentImageIndex++;
-                showImageByIndex(currentImageIndex);
-            }, 1000);
-        }
     };
     
-    // Add cache busting
     const timestamp = new Date().getTime();
     const urlWithCacheBust = imageUrl + (imageUrl.includes('?') ? '&' : '?') + 't=' + timestamp;
-    console.log('Attempting to load:', urlWithCacheBust); // Debug log
-    
     img.src = urlWithCacheBust;
 }
 
@@ -2798,12 +2768,74 @@ function previousImage() {
 function showImageByIndex(index, preserveOrientation = false) {
     if (index >= 0 && index < currentImages.length) {
         const image = currentImages[index];
-        showImageInViewer(image.url, image);
-        currentImageIndex = index;
-        updateViewerUI();
         
-        // Highlight the marble that has this image
-        highlightMarbleWithImage(index);
+        // CHECK IF IMAGE IS PRELOADED
+        if (preloadedImages[image.url]) {
+            console.log('Image already preloaded - instant display');
+            // INSTANT DISPLAY - no loading screen
+            applyImageToSphere(preloadedImages[image.url], image);
+            currentImageIndex = index;
+            updateViewerUI();
+            highlightMarbleWithImage(index);
+        } else {
+            console.log('Image not preloaded - showing loading screen');
+            // NOT PRELOADED - show loading screen
+            showImageInViewer(image.url, image);
+            currentImageIndex = index;
+            updateViewerUI();
+            highlightMarbleWithImage(index);
+        }
+        
+        // PRELOAD ADJACENT IMAGES FOR NEXT NAVIGATION
+        preloadAdjacentImages();
+    }
+}
+
+function applyImageToSphere(img, imageData) {
+    // Remove old sphere
+    if (sphere) {
+        panoGroup.remove(sphere);
+        if (sphere.geometry) sphere.geometry.dispose();
+        if (sphere.material) {
+            if (sphere.material.map) sphere.material.map.dispose();
+            sphere.material.dispose();
+        }
+    }
+    
+    // Create new sphere with preloaded image
+    const geometry = new THREE.SphereGeometry(100, 60, 40);
+    geometry.scale(-1, 1, 1);
+    
+    const texture = new THREE.Texture(img);
+    texture.needsUpdate = true;
+    
+    const material = new THREE.MeshBasicMaterial({ 
+        map: texture, 
+        side: THREE.DoubleSide 
+    });
+    
+    sphere = new THREE.Mesh(geometry, material);
+    panoGroup.add(sphere);
+    
+    // Reset orientation
+    panoGroup.rotation.set(0, 0, 0);
+    currentYaw = 0;
+    currentPitch = 0;
+    
+    updateNavigationRing();
+    setStatus(`Loaded image ${currentImageIndex + 1}`);
+}
+
+function preloadAdjacentImages() {
+    // Quick preload of just next/previous for instant navigation
+    const prevIndex = currentImageIndex - 1;
+    const nextIndex = currentImageIndex + 1;
+    
+    if (prevIndex >= 0 && !preloadedImages[currentImages[prevIndex].url]) {
+        preloadOne(prevIndex);
+    }
+    if (nextIndex < currentImages.length && !preloadedImages[currentImages[nextIndex].url]) {
+        preloadOne(nextIndex);
     }
 }
 
@@ -2949,6 +2981,8 @@ function setupViewerEventListeners() {
     // Zoom controls
     document.getElementById('zoomIn').addEventListener('click', zoomIn);
     document.getElementById('zoomOut').addEventListener('click', zoomOut);
+
+     canvas.addEventListener('wheel', handleWheelZoom);
     
     // Navigation buttons
     document.getElementById('nextImageBtn').addEventListener('click', nextImage);
@@ -2974,6 +3008,18 @@ function zoomOut() {
         currentFov += 5;
         camera.fov = currentFov;
         camera.updateProjectionMatrix();
+    }
+}
+
+function handleWheelZoom(e) {
+    e.preventDefault();
+    
+    if (e.deltaY < 0) {
+        // Scroll up - zoom in
+        zoomIn();
+    } else {
+        // Scroll down - zoom out
+        zoomOut();
     }
 }
 
