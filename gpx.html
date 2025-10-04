@@ -126,11 +126,21 @@
             padding: 2px 6px;
             font-size: 10px;
         }
+
+        .stats-container {
+    background: #f8f9fa;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #e9ecef;
+}
+
     </style>
 </head>
 <body>
     <div id="map"></div>
     <div id="controls">
+
+      
         <div class="control-group">
             <input type="file" id="gpx-file" accept=".gpx" multiple>
             <div class="tracks-list" id="tracks-list">
@@ -168,6 +178,19 @@
             <button onclick="movePointMode()">Move Points</button>
         </div>
         
+<div class="control-group">
+    <div class="stats-container">
+        <div class="slider-label">
+            <small>Distance: <span id="total-distance">0 km</span></small>
+            <small>Avg Speed: <span id="avg-speed">0 km/h</span></small>
+        </div>
+        <div class="slider-label">
+            <small>Points: <span id="stats-points">0</span></small>
+            <small>Duration: <span id="total-duration">0s</span></small>
+        </div>
+    </div>
+</div>
+
         <div class="status" id="status">Ready - Load GPX files to start</div>
     </div>
 
@@ -302,68 +325,317 @@
             });
         }
 
-        // Parse GPX and add as new track
-        function parseGPX(gpxContent, fileName) {
-            try {
-                const parser = new DOMParser();
-                const gpxDoc = parser.parseFromString(gpxContent, 'text/xml');
-                const geojson = toGeoJSON.gpx(gpxDoc);
-                
-                console.log('GPX parsed:', geojson);
-                
-                // Extract coordinates from LineString features
-                let coordinates = [];
-                geojson.features.forEach(feature => {
-                    if (feature.geometry.type === 'LineString') {
-                        coordinates = feature.geometry.coordinates;
-                    }
-                });
-                
-                if (coordinates.length === 0) {
-                    alert(`No route found in ${fileName}`);
-                    return;
-                }
-                
-                // Create new track
-                const trackId = `track-${nextTrackId++}`;
-                const trackColor = trackColors[(nextTrackId - 2) % trackColors.length];
-                
-                const trackData = {
-                    id: trackId,
-                    name: fileName.replace('.gpx', ''),
-                    color: trackColor,
-                    originalPoints: coordinates.map((coord, index) => ({
-                        id: index,
-                        coordinates: coord,
-                        originalIndex: index
-                    })),
-                    activePoints: [],
-                    density: 100,
-                    isActive: false
-                };
-                
-                // Apply initial density
-                applyDensityFilterToTrack(trackData, currentDensity);
-                
-                // Add to tracks map
-                allTracks.set(trackId, trackData);
-                
-                // If this is the first track, select it
-                if (allTracks.size === 1) {
-                    selectTrack(trackId);
-                }
-                
-                // Update UI
-                updateTracksList();
-                updateAllTracksVisualization();
-                
-                setStatus(`Loaded ${fileName} with ${trackData.originalPoints.length} points`);
-                
-            } catch (error) {
-                console.error('Error parsing GPX:', error);
-                alert(`Error parsing ${fileName}. Please check the file format.`);
+        /// Parse GPX and add as new track - OLD VERSION (DELETE THIS)
+function parseGPX(gpxContent, fileName) {
+    try {
+        const parser = new DOMParser();
+        const gpxDoc = parser.parseFromString(gpxContent, 'text/xml');
+        const geojson = toGeoJSON.gpx(gpxDoc);
+        
+        console.log('GPX parsed:', geojson);
+        
+        // Extract coordinates from LineString features
+        let coordinates = [];
+        geojson.features.forEach(feature => {
+            if (feature.geometry.type === 'LineString') {
+                coordinates = feature.geometry.coordinates;
             }
+        });
+        
+        if (coordinates.length === 0) {
+            alert(`No route found in ${fileName}`);
+            return;
         }
+        
+        // Create new track
+        const trackId = `track-${nextTrackId++}`;
+        const trackColor = trackColors[(nextTrackId - 2) % trackColors.length];
+        
+        const trackData = {
+            id: trackId,
+            name: fileName.replace('.gpx', ''),
+            color: trackColor,
+            originalPoints: coordinates.map((coord, index) => ({
+                id: index,
+                coordinates: coord,
+                originalIndex: index
+            })),
+            activePoints: [],
+            density: 100,
+            isActive: false
+        };
+        
+        // Apply initial density
+        applyDensityFilterToTrack(trackData, currentDensity);
+        
+        // Add to tracks map
+        allTracks.set(trackId, trackData);
+        
+        // If this is the first track, select it and fly to bounds
+        if (allTracks.size === 1) {
+            selectTrack(trackId);
+        } else {
+            // Just add the track but don't select it
+            updateTracksList();
+            updateAllTracksVisualization();
+            setStatus(`Loaded ${fileName} with ${trackData.originalPoints.length} points`);
+        }
+        
+    } catch (error) {
+        console.error('Error parsing GPX:', error);
+        alert(`Error parsing ${fileName}. Please check the file format.`);
+    }
+}
+
+
+// Enhanced track data structure
+const trackData = {
+    id: trackId,
+    name: fileName.replace('.gpx', ''),
+    color: trackColor,
+    originalPoints: coordinates.map((coord, index) => ({
+        id: index,
+        coordinates: coord,
+        originalIndex: index,
+        time: timeData[index] || null
+    })),
+    activePoints: [],
+    density: 100,
+    isActive: false,
+    // ADD ORIGINAL STATISTICS:
+    originalStats: {
+        distance: calculateTotalDistance(coordinates),
+        duration: calculateDurationFromTimes(timeData),
+        pointCount: coordinates.length
+    }
+};
+
+// Calculate statistics from original GPX data (ONCE on load)
+function calculateOriginalStats(track) {
+    const coordinates = track.originalPoints.map(p => p.coordinates);
+    const timeData = track.originalPoints.map(p => p.time).filter(t => t);
+    
+    const distance = calculateTotalDistance(coordinates);
+    const duration = calculateDurationFromTimes(timeData);
+    const avgSpeed = calculateAverageSpeedFromStats(distance, duration);
+    
+    return {
+        distance: distance,
+        duration: duration,
+        avgSpeed: avgSpeed,
+        pointCount: track.originalPoints.length
+    };
+}
+
+// Calculate distance between two coordinates (haversine formula) in meters
+function calculateDistance(coord1, coord2) {
+    const R = 6371000; // Earth radius in meters
+    const dLat = (coord2[1] - coord1[1]) * Math.PI / 180;
+    const dLon = (coord2[0] - coord1[0]) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(coord1[1] * Math.PI / 180) * Math.cos(coord2[1] * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Calculate total distance of a track in meters
+function calculateTotalDistance(points) {
+    if (points.length < 2) return 0;
+    
+    let totalDistance = 0;
+    for (let i = 1; i < points.length; i++) {
+        totalDistance += calculateDistance(points[i-1], points[i]);
+    }
+    return totalDistance;
+}
+
+// Calculate duration from time array - ALWAYS show seconds
+function calculateDurationFromTimes(timeData) {
+    if (timeData.length < 2) return '0s';
+    
+    try {
+        const startTime = new Date(timeData[0]);
+        const endTime = new Date(timeData[timeData.length - 1]);
+        const durationMs = endTime - startTime;
+        
+        const hours = Math.floor(durationMs / (1000 * 60 * 60));
+        const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
+        
+        // Always include seconds
+        if (hours > 0) {
+            return `${hours}h ${minutes}m ${seconds}s`;
+        } else if (minutes > 0) {
+            return `${minutes}m ${seconds}s`;
+        } else {
+            return `${seconds}s`;
+        }
+    } catch (e) {
+        return '0s';
+    }
+}
+
+// Calculate average speed from distance and duration (handles seconds)
+function calculateAverageSpeedFromStats(distanceMeters, durationString) {
+    if (durationString === 'Unknown' || distanceMeters === 0) return 0;
+    
+    try {
+        let totalHours = 0;
+        
+        // Parse different duration formats
+        if (durationString.includes('h')) {
+            // Format: "1h 23m 45s" or "1h 30m" or "1h 45s"
+            const hoursMatch = durationString.match(/(\d+)h/);
+            const minutesMatch = durationString.match(/(\d+)m/);
+            const secondsMatch = durationString.match(/(\d+)s/);
+            
+            const hours = hoursMatch ? parseInt(hoursMatch[1]) : 0;
+            const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 0;
+            const seconds = secondsMatch ? parseInt(secondsMatch[1]) : 0;
+            
+            totalHours = hours + (minutes / 60) + (seconds / 3600);
+        } else if (durationString.includes('m')) {
+            // Format: "23m 45s" or "30m"
+            const minutesMatch = durationString.match(/(\d+)m/);
+            const secondsMatch = durationString.match(/(\d+)s/);
+            
+            const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 0;
+            const seconds = secondsMatch ? parseInt(secondsMatch[1]) : 0;
+            
+            totalHours = (minutes / 60) + (seconds / 3600);
+        } else if (durationString.includes('s')) {
+            // Format: "45s"
+            const secondsMatch = durationString.match(/(\d+)s/);
+            const seconds = secondsMatch ? parseInt(secondsMatch[1]) : 0;
+            
+            totalHours = seconds / 3600;
+        }
+        
+        const distanceKm = distanceMeters / 1000;
+        return totalHours > 0 ? distanceKm / totalHours : 0;
+        
+    } catch (e) {
+        return 0;
+    }
+}
+
+// Update statistics display (ALWAYS shows original stats)
+// Update statistics display (ALWAYS shows original stats)
+function updateStatistics() {
+    const track = getCurrentTrack();
+    if (!track) {
+        clearStatistics();
+        return;
+    }
+    
+    const stats = track.originalStats;
+    const distanceKm = stats.distance / 1000;
+    
+    // Always show original statistics
+    document.getElementById('total-distance').textContent = 
+        distanceKm < 1 ? 
+        `${stats.distance.toFixed(0)} m` : 
+        `${distanceKm.toFixed(2)} km`;
+    
+    document.getElementById('avg-speed').textContent = 
+        `${stats.avgSpeed.toFixed(1)} km/h`;
+    
+    document.getElementById('stats-points').textContent = 
+        stats.pointCount;
+    
+    // FIX: Use the actual duration string that includes seconds
+    document.getElementById('total-duration').textContent = 
+        stats.duration; // This now shows "45m 30s" etc.
+}
+
+// Clear statistics when no track is selected
+function clearStatistics() {
+    document.getElementById('total-distance').textContent = '0 km';
+    document.getElementById('avg-speed').textContent = '0 km/h';
+    document.getElementById('stats-points').textContent = '0';
+    document.getElementById('total-duration').textContent = '0s'; // Changed to seconds
+}
+
+// In parseGPX function - extract time data properly
+function parseGPX(gpxContent, fileName) {
+    try {
+        const parser = new DOMParser();
+        const gpxDoc = parser.parseFromString(gpxContent, 'text/xml');
+        
+        // Extract ALL track points with their times
+        const trkpts = gpxDoc.querySelectorAll('trkpt');
+        const pointsWithTime = [];
+        
+        trkpts.forEach((trkpt, index) => {
+            const lat = parseFloat(trkpt.getAttribute('lat'));
+            const lon = parseFloat(trkpt.getAttribute('lon'));
+            const timeElement = trkpt.querySelector('time');
+            
+            pointsWithTime.push({
+                id: index,
+                coordinates: [lon, lat],
+                originalIndex: index,
+                time: timeElement ? timeElement.textContent : null
+            });
+        });
+        
+        if (pointsWithTime.length === 0) {
+            alert(`No track points found in ${fileName}`);
+            return;
+        }
+        
+        // Create track with original statistics
+        const trackId = `track-${nextTrackId++}`;
+        const trackColor = trackColors[(nextTrackId - 2) % trackColors.length];
+        
+        const trackData = {
+            id: trackId,
+            name: fileName.replace('.gpx', ''),
+            color: trackColor,
+            originalPoints: pointsWithTime,
+            activePoints: [],
+            density: 100,
+            isActive: false,
+            originalStats: calculateOriginalStatsFromPoints(pointsWithTime)
+        };
+        
+        // Apply initial density
+        applyDensityFilterToTrack(trackData, currentDensity);
+        
+        // Add to tracks map
+        allTracks.set(trackId, trackData);
+        
+        // If first track, select it
+        if (allTracks.size === 1) {
+            selectTrack(trackId);
+        } else {
+            updateTracksList();
+            updateAllTracksVisualization();
+            setStatus(`Loaded ${fileName} with ${trackData.originalPoints.length} points`);
+        }
+        
+    } catch (error) {
+        console.error('Error parsing GPX:', error);
+        alert(`Error parsing ${fileName}. Please check the file format.`);
+    }
+}
+
+// Calculate stats directly from points array
+function calculateOriginalStatsFromPoints(points) {
+    const coordinates = points.map(p => p.coordinates);
+    const timeData = points.map(p => p.time).filter(t => t);
+    
+    const distance = calculateTotalDistance(coordinates);
+    const duration = calculateDurationFromTimes(timeData); // This now returns "45m 30s" format
+    const avgSpeed = calculateAverageSpeedFromStats(distance, duration);
+    
+    return {
+        distance: distance,
+        duration: duration, // Now includes seconds
+        avgSpeed: avgSpeed,
+        pointCount: points.length
+    };
+}
 
         // Apply density filter to a specific track
         function applyDensityFilterToTrack(trackData, densityPercent) {
@@ -416,6 +688,31 @@
             return unique;
         }
 
+        // Calculate bounds from coordinates
+        function calculateBounds(coordinates) {
+            if (coordinates.length === 0) return null;
+            
+            const bounds = new mapboxgl.LngLatBounds();
+            coordinates.forEach(coord => {
+                bounds.extend(coord);
+            });
+            return bounds;
+        }
+
+        // Fly to track bounds
+        function flyToTrack(trackData) {
+            const coordinates = trackData.activePoints.map(p => p.coordinates);
+            const bounds = calculateBounds(coordinates);
+            
+            if (bounds) {
+                map.fitBounds(bounds, {
+                    padding: 50,
+                    duration: 1000,
+                    essential: true
+                });
+            }
+        }
+
         // Select a track for editing
         function selectTrack(trackId) {
             // Deselect previous track
@@ -436,21 +733,27 @@
             // Update point counts
             document.getElementById('points-count').textContent = track.activePoints.length + ' points';
             document.getElementById('original-count').textContent = 'of ' + track.originalPoints.length;
+
+            updateStatistics();
             
-            // Reset edit mode and smoothing
-            if (isEditMode) {
-                disableEditing();
-                isEditMode = false;
-                document.getElementById('edit-btn').textContent = 'Edit Mode: OFF';
-                document.getElementById('edit-btn').classList.remove('active');
-            }
-            
-            isCatmullRomEnabled = false;
-            document.getElementById('catmull-btn').textContent = 'Catmull-Rom: OFF';
-            document.getElementById('catmull-btn').classList.remove('active');
+// Reset edit mode but KEEP Catmull-Rom state
+if (isEditMode) {
+    disableEditing();
+    isEditMode = false;
+    document.getElementById('edit-btn').textContent = 'Edit Mode: OFF';
+    document.getElementById('edit-btn').classList.remove('active');
+}
+
+// Keep Catmull-Rom state as is, just update the button
+document.getElementById('catmull-btn').textContent = isCatmullRomEnabled ? 'Catmull-Rom: ON' : 'Catmull-Rom: OFF';
+document.getElementById('catmull-btn').classList.toggle('active', isCatmullRomEnabled);
             
             updateTracksList();
             updateAllTracksVisualization();
+            
+            // FLY TO THE TRACK BOUNDS
+            flyToTrack(track);
+            
             setStatus(`Selected: ${track.name}`);
         }
 
@@ -478,26 +781,148 @@
         }
 
         // Update tracks list UI
-        function updateTracksList() {
-            const tracksList = document.getElementById('tracks-list');
-            tracksList.innerHTML = '';
-            
-            allTracks.forEach((track, trackId) => {
-                const trackItem = document.createElement('div');
-                trackItem.className = `track-item ${track.isActive ? 'track-active' : ''}`;
-                trackItem.innerHTML = `
-                    <div class="track-info">
-                        <div class="track-color" style="background-color: ${track.color}"></div>
-                        <span title="${track.name}">${track.name.length > 20 ? track.name.substring(0, 20) + '...' : track.name}</span>
-                    </div>
-                    <div class="track-actions">
-                        <button class="small-btn" onclick="selectTrack('${trackId}')">Edit</button>
-                        <button class="small-btn" onclick="removeTrack('${trackId}')">×</button>
-                    </div>
-                `;
-                tracksList.appendChild(trackItem);
-            });
+        // Update tracks list UI
+function updateTracksList() {
+    const tracksList = document.getElementById('tracks-list');
+    tracksList.innerHTML = '';
+    
+    allTracks.forEach((track, trackId) => {
+        const trackItem = document.createElement('div');
+        trackItem.className = `track-item ${track.isActive ? 'track-active' : ''}`;
+        trackItem.innerHTML = `
+            <div class="track-info">
+                <div class="track-color" style="background-color: ${track.color}"></div>
+                <span title="${track.name}">${track.name.length > 20 ? track.name.substring(0, 20) + '...' : track.name}</span>
+            </div>
+            <div class="track-actions">
+                <button class="small-btn" onclick="selectTrack('${trackId}')">Edit</button>
+                <button class="small-btn" onclick="exportSingleTrack('${trackId}')" title="Export this track">💾</button>
+                <button class="small-btn" onclick="removeTrack('${trackId}')">×</button>
+            </div>
+        `;
+        
+        // Also make the entire track item clickable to select
+        trackItem.onclick = (e) => {
+            // Don't trigger if the click was on the buttons
+            if (!e.target.closest('.track-actions')) {
+                selectTrack(trackId);
+            }
+        };
+        
+        tracksList.appendChild(trackItem);
+    });
+}
+
+// Export single track by ID
+function exportSingleTrack(trackId) {
+    const track = allTracks.get(trackId);
+    if (track) {
+        const gpxContent = generateGPX(track);
+        downloadFile(gpxContent, `${track.name}_edited.gpx`, 'application/gpx+xml');
+        setStatus(`Exported: ${track.name}_edited.gpx`);
+    }
+}
+
+// Export current track
+function exportCurrentTrack() {
+    const track = getCurrentTrack();
+    if (!track) {
+        setStatus('Please select a track first!');
+        return;
+    }
+    exportSingleTrack(track.id);
+}
+
+// Export all tracks as ZIP
+async function exportAllTracksAsZip() {
+    if (allTracks.size === 0) {
+        setStatus('No tracks to export!');
+        return;
+    }
+
+    try {
+        // Load JSZip if not already available
+        if (typeof JSZip === 'undefined') {
+            await loadJSZip();
         }
+
+        const zip = new JSZip();
+        
+        allTracks.forEach(track => {
+            const gpxContent = generateGPX(track);
+            zip.file(`${track.name}_edited.gpx`, gpxContent);
+        });
+        
+        const content = await zip.generateAsync({type: "blob"});
+        downloadFile(content, 'edited_tracks.zip', 'application/zip');
+        setStatus(`Exported ${allTracks.size} tracks as separate files`);
+        
+    } catch (error) {
+        console.error('Error creating ZIP:', error);
+        setStatus('Error creating ZIP file');
+    }
+}
+
+// Load JSZip dynamically
+function loadJSZip() {
+    return new Promise((resolve, reject) => {
+        if (typeof JSZip !== 'undefined') {
+            resolve();
+            return;
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
+// Generate GPX for a single track - FIXED VERSION
+function generateGPX(track) {
+    // ALWAYS export the edited control points, not the smoothed visualization
+    // This preserves your point density and editing work
+    const coordinates = track.activePoints.map(p => p.coordinates);
+    
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="GPX Editor" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>${escapeXML(track.name)}_edited</name>
+    <trkseg>
+`;
+    
+    coordinates.forEach(coord => {
+        gpx += `      <trkpt lat="${coord[1].toFixed(6)}" lon="${coord[0].toFixed(6)}"></trkpt>\n`;
+    });
+    
+    gpx += `    </trkseg>
+  </trk>
+</gpx>`;
+    return gpx;
+}
+
+// Escape XML special characters
+function escapeXML(str) {
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&apos;');
+}
+
+// Download helper function
+function downloadFile(content, fileName, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
 
         // Get current track data
         function getCurrentTrack() {
@@ -517,39 +942,40 @@
             const features = [];
             let activeTrackCoordinates = [];
             
-            // Create features for all tracks
-            allTracks.forEach(track => {
-                let displayCoordinates;
-                
-                if (track.isActive && isCatmullRomEnabled) {
-                    // Use Catmull-Rom for active track if enabled
-                    displayCoordinates = catmullRomSmooth(
-                        track.activePoints.map(p => p.coordinates), 
-                        15, 
-                        0.5
-                    );
-                    activeTrackCoordinates = displayCoordinates;
-                } else {
-                    // Use straight lines
-                    displayCoordinates = track.activePoints.map(p => p.coordinates);
-                    if (track.isActive) {
-                        activeTrackCoordinates = displayCoordinates;
-                    }
-                }
-                
-                features.push({
-                    type: 'Feature',
-                    geometry: {
-                        type: 'LineString',
-                        coordinates: displayCoordinates
-                    },
-                    properties: {
-                        trackId: track.id,
-                        color: track.color,
-                        isActive: track.isActive
-                    }
-                });
-            });
+           // Create features for all tracks
+allTracks.forEach(track => {
+    let displayCoordinates;
+    
+    // Apply Catmull-Rom to ALL tracks if enabled, not just active track
+    if (isCatmullRomEnabled) {
+        displayCoordinates = catmullRomSmooth(
+            track.activePoints.map(p => p.coordinates), 
+            15, 
+            0.5
+        );
+    } else {
+        // Use straight lines
+        displayCoordinates = track.activePoints.map(p => p.coordinates);
+    }
+    
+    // Track active track coordinates for bounds calculation
+    if (track.isActive) {
+        activeTrackCoordinates = displayCoordinates;
+    }
+    
+    features.push({
+        type: 'Feature',
+        geometry: {
+            type: 'LineString',
+            coordinates: displayCoordinates
+        },
+        properties: {
+            trackId: track.id,
+            color: track.color,
+            isActive: track.isActive
+        }
+    });
+});
             
             // Update tracks line source
             map.getSource('tracks-line').setData({
@@ -588,13 +1014,12 @@
                 });
             }
 
-            // Fit bounds to active track if requested
+            // Fit bounds to active track if requested (only on initial load)
             if (fitBounds && activeTrackCoordinates.length > 0) {
-                const bounds = activeTrackCoordinates.reduce((bounds, coord) => {
-                    return bounds.extend(coord);
-                }, new mapboxgl.LngLatBounds(activeTrackCoordinates[0], activeTrackCoordinates[0]));
-
-                map.fitBounds(bounds, { padding: 50, duration: 500 });
+                const bounds = calculateBounds(activeTrackCoordinates);
+                if (bounds) {
+                    map.fitBounds(bounds, { padding: 50, duration: 1000 });
+                }
             }
         }
 
@@ -1007,6 +1432,10 @@
                 map.doubleClickZoom.enable();
             }
         }
+
+
+
+
     </script>
 </body>
 </html>
