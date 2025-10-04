@@ -510,35 +510,25 @@
         </div>
     </div>
 
-    <div class="control-group">
-        <div class="slider-label">
-            <span>Marble Controls:</span>
-            <div>
-                <button class="small-btn" onclick="addMarble()">+</button>
-                <button class="small-btn" onclick="removeMarble()">-</button>
-                <button class="small-btn" onclick="initializeMarbles()">Rebuild</button>
-                <button class="small-btn" onclick="lockSelectedMarble()">🔒 Lock</button>
-                <small id="marble-count">0 marbles</small>
-            </div>
-        </div>
-        <div class="slider-label">
-            <small>Spacing: <span id="marble-spacing">10</span>m</small>
-            <input type="range" min="1" max="50" value="10" class="slider" id="marble-spacing-slider">
+<div class="control-group">
+    <div class="slider-label">
+        <span>Marble Controls:</span>
+        <div>
+            <button class="small-btn" onclick="addMarble()" title="Add marble at end">+</button>
+            <button class="small-btn" onclick="removeMarble()" title="Remove last marble">-</button>
+            <button class="small-btn" onclick="initializeMarbles()" title="Rebuild all marbles">Rebuild</button>
+            <button class="small-btn" onclick="lockSelectedMarble()" title="Lock selected marble">🔒 Lock</button>
         </div>
     </div>
+    <div class="slider-label">
+        <small id="marble-count">0 marbles</small>
+        <small>Spacing: <span id="marble-spacing">10</span>m</small>
+    </div>
+    <div class="slider-label">
+        <input type="range" min="1" max="50" value="10" class="slider" id="marble-spacing-slider">
+    </div>
+</div>
     
-    <!-- NEW: 360 Image Controls -->
-    <div class="control-group">
-        <div class="slider-label">
-            <span>360 Viewer:</span>
-            <button class="small-btn" onclick="load360Images()">Load Images</button>
-            <button class="small-btn" onclick="clear360Images()">Clear</button>
-        </div>
-        <div class="slider-label">
-            <small>Images: <span id="image-count">0 loaded</span></small>
-            <small>Current: <span id="current-image">-</span></small>
-        </div>
-    </div>
     
     <div class="control-group">
         <div class="export-buttons">
@@ -1782,96 +1772,166 @@ map.addLayer({
         }
     }
 
-    function addMarble() {
-        const track = getCurrentTrack();
-        if (!track) {
-            setStatus('Please select a track first!');
-            return;
-        }
-        
-        const marbles = track.marbles;
-        const coordinates = getDisplayCoordinates(track);
-        const totalDistance = calculateTotalDistance(coordinates);
-        
-        if (marbles.length === 0) {
-            initializeMarbles();
-            return;
-        }
-        
-        // Add new marble in the middle (not at the end)
-        const newIndex = Math.floor(marbles.length / 2);
-        const newDistance = (marbles[newIndex - 1].distanceAlongRoute + marbles[newIndex].distanceAlongRoute) / 2;
-        
-        const newMarble = {
-            id: Date.now(),
-            index: newIndex,
-            position: findPositionAtDistance(coordinates, newDistance),
-            distanceAlongRoute: newDistance,
-            isFixed: false,
-            assignedImage: null
-        };
-        
-        // Insert the new marble in the middle
-        track.marbles.splice(newIndex, 0, newMarble);
-        
-        // Re-index all marbles
-        track.marbles.forEach((marble, index) => {
-            marble.index = index;
-        });
-        
-        // Redistribute marbles around the new one (squishy behavior)
-        dragMarbleIndex = newIndex;
-        redistributeMarbles();
-        dragMarbleIndex = -1;
-        
-        updateMarbleDisplay();
-        setStatus(`Added marble - ${track.marbles.length} total`);
+function addMarble() {
+    const track = getCurrentTrack();
+    if (!track) {
+        setStatus('Please select a track first!');
+        return;
     }
+    
+    const marbles = track.marbles;
+    const coordinates = getDisplayCoordinates(track);
+    const totalDistance = calculateTotalDistance(coordinates);
+    
+    if (marbles.length === 0) {
+        initializeMarbles();
+        return;
+    }
+    
+    // ADD AT THE END (not in the middle)
+    const lastMarble = marbles[marbles.length - 1];
+    const newDistance = lastMarble.distanceAlongRoute + track.marbleSpacing;
+    
+    // Make sure we don't exceed the track length
+    const maxDistance = totalDistance;
+    const safeDistance = Math.min(newDistance, maxDistance);
+    
+    const newMarble = {
+        id: Date.now(),
+        index: marbles.length,
+        position: findPositionAtDistance(coordinates, safeDistance),
+        distanceAlongRoute: safeDistance,
+        isLocked: false,
+        isFixed: false,
+        assignedImage: null
+    };
+    
+    // Add to the END of the array
+    track.marbles.push(newMarble);
+    
+    // AUTO-RESPACE ALL MARBLES AFTER ADDING
+    respaceAllMarbles();
+    
+    updateMarbleDisplay();
+    setStatus(`Added marble - ${track.marbles.length} total (auto-respaced)`);
+    
+    // Auto-assign image if available
+    autoAssignImageToNewMarble();
+}
 
-    function removeMarble() {
-        const track = getCurrentTrack();
-        if (!track) return;
-        
-        const marbles = track.marbles;
-        if (marbles.length <= 2) {
-            setStatus('Cannot remove - must keep start and end marbles');
-            return;
-        }
-        
-        // Remove a middle marble (not start or end)
-        const middleIndex = Math.floor(marbles.length / 2);
-        track.marbles.splice(middleIndex, 1);
-        
-        // Redistribute remaining marbles with squishy behavior
-        if (track && marbles.length > 2) {
-            // Simulate dragging the marble next to the removed one to trigger redistribution
-            const redistributeIndex = Math.min(middleIndex, marbles.length - 2);
-            dragMarbleIndex = redistributeIndex;
-            redistributeMarbles();
-            dragMarbleIndex = -1;
-        }
-        
-        // Re-index
-        track.marbles.forEach((marble, index) => {
-            marble.index = index;
-        });
-        
-        updateMarbleDisplay();
-        setStatus(`Removed marble - ${track.marbles.length} total`);
+function autoAssignImageToNewMarble() {
+    const track = getCurrentTrack();
+    if (!track) return;
+    
+    const marbles = track.marbles;
+    const newMarble = marbles[marbles.length - 1]; // The one we just added
+    
+    // Find the next available image
+    const usedImageIndices = new Set(marbles.map(m => m.assignedImage).filter(i => i !== null));
+    let nextAvailableImage = 0;
+    
+    while (usedImageIndices.has(nextAvailableImage) && nextAvailableImage < currentImages.length) {
+        nextAvailableImage++;
     }
+    
+    // Assign if we have an available image
+    if (nextAvailableImage < currentImages.length) {
+        newMarble.assignedImage = nextAvailableImage;
+        setStatus(`Assigned image ${nextAvailableImage + 1} to new marble`);
+    } else {
+        setStatus('No more images available for new marble');
+    }
+    
+    updateMarbleDisplay();
+}
 
-    function updateMarbleSpacing() {
-        const track = getCurrentTrack();
-        if (!track) return;
-        
-        const spacingSlider = document.getElementById('marble-spacing-slider');
-        track.marbleSpacing = parseInt(spacingSlider.value);
-        document.getElementById('marble-spacing').textContent = track.marbleSpacing;
-        
-        if (track.marbles.length > 0) {
-            initializeMarbles(); // Rebuild with new spacing
-        }
+function removeMarble() {
+    const track = getCurrentTrack();
+    if (!track) return;
+    
+    const marbles = track.marbles;
+    if (marbles.length <= 2) {
+        setStatus('Cannot remove - must keep start and end marbles');
+        return;
     }
+    
+    // REMOVE FROM THE END (not from the middle)
+    let removeIndex = marbles.length - 1;
+    
+    // Find the last removable marble (not fixed)
+    while (removeIndex > 0 && marbles[removeIndex].isFixed) {
+        removeIndex--;
+    }
+    
+    // Can't remove if we're at the first marble
+    if (removeIndex <= 0) {
+        setStatus('Cannot remove - only fixed marbles remain');
+        return;
+    }
+    
+    const removedMarble = marbles[removeIndex];
+    const removedImageIndex = removedMarble.assignedImage;
+    
+    // Remove from the array
+    track.marbles.splice(removeIndex, 1);
+    
+    // AUTO-RESPACE ALL MARBLES AFTER REMOVING
+    respaceAllMarbles();
+    
+    // Re-index all marbles
+    track.marbles.forEach((marble, index) => {
+        marble.index = index;
+    });
+    
+    // SHIFT IMAGE ASSIGNMENTS DOWN
+    if (removedImageIndex !== null) {
+        marbles.forEach(marble => {
+            // If this marble had an image index HIGHER than the removed one, shift it down
+            if (marble.assignedImage !== null && marble.assignedImage > removedImageIndex) {
+                marble.assignedImage = marble.assignedImage - 1;
+            }
+        });
+        setStatus(`Removed marble with image ${removedImageIndex + 1} - shifted higher images down`);
+    } else {
+        setStatus(`Removed marble without image - ${track.marbles.length} total`);
+    }
+    
+    updateMarbleDisplay();
+}
+
+
+function respaceAllMarbles() {
+    const track = getCurrentTrack();
+    if (!track || track.marbles.length < 2) return;
+    
+    const marbles = track.marbles;
+    const coordinates = getDisplayCoordinates(track);
+    const totalDistance = calculateTotalDistance(coordinates);
+    
+    // Simple approach: space all marbles evenly along the entire track
+    for (let i = 0; i < marbles.length; i++) {
+        const ratio = i / (marbles.length - 1);
+        marbles[i].distanceAlongRoute = ratio * totalDistance;
+        marbles[i].position = findPositionAtDistance(coordinates, marbles[i].distanceAlongRoute);
+        marbles[i].index = i;
+        
+        // Keep first and last marbles fixed
+        marbles[i].isFixed = (i === 0 || i === marbles.length - 1);
+    }
+}
+
+function updateMarbleSpacing() {
+    const track = getCurrentTrack();
+    if (!track) return;
+    
+    const spacingSlider = document.getElementById('marble-spacing-slider');
+    track.marbleSpacing = parseInt(spacingSlider.value);
+    document.getElementById('marble-spacing').textContent = track.marbleSpacing;
+    
+    if (track.marbles.length > 0) {
+        initializeMarbles(); // Rebuild with new spacing
+    }
+}
 
     function toggleMarbleLock(marbleId) {
         const track = getCurrentTrack();
@@ -2237,7 +2297,10 @@ function updateMarbleDisplay() {
                 isFixed: marble.isFixed || false,
                 isSelected: (marble.id === selectedMarbleId),
                 hasImage: hasImage,
-                imageIndex: imageIndex // Add this for tooltips
+                imageIndex: imageIndex,
+                // Add position info for tooltips
+                position: `${index + 1}/${marbles.length}`,
+                distance: `${Math.round(marble.distanceAlongRoute)}m`
             }
         };
     });
@@ -2247,10 +2310,13 @@ function updateMarbleDisplay() {
         features: marbleFeatures
     });
     
-    // Update marble count with image info
+    // Update marble count with detailed info
     const marblesWithImages = marbles.filter(m => m.assignedImage !== null).length;
+    const lockedMarbles = marbles.filter(m => m.isLocked).length;
+    const fixedMarbles = marbles.filter(m => m.isFixed).length;
+    
     document.getElementById('marble-count').textContent = 
-        `${marbles.length} marbles (${marblesWithImages} with images)`;
+        `${marbles.length} marbles (${marblesWithImages} with images, ${lockedMarbles} locked)`;
     
     enableMarbleDragging();
 }
@@ -2635,6 +2701,8 @@ function updateNavigationRing() {
 function showImageInViewer(imageUrl, imageData) {
     showViewerLoading('Loading 360° image...');
     
+    console.log('Loading image:', imageUrl); // Debug log
+    
     // Initialize viewer if needed
     if (!viewerInitialized) {
         initThreeJSViewer();
@@ -2643,44 +2711,71 @@ function showImageInViewer(imageUrl, imageData) {
     // Remove old sphere
     if (sphere) {
         panoGroup.remove(sphere);
-        sphere.geometry.dispose();
-        sphere.material.dispose();
+        if (sphere.geometry) sphere.geometry.dispose();
+        if (sphere.material) {
+            if (sphere.material.map) sphere.material.map.dispose();
+            sphere.material.dispose();
+        }
     }
     
     // Load and display new image
     const img = new Image();
     img.crossOrigin = "Anonymous";
+    
     img.onload = function() {
-        const geometry = new THREE.SphereGeometry(100, 60, 40);
-        geometry.scale(-1, 1, 1); // Flip inside out
+        console.log('Image loaded successfully:', imageUrl); // Debug log
         
-        const texture = new THREE.Texture(img);
-        texture.needsUpdate = true;
-        
-        const material = new THREE.MeshBasicMaterial({ 
-            map: texture, 
-            side: THREE.DoubleSide 
-        });
-        
-        sphere = new THREE.Mesh(geometry, material);
-        panoGroup.add(sphere);
-        
-        // Reset orientation
-        panoGroup.rotation.set(0, 0, 0);
-        currentYaw = 0;
-        currentPitch = 0;
-        
-        hideViewerLoading();
-        updateViewCone(imageData);
-        updateNavigationRing();
+        try {
+            const geometry = new THREE.SphereGeometry(100, 60, 40);
+            geometry.scale(-1, 1, 1); // Flip inside out
+            
+            const texture = new THREE.Texture(img);
+            texture.needsUpdate = true;
+            
+            const material = new THREE.MeshBasicMaterial({ 
+                map: texture, 
+                side: THREE.DoubleSide 
+            });
+            
+            sphere = new THREE.Mesh(geometry, material);
+            panoGroup.add(sphere);
+            
+            // Reset orientation
+            panoGroup.rotation.set(0, 0, 0);
+            currentYaw = 0;
+            currentPitch = 0;
+            
+            hideViewerLoading();
+            updateNavigationRing();
+            setStatus(`Loaded image ${currentImageIndex + 1}`);
+            
+        } catch (error) {
+            console.error('Error creating sphere:', error);
+            hideViewerLoading();
+            setStatus('Error creating 3D sphere');
+        }
     };
     
     img.onerror = function() {
+        console.error('Failed to load image:', imageUrl); // Debug log
         hideViewerLoading();
-        setStatus('Failed to load 360 image');
+        setStatus('Failed to load 360 image: ' + imageUrl);
+        
+        // Try to load next image if this one fails
+        if (currentImageIndex < currentImages.length - 1) {
+            setTimeout(() => {
+                currentImageIndex++;
+                showImageByIndex(currentImageIndex);
+            }, 1000);
+        }
     };
     
-    img.src = imageUrl;
+    // Add cache busting
+    const timestamp = new Date().getTime();
+    const urlWithCacheBust = imageUrl + (imageUrl.includes('?') ? '&' : '?') + 't=' + timestamp;
+    console.log('Attempting to load:', urlWithCacheBust); // Debug log
+    
+    img.src = urlWithCacheBust;
 }
 
 // ===== IMAGE NAVIGATION =====
