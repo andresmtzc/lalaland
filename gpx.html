@@ -2703,19 +2703,31 @@ function animateViewer() {
     }
 }
 
-function updateNavigationRing() {
+function updateNavigationRing(instant = false) {
     const ring = document.querySelector('.navigation-ring');
     if (!ring || !sphere) return;
+    
+    // Temporarily remove transition for instant changes
+    if (instant) {
+        ring.style.transition = 'none';
+    }
     
     // Rotate ring to match view
     let yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
     
     // Apply 180° offset when going backward
-    if (!isGoingForward) {
-        yawDegrees += 180;  // ← Add 180° for backward direction
-    }
+    //if (!isGoingForward) {
+     //   yawDegrees += 180;
+    //}
     
     ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
+    
+    // Restore transition after a frame
+    if (instant) {
+        requestAnimationFrame(() => {
+            ring.style.transition = '';
+        });
+    }
 }
 
 // ===== IMAGE DISPLAY =====
@@ -2765,8 +2777,9 @@ function showImageInViewer(imageUrl, imageData) {
 function nextImage() {
     if (currentImageIndex < currentImages.length - 1) {
         currentImageIndex++;
-        isGoingForward = true;  // ← Going forward
+        isGoingForward = true;
         showImageByIndex(currentImageIndex);
+        updateNavigationRing(true); // ← Instant change
     }
     updateNavigationButtons();
 }
@@ -2774,8 +2787,9 @@ function nextImage() {
 function previousImage() {
     if (currentImageIndex > 0) {
         currentImageIndex--;
-        isGoingForward = false;  // ← Going backward  
+        isGoingForward = false;
         showImageByIndex(currentImageIndex);
+        updateNavigationRing(true); // ← Instant change
     }
     updateNavigationButtons();
 }
@@ -2817,15 +2831,15 @@ function applyImageToSphere(img, imageData) {
         }
     }
     
-    // Create new sphere
+    // Create new sphere with preloaded image
     const geometry = new THREE.SphereGeometry(100, 60, 40);
     geometry.scale(-1, 1, 1);
+    geometry.rotateY(Math.PI);
     
-    // Only apply Math.PI rotation when going forward
-    if (isGoingForward) {
-        geometry.rotateY(Math.PI);
-    }
-    // If going backward, do nothing
+    // REMOVE the automatic Math.PI rotation entirely
+    // if (isGoingForward) {
+    //     geometry.rotateY(Math.PI);
+    // }
     
     const texture = new THREE.Texture(img);
     texture.needsUpdate = true;
@@ -2837,13 +2851,15 @@ function applyImageToSphere(img, imageData) {
     
     sphere = new THREE.Mesh(geometry, material);
     panoGroup.add(sphere);
+
+        // KEEP current orientation - don't reset!
+    // panoGroup.rotation.set(0, 0, 0); ← REMOVE THIS LINE
+    // currentYaw = 0; ← REMOVE THIS LINE  
+    // currentPitch = 0; ← REMOVE THIS LINE
     
-    // Reset orientation
-    panoGroup.rotation.set(0, 0, 0);
-    currentYaw = 0;
-    currentPitch = 0;
+    // KEEP current orientation
+    updateNavigationRing(true);
     
-    updateNavigationRing();
     setStatus(`Loaded image ${currentImageIndex + 1}`);
 }
 
