@@ -2335,6 +2335,9 @@ function selectMarble(marbleId) {
     if (marbleIndex !== -1) {
         updateMarbleDisplay();
         setStatus(`Selected marble #${marbleIndex + 1} - Drag to move or Ctrl+Click to lock`);
+
+                // UPDATE CONE POSITION
+        updateViewCone();
     }
 
     // NEW: update branch buttons for this selection
@@ -3393,6 +3396,12 @@ function selectTrackWithoutMapReset(trackId) {
     updateAllTracksVisualization(false); // Don't fit bounds!
     updateMarbleDisplay();
     
+
+        // REMOVE CONE WHEN SWITCHING TRACKS (no marble selected)
+    if (viewConeMarker) {
+        viewConeMarker.remove();
+        viewConeMarker = null;
+    }
     // DON'T fly to track bounds
     // DON'T load images automatically - this is interfering!
     // load360Images(); ← REMOVE THIS LINE
@@ -3401,33 +3410,35 @@ function selectTrackWithoutMapReset(trackId) {
 }
 
 // ===== VIEW CONE =====
-function updateViewCone(imageData) {
-    if (!map || !imageData) return;
+function updateViewCone() {
+    if (!map) return;
     
     // Remove old cone
     if (viewConeMarker) {
         viewConeMarker.remove();
     }
     
-    // Get the marble that has this image to position the cone
     const track = getCurrentTrack();
-    if (!track) return;
+    if (!track || !selectedMarbleId) return;
     
-    const marble = track.marbles.find(m => m.assignedImage === currentImageIndex);
+    const marble = track.marbles.find(m => m.id === selectedMarbleId);
     if (!marble) return;
     
     // Create view cone element
     const coneElement = document.createElement('div');
     coneElement.innerHTML = `
-        <div style="width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 20px solid rgba(255, 107, 107, 0.7); transform-origin: center bottom;"></div>
+        <div style="width: 0; height: 0; border-left: 15px solid transparent; border-right: 15px solid transparent; border-bottom: 30px solid rgba(255, 107, 107, 0.8); transform-origin: center bottom;"></div>
     `;
     
     // Add to map at marble position
-    viewConeMarker = new mapboxgl.Marker(coneElement)
-        .setLngLat(marble.position)
-        .addTo(map);
+    viewConeMarker = new mapboxgl.Marker({
+        element: coneElement,
+        anchor: 'center'
+    })
+    .setLngLat(marble.position)
+    .addTo(map);
     
-    // Rotate cone based on current view
+    // Update rotation immediately
     updateViewConeRotation();
 }
 
