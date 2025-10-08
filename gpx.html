@@ -3296,54 +3296,60 @@ function refreshBranchButtons() {
     btn.className = 'small-btn';
     const meters = Math.round(p.distanceM);
     btn.textContent = idx === 0 ? `Go → (${meters}m)` : `Alt ${idx+1} →`;
-    btn.onclick = () => {
-      const track = getCurrentTrack();
-      if (!track) return;
-      
-      // SEARCH IN ALL TRACKS, not just current track
-      let target = null;
-      let targetTrack = null;
-      
-      // Look through all tracks to find the marble
-      for (const [trackId, track] of allTracks) {
-        target = track.marbles.find(m => m.id === p.toMarbleId);
-        if (target) {
-          targetTrack = track;
-          break;
-        }
-      }
-      
-      if (!target) return;
+    btn.onclick = async () => {
+  const track = getCurrentTrack();
+  if (!track) return;
+  
+  // SEARCH IN ALL TRACKS, not just current track
+  let target = null;
+  let targetTrack = null;
+  
+  // Look through all tracks to find the marble
+  for (const [trackId, track] of allTracks) {
+    target = track.marbles.find(m => m.id === p.toMarbleId);
+    if (target) {
+      targetTrack = track;
+      break;
+    }
+  }
+  
+  if (!target) return;
 
-      // Store current map view BEFORE switching
-      const currentZoom = map.getZoom();
-      
-      // If target is in a different track, switch to that track properly
-      if (targetTrack.id !== currentTrackId) {
-        // Use selectTrack but prevent the flyTo bounds
-        selectTrackWithoutMapReset(targetTrack.id);
-      } else {
-        // Same track - just select the marble
-        selectMarble(target.id);
-      }
+  // Store current map view BEFORE switching
+  const currentZoom = map.getZoom();
+  
+  // If target is in a different track, switch to that track properly
+  if (targetTrack.id !== currentTrackId) {
+    // Switch tracks first
+    selectTrackWithoutMapReset(targetTrack.id);
+    
+    // Load images for the new track
+    await load360Images();
+    
+    // NOW select the target marble after images are loaded
+    selectMarble(target.id);
+  } else {
+    // Same track - just select the marble
+    selectMarble(target.id);
+  }
 
-      // store "continue direction" bias
-      const current = track.marbles.find(m => m.id === selectedMarbleId);
-      if (current) lastHopBearingDeg = bearingDeg(current.position, target.position);
+  // store "continue direction" bias
+  const current = track.marbles.find(m => m.id === selectedMarbleId);
+  if (current) lastHopBearingDeg = bearingDeg(current.position, target.position);
 
-      if (target.assignedImage != null) {
-        showMarbleImage(target.id);
-      } else {
-        // Smoothly move to target position while preserving zoom
-        map.flyTo({
-          center: target.position,
-          zoom: currentZoom, // Keep current zoom level
-          duration: 1000
-        });
-        setStatus(`Moved to marble ${target.index+1}${targetTrack.id !== currentTrackId ? ` in ${targetTrack.name}` : ''}`);
-      }
-      updateNavigationRing(true);
-    };
+  if (target.assignedImage != null) {
+    showMarbleImage(target.id);
+  } else {
+    // Smoothly move to target position while preserving zoom
+    map.flyTo({
+      center: target.position,
+      zoom: currentZoom, // Keep current zoom level
+      duration: 1000
+    });
+    setStatus(`Moved to marble ${target.index+1}${targetTrack.id !== currentTrackId ? ` in ${targetTrack.name}` : ''}`);
+  }
+  updateNavigationRing(true);
+};
     host.appendChild(btn);
   });
 }
@@ -3387,11 +3393,9 @@ function selectTrackWithoutMapReset(trackId) {
     updateAllTracksVisualization(false); // Don't fit bounds!
     updateMarbleDisplay();
     
-    // DON'T fly to track bounds - this is the key change!
-    // flyToTrack(track); ← REMOVED
-    
-    // Load images for the new track
-    load360Images();
+    // DON'T fly to track bounds
+    // DON'T load images automatically - this is interfering!
+    // load360Images(); ← REMOVE THIS LINE
     
     setStatus(`Switched to: ${track.name} - ${track.marbles.length} marbles`);
 }
