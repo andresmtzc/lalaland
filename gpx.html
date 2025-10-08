@@ -835,6 +835,9 @@ map.addLayer({
         // Add to tracks map
         allTracks.set(trackId, trackData);
         
+        // REBUILD NAVIGATION GRAPH FOR WAYPOINTS
+        rebuildNavGraph();
+        
         // If first track, select it
         if (allTracks.size === 1) {
             selectTrack(trackId);
@@ -873,12 +876,12 @@ function parseWaypointsFromGPX(gpxDoc, trackData) {
             const marble = {
                 id: Date.now() + index,
                 index: trackData.marbles.length,
-                position: [lon, lat], // Use actual waypoint position
+                position: [lon, lat],
                 distanceAlongRoute: closestPoint.distance,
-                isLocked: false, // Make them unlockable like regular marbles
-                isFixed: false,  // Don't mark as fixed - this makes them brown!
-                assignedImage: extractImageIndexFromWaypoint(name, description), // Try to extract image index
-                isWaypoint: true, // Flag to identify waypoint-derived marbles
+                isLocked: false,
+                isFixed: false,
+                assignedImage: extractImageIndexFromWaypoint(name, description),
+                isWaypoint: true,
                 originalName: name,
                 description: description,
                 time: time
@@ -897,6 +900,45 @@ function parseWaypointsFromGPX(gpxDoc, trackData) {
     });
     
     console.log(`Created ${trackData.marbles.length} marbles from waypoints`);
+    
+    // ENSURE CONSECUTIVE MARBLES ARE CONNECTED
+    ensureSequentialConnections(trackData);
+}
+
+function ensureSequentialConnections(track) {
+    if (!track || track.marbles.length < 2) return;
+    
+    const marbles = track.marbles;
+    
+    // Ensure consecutive marbles are connected
+    for (let i = 0; i < marbles.length - 1; i++) {
+        const current = marbles[i];
+        const next = marbles[i + 1];
+        
+        const distance = calculateDistance(current.position, next.position);
+        const bearing = bearingDeg(current.position, next.position);
+        const reverseBearing = bearingDeg(next.position, current.position);
+        
+        // Add forward connection
+        if (!navGraph.has(current.id)) navGraph.set(current.id, []);
+        if (!navGraph.get(current.id).some(conn => conn.toMarbleId === next.id)) {
+            navGraph.get(current.id).push({
+                toMarbleId: next.id,
+                distanceM: distance,
+                bearingDeg: bearing
+            });
+        }
+        
+        // Add reverse connection
+        if (!navGraph.has(next.id)) navGraph.set(next.id, []);
+        if (!navGraph.get(next.id).some(conn => conn.toMarbleId === current.id)) {
+            navGraph.get(next.id).push({
+                toMarbleId: current.id,
+                distanceM: distance,
+                bearingDeg: reverseBearing
+            });
+        }
+    }
 }
 
 function extractImageIndexFromWaypoint(name, description) {
@@ -2157,19 +2199,33 @@ function rebuildNavGraph() {
 }
 
 function getFacingOptions(marbleId, currentYawRad, maxOptions = 3) {
-  const edges = navGraph.get(marbleId) || [];
-  const yawDeg = (THREE.MathUtils.radToDeg(currentYawRad) + 360) % 360;
+    const edges = navGraph.get(marbleId) || [];
+    const yawDeg = (THREE.MathUtils.radToDeg(currentYawRad) + 360) % 360;
 
-  // Score by how well an edge aligns with the current view + (optionally) continue straight
-  return edges
-    .map(e => {
-      const angleToView = angularDiffDeg(yawDeg, e.bearingDeg);
-      const continueBonus = (lastHopBearingDeg != null) ? angularDiffDeg(lastHopBearingDeg, e.bearingDeg) : 180;
-      const score = angleToView + 0.3 * continueBonus; // tune 0.3 if you want
-      return { ...e, angleToView, score };
-    })
-    .sort((a, b) => a.score - b.score)
-    .slice(0, maxOptions);
+    return edges
+        .map(e => {
+            const angleToView = angularDiffDeg(yawDeg, e.bearingDeg);
+            
+            // Enhanced scoring:
+            // - Perfect alignment (0° diff) = 0 points
+            // - 90° off = 90 points  
+            // - 180° off = 180 points
+            let score = angleToView;
+            
+            // Bonus for continuing straight (if we have previous direction)
+            if (lastHopBearingDeg != null) {
+                const continueDiff = angularDiffDeg(lastHopBearingDeg, e.bearingDeg);
+                // Prefer directions close to our last movement (encourage straight lines)
+                score += continueDiff * 0.3;
+            }
+            
+            // Small preference for shorter distances
+            score += e.distanceM * 0.001;
+            
+            return { ...e, angleToView, score };
+        })
+        .sort((a, b) => a.score - b.score)
+        .slice(0, maxOptions);
 }
 
 
@@ -2971,29 +3027,51 @@ function animateViewer() {
 
 function updateNavigationRing(instant = false) {
     const ring = document.querySelector('.navigation-ring');
-    if (!ring || !sphere) return;
+    const nextBtn = document.getElementById('nextImageBtn');
+    const prevBtn = document.getElementById('prevImageBtn');
     
-    // Temporarily remove transition for instant changes
-    if (instant) {
-        ring.style.transition = 'none';
-    }
+    if (!ring || !sphere) return;
     
     // Rotate ring to match view
     let yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
-    
-    // Apply 180° offset when going backward
-    //if (!isGoingForward) {
-     //   yawDegrees += 180;
-    //}
-    
     ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
     
-    // Restore transition after a frame
+    // Update button tooltips with smart navigation info
+    if (nextBtn) {
+        const forwardTarget = getBestMarbleInDirection(currentYaw);
+        nextBtn.title = forwardTarget ? 
+            `Navigate to marble ${forwardTarget.index + 1} (${Math.round(forwardTarget.distance)}m)` : 
+            'Navigate forward';
+    }
+    
+    if (prevBtn) {
+        const behindTarget = getBestMarbleInDirection(currentYaw + Math.PI);
+        prevBtn.title = behindTarget ? 
+            `Navigate to marble ${behindTarget.index + 1} (${Math.round(behindTarget.distance)}m)` : 
+            'Navigate backward';
+    }
+    
     if (instant) {
+        ring.style.transition = 'none';
         requestAnimationFrame(() => {
             ring.style.transition = '';
         });
     }
+}
+
+function getBestMarbleInDirection(directionRad) {
+    if (!selectedMarbleId) return null;
+    
+    const options = getFacingOptions(selectedMarbleId, directionRad, 1);
+    if (options.length === 0) return null;
+    
+    const track = getCurrentTrack();
+    const targetMarble = track.marbles.find(m => m.id === options[0].toMarbleId);
+    
+    return targetMarble ? {
+        index: targetMarble.index,
+        distance: options[0].distanceM
+    } : null;
 }
 
 // ===== IMAGE DISPLAY =====
@@ -3340,8 +3418,8 @@ function setupViewerEventListeners() {
      canvas.addEventListener('wheel', handleWheelZoom);
     
     // Navigation buttons
-    document.getElementById('nextImageBtn').addEventListener('click', nextImage);
-    document.getElementById('prevImageBtn').addEventListener('click', previousImage);
+document.getElementById('nextImageBtn').addEventListener('click', navigateToBestMarbleInView);
+document.getElementById('prevImageBtn').addEventListener('click', navigateToBestMarbleBehind);
     
 
 }
@@ -3358,6 +3436,76 @@ function disableNavigationButtons() {
     buttons.forEach(button => {
         button.style.pointerEvents = 'none';
     });
+}
+
+function navigateToBestMarbleInView() {
+    navigateToAdjacentMarble(true); // Always go to next marble
+}
+
+function navigateToBestMarbleBehind() {
+    navigateToAdjacentMarble(false); // Always go to previous marble
+}
+
+function findClosestMarbleInViewDirection() {
+    const track = getCurrentTrack();
+    if (!track || track.marbles.length === 0) return null;
+    
+    const viewDirection = THREE.MathUtils.radToDeg(currentYaw);
+    
+    // Find marble that best aligns with current view direction
+    let bestMarble = null;
+    let bestScore = Infinity;
+    
+    track.marbles.forEach(marble => {
+        // Calculate bearing from current view position to marble
+        // For simplicity, use map center or current selected position
+        const fromPosition = selectedMarbleId ? 
+            track.marbles.find(m => m.id === selectedMarbleId).position : 
+            [map.getCenter().lng, map.getCenter().lat];
+            
+        const bearingToMarble = bearingDeg(fromPosition, marble.position);
+        const angleDiff = angularDiffDeg(viewDirection, bearingToMarble);
+        
+        // Score based on angle alignment and distance
+        const distance = calculateDistance(fromPosition, marble.position);
+        const score = angleDiff + (distance * 0.01); // Weight distance slightly
+        
+        if (score < bestScore) {
+            bestScore = score;
+            bestMarble = marble;
+        }
+    });
+    
+    return bestMarble;
+}
+
+function findClosestMarbleBehindView() {
+    const track = getCurrentTrack();
+    if (!track || track.marbles.length === 0) return null;
+    
+    const behindDirection = (THREE.MathUtils.radToDeg(currentYaw) + 180) % 360;
+    
+    let bestMarble = null;
+    let bestScore = Infinity;
+    
+    track.marbles.forEach(marble => {
+        const fromPosition = selectedMarbleId ? 
+            track.marbles.find(m => m.id === selectedMarbleId).position : 
+            [map.getCenter().lng, map.getCenter().lat];
+            
+        const bearingToMarble = bearingDeg(fromPosition, marble.position);
+        const angleDiff = angularDiffDeg(behindDirection, bearingToMarble);
+        
+        const distance = calculateDistance(fromPosition, marble.position);
+        const score = angleDiff + (distance * 0.01);
+        
+        if (score < bestScore) {
+            bestScore = score;
+            bestMarble = marble;
+        }
+    });
+    
+    return bestMarble;
 }
 
 function zoomIn() {
