@@ -615,45 +615,45 @@ let lastHopBearingDeg = null; // optional bias to "keep going straight"
     ];
 
     // Initialize map and viewer
-    function initializeApp() {
-        // Initialize Mapbox map
-        map = new mapboxgl.Map({
-            container: 'map',
-            style: 'mapbox://styles/mapbox/outdoors-v12',
-            center: [0, 0],
-            zoom: 1,
-            cooperativeGestures: false
+function initializeApp() {
+    // Initialize Mapbox map
+    map = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/outdoors-v12',
+        center: [0, 0],
+        zoom: 1,
+        cooperativeGestures: false
+    });
+
+    // Wait for map to load
+    map.on('load', async () => {
+        console.log('Map loaded successfully');
+        document.getElementById('gpx-file').addEventListener('change', handleGPXUpload);
+        
+        // Setup density slider
+        const densitySlider = document.getElementById('density-slider');
+        densitySlider.addEventListener('input', handleDensityChange);
+        
+        // Setup marble spacing slider
+        const marbleSpacingSlider = document.getElementById('marble-spacing-slider');
+        marbleSpacingSlider.addEventListener('input', updateMarbleSpacing);
+        
+        // Create sources for tracks
+        map.addSource('tracks-line', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] }
         });
 
-        // Wait for map to load
-        map.on('load', () => {
-            console.log('Map loaded successfully');
-            document.getElementById('gpx-file').addEventListener('change', handleGPXUpload);
-            
-            // Setup density slider
-            const densitySlider = document.getElementById('density-slider');
-            densitySlider.addEventListener('input', handleDensityChange);
-            
-            // Setup marble spacing slider
-            const marbleSpacingSlider = document.getElementById('marble-spacing-slider');
-            marbleSpacingSlider.addEventListener('input', updateMarbleSpacing);
-            
-            // Create sources for tracks
-            map.addSource('tracks-line', {
-                type: 'geojson',
-                data: { type: 'FeatureCollection', features: [] }
-            });
+        map.addSource('control-points', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] }
+        });
 
-            map.addSource('control-points', {
-                type: 'geojson',
-                data: { type: 'FeatureCollection', features: [] }
-            });
-
-            // Create source for marbles
-            map.addSource('marbles', {
-                type: 'geojson',
-                data: { type: 'FeatureCollection', features: [] }
-            });
+        // Create source for marbles
+        map.addSource('marbles', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] }
+        });
 
             // Add tracks line layer
             map.addLayer({
@@ -739,52 +739,163 @@ map.addLayer({
     }
 });
 
-   initConeSystem();
-  // Add marble navigation buttons
-    addMarbleNavigationButtons();
-            setupMapInteractions();
-        });
+        initConeSystem();
+        addMarbleNavigationButtons();
+        setupMapInteractions();
 
-        // Initialize 360 viewer
-        initializeViewer();
-    }
+        // AUTO-LOAD GPX FILES FROM MANIFEST
+        await loadGPXFromManifest();
+    });
+
+    // Initialize 360 viewer
+    initializeViewer();
+}
 
 
 
     // Setup map interactions
     function setupMapInteractions() {
-        map.on('mouseup', () => {
-            if (isDragging) {
-                setTimeout(() => {
-                    isDragging = false;
-                    dragPointId = -1;
-                    map.getCanvas().style.cursor = 'move';
-                    enableMapInteractions();
-                }, 50);
+    map.on('mouseup', () => {
+        if (isDragging) {
+            setTimeout(() => {
+                isDragging = false;
+                dragPointId = -1;
+                map.getCanvas().style.cursor = 'move';
+                enableMapInteractions();
+            }, 50);
+        }
+        if (isDraggingMarble) {
+            stopMarbleDrag();
+        }
+    });
+    
+    // ADD THESE: Update view cone on map interactions
+    map.on('zoom', () => {
+        if (selectedMarbleId) {
+            updateViewCone();
+        }
+    });
+    
+    map.on('move', () => {
+        if (selectedMarbleId) {
+            updateViewCone();
+        }
+    });
+}
+
+async function loadGPXFromManifest() {
+    try {
+        setStatus('Loading predefined tracks...');
+        
+        // Hardcoded URL to the manifest
+        const MANIFEST_URL = 'https://lalaland.mx/frames/index.json';
+        
+        console.log('Fetching manifest from:', MANIFEST_URL);
+        
+        const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
+        if (!res.ok) {
+            console.log('No manifest found or unable to load');
+            setStatus('No predefined tracks found');
+            return;
+        }
+        
+        const manifest = await res.json();
+        console.log('Manifest loaded:', manifest);
+        
+        let gpxFiles = [];
+        
+        // Your manifest has BOTH files and gpxFiles arrays
+        if (manifest.gpxFiles && manifest.gpxFiles.length > 0) {
+            // Use the gpxFiles array specifically
+            gpxFiles = manifest.gpxFiles;
+            console.log('Using gpxFiles array:', gpxFiles);
+        } else if (manifest.files) {
+            // Fallback: look for .gpx files in the main files array
+            gpxFiles = manifest.files.filter(file => file.toLowerCase().endsWith('.gpx'));
+            console.log('Found GPX files in files array:', gpxFiles);
+        }
+        
+        console.log('Final GPX files to load:', gpxFiles);
+        
+        if (gpxFiles.length === 0) {
+            console.log('No GPX files found in manifest');
+            setStatus('No predefined tracks in manifest');
+            return;
+        }
+        
+        setStatus(`Loading ${gpxFiles.length} predefined tracks...`);
+        
+        // Load each GPX file
+        let loadedCount = 0;
+        for (const gpxFile of gpxFiles) {
+            try {
+                console.log(`Loading GPX: ${gpxFile}`);
+                await loadSingleGPX(gpxFile);
+                loadedCount++;
+            } catch (error) {
+                console.error(`Failed to load ${gpxFile}:`, error);
+                setStatus(`Failed to load ${gpxFile}`);
             }
-            if (isDraggingMarble) {
-                stopMarbleDrag();
+        }
+        
+        console.log(`Successfully loaded ${loadedCount} tracks`);
+        setStatus(`Auto-loaded ${loadedCount} predefined tracks`);
+        
+        // Auto-select the first track if any were loaded
+        if (loadedCount > 0 && allTracks.size > 0) {
+            const firstTrackId = Array.from(allTracks.keys())[0];
+            if (firstTrackId) {
+                selectTrack(firstTrackId);
+                const track = allTracks.get(firstTrackId);
+                setStatus(`Auto-selected: ${track.name}`);
             }
-        });
+        } else {
+            setStatus('No tracks were successfully loaded');
+        }
+        
+    } catch (error) {
+        console.error('Error loading GPX from manifest:', error);
+        setStatus('Error loading predefined tracks - check console');
     }
+}
+
+async function loadSingleGPX(filename) {
+    try {
+        // Ensure filename has correct path
+        const fullPath = filename.startsWith(FRAMES_BASE) ? filename : FRAMES_BASE + filename;
+        const response = await fetch(fullPath);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const gpxContent = await response.text();
+        // PASS isPredefined = true for manifest-loaded files
+        parseGPX(gpxContent, filename.split('/').pop(), true);
+        
+    } catch (error) {
+        console.error(`Error loading GPX file ${filename}:`, error);
+        throw error;
+    }
+}
 
     // Handle multiple GPX file upload
-    function handleGPXUpload(event) {
-        const files = Array.from(event.target.files);
-        if (files.length === 0) return;
+function handleGPXUpload(event) {
+    const files = Array.from(event.target.files);
+    if (files.length === 0) return;
 
-        files.forEach(file => {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const gpxContent = e.target.result;
-                parseGPX(gpxContent, file.name);
-            };
-            reader.readAsText(file);
-        });
-    }
+    files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const gpxContent = e.target.result;
+            parseGPX(gpxContent, file.name, false); // User-uploaded files are not predefined
+        };
+        reader.readAsText(file);
+    });
+}
 
     // Parse GPX and add as new track
-   function parseGPX(gpxContent, fileName) {
+   function parseGPX(gpxContent, fileName, isPredefined = false) {
     try {
         const parser = new DOMParser();
         const gpxDoc = parser.parseFromString(gpxContent, 'text/xml');
@@ -807,7 +918,9 @@ map.addLayer({
         });
         
         if (pointsWithTime.length === 0) {
-            alert(`No track points found in ${fileName}`);
+            if (!isPredefined) { // Only alert for user-uploaded files
+                alert(`No track points found in ${fileName}`);
+            }
             return;
         }
         
@@ -823,21 +936,22 @@ map.addLayer({
             activePoints: [],
             density: 100,
             isActive: false,
+            isPredefined: isPredefined, // Mark as predefined
             originalStats: calculateOriginalStatsFromPoints(pointsWithTime),
-            marbles: [], // Track-specific marbles
-            marbleSpacing: 10 // Track-specific marble spacing
+            marbles: [],
+            marbleSpacing: 10
         };
         
         // Apply initial density
         applyDensityFilterToTrack(trackData, currentDensity);
         
-        // PARSE WAYPOINTS AND CREATE MARBLES
+        // Parse waypoints and create marbles
         parseWaypointsFromGPX(gpxDoc, trackData);
         
         // Add to tracks map
         allTracks.set(trackId, trackData);
         
-        // REBUILD NAVIGATION GRAPH FOR WAYPOINTS
+        // Rebuild navigation graph for waypoints
         rebuildNavGraph();
         
         // If first track, select it
@@ -851,10 +965,12 @@ map.addLayer({
         
     } catch (error) {
         console.error('Error parsing GPX:', error);
-        alert(`Error parsing ${fileName}. Please check the file format.`);
+        if (!isPredefined) { // Only alert for user-uploaded files
+            alert(`Error parsing ${fileName}. Please check the file format.`);
+        }
     }
 }
-
+ 
 function parseWaypointsFromGPX(gpxDoc, trackData) {
     const waypoints = gpxDoc.querySelectorAll('wpt');
     const coordinates = getDisplayCoordinates(trackData);
@@ -1281,38 +1397,50 @@ function angularDiffDeg(a, b) { // smallest |a-b|
 
     // Update tracks list UI
     function updateTracksList() {
-        const tracksList = document.getElementById('tracks-list');
-        tracksList.innerHTML = '';
-        
-        if (allTracks.size === 0) {
-            tracksList.innerHTML = '<div style="text-align: center; padding: 10px; color: #666; font-size: 12px;">No tracks loaded</div>';
-            return;
-        }
-        
-        allTracks.forEach((track, trackId) => {
-            const trackItem = document.createElement('div');
-            trackItem.className = `track-item ${track.isActive ? 'track-active' : ''}`;
-            trackItem.innerHTML = `
-                <div class="track-info">
-                    <div class="track-color" style="background-color: ${track.color}"></div>
-                    <span title="${track.name}">${track.name.length > 20 ? track.name.substring(0, 20) + '...' : track.name}</span>
-                </div>
-                <div class="track-actions">
-                    <button class="small-btn" onclick="selectTrack('${trackId}')">Edit</button>
-                    <button class="small-btn" onclick="exportSingleTrack('${trackId}')" title="Export this track">💾</button>
-                    <button class="small-btn" onclick="removeTrack('${trackId}')">×</button>
-                </div>
-            `;
-            
-            trackItem.onclick = (e) => {
-                if (!e.target.closest('.track-actions')) {
-                    selectTrack(trackId);
-                }
-            };
-            
-            tracksList.appendChild(trackItem);
-        });
+    const tracksList = document.getElementById('tracks-list');
+    tracksList.innerHTML = '';
+    
+    if (allTracks.size === 0) {
+        tracksList.innerHTML = `
+            <div style="text-align: center; padding: 10px; color: #666; font-size: 12px;">
+                No tracks loaded<br>
+                <small>Drop GPX files or they will auto-load from manifest</small>
+            </div>
+        `;
+        return;
     }
+    
+    allTracks.forEach((track, trackId) => {
+        const trackItem = document.createElement('div');
+        trackItem.className = `track-item ${track.isActive ? 'track-active' : ''}`;
+        
+        // Add a small indicator for predefined tracks
+        const isPredefined = track.isPredefined ? ' 📁' : '';
+        
+        trackItem.innerHTML = `
+            <div class="track-info">
+                <div class="track-color" style="background-color: ${track.color}"></div>
+                <span title="${track.name}">
+                    ${track.name.length > 20 ? track.name.substring(0, 20) + '...' : track.name}
+                    ${isPredefined}
+                </span>
+            </div>
+            <div class="track-actions">
+                <button class="small-btn" onclick="selectTrack('${trackId}')">Edit</button>
+                <button class="small-btn" onclick="exportSingleTrack('${trackId}')" title="Export this track">💾</button>
+                <button class="small-btn" onclick="removeTrack('${trackId}')">×</button>
+            </div>
+        `;
+        
+        trackItem.onclick = (e) => {
+            if (!e.target.closest('.track-actions')) {
+                selectTrack(trackId);
+            }
+        };
+        
+        tracksList.appendChild(trackItem);
+    });
+}
 
     // Get current track data
     function getCurrentTrack() {
@@ -2748,12 +2876,13 @@ async function createImagesFromFramesFolder() {
   // case-insensitive prefix match: "<gpx>-"
   const requiredStartLC = (gpxName + '-').toLowerCase();
 
-  // --- fetch manifest ---
+  // --- fetch manifest with hardcoded URL ---
   let list;
   try {
-    const res = await fetch(FRAMES_BASE + 'index.json', { cache: 'no-store' });
+    const MANIFEST_URL = 'https://lalaland.mx/frames/index.json';
+    const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
     if (!res.ok) {
-      setStatus?.(`Could not fetch ${FRAMES_BASE}index.json (${res.status})`);
+      setStatus?.(`Could not fetch ${MANIFEST_URL} (${res.status})`);
       updateImageCount?.();
       return;
     }
@@ -2765,6 +2894,7 @@ async function createImagesFromFramesFolder() {
     return;
   }
 
+  // ... rest of the function remains the same ...
   // normalize to bare filenames
   const files = list.map(x => String(x).split('/').pop()).filter(Boolean);
 
@@ -2792,7 +2922,7 @@ async function createImagesFromFramesFolder() {
   setStatus?.(`Loaded ${currentImages.length} image(s) for "${gpxName}" from ${FRAMES_BASE}`);
   updateImageCount?.();
 }
-
+ 
 
 
 
@@ -3546,6 +3676,7 @@ function setupViewerEventListeners() {
     // Mouse drag to look around
     let isDragging = false;
     let lastX = 0, lastY = 0;
+    setupTouchGestures(canvas);
     
     canvas.addEventListener('mousedown', (e) => {
         isDragging = true;
@@ -3605,6 +3736,57 @@ document.getElementById('nextImageBtn').addEventListener('click', navigateToBest
 document.getElementById('prevImageBtn').addEventListener('click', navigateToBestMarbleBehind);
     
 
+}
+
+function setupTouchGestures(canvas) {
+    let touchStartDistance = 0;
+    let touchStartFov = currentFov;
+
+    canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+            // Pinch start - store initial distance and FOV
+            touchStartDistance = getTouchDistance(e.touches);
+            touchStartFov = currentFov;
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2) {
+            // Pinch gesture - calculate zoom
+            const currentDistance = getTouchDistance(e.touches);
+            const scale = touchStartDistance / currentDistance;
+            
+            // Adjust FOV based on pinch scale (invert for natural feeling)
+            const newFov = Math.max(30, Math.min(120, touchStartFov * scale));
+            
+            if (newFov !== currentFov) {
+                currentFov = newFov;
+                camera.fov = currentFov;
+                camera.updateProjectionMatrix();
+                
+                // Update cone and render
+                updateViewCone();
+                renderer.render(scene, camera);
+            }
+            
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+        if (e.touches.length < 2) {
+            // Pinch ended
+            touchStartDistance = 0;
+        }
+    }, { passive: false });
+}
+
+// Helper function to calculate distance between two touches
+function getTouchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
 }
 
 function enableNavigationButtons() {
@@ -3698,7 +3880,6 @@ function zoomIn() {
         camera.updateProjectionMatrix();
         updateZoomDisplay();
         updateViewCone(); // UPDATE CONE ON ZOOM
-        showToast(`Zoomed in (${currentFov}°)`, 1000);
     }
 }
 
@@ -3709,7 +3890,6 @@ function zoomOut() {
         camera.updateProjectionMatrix();
         updateZoomDisplay();
         updateViewCone(); // UPDATE CONE ON ZOOM
-        showToast(`Zoomed out (${currentFov}°)`, 1000);
     }
 }
 
@@ -3717,7 +3897,8 @@ function handleWheelZoom(e) {
     e.preventDefault();
     e.stopPropagation();
     
-    const zoomSpeed = 2; // Adjust this for faster/slower zoom
+    // Use a consistent zoom speed regardless of device
+    const zoomSpeed = e.deltaMode === 0 ? 2 : 60; // Adjust for different delta modes
     const delta = e.deltaY > 0 ? zoomSpeed : -zoomSpeed;
     
     const oldFov = currentFov;
@@ -3727,10 +3908,7 @@ function handleWheelZoom(e) {
         camera.fov = currentFov;
         camera.updateProjectionMatrix();
         
-        // UPDATE CONE IMMEDIATELY
         updateViewCone();
-        
-        // Force a render to make sure changes are visible
         renderer.render(scene, camera);
         
         console.log(`Zoom: ${currentFov}°`);
