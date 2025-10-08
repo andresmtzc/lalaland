@@ -240,6 +240,7 @@
     width: 320px;
     max-height: calc(50vh - 80px); /* Adjusted for split screen */
     overflow-y: auto;
+    display:none;
 }
 
 /* === NEW 360 VIEWER STYLES === */
@@ -259,8 +260,10 @@
     left: 0;
     width: 100%;
     height: 100%;
-    touch-action: none;
-    pointer-events:auto;
+    touch-action: none; /* Important: prevents browser from handling touch gestures */
+    pointer-events: auto;
+    -webkit-user-select: none; /* Prevent text selection on iOS */
+    user-select: none;
 }
 
 .viewer-controls {
@@ -3741,9 +3744,17 @@ document.getElementById('prevImageBtn').addEventListener('click', navigateToBest
 function setupTouchGestures(canvas) {
     let touchStartDistance = 0;
     let touchStartFov = currentFov;
+    let isTouching = false;
+    let lastTouchX = 0, lastTouchY = 0;
 
     canvas.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 2) {
+        if (e.touches.length === 1) {
+            // Single touch - panning (looking around)
+            isTouching = true;
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+            e.preventDefault();
+        } else if (e.touches.length === 2) {
             // Pinch start - store initial distance and FOV
             touchStartDistance = getTouchDistance(e.touches);
             touchStartFov = currentFov;
@@ -3752,12 +3763,36 @@ function setupTouchGestures(canvas) {
     }, { passive: false });
 
     canvas.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 2) {
-            // Pinch gesture - calculate zoom
+        if (e.touches.length === 1 && isTouching) {
+            // Single touch panning - look around
+            const deltaX = e.touches[0].clientX - lastTouchX;
+            const deltaY = e.touches[0].clientY - lastTouchY;
+            
+            // Apply rotation (same as mouse drag)
+            panoGroup.rotation.y -= deltaX * 0.01;
+            panoGroup.rotation.x -= deltaY * 0.01;
+            
+            // Clamp pitch to avoid flipping
+            panoGroup.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, panoGroup.rotation.x));
+            
+            currentYaw = panoGroup.rotation.y;
+            currentPitch = panoGroup.rotation.x;
+            
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+            
+            // UPDATE CONE IN REAL-TIME DURING TOUCH PAN
+            updateViewCone();
+            updateNavigationRing();
+            refreshBranchButtons();
+            
+            e.preventDefault();
+        } else if (e.touches.length === 2) {
+            // Pinch gesture - zoom
             const currentDistance = getTouchDistance(e.touches);
             const scale = touchStartDistance / currentDistance;
             
-            // Adjust FOV based on pinch scale (invert for natural feeling)
+            // Adjust FOV based on pinch scale
             const newFov = Math.max(30, Math.min(120, touchStartFov * scale));
             
             if (newFov !== currentFov) {
@@ -3775,9 +3810,14 @@ function setupTouchGestures(canvas) {
     }, { passive: false });
 
     canvas.addEventListener('touchend', (e) => {
-        if (e.touches.length < 2) {
-            // Pinch ended
+        if (e.touches.length === 0) {
+            // All touches ended
+            isTouching = false;
             touchStartDistance = 0;
+        } else if (e.touches.length === 1) {
+            // Went from pinch to single touch - update touch position
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
         }
     }, { passive: false });
 }
@@ -3975,16 +4015,18 @@ function navigateToMarbleWithImage(direction) {
 
 // Add this to your existing keyboard event listeners
 document.addEventListener('keydown', (e) => {
+    // Use 'd' or 'D' key to toggle controls panel
     if (e.key === 'd' || e.key === 'D') {
         toggleControlsPanel();
+        e.preventDefault(); // Prevent any default browser behavior
     }
 });
 
 function toggleControlsPanel() {
     const controls = document.getElementById('controls');
-    if (controls.style.display === 'none') {
+    if (controls.style.display === 'none' || controls.style.display === '') {
         controls.style.display = 'block';
-        setStatus('Controls panel shown');
+        setStatus('Controls panel shown - press D to hide');
     } else {
         controls.style.display = 'none';
         setStatus('Controls panel hidden - press D to show');
