@@ -588,6 +588,7 @@ let viewerInitialized = false;
 let viewConeMarker = null;
 let isGoingForward = true;
 
+
 // ---- NAV GRAPH (for Y-junction choices) ----
 const navGraph = new Map(); // marbleId -> Array<{toMarbleId, distanceM, bearingDeg}>
 let lastHopBearingDeg = null; // optional bias to "keep going straight"
@@ -600,6 +601,8 @@ let lastHopBearingDeg = null; // optional bias to "keep going straight"
     // 360 Viewer variables
     let viewer;
     let currentImages = [];
+    // Frames folder (same-origin)
+    const FRAMES_BASE = 'https://lalaland.mx/frames/';
     let currentImageIndex = -1;
     let imageAssignments = new Map(); // marbleId -> imageIndex
 
@@ -2456,120 +2459,92 @@ function updateMarbleDisplay() {
     // ========== 360 VIEWER FUNCTIONS ==========
 
 async function load360Images() {
-    try {
-        setStatus('Loading 360 images from frames folder...');
-        createImagesFromFramesFolder();
-        
-        if (currentImages.length > 0) {
-            setStatus(`Loaded ${currentImages.length} images - assigning to marbles`);
-            assignImagesToMarbles();
-            
-            // AUTO-SHOW FIRST IMAGE
-            showImageByIndex(0);
-            
-            // START BACKGROUND PRELOADING OF ALL IMAGES
-            startBackgroundPreload(3); // ← ADD THIS LINE
-        }
-        
-    } catch (error) {
-        console.error('Error loading 360 images:', error);
-        setStatus('Error loading 360 images');
+  try {
+    setStatus('Loading 360 images from frames folder...');
+    await createImagesFromFramesFolder();
+
+    if (currentImages.length > 0) {
+      setStatus(`Loaded ${currentImages.length} images - assigning to marbles`);
+      assignImagesToMarbles();
+      showImageByIndex(0);        // show first
+      startBackgroundPreload(3);  // keep as you had it
     }
+  } catch (error) {
+    console.error('Error loading 360 images:', error);
+    setStatus('Error loading 360 images');
+  }
 }
 
-    function createImagesFromFramesFolder() {
-    // Clear existing images
-    currentImages = [];
-    
-    // Use the exact image URLs from your beta
-    const filenames = [
-        'santte1a-00.00.00.901.jpeg',
-        'santte1a-00.00.03.036.jpeg',
-        'santte1a-00.00.05.105.jpeg',
-        'santte1a-00.00.06.907.jpeg',
-        'santte1a-00.00.08.242.jpeg',
-        'santte1a-00.00.10.975.jpeg',
-        'santte1a-00.00.13.347.jpeg',
-        'santte1a-00.00.14.381.jpeg',
-        'santte1a-00.00.16.450.jpeg',
-        'santte1a-00.00.18.819.jpeg',
-        'santte1a-00.00.20.354.jpeg',
-        'santte1a-00.00.22.356.jpeg',
-        'santte1a-00.00.24.424.jpeg',
-        'santte1a-00.00.25.692.jpeg',
-        'santte1a-00.00.29.096.jpeg',
-        'santte1a-00.00.30.030.jpeg',
-        'santte1a-00.00.31.732.jpeg',
-        'santte1a-00.00.34.268.jpeg',
-        'santte1a-00.00.35.802.jpeg',
-        'santte1a-00.00.37.638.jpeg',
-        'santte1a-00.00.40.073.jpeg',
-        'santte1a-00.00.41.708.jpeg',
-        'santte1a-00.00.43.310.jpeg',
-        'santte1a-00.00.45.679.jpeg',
-        'santte1a-00.00.47.614.jpeg',
-        'santte1a-00.00.49.683.jpeg',
-        'santte1a-00.00.51.618.jpeg',
-        'santte1a-00.00.53.186.jpeg',
-        'santte1a-00.00.55.122.jpeg',
-        'santte1a-00.00.58.191.jpeg',
-        'santte1a-00.00.59.359.jpeg',
-        'santte1a-00.01.01.028.jpeg',
-        'santte1a-00.01.03.030.jpeg',
-        'santte1a-00.01.05.039.jpeg',
-        'santte1a-00.01.07.034.jpeg',
-        'santte1a-00.01.09.002.jpeg',
-        'santte1a-00.01.10.704.jpeg',
-        'santte1a-00.01.12.673.jpeg',
-        'santte1a-00.01.14.474.jpeg',
-        'santte1a-00.01.16.410.jpeg',
-        'santte1a-00.01.18.412.jpeg',
-        'santte1a-00.01.21.281.jpeg',
-        'santte1a-00.01.22.849.jpeg',
-        'santte1a-00.01.24.384.jpeg',
-        'santte1a-00.01.25.852.jpeg',
-        'santte1a-00.01.28.288.jpeg',
-        'santte1a-00.01.30.390.jpeg',
-        'santte1a-00.01.32.025.jpeg',
-        'santte1a-00.01.33.894.jpeg',
-        'santte1a-00.01.35.862.jpeg',
-        'santte1a-00.01.37.764.jpeg',
-        'santte1a-00.01.40.100.jpeg',
-        'santte1a-00.01.41.201.jpeg',
-        'santte1a-00.01.43.704.jpeg',
-        'santte1a-00.01.45.706.jpeg',
-        'santte1a-00.01.47.741.jpeg',
-        'santte1a-00.01.49.276.jpeg',
-        'santte1a-00.01.51.378.jpeg',
-        'santte1a-00.01.53.180.jpeg',
-        'santte1a-00.01.55.115.jpeg',
-        'santte1a-00.01.57.050.jpeg'
-    ];
-    
-    // Base URL
-    const baseUrl = 'https://lalaland.mx/frames/';
-    
-    // Create image objects WITHOUT coordinates
-    for (let i = 0; i < filenames.length; i++) {
-        const filename = filenames[i];
-        const imageUrl = baseUrl + filename;
-        
-        currentImages.push({
-            url: imageUrl,
-            index: i,
-            filename: filename,
-            timestamp: `Image ${i + 1}`,
-            sequence: i
-            // NO lat/lon coordinates - we'll use marble positions instead
-        });
+
+
+async function createImagesFromFramesFolder() {
+  // reset state
+  currentImages = [];
+  currentImageIndex = -1;
+
+  const track = getCurrentTrack?.();
+  if (!track) {
+    setStatus?.('No track selected - cannot load frames.');
+    updateImageCount?.();
+    return;
+  }
+
+  // GPX base name (e.g., Santte2.gpx -> "Santte2")
+  const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
+  if (!gpxName) {
+    setStatus?.('GPX name not available.');
+    return;
+  }
+
+  // case-insensitive prefix match: "<gpx>-"
+  const requiredStartLC = (gpxName + '-').toLowerCase();
+
+  // --- fetch manifest ---
+  let list;
+  try {
+    const res = await fetch(FRAMES_BASE + 'index.json', { cache: 'no-store' });
+    if (!res.ok) {
+      setStatus?.(`Could not fetch ${FRAMES_BASE}index.json (${res.status})`);
+      updateImageCount?.();
+      return;
     }
-    
-    currentImageIndex = -1;
-    setStatus(`Loaded ${currentImages.length} images from frames folder`);
-    
-    // Start preloading images in background
-    startBackgroundPreload();
+    const data = await res.json();
+    list = Array.isArray(data) ? data : Array.isArray(data.files) ? data.files : [];
+  } catch (e) {
+    console.error(e);
+    setStatus?.('Error reading frames manifest.');
+    return;
+  }
+
+  // normalize to bare filenames
+  const files = list.map(x => String(x).split('/').pop()).filter(Boolean);
+
+  // filter by prefix, case-insensitive, and keep only images
+  const matches = files
+    .filter(name => name.toLowerCase().startsWith(requiredStartLC))
+    .filter(name => /\.(?:jpe?g|png)$/i.test(name))
+    .sort((a, b) => a.localeCompare(b));
+
+  if (matches.length === 0) {
+    setStatus?.(`No frames for "${gpxName}". Expecting files like "${gpxName}-....jpeg"`);
+    updateImageCount?.();
+    return;
+  }
+
+  // build currentImages using absolute URLs
+  currentImages = matches.map((filename, i) => ({
+    url: FRAMES_BASE + filename,
+    index: i,
+    filename,
+    timestamp: filename, // keep as-is; parse if needed
+    sequence: i
+  }));
+
+  setStatus?.(`Loaded ${currentImages.length} image(s) for "${gpxName}" from ${FRAMES_BASE}`);
+  updateImageCount?.();
 }
+
+
 
 
 
