@@ -738,6 +738,8 @@ map.addLayer({
         'text-halo-width': 1
     }
 });
+
+   initConeSystem();
   // Add marble navigation buttons
     addMarbleNavigationButtons();
             setupMapInteractions();
@@ -2347,6 +2349,8 @@ function selectMarble(marbleId) {
     function deselectMarble() {
         selectedMarbleId = null;
         updateMarbleDisplay();
+            // HIDE CONE when no marble selected
+    hideViewCone(); // ADD THIS LINE
         setStatus('Marble deselected');
     }
 
@@ -3410,48 +3414,130 @@ function selectTrackWithoutMapReset(trackId) {
 }
 
 // ===== VIEW CONE =====
-function updateViewCone() {
-    if (!map) return;
+// ===== CONE SYSTEM FUNCTIONS =====
+
+// Forward geodesic (bearing+distance -> dest lon/lat)
+function destFromBearingDistance(lat, lon, bearingDeg, distMeters) {
+    const R = 6378137;
+    const brng = degToRad(bearingDeg);
+    const φ1 = degToRad(lat), λ1 = degToRad(lon);
+    const φ2 = Math.asin(Math.sin(φ1) * Math.cos(distMeters / R) +
+                         Math.cos(φ1) * Math.sin(distMeters / R) * Math.cos(brng));
+    const λ2 = λ1 + Math.atan2(
+        Math.sin(brng) * Math.sin(distMeters / R) * Math.cos(φ1),
+        Math.cos(distMeters / R) - Math.sin(φ1) * Math.sin(φ2)
+    );
+    return [radToDeg(λ2), radToDeg(φ2)];
+}
+
+// Build a polygon ring for a FOV cone
+function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters = 7, steps = 24) {
+    // Use the fovDeg parameter to control the cone angle
+    const half = Math.max(0, Math.min(89, fovDeg / 2)); // Max 89° to avoid full circle
     
-    // Remove old cone
-    if (viewConeMarker) {
-        viewConeMarker.remove();
+    console.log(`Cone FOV: ${fovDeg}° (half: ${half}°)`); // Debug log
+    
+    const start = headingDeg - half;
+    const end = headingDeg + half;
+
+    const ring = [[lon, lat]]; // start at origin
+    for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const brg = start + (end - start) * t;
+        ring.push(destFromBearingDistance(lat, lon, brg, radiusMeters));
     }
+    ring.push([lon, lat]); // close polygon
+    return ring;
+}
+
+// Get horizontal FOV from vertical FOV
+function getHorizontalFovDeg() {
+    const vRad = THREE.MathUtils.degToRad(currentFov);
+    const hRad = 2 * Math.atan(Math.tan(vRad / 2) * camera.aspect);
+    return THREE.MathUtils.radToDeg(hRad);
+}
+
+// Update the map polygon to match current yaw + FOV
+function updateViewCone() {
+    if (!map || !map.getSource('view-cone')) return;
     
     const track = getCurrentTrack();
     if (!track || !selectedMarbleId) return;
     
     const marble = track.marbles.find(m => m.id === selectedMarbleId);
     if (!marble) return;
+
+    const headingDeg = (THREE.MathUtils.radToDeg(currentYaw) + 360) % 360;
+    const fovH = getHorizontalFovDeg();
     
-    // Create view cone element
-    const coneElement = document.createElement('div');
-    coneElement.innerHTML = `
-        <div style="width: 0; height: 0; border-left: 15px solid transparent; border-right: 15px solid transparent; border-bottom: 30px solid rgba(255, 107, 107, 0.8); transform-origin: center bottom;"></div>
-    `;
+    // Use a reasonable fixed radius - you can adjust this
+    const radiusMeters = 10;
     
-    // Add to map at marble position
-    viewConeMarker = new mapboxgl.Marker({
-        element: coneElement,
-        anchor: 'center'
-    })
-    .setLngLat(marble.position)
-    .addTo(map);
+    const ring = makeViewConeRing(marble.position[1], marble.position[0], headingDeg, fovH, radiusMeters, 24);
+
+    map.getSource('view-cone').setData({
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [ring] }
+    });
     
-    // Update rotation immediately
-    updateViewConeRotation();
+    console.log(`Cone updated: FOV=${fovH.toFixed(1)}°, Heading=${headingDeg.toFixed(1)}°`); // Debug
 }
 
-function updateViewConeRotation() {
-    if (!viewConeMarker) return;
-    
-    const coneElement = viewConeMarker.getElement();
-    const arrow = coneElement.querySelector('div');
-    if (arrow) {
-        const degrees = THREE.MathUtils.radToDeg(currentYaw);
-        arrow.style.transform = `rotate(${degrees}deg)`;
+// Initialize the cone source and layers
+function initConeSystem() {
+    if (!map.getSource('view-cone')) {
+        map.addSource('view-cone', {
+            type: 'geojson',
+            data: { 
+                type: 'Feature', 
+                geometry: { 
+                    type: 'Polygon', 
+                    coordinates: [[[0,0],[0,0],[0,0]]] 
+                } 
+            }
+        });
+
+        map.addLayer({
+            id: 'view-cone-fill',
+            type: 'fill',
+            source: 'view-cone',
+            paint: { 
+                'fill-color': '#ff6b6b', 
+                'fill-opacity': 0.2 
+            }
+        });
+
+        map.addLayer({
+            id: 'view-cone-outline',
+            type: 'line',
+            source: 'view-cone',
+            paint: { 
+                'line-color': '#ff6b6b', 
+                'line-width': 2, 
+                'line-opacity': 0.8 
+            }
+        });
     }
 }
+
+// Hide cone when no marble selected
+function hideViewCone() {
+    if (map && map.getSource('view-cone')) {
+        map.getSource('view-cone').setData({
+            type: 'Feature',
+            geometry: { type: 'Polygon', coordinates: [[[0,0],[0,0],[0,0]]] }
+        });
+    }
+}
+
+// Math helpers (add if not already in your code)
+function radToDeg(r) { return r * 180 / Math.PI; }
+function degToRad(d) { return d * Math.PI / 180; }
+function normDeg(d) { d = d % 360; return d < 0 ? d + 360 : d; }
+
+
+
+
 
 // ===== VIEWER CONTROLS =====
 function setupViewerEventListeners() {
@@ -3484,7 +3570,8 @@ function setupViewerEventListeners() {
             lastY = e.clientY;
             
             updateNavigationRing();
-            updateViewConeRotation();
+   
+                    updateViewCone(); // ADD THIS LINE
             refreshBranchButtons();
         }
     });
@@ -3511,7 +3598,7 @@ function setupViewerEventListeners() {
     document.getElementById('zoomIn').addEventListener('click', zoomIn);
     document.getElementById('zoomOut').addEventListener('click', zoomOut);
 
-     canvas.addEventListener('wheel', handleWheelZoom);
+    canvas.addEventListener('wheel', handleWheelZoom, { passive: false });
     
     // Navigation buttons
 document.getElementById('nextImageBtn').addEventListener('click', navigateToBestMarbleInView);
@@ -3609,6 +3696,9 @@ function zoomIn() {
         currentFov -= 5;
         camera.fov = currentFov;
         camera.updateProjectionMatrix();
+        updateZoomDisplay();
+        updateViewCone(); // UPDATE CONE ON ZOOM
+        showToast(`Zoomed in (${currentFov}°)`, 1000);
     }
 }
 
@@ -3617,18 +3707,33 @@ function zoomOut() {
         currentFov += 5;
         camera.fov = currentFov;
         camera.updateProjectionMatrix();
+        updateZoomDisplay();
+        updateViewCone(); // UPDATE CONE ON ZOOM
+        showToast(`Zoomed out (${currentFov}°)`, 1000);
     }
 }
 
 function handleWheelZoom(e) {
     e.preventDefault();
+    e.stopPropagation();
     
-    if (e.deltaY < 0) {
-        // Scroll up - zoom in
-        zoomIn();
-    } else {
-        // Scroll down - zoom out
-        zoomOut();
+    const zoomSpeed = 2; // Adjust this for faster/slower zoom
+    const delta = e.deltaY > 0 ? zoomSpeed : -zoomSpeed;
+    
+    const oldFov = currentFov;
+    currentFov = Math.max(30, Math.min(120, currentFov + delta));
+    
+    if (currentFov !== oldFov) {
+        camera.fov = currentFov;
+        camera.updateProjectionMatrix();
+        
+        // UPDATE CONE IMMEDIATELY
+        updateViewCone();
+        
+        // Force a render to make sure changes are visible
+        renderer.render(scene, camera);
+        
+        console.log(`Zoom: ${currentFov}°`);
     }
 }
 
