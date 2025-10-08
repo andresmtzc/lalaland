@@ -1166,62 +1166,60 @@ function angularDiffDeg(a, b) { // smallest |a-b|
 
     // Select a track for editing
     function selectTrack(trackId) {
-        // Deselect previous track
-        if (currentTrackId && allTracks.has(currentTrackId)) {
-            allTracks.get(currentTrackId).isActive = false;
-        }
-        
-        // Select new track
-        currentTrackId = trackId;
-        const track = allTracks.get(trackId);
-        track.isActive = true;
-        
-        // Update density slider to match selected track
-        currentDensity = track.density;
-        document.getElementById('density-slider').value = currentDensity;
-        document.getElementById('density-value').textContent = currentDensity + '%';
-        
-        // Update marble spacing slider to match current track
-        document.getElementById('marble-spacing-slider').value = track.marbleSpacing;
-        document.getElementById('marble-spacing').textContent = track.marbleSpacing;
-        
-        // Update point counts
-        document.getElementById('points-count').textContent = track.activePoints.length + ' points';
-        document.getElementById('original-count').textContent = 'of ' + track.originalPoints.length;
-
-        updateStatistics();
-        
-        // Reset edit mode but KEEP Catmull-Rom state
-        if (isEditMode) {
-            disableEditing();
-            isEditMode = false;
-            document.getElementById('edit-btn').textContent = 'Edit Mode: OFF';
-            document.getElementById('edit-btn').classList.remove('active');
-        }
-
-        // Keep Catmull-Rom state as is
-        document.getElementById('catmull-btn').textContent = isCatmullRomEnabled ? 'Catmull-Rom: ON' : 'Catmull-Rom: OFF';
-        document.getElementById('catmull-btn').classList.toggle('active', isCatmullRomEnabled);
-        
-        // Clear marble selection state (but keep the track's marbles)
-        selectedMarbleId = null;
-        isDraggingMarble = false;
-        dragMarbleIndex = -1;
-        
-        updateTracksList();
-        updateAllTracksVisualization();
-        updateMarbleDisplay(); // Show current track's marbles
-        
-        // FLY TO THE TRACK BOUNDS
-        flyToTrack(track);
-        
-        // AUTO-LOAD IMAGES WHEN TRACK IS SELECTED
-        if (currentImages.length === 0) {
-            load360Images();
-        }
-        
-        setStatus(`Selected: ${track.name} - ${track.marbles.length} marbles`);
+    // Deselect previous track
+    if (currentTrackId && allTracks.has(currentTrackId)) {
+        allTracks.get(currentTrackId).isActive = false;
     }
+    
+    // Select new track
+    currentTrackId = trackId;
+    const track = allTracks.get(trackId);
+    track.isActive = true;
+    
+    // Update density slider to match selected track
+    currentDensity = track.density;
+    document.getElementById('density-slider').value = currentDensity;
+    document.getElementById('density-value').textContent = currentDensity + '%';
+    
+    // Update marble spacing slider to match current track
+    document.getElementById('marble-spacing-slider').value = track.marbleSpacing;
+    document.getElementById('marble-spacing').textContent = track.marbleSpacing;
+    
+    // Update point counts
+    document.getElementById('points-count').textContent = track.activePoints.length + ' points';
+    document.getElementById('original-count').textContent = 'of ' + track.originalPoints.length;
+
+    updateStatistics();
+    
+    // Reset edit mode but KEEP Catmull-Rom state
+    if (isEditMode) {
+        disableEditing();
+        isEditMode = false;
+        document.getElementById('edit-btn').textContent = 'Edit Mode: OFF';
+        document.getElementById('edit-btn').classList.remove('active');
+    }
+
+    // Keep Catmull-Rom state as is
+    document.getElementById('catmull-btn').textContent = isCatmullRomEnabled ? 'Catmull-Rom: ON' : 'Catmull-Rom: OFF';
+    document.getElementById('catmull-btn').classList.toggle('active', isCatmullRomEnabled);
+    
+    // Clear marble selection state (but keep the track's marbles)
+    selectedMarbleId = null;
+    isDraggingMarble = false;
+    dragMarbleIndex = -1;
+    
+    updateTracksList();
+    updateAllTracksVisualization();
+    updateMarbleDisplay(); // Show current track's marbles
+    
+    // FLY TO THE TRACK BOUNDS
+    flyToTrack(track);
+    
+    // AUTO-LOAD IMAGES WHEN TRACK IS SELECTED
+    load360Images();
+    
+    setStatus(`Selected: ${track.name} - ${track.marbles.length} marbles`);
+}
 
     // Update statistics display
     function updateStatistics() {
@@ -2300,13 +2298,17 @@ function navigateToAdjacentMarble(goForward) {
     
     let nextIndex = goForward ? currentIndex + 1 : currentIndex - 1;
     
-    // Wrap around
-    if (nextIndex < 0) nextIndex = marbles.length - 1;
-    if (nextIndex >= marbles.length) nextIndex = 0;
+    // DON'T wrap around - stop at endpoints
+    if (nextIndex < 0 || nextIndex >= marbles.length) {
+        setStatus(goForward ? 'Already at last marble' : 'Already at first marble');
+        return;
+    }
     
     const nextMarble = marbles[nextIndex];
     selectMarble(nextMarble.id);
     showMarbleImage(nextMarble.id);
+    
+    setStatus(`Moved to marble ${nextIndex + 1}/${marbles.length}`);
 }
 
 function selectMarble(marbleId) {
@@ -2722,7 +2724,7 @@ async function createImagesFromFramesFolder() {
   currentImages = [];
   currentImageIndex = -1;
 
-  const track = getCurrentTrack?.();
+  const track = getCurrentTrack();
   if (!track) {
     setStatus?.('No track selected - cannot load frames.');
     updateImageCount?.();
@@ -2776,7 +2778,7 @@ async function createImagesFromFramesFolder() {
     url: FRAMES_BASE + filename,
     index: i,
     filename,
-    timestamp: filename, // keep as-is; parse if needed
+    timestamp: filename,
     sequence: i
   }));
 
@@ -2809,26 +2811,29 @@ function assignImagesToMarbles() {
         return;
     }
     
-    // ENFORCE 1:1 RATIO - either adjust marbles or images
-    if (marbles.length > currentImages.length) {
-        // Too many marbles - remove excess marbles
-        const excess = marbles.length - currentImages.length;
-        track.marbles = marbles.slice(0, currentImages.length);
-        setStatus(`Removed ${excess} marbles to match ${currentImages.length} available images`);
-    } else if (marbles.length < currentImages.length) {
-        // Too few marbles - we'll assign only to existing marbles
-        setStatus(`Warning: ${currentImages.length - marbles.length} images unused`);
-    }
-    
-    // Now assign 1:1
-    marbles.forEach((marble, index) => {
-        marble.assignedImage = index; // Direct 1:1 mapping
+    // Clear previous assignments
+    marbles.forEach(marble => {
+        marble.assignedImage = null;
     });
     
-    updateMarbleDisplay();
-    setStatus(`Perfect 1:1 assignment: ${marbles.length} marbles ↔ ${marbles.length} images`);
+    // Assign images to marbles in 1:1 order
+    const assignmentCount = Math.min(marbles.length, currentImages.length);
     
-    return marbles.length;
+    for (let i = 0; i < assignmentCount; i++) {
+        marbles[i].assignedImage = i;
+    }
+    
+    updateMarbleDisplay();
+    
+    if (marbles.length > currentImages.length) {
+        setStatus(`Assigned ${assignmentCount} images to ${marbles.length} marbles (${marbles.length - assignmentCount} marbles without images)`);
+    } else if (marbles.length < currentImages.length) {
+        setStatus(`Assigned ${assignmentCount} images to ${marbles.length} marbles (${currentImages.length - assignmentCount} images unused)`);
+    } else {
+        setStatus(`Perfect! All ${assignmentCount} images assigned to marbles`);
+    }
+    
+    return assignmentCount;
 }
 
 function validateImageAssignment() {
@@ -3294,19 +3299,48 @@ function refreshBranchButtons() {
     btn.onclick = () => {
       const track = getCurrentTrack();
       if (!track) return;
-      const target = track.marbles.find(m => m.id === p.toMarbleId);
+      
+      // SEARCH IN ALL TRACKS, not just current track
+      let target = null;
+      let targetTrack = null;
+      
+      // Look through all tracks to find the marble
+      for (const [trackId, track] of allTracks) {
+        target = track.marbles.find(m => m.id === p.toMarbleId);
+        if (target) {
+          targetTrack = track;
+          break;
+        }
+      }
+      
       if (!target) return;
+
+      // Store current map view BEFORE switching
+      const currentZoom = map.getZoom();
+      
+      // If target is in a different track, switch to that track properly
+      if (targetTrack.id !== currentTrackId) {
+        // Use selectTrack but prevent the flyTo bounds
+        selectTrackWithoutMapReset(targetTrack.id);
+      } else {
+        // Same track - just select the marble
+        selectMarble(target.id);
+      }
 
       // store "continue direction" bias
       const current = track.marbles.find(m => m.id === selectedMarbleId);
       if (current) lastHopBearingDeg = bearingDeg(current.position, target.position);
 
-      selectMarble(target.id);
       if (target.assignedImage != null) {
         showMarbleImage(target.id);
       } else {
-        map.flyTo({ center: target.position, zoom: Math.max(map.getZoom(), 17) });
-        setStatus(`Moved to marble ${target.index+1}, no image assigned`);
+        // Smoothly move to target position while preserving zoom
+        map.flyTo({
+          center: target.position,
+          zoom: currentZoom, // Keep current zoom level
+          duration: 1000
+        });
+        setStatus(`Moved to marble ${target.index+1}${targetTrack.id !== currentTrackId ? ` in ${targetTrack.name}` : ''}`);
       }
       updateNavigationRing(true);
     };
@@ -3314,6 +3348,53 @@ function refreshBranchButtons() {
   });
 }
 
+function selectTrackWithoutMapReset(trackId) {
+    // Deselect previous track
+    if (currentTrackId && allTracks.has(currentTrackId)) {
+        allTracks.get(currentTrackId).isActive = false;
+    }
+    
+    // Select new track
+    currentTrackId = trackId;
+    const track = allTracks.get(trackId);
+    track.isActive = true;
+    
+    // Update UI elements
+    currentDensity = track.density;
+    document.getElementById('density-slider').value = currentDensity;
+    document.getElementById('density-value').textContent = currentDensity + '%';
+    document.getElementById('marble-spacing-slider').value = track.marbleSpacing;
+    document.getElementById('marble-spacing').textContent = track.marbleSpacing;
+    document.getElementById('points-count').textContent = track.activePoints.length + ' points';
+    document.getElementById('original-count').textContent = 'of ' + track.originalPoints.length;
+
+    updateStatistics();
+    
+    // Reset edit mode
+    if (isEditMode) {
+        disableEditing();
+        isEditMode = false;
+        document.getElementById('edit-btn').textContent = 'Edit Mode: OFF';
+        document.getElementById('edit-btn').classList.remove('active');
+    }
+
+    // Clear marble selection
+    selectedMarbleId = null;
+    isDraggingMarble = false;
+    dragMarbleIndex = -1;
+    
+    updateTracksList();
+    updateAllTracksVisualization(false); // Don't fit bounds!
+    updateMarbleDisplay();
+    
+    // DON'T fly to track bounds - this is the key change!
+    // flyToTrack(track); ← REMOVED
+    
+    // Load images for the new track
+    load360Images();
+    
+    setStatus(`Switched to: ${track.name} - ${track.marbles.length} marbles`);
+}
 
 // ===== VIEW CONE =====
 function updateViewCone(imageData) {
@@ -3716,10 +3797,10 @@ function showImage(index) {
     // This is called by the old viewer controls, redirect to new system
     showImageByIndex(index);
 }
+  
 
-
-
-
+  
+   
 
     // Initialize the application
     initializeApp();
