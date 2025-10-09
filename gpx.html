@@ -3600,20 +3600,37 @@ function updateViewCone() {
     const marble = track.marbles.find(m => m.id === selectedMarbleId);
     if (!marble) return;
 
-    const headingDeg = (THREE.MathUtils.radToDeg(currentYaw) + 360) % 360;
+    const currentIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+    
+    // 1. GET PATH DIRECTION (base bearing)
+    let pathBearing = 0;
+    if (currentIndex < track.marbles.length - 1) {
+        const nextMarble = track.marbles[currentIndex + 1];
+        const dx = nextMarble.position[0] - marble.position[0];
+        const dy = nextMarble.position[1] - marble.position[1];
+        pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+    } else if (currentIndex > 0) {
+        const prevMarble = track.marbles[currentIndex - 1];
+        const dx = prevMarble.position[0] - marble.position[0];
+        const dy = prevMarble.position[1] - marble.position[1];
+        pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+    }
+
+    // 2. GET USER OFFSET (convert yaw to degrees and apply to path)
+    const userYawDeg = THREE.MathUtils.radToDeg(currentYaw);
+    const finalHeading = (pathBearing + userYawDeg + 360) % 360;
+
+    console.log('Path bearing:', pathBearing, 'User yaw:', userYawDeg, 'Final heading:', finalHeading);
+
     const fovH = getHorizontalFovDeg();
+    const radiusMeters = 15;
     
-    // Use a reasonable fixed radius - you can adjust this
-    const radiusMeters = 10;
-    
-    const ring = makeViewConeRing(marble.position[1], marble.position[0], headingDeg, fovH, radiusMeters, 24);
+    const ring = makeViewConeRing(marble.position[1], marble.position[0], finalHeading, fovH, radiusMeters, 24);
 
     map.getSource('view-cone').setData({
         type: 'Feature',
         geometry: { type: 'Polygon', coordinates: [ring] }
     });
-    
-    console.log(`Cone updated: FOV=${fovH.toFixed(1)}°, Heading=${headingDeg.toFixed(1)}°`); // Debug
 }
 
 // Initialize the cone source and layers
