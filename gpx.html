@@ -652,11 +652,14 @@ function initializeApp() {
                 id: 'gpx-tracks-line',
                 type: 'line',
                 source: 'tracks-line',
-                paint: {
-                    'line-color': ['get', 'color'],
-                    'line-width': ['case', ['==', ['get', 'isActive'], true], 4, 2],
-                    'line-opacity': ['case', ['==', ['get', 'isActive'], true], 0.8, 0.5]
-                }
+    paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ['case', ['==', ['get', 'isActive'], true], 4, 2],
+        'line-opacity': ['case', ['==', ['get', 'isActive'], true], 0.8, 0.5]
+    },
+    layout: {
+        'visibility': 'none' // HIDDEN BY DEFAULT
+    }
             });
 
             // Add control points layer
@@ -671,11 +674,14 @@ function initializeApp() {
                     'circle-stroke-color': '#ffffff',
                     'circle-opacity': ['case', 
                         ['all', 
-                            ['==', ['get', 'isActive'], true],
-                            ['==', ['get', 'isEditMode'], true]
-                        ], 1, 0
-                    ]
-                }
+                ['==', ['get', 'isActive'], true],
+                ['==', ['get', 'isEditMode'], true]
+            ], 1, 0
+        ]
+    },
+    layout: {
+        'visibility': 'none' // HIDDEN BY DEFAULT
+    }
             });
 
             // Add marbles layer - FIXED: removed broken comment
@@ -722,7 +728,8 @@ map.addLayer({
         ],
         'text-size': 10,
         'text-offset': [1, 0],
-        'text-anchor': 'center'
+        'text-anchor': 'center',
+        'visibility': 'none' // HIDDEN BY DEFAULT
     },
     paint: {
         'text-color': '#FFFFFF',
@@ -730,7 +737,7 @@ map.addLayer({
         'text-halo-width': 1
     }
 });
-
+ addTrackToggle();
         initConeSystem();
         addMarbleNavigationButtons();
         setupMapInteractions();
@@ -2902,7 +2909,54 @@ async function load360Images() {
   }
 }
 
+function addTrackToggle() {
+    console.log('Adding tracks toggle button...');
+    
+    const controls = document.getElementById('controls');
+    if (!controls) {
+        console.error('Controls element not found!');
+        return;
+    }
+    
+    const toggleHTML = `
+        <div class="control-group">
+            <button onclick="toggleTracksVisibility()" id="tracks-toggle-btn">
+                Show Tracks & Numbers: OFF
+            </button>
+        </div>
+    `;
+    
+    // Try to insert after the edit mode button group
+    const editGroup = controls.querySelector('.control-group:nth-child(2)');
+    if (editGroup) {
+        editGroup.insertAdjacentHTML('afterend', toggleHTML);
+        console.log('Tracks toggle added successfully');
+    } else {
+        // Fallback: add to the end
+        controls.insertAdjacentHTML('beforeend', toggleHTML);
+        console.log('Tracks toggle added to end (fallback)');
+    }
+}
 
+let tracksVisible = false;
+
+function toggleTracksVisibility() {
+    tracksVisible = !tracksVisible;
+    const btn = document.getElementById('tracks-toggle-btn');
+    btn.textContent = `Show Tracks & Numbers: ${tracksVisible ? 'ON' : 'OFF'}`;
+    btn.classList.toggle('active', tracksVisible);
+    
+    // Update map layers visibility - TRACKS AND NUMBER TAGS
+    if (tracksVisible) {
+        map.setLayoutProperty('gpx-tracks-line', 'visibility', 'visible');
+        map.setLayoutProperty('gpx-control-points', 'visibility', 'visible');
+        map.setLayoutProperty('marble-labels', 'visibility', 'visible'); // SHOW NUMBER TAGS
+    } else {
+        map.setLayoutProperty('gpx-tracks-line', 'visibility', 'none');
+        map.setLayoutProperty('gpx-control-points', 'visibility', 'none');
+        map.setLayoutProperty('marble-labels', 'visibility', 'none'); // HIDE NUMBER TAGS
+    }
+}
 
 async function createImagesFromFramesFolder() {
   // reset state
