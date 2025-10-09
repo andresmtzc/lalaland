@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2389,6 +2390,7 @@ function toggleMarbleLock(marbleId) {
 function handleMarbleClick(e) {
     if (e.features.length > 0) {
         const marbleId = e.features[0].properties.id;
+        const trackId = e.features[0].properties.trackId; // Get the track ID
         
         // If Ctrl/Cmd click, toggle lock
         if (e.originalEvent.ctrlKey || e.originalEvent.metaKey) {
@@ -2396,13 +2398,54 @@ function handleMarbleClick(e) {
             return;
         }
         
-        // Regular click - select marble AND show its image
-        selectMarble(marbleId);
-        showMarbleImage(marbleId); // This now shows the 360 image
-        
-
+        // CHECK IF WE NEED TO SWITCH TRACKS
+        if (trackId !== currentTrackId) {
+            // Switch to the marble's track first
+            selectTrackAndThenMarble(trackId, marbleId);
+        } else {
+            // Same track - just select the marble
+            selectMarble(marbleId);
+            showMarbleImage(marbleId);
+        }
     } else {
         deselectMarble();
+    }
+}
+
+// NEW FUNCTION: Switch track then select marble
+let isSwitchingToMarble = false;
+
+async function selectTrackAndThenMarble(trackId, marbleId) {
+    const previousTrackId = currentTrackId;
+    
+    try {
+        isSwitchingToMarble = true; // SET FLAG
+        
+        // Switch tracks first
+        selectTrackWithoutMapReset(trackId);
+        
+        // Wait a bit for track switch
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // NOW select the marble
+        selectMarble(marbleId);
+        
+        // Force the image to show for this marble
+        const track = getCurrentTrack();
+        const marble = track.marbles.find(m => m.id === marbleId);
+        if (marble && marble.assignedImage !== null) {
+            showImageByIndex(marble.assignedImage);
+        }
+        
+        setStatus(`Switched to ${allTracks.get(trackId).name} and selected marble`);
+        
+    } catch (error) {
+        console.error('Error switching tracks:', error);
+        if (previousTrackId) {
+            selectTrackWithoutMapReset(previousTrackId);
+        }
+    } finally {
+        isSwitchingToMarble = false; // CLEAR FLAG
     }
 }
 
@@ -2724,64 +2767,66 @@ function selectMarble(marbleId) {
     }
 
 function updateMarbleDisplay() {
-    const track = getCurrentTrack();
-    const marbles = track ? track.marbles : [];
+    // COLLECT MARBLES FROM ALL TRACKS
+    const allMarbles = [];
     
-    if (marbles.length === 0) {
-        map.getSource('marbles').setData({
-            type: 'FeatureCollection',
-            features: []
+    allTracks.forEach((track, trackId) => {
+        track.marbles.forEach((marble, index) => {
+            const hasImage = marble.assignedImage !== null;
+            const imageIndex = hasImage ? marble.assignedImage + 1 : 0;
+            const isWaypoint = marble.isWaypoint || false;
+            const isFromCurrentTrack = (trackId === currentTrackId);
+            
+            allMarbles.push({
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: marble.position
+                },
+                properties: {
+                    id: marble.id,
+                    trackId: trackId,
+                    index: index,
+                    isDragging: marble.isDragging || false,
+                    isLocked: marble.isLocked || false,
+                    isFixed: marble.isFixed || false,
+                    isSelected: (marble.id === selectedMarbleId),
+                    hasImage: hasImage,
+                    imageIndex: imageIndex,
+                    isWaypoint: isWaypoint,
+                    isFromCurrentTrack: isFromCurrentTrack, // Highlight current track marbles
+                    originalName: marble.originalName || '',
+                    position: `${index + 1}/${track.marbles.length}`,
+                    distance: `${Math.round(marble.distanceAlongRoute)}m`,
+                    name: isWaypoint ? (marble.originalName || `Waypoint ${index + 1}`) : `Marble ${index + 1}`,
+                    trackName: track.name // Include track name for tooltips
+                }
+            });
         });
-        document.getElementById('marble-count').textContent = '0 marbles';
-        return;
-    }
-    
-    const marbleFeatures = marbles.map((marble, index) => {
-        const hasImage = marble.assignedImage !== null;
-        const imageIndex = hasImage ? marble.assignedImage + 1 : 0;
-        const isWaypoint = marble.isWaypoint || false;
-        
-        return {
-            type: 'Feature',
-            geometry: {
-                type: 'Point',
-                coordinates: marble.position
-            },
-            properties: {
-                id: marble.id,
-                index: index,
-                isDragging: marble.isDragging || false,
-                isLocked: marble.isLocked || false,
-                isFixed: marble.isFixed || false,
-                isSelected: (marble.id === selectedMarbleId),
-                hasImage: hasImage,
-                imageIndex: imageIndex,
-                isWaypoint: isWaypoint, // Add waypoint flag
-                originalName: marble.originalName || '',
-                // Add position info for tooltips
-                position: `${index + 1}/${marbles.length}`,
-                distance: `${Math.round(marble.distanceAlongRoute)}m`,
-                // Enhanced tooltip for waypoints
-                name: isWaypoint ? (marble.originalName || `Waypoint ${index + 1}`) : `Marble ${index + 1}`
-            }
-        };
     });
     
+    // UPDATE THE SOURCE WITH ALL MARBLES
     map.getSource('marbles').setData({
         type: 'FeatureCollection',
-        features: marbleFeatures
+        features: allMarbles
     });
      
-    // Update marble count with waypoint info
-    const marblesWithImages = marbles.filter(m => m.assignedImage !== null).length;
-    const waypointMarbles = marbles.filter(m => m.isWaypoint).length;
-    const regularMarbles = marbles.length - waypointMarbles;
+    // Update marble count for ALL tracks
+    let totalMarbles = 0;
+    let totalWithImages = 0;
+    let totalWaypoints = 0;
+    
+    allTracks.forEach(track => {
+        totalMarbles += track.marbles.length;
+        totalWithImages += track.marbles.filter(m => m.assignedImage !== null).length;
+        totalWaypoints += track.marbles.filter(m => m.isWaypoint).length;
+    });
     
     document.getElementById('marble-count').textContent = 
-        `${marbles.length} marbles (${waypointMarbles} waypoints, ${regularMarbles} auto, ${marblesWithImages} with images)`;
+        `${totalMarbles} marbles across ${allTracks.size} tracks (${totalWaypoints} waypoints, ${totalWithImages} with images)`;
     
     enableMarbleDragging();
-}   
+}
 
     function enableMarbleDragging() {
         // Clear existing handlers to avoid duplicates
@@ -2832,10 +2877,24 @@ async function load360Images() {
     await createImagesFromFramesFolder();
 
     if (currentImages.length > 0) {
-      setStatus(`Loaded ${currentImages.length} images - assigning to marbles`);
-      assignImagesToMarbles();
-      showImageByIndex(0);        // show first
-      startBackgroundPreload(3);  // keep as you had it
+      setStatus(`Loaded ${currentImages.length} images for current track`);
+      
+      // ONLY auto-show first image if we're NOT switching to a specific marble
+      if (!isSwitchingToMarble) {
+        if (selectedMarbleId) {
+          const track = getCurrentTrack();
+          const marble = track.marbles.find(m => m.id === selectedMarbleId);
+          if (marble && marble.assignedImage !== null) {
+            showImageByIndex(marble.assignedImage);
+          } else {
+            showImageByIndex(0);
+          }
+        } else {
+          showImageByIndex(0);
+        }
+      }
+      
+      startBackgroundPreload(3);
     }
   } catch (error) {
     console.error('Error loading 360 images:', error);
@@ -3521,15 +3580,14 @@ function selectTrackWithoutMapReset(trackId) {
     updateAllTracksVisualization(false); // Don't fit bounds!
     updateMarbleDisplay();
     
-
-        // REMOVE CONE WHEN SWITCHING TRACKS (no marble selected)
+    // Remove cone when switching tracks
     if (viewConeMarker) {
         viewConeMarker.remove();
         viewConeMarker = null;
     }
-    // DON'T fly to track bounds
-    // DON'T load images automatically - this is interfering!
-    // load360Images(); ← REMOVE THIS LINE
+     
+    // IMPORTANT: Load images for the new track
+    load360Images();
     
     setStatus(`Switched to: ${track.name} - ${track.marbles.length} marbles`);
 }
