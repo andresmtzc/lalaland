@@ -2466,7 +2466,7 @@ fetch('https://lalaland.mx/mapbox.txt')
         await enrichLotsWithAvailability();
 
 animateLots(map, () => {
-  addCustomImage(map);
+['drone', 'agora'].forEach(type => addCustomImage(map, type));
   addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
     
@@ -3337,33 +3337,61 @@ function shuffle(arr) {
 
 <script>
 // DRONE IMAGE - Add custom recent drone satellite image as a raster layer
-function addCustomImage(map) {
-  // Coordinates for the custom drone image (georeferenced)
-  const imageBounds = [
-    [-100.16483, 25.467111], // Top-left corner [lng, lat]
-    [-100.154874, 25.467111], // Top-right corner [lng, lat]
-    [-100.154874, 25.457155], // Bottom-right corner [lng, lat]
-    [-100.16483, 25.457155],  // Bottom-left corner [lng, lat]
-  ];
+function addCustomImage(map, imageType = 'drone') {
+  const images = {
+    drone: {
+      url: 'https://lalaland.mx/santte2.jpg',
+      layerId: 'drone-satellite-layer',
+      sourceId: 'drone-satellite',
+      message: "Cargamos la imágen aérea más actual — (marzo 2025)",
+      bounds: [
+        [-100.16483, 25.467111], // Top-left [lng, lat]
+        [-100.154874, 25.467111], // Top-right
+        [-100.154874, 25.457155], // Bottom-right
+        [-100.16483, 25.457155],  // Bottom-left
+      ]
+    },
+    agora: {
+      url: 'https://lalaland.mx/agora.jpg',
+      layerId: 'agora-satellite-layer',
+      sourceId: 'agora-satellite',
+      message: "Cargamos la imágen aérea más actual — (marzo 2025)",
+      bounds: [
+    [-100.183685, 25.443361], // Top-left [lng, lat]
+    [-100.173731, 25.443361], // Top-right
+    [-100.173731, 25.433407], // Bottom-right
+    [-100.183685, 25.433407], // Bottom-left
+      ]
+    }
+  };
 
-  map.addSource('drone-satellite', { 
+  const config = images[imageType];
+
+  // Remove existing layers/sources if they exist
+  if (map.getLayer(config.layerId)) {
+    map.removeLayer(config.layerId);
+  }
+  if (map.getSource(config.sourceId)) {
+    map.removeSource(config.sourceId);
+  }
+
+  map.addSource(config.sourceId, {
     type: 'image',
-    url: 'https://lalaland.mx/santte2.jpg', // Your drone image URL
-    coordinates: imageBounds // Set the coordinates for where the image will be placed
+    url: config.url,
+    coordinates: config.bounds
   });
 
   map.addLayer({
-    id: 'drone-satellite-layer',
+    id: config.layerId,
     type: 'raster',
-    source: 'drone-satellite',
+    source: config.sourceId,
     paint: {
       'raster-opacity': 0
     }
-  }, 'road');  // Insert BELOW 'road' layer, so roads are on top
+  }, 'road');
 
-  // Then fade in opacity as you do
-  fadeInImage(map);
-  showToaster("Cargamos la imágen aérea más actual — (marzo 2025)");
+  fadeInImage(map, config.layerId);
+  showToaster(config.message);
 }
 
 //CTA
@@ -3380,7 +3408,7 @@ function showCta(message = "Want more info about this lot?", duration = 5000) {
 }
  
 // Fade-in effect for the image (opacity increases gradually from 0 to 1)
-function fadeInImage(map) {
+function fadeInImage(map, layerId) {
   let opacity = 0;
   const interval = setInterval(() => {
     opacity += 0.05;  // Increase opacity gradually
@@ -3388,9 +3416,9 @@ function fadeInImage(map) {
       opacity = 1;
       clearInterval(interval); // Stop once opacity reaches 1
     }
-    map.setPaintProperty('drone-satellite-layer', 'raster-opacity', opacity);
+    map.setPaintProperty(layerId, 'raster-opacity', opacity);
   }, 50); // Adjust the interval for smoother or faster fade-in
-} 
+}
 
 function showToaster(message, duration = 3000) {
   const toaster = document.getElementById('toaster');
@@ -7542,6 +7570,6 @@ function initChatAvailability() {
 }
 </script>
 
-
+  
 </body> 
 </html>   
