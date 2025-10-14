@@ -2469,14 +2469,14 @@ fetch('https://lalaland.mx/mapbox.txt')
     
     const m = new mapboxgl.Map({
       container: 'map',
-      style: 'mapbox://styles/mapbox/satellite-streets-v12',
+      style: 'mapbox://styles/andresmtzc/cmgpy4sy8005101qo65pf7ve2',
       bounds: communityBounds,
       fitBoundsOptions: {
         padding: 50,
         maxZoom: 16
       }
     });
- 
+   
     window.map = m;
     map = m;
 
@@ -4676,8 +4676,6 @@ function openModal(lot = null, baseIndex = 0) {
   const modal = document.getElementById('lotModal');
   const wasHidden = !modal.classList.contains('show');
 
-
-  
   // Check if we're just switching lots in an already-open modal
   const isJustSwitchingLots = wasHidden === false && lot && !infoMode && !modal.classList.contains('pin-mode');
   
@@ -4689,37 +4687,41 @@ function openModal(lot = null, baseIndex = 0) {
     modal.classList.remove('pin-mode');
   }
 
-
-
-
+  // 🔥 CONSOLIDATED: Apply fraccionamiento filter function
+  function applyFraccFilter(shouldRender = true) {
+  try {
+    // Get fracc directly from the lot data - this should work if your Supabase data is correct
+    const fracc = (lot && (lot.fraccionamiento || '').toString().trim()) || 'santte1';
+    
+    const modalEl = document.getElementById('lotModal');
+    const currentFracc = modalEl?.dataset.fracc || '';
+    
+    // Only re-filter if the fraccionamiento has changed
+    if (fracc !== currentFracc) {
+      if (modalEl) modalEl.dataset.fracc = fracc;
+      const headerFraccEl = document.getElementById('headerFracc');
+      if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
+      if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
+        // Filter baseLots by fraccionamiento
+        baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
+        updateLotsArray();
+        // Only re-render when requested
+        if (shouldRender) {
+          render();
+        }
+      }
+    }
+    if (window.resetUnitButtons) window.resetUnitButtons();
+  } catch (e) {
+    console.warn('Fraccionamiento filter failed:', e);
+  }
+}
 
   // If just switching lots, handle it efficiently without resetting everything
   if (isJustSwitchingLots) {
-    // ⤵️ Apply fraccionamiento filter FIRST when switching between different fraccionamientos
-    (function applyFraccFilter() {
-      try {
-        const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
-          || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
-        const modalEl = document.getElementById('lotModal');
-        const currentFracc = modalEl?.dataset.fracc || '';
-        
-        // Only re-filter if the fraccionamiento has changed
-        if (fracc !== currentFracc) {
-          if (modalEl) modalEl.dataset.fracc = fracc;
-          const headerFraccEl = document.getElementById('headerFracc');
-          if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
-          if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
-            // Filter baseLots by fraccionamiento
-            baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
-            updateLotsArray();
-            render(); // Re-render the list with the new filtered lots
-          }
-        }
-        if (window.resetUnitButtons) window.resetUnitButtons();
-      } catch (e) {
-        console.warn('Fraccionamiento filter failed:', e);
-      }
-    })();
+    // ⤵️ Apply filter FIRST when switching between different fraccionamientos
+    // Use shouldRender: true to force re-render when switching communities
+    applyFraccFilter(true);
 
     // Just scroll to the new lot after filtering
     const scrollToIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
@@ -4758,7 +4760,6 @@ function openModal(lot = null, baseIndex = 0) {
   document.getElementById('calendlyEmbed').style.display = 'none';
   document.getElementById('lotDetails').style.display = 'block';
 
-
   // 🔶 If we're going to list mode, clear previous INFO content *before showing the modal*
   const modalInfoEl = document.getElementById('modalInfo');
   const customScrollbarEl = document.getElementById('customScrollbar');
@@ -4774,20 +4775,19 @@ function openModal(lot = null, baseIndex = 0) {
     }
   }
 
-document.getElementById('communitySearchBtn')?.classList.add('hide');
-document.getElementById('lalalandInfoBtn')?.classList.add('hide');
+  document.getElementById('communitySearchBtn')?.classList.add('hide');
+  document.getElementById('lalalandInfoBtn')?.classList.add('hide');
+  
   // Now show the modal
   modal.classList.add('show');
   modal.style.display = 'block';
   if (wasHidden) adjustMapForModal();
 
-
-
   // 🔸 INFO MODE short-circuit (your existing block)
   if (infoMode) {
     modal.classList.add('expanded', 'info-mode');
     modalInfoEl.innerHTML = `
-      <div style="padding:20px; color:#8a8880; height:2000px;"> <!-- Added height for testing -->
+      <div style="padding:20px; color:#8a8880; height:2000px;">
         <h2 style="color:#a17345; margin-bottom:10px;">Sobre Santte 2</h2>
         <p>Bienvenido a Santte 2. Aquí puedes poner descripción, ubicación, beneficios, etc.</p>
         <p>Para más información contáctanos por WhatsApp o visita nuestras oficinas.</p>
@@ -4810,10 +4810,9 @@ document.getElementById('lalalandInfoBtn')?.classList.add('hide');
   }
 
   // 👇 Normal list flow
-
-  
   modal.classList.add('lot-mode');
   modal.classList.remove('info-mode');
+
   const doScrollAndHighlight = () => {
     const scrollToIndex = lot
       ? baseLots.findIndex(l => l.number === extractLotNumber(lot.name))
@@ -4832,26 +4831,8 @@ document.getElementById('lalalandInfoBtn')?.classList.add('hide');
   // Only fetch and render if needed
   if (!isDataLoaded) {
     fetchLots().then(() => {
-      // ⤵️ Apply fraccionamiento filter based on clicked lot (and update header)
-      (function applyFraccFilter() {
-        try {
-          const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
-            || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
-          const modalEl = document.getElementById('lotModal');
-          if (modalEl) modalEl.dataset.fracc = fracc;
-          const headerFraccEl = document.getElementById('headerFracc');
-          if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
-          if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
-            // Filter baseLots by fraccionamiento
-            baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
-            updateLotsArray();
-          }
-              resetUnitButtons();
-        } catch (e) {
-          console.warn('Fraccionamiento filter failed:', e);
-        }
-      })(); 
-
+      // 🔥 Apply filter when data is first loaded
+      applyFraccFilter(false); // Don't render yet, we'll call render() below
       render();
       requestAnimationFrame(() => {
         requestAnimationFrame(doScrollAndHighlight);
@@ -4860,33 +4841,17 @@ document.getElementById('lalalandInfoBtn')?.classList.add('hide');
   } else {
     // Only re-render if content was cleared (modal was hidden)
     if (wasHidden || !lot) {
-      // ⤵️ Apply fraccionamiento filter based on clicked lot (and update header)
-      (function applyFraccFilter() {
-        try {
-          const fracc = (lot && (lot.fraccionamiento || '').toString().trim())
-            || (/^b/i.test(lot?.name || '') ? 'santte2' : 'santte1');
-          const modalEl = document.getElementById('lotModal');
-          if (modalEl) modalEl.dataset.fracc = fracc;
-
-          if (window.resetUnitButtons) window.resetUnitButtons();
-          const headerFraccEl = document.getElementById('headerFracc');
-          if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
-          if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
-            // Filter baseLots by fraccionamiento
-            baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
-            updateLotsArray();
-          }
-        } catch (e) {
-          console.warn('Fraccionamiento filter failed:', e);
-        }
-      })();
-
+      // 🔥 Apply filter when opening modal fresh or with new lot
+      applyFraccFilter(false); // Don't render yet, we'll call render() below
       render();
       requestAnimationFrame(() => {
         requestAnimationFrame(doScrollAndHighlight);
       });
     } else {
       // Modal is already open with content - just scroll to the lot
+      // 🔥 Apply filter but don't re-render (content is already there)
+      applyFraccFilter(false);
+      
       const scrollToIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
       if (scrollToIndex !== -1) {
         scrollToBaseIndex(scrollToIndex, true);
@@ -7416,25 +7381,52 @@ function shareCurrentLot() {
   let lotName = '';
   let lotNumber = '';
   
-  // Try to get from detail view
-  const detailLotNumber = document.querySelector('.lot-details .lote-number');
-  if (detailLotNumber) {
-    lotNumber = detailLotNumber.textContent.trim();
-  }
-  
-  // Try to get from list view (centered lot)
-  if (!lotNumber) {
-    const centeredRow = document.querySelector('.info-row.center .lote-number');
-    if (centeredRow) {
-      lotNumber = centeredRow.textContent.trim();
+  // METHOD 1: Try to get from detail view (more reliable)
+  const detailContainer = document.querySelector('.lot-details.active');
+  if (detailContainer) {
+    // Look for the lot number in the detail view
+    const lotNumberEl = detailContainer.querySelector('.lote-number');
+    if (lotNumberEl) {
+      lotNumber = lotNumberEl.textContent.trim();
+      
+      // Also try to get the ID text if available
+      const idText = detailContainer.querySelector('div[style*="font-size: 14px"]');
+      if (idText && idText.textContent.includes('ID:')) {
+        const idMatch = idText.textContent.match(/ID:\s*(\S+)/);
+        if (idMatch) {
+          lotName = idMatch[1]; // This should be the full lot name
+        }
+      }
     }
   }
   
-  // Find the lot data
-  if (lotNumber) {
-    const lot = lotData.find(l => extractLotNumber(l.name) === lotNumber);
-    if (lot) {
-      lotName = lot.name;
+  // METHOD 2: If we have lotNumber but not lotName, try to find it in the data
+  if (lotNumber && !lotName) {
+    // Search through all lot data to find matching lot
+    const foundLot = lotData.find(l => extractLotNumber(l.name) === lotNumber);
+    if (foundLot) {
+      lotName = foundLot.name;
+    }
+  }
+  
+  // METHOD 3: Fallback - use currentLotIndex if available
+  if (!lotName && typeof currentLotIndex !== 'undefined' && currentLotIndex !== -1) {
+    const currentLot = lotData[currentLotIndex];
+    if (currentLot) {
+      lotName = currentLot.name;
+      lotNumber = extractLotNumber(currentLot.name);
+    }
+  }
+  
+  // METHOD 4: Last resort - try to get from centered row in list
+  if (!lotName) {
+    const centeredRow = document.querySelector('.info-row.center .lote-number');
+    if (centeredRow) {
+      lotNumber = centeredRow.textContent.trim();
+      const foundLot = lotData.find(l => extractLotNumber(l.name) === lotNumber);
+      if (foundLot) {
+        lotName = foundLot.name;
+      }
     }
   }
   
@@ -7450,11 +7442,8 @@ function shareCurrentLot() {
   
   console.log('🔗 Share attempt:', { lotName, lotNumber, shareUrl });
   
-  // 🟢 IMPROVED WEB SHARE API
+  // Rest of your share logic remains the same...
   if (navigator.share) {
-    console.log('📱 Web Share API available');
-    
-    // Add small delay to ensure user gesture context is preserved
     setTimeout(() => {
       navigator.share({
         title: `Lote ${lotNumber} - Lalaland`,
@@ -7465,15 +7454,12 @@ function shareCurrentLot() {
         showToaster('Shared successfully! 📤');
       }).catch((error) => {
         console.log('❌ Share failed or cancelled:', error);
-        // Don't show error if user cancelled
         if (error.name !== 'AbortError') {
           fallbackShare(shareUrl, lotNumber);
         }
       });
     }, 100);
-    
   } else {
-    console.log('📱 Web Share API not available');
     fallbackShare(shareUrl, lotNumber);
   }
 }
