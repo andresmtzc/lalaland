@@ -1881,6 +1881,27 @@ opacity:1;
     box-sizing: border-box;
 }
 
+
+.price-edit {
+    font-size: 24px;
+    color: #8a8880;
+    border: 1px solid #ff8400;
+    border-radius: 4px;
+    padding: 2px 8px;
+    background: #fcfaf3;
+    width: 80px;
+    text-align: center;
+    font-family: 'Barlow Condensed', Arial, sans-serif;
+    font-weight: 400;
+}
+
+.price-edit:focus {
+    outline: none;
+    border-color: #ff8400;
+    box-shadow: 0 0 0 2px rgba(255,132,0,0.2);
+    background: #fff;
+}
+
 /* Hide floating UI whenever the modal is open */
 body.modal-open .lalaland-button,
 body.modal-open #communitySearchBtn,
@@ -2196,38 +2217,65 @@ ctaobserver.observe(ctaToaster, {
           resolve();
 
           // ✅ ✅ ✅ ADD REALTIME SUBSCRIPTION HERE
-          const channel = window.supabaseClient
-            .channel('lots-realtime')
-            .on(
-              'postgres_changes',
-              {
-                event: '*',
-                schema: 'public',
-                table: 'lots',
-              },
-              (payload) => {
-                console.log('📡 Change detected:', payload);
+         const channel = window.supabaseClient
+  .channel('lots-realtime')
+  .on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'lots',
+    },
+    (payload) => {
+      console.log('📡 Change detected:', payload);
 
-                const updatedLotName = payload.new?.lot_name || payload.old?.lot_name;
-                const updatedIndex = lotData.findIndex(l => l.name === updatedLotName);
+      const updatedLotName = payload.new?.lot_name || payload.old?.lot_name;
+      const lotNumber = extractLotNumber(updatedLotName);
 
-                if (updatedIndex !== -1) {
-                  const lot = lotData[updatedIndex];
+      // 🟢 UPDATE ALL DATA SOURCES, not just lotData
+      
+      // 1. Update lotData (map data)
+      const updatedIndex = lotData.findIndex(l => l.name === updatedLotName);
+      if (updatedIndex !== -1) {
+        const lot = lotData[updatedIndex];
+        const raw = payload.new?.availability ?? lot.availability ?? 'Available';
+        lot.availability = raw;
+        lot.featured = raw.toLowerCase() === 'featured';
+        lot.rSize = payload.new?.rSize ?? lot.rSize;
+        lot.millones = payload.new?.millones ?? lot.millones;
 
-                  // Update local lot data
-const raw = payload.new?.availability ?? lot.availability ?? 'Available';
-lot.availability = raw;                              // "Available" | "Sold" | "Featured"
-lot.featured = raw.toLowerCase() === 'featured';
-                  lot.rSize = payload.new?.rSize ?? lot.rSize;
-                  lot.millones = payload.new?.millones ?? lot.millones;
+        // Refresh visual on map
+        refreshLotVisuals(map, lot);
+      }
 
-                  // Refresh visual on map
-                  refreshLotVisuals(map, lot);
-                }
-              }
-            )
-            .subscribe()
-            .catch(error => console.error('❌ Realtime subscription failed:', error));
+      // 🟢 NEW: Update baseLotsAll (modal data source)
+      if (window.baseLotsAll) {
+        const baseLotAll = window.baseLotsAll.find(bl => bl.number === lotNumber);
+        if (baseLotAll) {
+          baseLotAll.availability = payload.new?.availability ?? baseLotAll.availability;
+          baseLotAll.rSize = payload.new?.rSize ?? baseLotAll.rSize;
+          baseLotAll.price = payload.new?.millones ?? baseLotAll.price;
+        }
+      }
+
+      // 🟢 NEW: Update baseLots (current filtered list)
+      if (baseLots) {
+        const baseLot = baseLots.find(bl => bl.number === lotNumber);
+        if (baseLot) {
+          baseLot.availability = payload.new?.availability ?? baseLot.availability;
+          baseLot.rSize = payload.new?.rSize ?? baseLot.rSize;
+          baseLot.price = payload.new?.millones ?? baseLot.price;
+        }
+      }
+
+      // 🟢 NEW: Re-render modal if it's open
+      if (document.getElementById('lotModal').classList.contains('show')) {
+        render();
+      }
+    }
+  )
+  .subscribe()
+  .catch(error => console.error('❌ Realtime subscription failed:', error));
         })
         .catch(e => {
           console.error('Failed to load Supabase config:', e);
@@ -3976,6 +4024,7 @@ function setupLotClickHandlers() {
 }
 
 
+
 async function showDetailViewForLot(index, isSwitchingLots = false) {
   const modalEl        = document.getElementById('lotModal');
   const lotDetails     = document.getElementById('lotDetails');
@@ -4075,7 +4124,10 @@ detailRow.innerHTML = `
 
   <div class="lot-price">
     <div class="price-wrapper">
-      <span class="price">$${lot.price}</span>
+      ${editMode ? 
+        `<input type="text" class="price-edit" value="${lot.price}" data-lot-number="${lot.number}" data-original-price="${lot.price}">` :
+        `<span class="price">$${lot.price}</span>`
+      }
       <span class="mdp">MDP</span>
     </div>
   </div>
@@ -4084,6 +4136,48 @@ detailRow.innerHTML = `
 `;
 
   detailContainer.appendChild(detailRow);
+
+  // 🟢 ADD SUPABASE SAVE CODE RIGHT HERE
+  if (editMode) {
+    const priceInput = detailContainer.querySelector('.price-edit');
+    
+    priceInput.addEventListener('blur', async function() {
+    const newPrice = this.value.replace('$', '').trim();
+    const lotNumber = this.dataset.lotNumber;
+    const originalPrice = this.dataset.originalPrice;
+    
+    if (!newPrice || newPrice === originalPrice) return;
+    
+    try {
+        await window.supabaseReady;
+        const { error } = await window.supabaseClient
+            .from('lots')
+            .update({ millones: newPrice })
+            .eq('lot_name', `lot${lotNumber}`);
+        
+        if (error) throw error;
+        
+        showToaster(`✅ Price updated to $${newPrice} MDP`);
+        this.dataset.originalPrice = newPrice;
+        
+        // 🟢 UPDATE IMMEDIATELY while waiting for real-time
+        const baseLot = window.baseLotsAll.find(bl => bl.number === lotNumber);
+        if (baseLot) baseLot.price = newPrice;
+        
+        const currentBaseLot = baseLots.find(bl => bl.number === lotNumber);
+        if (currentBaseLot) currentBaseLot.price = newPrice;
+        
+    } catch (error) {
+        console.error('Failed to update price:', error);
+        showToaster('❌ Failed to update price');
+        this.value = originalPrice;
+    }
+});
+
+    priceInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') this.blur();
+    });
+  }
 
   // CTA Buttons Section
   const ctaSection = document.createElement('div');
@@ -4175,7 +4269,6 @@ lastOpenedBaseIndex = baseIndex;
     try { loadCalendlyWidget?.({ lot, detailData: { nickname, subtitle } }); } catch (e) {}
   }, { once: true });
 }
-
 
 
 
@@ -7125,7 +7218,7 @@ function findClosestCommunityCenter(point, communities) {
       closestDistance = distance;
       closestFracc = fracc;
     }
-  });
+  }); 
   
   return communities[closestFracc].center;
 }
