@@ -1872,6 +1872,14 @@ opacity:1;
   }
 }
 
+.edit-outline {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1000;
+    border: 2px dashed #ff8400;
+    background: transparent;
+    box-sizing: border-box;
+}
 
 /* Hide floating UI whenever the modal is open */
 body.modal-open .lalaland-button,
@@ -2710,6 +2718,9 @@ map.on('click', 'lots-final-click', (e) => {
     // SINGLE CLICK HANDLER - REMOVED THE DUPLICATE
 map.on('click', 'lots-final-click', (e) => {
   if (e.features.length === 0) return;
+
+  // 🟢 ADD THIS ONE LINE - Check edit mode first
+  if (handleEditClick(e)) return;
 
   const feature = e.features[0];
   const lotName = feature.properties.name;
@@ -7614,6 +7625,250 @@ function initChatAvailability() {
 }
 </script>
 
-  
+<script>
+// ===== EDIT MODE FUNCTIONALITY =====
+let editMode = false;
+let selectedLots = new Set();
+
+// Edit button event listener
+document.getElementById('editBtn').addEventListener('click', function() {
+    editMode = !editMode;
+    
+    if (editMode) {
+        // Enter edit mode
+        this.style.boxShadow = '0 0 0 3px rgba(255,132,0,1)';
+        this.style.backgroundColor = '#ff8400';
+        showToaster('✏️ Edit mode ON - Click lots to compare');
+        console.log('Edit mode ON');
+} else {
+    // Exit edit mode
+    this.style.boxShadow = '';
+    this.style.backgroundColor = '#fcfaf3';
+    selectedLots.clear();
+    removeEditOutlines();
+    
+    // 🟢 RESTORE original baseLots
+    if (window.originalBaseLots) {
+        baseLots = window.originalBaseLots;
+        updateLotsArray();
+        window.originalBaseLots = null; // Clean up
+    }
+    
+    // Restore normal list
+    if (isDataLoaded) {
+        render();
+    }
+    showToaster('Edit mode OFF');
+    console.log('Edit mode OFF');
+}
+});
+
+// Edit mode click handler
+function handleEditClick(e) {
+    if (!editMode) return false;
+    
+    console.log('Edit click detected');
+    
+    if (e.features && e.features.length > 0) {
+        const feature = e.features[0];
+        const lotName = feature.properties.name;
+        const lotNumber = extractLotNumber(lotName);
+        
+        // Toggle selection
+        if (selectedLots.has(lotName)) {
+            selectedLots.delete(lotName);
+            showToaster(`❌ Removed ${lotNumber}`);
+        } else {
+            selectedLots.add(lotName);
+            showToaster(`✅ Added ${lotNumber}`);
+        }
+        
+        console.log('Selected lots:', Array.from(selectedLots));
+        
+        // Update visuals
+        updateEditOutlines();
+        updateModalList();
+        
+        // Stop normal modal from opening
+        e.preventDefault();
+        if (e.originalEvent) {
+            e.originalEvent.stopPropagation();
+        }
+        return true;
+    }
+    return false;
+}
+
+// Update outlines - SIMPLE ORANGE LINES
+// Update outlines - WHITE FILL INSTEAD OF ORANGE OUTLINE
+function updateEditOutlines() {
+    // Remove old outlines
+    removeEditOutlines();
+    
+    if (!map || selectedLots.size === 0) return;
+    
+    // Add white fill using map layers
+    selectedLots.forEach(lotName => {
+        const lot = lotData.find(l => l.name === lotName);
+        if (lot) {
+            // Create a simple source for this lot
+            const sourceId = `edit-outline-${lotName}`;
+            const layerId = `edit-outline-layer-${lotName}`;
+            
+            // Remove existing if any
+            if (map.getLayer(layerId)) map.removeLayer(layerId);
+            if (map.getSource(sourceId)) map.removeSource(sourceId);
+            
+            // Create source with lot polygon
+            const coords = [...lot.coords];
+            if (coords[0][0] !== coords[coords.length - 1][0] || 
+                coords[0][1] !== coords[coords.length - 1][1]) {
+                coords.push(coords[0]);
+            }
+            
+            map.addSource(sourceId, {
+                type: 'geojson',
+                data: {
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Polygon',
+                        coordinates: [coords]
+                    }
+                }
+            });
+            
+            // Add white fill layer instead of orange outline
+            map.addLayer({
+                id: layerId,
+                type: 'fill',
+                source: sourceId,
+paint: {
+    'fill-color': '#fcfaf3',
+    'fill-opacity': 0.4, // Very subtle orange
+
+}
+            }, 'lots-final-click'); // Add above existing layers
+        }
+    });
+}
+
+// Remove outlines
+function removeEditOutlines() {
+    if (!map) return;
+    
+    try {
+        // Get current style
+        const style = map.getStyle();
+        if (!style || !style.layers) return;
+        
+        // Remove all edit outline layers and sources safely
+        style.layers.forEach(layer => {
+            if (layer.id && layer.id.startsWith('edit-outline-layer-')) {
+                try {
+                    if (map.getLayer(layer.id)) {
+                        map.removeLayer(layer.id);
+                    }
+                } catch (e) {
+                    console.log('Could not remove layer:', layer.id);
+                }
+            }
+        });
+        
+        // Remove sources
+        Object.keys(style.sources || {}).forEach(sourceId => {
+            if (sourceId.startsWith('edit-outline-')) {
+                try {
+                    if (map.getSource(sourceId)) {
+                        map.removeSource(sourceId);
+                    }
+                } catch (e) {
+                    console.log('Could not remove source:', sourceId);
+                }
+            }
+        });
+    } catch (error) {
+        console.log('Error removing edit outlines:', error);
+    }
+}
+
+
+// Update modal list - FIXED VERSION with multiple communities support
+function updateModalList() {
+    const modal = document.getElementById('lotModal');
+    const modalInfo = document.getElementById('modalInfo');
+    
+    if (selectedLots.size === 0) {
+        if (modal.classList.contains('show')) {
+            modalInfo.innerHTML = '<div style="padding:20px; text-align:center; color:#8a8880;">Select lots to compare</div>';
+            // Restore normal baseLots if no selections
+            if (window.originalBaseLots) {
+                baseLots = window.originalBaseLots;
+                updateLotsArray();
+                window.originalBaseLots = null;
+            }
+        }
+        return;
+    }
+    
+    // Auto-open modal if closed
+    if (!modal.classList.contains('show')) {
+        openModal(); // Open without specific lot
+    }
+    
+    // Get selected lots data
+    const selectedBaseLots = [];
+    let uniqueFraccs = new Set(); // 🟢 NEW: Track communities
+
+    selectedLots.forEach(lotName => {
+        const lotNumber = extractLotNumber(lotName);
+        const baseLot = window.baseLotsAll.find(bl => bl.number === lotNumber);
+        if (baseLot) {
+            selectedBaseLots.push({...baseLot});
+            // 🟢 NEW: Collect all unique communities
+            if (baseLot.fraccionamiento) {
+                uniqueFraccs.add(baseLot.fraccionamiento);
+            }
+        }
+    });
+    
+    console.log('Selected base lots:', selectedBaseLots);
+    console.log('Unique communities:', Array.from(uniqueFraccs)); // 🟢 NEW: Debug log
+    
+    if (selectedBaseLots.length > 0) {
+        // 🟢 STORE original and REPLACE baseLots completely
+        if (!window.originalBaseLots) {
+            window.originalBaseLots = [...baseLots];
+        }
+        
+        baseLots = selectedBaseLots;
+        updateLotsArray();
+        
+        // 🟢 NEW: Update header for single or multiple communities
+        let headerText;
+        if (uniqueFraccs.size === 1) {
+            headerText = Array.from(uniqueFraccs)[0].toUpperCase();
+        } else if (uniqueFraccs.size > 1) {
+            headerText = 'MULTIPLE COMMUNITIES';
+        } else {
+            headerText = 'COMPARING LOTS';
+        }
+        
+        document.getElementById('headerFracc').textContent = headerText;
+        modal.dataset.fracc = 'multiple';
+        
+        render();
+    }
+}
+
+// Update outlines on map move
+if (map) {
+    map.on('move', function() {
+        if (editMode && selectedLots.size > 0) {
+            // For map layers, they auto-update with map movement
+        }
+    });
+}
+</script>
+
 </body> 
 </html>   
