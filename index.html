@@ -5588,7 +5588,7 @@ function _ensureConesShown() {
     if (!window.map) { toast('Map is still loading…'); return; }
     PS.addMode = !PS.addMode;
     const btn = document.getElementById('addPinBtn');
-    if (btn) btn.style.boxShadow = PS.addMode ? '0 0 0 3px rgba(255,132,0,1)' : '';
+btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
     map.getCanvas().style.cursor = PS.addMode ? 'crosshair' : '';
     if (PS.addMode && !PS._mapClickHandler) {
       PS._mapClickHandler = (e) => {
@@ -7070,18 +7070,64 @@ Zoom: ${zoom}
 
     // 🟢 GET CURRENT FRACC CENTER BASED ON ACTIVE FILTER
 function getCurrentFraccCenter() {
+  // 🟢 REUSE existing communities object from your search menu
+  const communities = window.communities || {
+    'santte1': { center: [-100.157213, 25.462513], zoom: 16.7 },
+    'santte2': { center: [-100.15994, 25.461823], zoom: 16.5 },
+    'amani-aqua': { center: [-100.179408, 25.437384], zoom: 15.65 },
+    'cañadas-vergel': { center: [-100.178308, 25.441684], zoom: 16.6 }
+  };
+  
   const modal = document.getElementById('lotModal');
   let currentFracc = (modal?.dataset.fracc || '').trim().toLowerCase();
   
-  // Updated to include all 4 areas
-  const centers = {
-    'santte1': [-100.157213, 25.462513],
-    'santte2': [-100.15994, 25.461823],
-    'amani-aqua': [-100.179408, 25.437384],
-    'cañadas-vergel': [-100.178308, 25.441684]
-  };
+  // 1. Try current modal fracc
+  if (communities[currentFracc]) {
+    return communities[currentFracc].center;
+  }
   
-  return centers[currentFracc] || centers['santte2']; // Fallback to Santte 2
+  // 2. Try most recent selected lot
+  if (selectedLots.size > 0) {
+    const lastSelected = Array.from(selectedLots).pop();
+    const lot = lotData.find(l => l.name === lastSelected);
+    if (lot && lot.fraccionamiento) {
+      const fracc = lot.fraccionamiento.toLowerCase();
+      if (communities[fracc]) {
+        return communities[fracc].center;
+      }
+    }
+  }
+  
+  // 3. Dynamic: Find closest community to current map view
+  if (map) {
+    const currentCenter = map.getCenter();
+    return findClosestCommunityCenter(currentCenter, communities);
+  }
+  
+  // 4. Fallback to first community
+  return communities[Object.keys(communities)[0]].center;
+}
+
+// 🟢 REUSABLE: Find closest community to any point
+function findClosestCommunityCenter(point, communities) {
+  let closestFracc = null;
+  let closestDistance = Infinity;
+  
+  Object.keys(communities).forEach(fracc => {
+    const communityCenter = communities[fracc].center;
+    const distance = turf.distance(
+      turf.point([point.lng, point.lat]),
+      turf.point(communityCenter),
+      { units: 'kilometers' }
+    );
+    
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestFracc = fracc;
+    }
+  });
+  
+  return communities[closestFracc].center;
 }
 
 // 🟢 ADD THIS FUNCTION FOR DYNAMIC ZOOM
