@@ -817,7 +817,7 @@ function addCustomImage(map) {
 
     map.addSource('drone-satellite', { 
       type: 'image',
-      url: 'https://lalaland.mx/santte3.jpg', // Your drone image URL
+      url: 'https://lalaland.mx/santte2.jpg', // Your drone image URL
       coordinates: imageBounds // Set the coordinates for where the image will be placed
     });
 
@@ -1042,39 +1042,39 @@ function parseWaypointsFromGPX(gpxDoc, trackData) {
         const description = descElement ? descElement.textContent : '';
         const time = timeElement ? timeElement.textContent : null;
         
-        // Find the closest position on the track for this waypoint
-        const closestPoint = findClosestPointOnRoute([lon, lat], coordinates);
+        // USE EXACT POSITION - don't recalculate based on track
+        const marble = {
+            id: Date.now() + index,
+            index: trackData.marbles.length,
+            position: [lon, lat], // This is the exact exported position
+            distanceAlongRoute: 0, // We'll set this below
+            isLocked: false,
+            isFixed: false,
+            assignedImage: extractImageIndexFromWaypoint(name, description),
+            isWaypoint: true,
+            originalName: name,
+            description: description,
+            time: time
+        };
         
+        // Only find distance for ordering, don't change position
+        const closestPoint = findClosestPointOnRoute([lon, lat], coordinates);
         if (closestPoint) {
-            const marble = {
-                id: Date.now() + index,
-                index: trackData.marbles.length,
-                position: [lon, lat],
-                distanceAlongRoute: closestPoint.distance,
-                isLocked: false,
-                isFixed: false,
-                assignedImage: extractImageIndexFromWaypoint(name, description),
-                isWaypoint: true,
-                originalName: name,
-                description: description,
-                time: time
-            };
-            
-            trackData.marbles.push(marble);
+            marble.distanceAlongRoute = closestPoint.distance;
+            // DON'T change marble.position!
         }
+        
+        trackData.marbles.push(marble);
     });
     
-    // Sort marbles by distance along route to maintain order
+    // Keep the sorting to maintain order
     trackData.marbles.sort((a, b) => a.distanceAlongRoute - b.distanceAlongRoute);
-    
-    // Re-index after sorting
     trackData.marbles.forEach((marble, index) => {
         marble.index = index;
     });
     
-    console.log(`Created ${trackData.marbles.length} marbles from waypoints`);
+    console.log(`Created ${trackData.marbles.length} marbles from waypoints - USING EXACT POSITIONS`);
     
-    // ENSURE CONSECUTIVE MARBLES ARE CONNECTED
     ensureSequentialConnections(trackData);
 }
 
