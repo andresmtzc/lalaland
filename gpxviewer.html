@@ -53,6 +53,12 @@
 .dragging-pano .ring-button * {
   pointer-events: none !important;
 }
+
+#branchImageBtn.ring-button {
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+}
 </style>
 </head>
 <body>
@@ -70,6 +76,7 @@
     <div class="navigation-ring">
       <button class="nav-button ring-button" id="nextImageBtn">▲</button>
       <button class="nav-button ring-button" id="prevImageBtn">▼</button>
+      <button class="nav-button ring-button" id="branchImageBtn">➤</button>
     </div>
     <div id="branch-buttons" style="margin-top:8px; display:flex; gap:6px; pointer-events:auto;"></div>
   </div>
@@ -657,16 +664,30 @@ function getFacingOptions(marbleId, currentYawRad, maxOptions=3){
   const edges = navGraph.get(marbleId) || [];
   const yawDeg = (THREE.MathUtils.radToDeg(currentYawRad) + 360) % 360;
 
-  return edges.map(e=>{
-    const angleToView = angularDiffDeg(yawDeg, e.bearingDeg);
-    let score = angleToView;
-    if (lastHopBearingDeg != null){
-      const continueDiff = angularDiffDeg(lastHopBearingDeg, e.bearingDeg);
-      score += continueDiff * 0.3;
-    }
+return edges.map(e => {
+  const angleToView = angularDiffDeg(yawDeg, e.bearingDeg);
+  let score = angleToView;
+
+  // Small bias to continue roughly same direction
+  if (lastHopBearingDeg != null) {
+    const continueDiff = angularDiffDeg(lastHopBearingDeg, e.bearingDeg);
+    score += continueDiff * 0.3;
+  }
+
+  // Prefer closer nodes slightly — but not if they're from same GPX and within 8 m
+  const targetTrackId = [...allTracks.entries()]
+    .find(([tid, tr]) => tr.marbles.some(m => m.id === e.toMarbleId))?.[0];
+  const currentTrackId = getCurrentTrack()?.id;
+  const sameTrack = targetTrackId === currentTrackId;
+
+  if (sameTrack && e.distanceM < 8) {
+    score += 20; // de-prioritize same-track near marbles when branching
+  } else {
     score += e.distanceM * 0.001;
-    return {...e, angleToView, score};
-  })
+  }
+
+  return { ...e, angleToView, score };
+})
   .sort((a,b)=>a.score-b.score)
   .slice(0, maxOptions);
 }
@@ -751,28 +772,110 @@ function animateViewer(){
   if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-function updateNavigationRing(instant=false){
-  const ring=document.querySelector('.navigation-ring');
-  const nextBtn=document.getElementById('nextImageBtn');
-  const prevBtn=document.getElementById('prevImageBtn');
+
+function updateNavigationRing(instant = false) {
+  const ring = document.querySelector('.navigation-ring');
+  const nextBtn   = document.getElementById('nextImageBtn');
+  const prevBtn   = document.getElementById('prevImageBtn');
+  const branchBtn = document.getElementById('branchImageBtn');
   if (!ring || !sphere) return;
-  let yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
+
+  const yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
   ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
 
-  if (nextBtn){
-    const fwd = getBestMarbleInDirection(currentYaw);
-    nextBtn.title = fwd ? `Navigate to marble ${fwd.index+1} (${Math.round(fwd.distance)}m)` : 'Navigate forward';
-  }
-  if (prevBtn){
+  const track = getCurrentTrack();
+  if (!track || !selectedMarbleId) return;
+
+  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+  const total       = track.marbles.length;
+
+  // --- Original forward/back logic preserved ---
+  let canForward = false;
+  let canBackward = false;
+  let canBranch = false;
+
+  // Endpoint logic
+  if (marbleIndex < total - 1) canForward = true;
+  if (marbleIndex > 0)         canBackward = true;
+
+  // Directional refinement (same as before)
+  if (marbleIndex > 0 && marbleIndex < total - 1) {
+    const fwd  = getBestMarbleInDirection(currentYaw);
     const back = getBestMarbleInDirection(currentYaw + Math.PI);
-    prevBtn.title = back ? `Navigate to marble ${back.index+1} (${Math.round(back.distance)}m)` : 'Navigate backward';
+    canForward  = !!fwd;
+    canBackward = !!back;
   }
 
-  if (instant){
-    ring.style.transition='none';
-    requestAnimationFrame(()=>{ ring.style.transition=''; });
+  const edges = navGraph.get(selectedMarbleId) || [];
+
+  // Junction fix
+  if (edges.length > 2) {
+    canForward  = true;
+    canBackward = true;
+  }
+
+  // --- Branch logic ---
+  const isEndpoint = marbleIndex === 0 || marbleIndex === total - 1;
+  const totalConnections = edges.length;
+
+  // Branch button active if:
+  //  - endpoint and at least 2 total connections (fork at end)
+  //  - OR any node with more than 2 connections (true junction)
+  canBranch = (isEndpoint && totalConnections >= 2) || totalConnections > 2;
+
+  // --- Apply visual state ---
+  nextBtn.disabled   = !canForward;
+  prevBtn.disabled   = !canBackward;
+  branchBtn.disabled = !canBranch;
+
+  nextBtn.style.opacity   = canForward  ? 1 : 0.35;
+  prevBtn.style.opacity   = canBackward ? 1 : 0.35;
+  branchBtn.style.opacity = canBranch   ? 1 : 0.35;
+
+  nextBtn.title   = canForward  ? 'Move forward' : 'No next marble';
+  prevBtn.title   = canBackward ? 'Move backward' : 'No previous marble';
+  branchBtn.title = canBranch   ? 'Branch to alternative path' : 'No branch available';
+
+  if (instant) {
+    ring.style.transition = 'none';
+    requestAnimationFrame(() => (ring.style.transition = ''));
   }
 }
+
+
+
+document.getElementById('branchImageBtn').addEventListener('click', async () => {
+  if (!selectedMarbleId) return;
+  const edges = navGraph.get(selectedMarbleId) || [];
+  const nearby = edges.filter(e => e.distanceM < 10);
+  if (!nearby.length) {
+    setStatus('No nearby marble (<10 m)');
+    return;
+  }
+
+  // Pick nearest neighbor
+  const targetEdge = nearby.sort((a, b) => a.distanceM - b.distanceM)[0];
+  let targetTrack = null, targetMarble = null;
+
+  for (const [tid, tr] of allTracks) {
+    const m = tr.marbles.find(x => x.id === targetEdge.toMarbleId);
+    if (m) { targetTrack = tr; targetMarble = m; break; }
+  }
+  if (!targetTrack || !targetMarble) return;
+
+  // Perform same jump as your branch buttons
+  if (targetTrack.id !== currentTrackId) {
+    selectTrackWithoutMapReset(targetTrack.id);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  selectMarble(targetMarble.id);
+  if (targetMarble.assignedImage != null) showMarbleImage(targetMarble.id);
+  else map.flyTo({ center: targetMarble.position, zoom: map.getZoom(), duration: 800 });
+
+  setStatus(`Jumped to ${targetTrack.name} (${Math.round(targetEdge.distanceM)} m)`);
+});
+
+
 
 function getBestMarbleInDirection(directionRad){
   if (!selectedMarbleId) return null;
