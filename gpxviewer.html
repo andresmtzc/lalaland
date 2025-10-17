@@ -1,488 +1,138 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-GPX Editor with Mapbox</title>
-    
-    <!-- Mapbox CSS -->
-    <link href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css" rel="stylesheet">
-    <!-- Three.js -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
-    
-    <style>
-        body { 
-            margin: 0; 
-            padding: 0; 
-            font-family: Arial, sans-serif; 
-            background: #f5f5f5;
-        }
-        #map { 
-            position: absolute; 
-            top: 0; 
-            bottom: 0; 
-            width: 100%; 
-        } 
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Viewer-Only: Marbles + NavGraph</title>
 
-        
-        
-      
-        .track-active {
-            background: #e6f3ff !important;
-            border-color: #4285F4 !important;
-        }
-        .status {
-            margin-top: 10px;
-            font-size: 12px;
-            color: #666;
-            padding: 8px;
-            background: #f8f9fa;
-            border-radius: 4px;
-        }
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
 
-        .small-btn {
-            padding: 2px 6px;
-            font-size: 10px;
-        }
-        
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#0b1020; font-family:system-ui, Arial, sans-serif; }
+  #viewer-container { position:absolute; top:0; left:0; width:100%; height:50%; background:#0b1020; }
+  #map { position:absolute; top:50%; left:0; width:100%; height:50%; }
 
+  #canvas { width:100%; height:100%; touch-action:none; pointer-events:auto; user-select:none; }
 
+  .image-controls {
+    position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center; z-index:20; pointer-events:none;
+  }
+  .navigation-ring {
+    position:relative; width:160px; height:160px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; user-select:none; pointer-events:none;
+  }
+  .nav-button.ring-button {
+    position:absolute; width:40px; height:40px; border:none; border-radius:50%;
+    background:rgba(0,0,0,0); color:#fff; display:flex; align-items:center; justify-content:center;
+    font-size:20px; cursor:pointer; transform:translateX(-50%); pointer-events:auto; z-index:21;
+  }
+  #nextImageBtn.ring-button { top:15px; left:50%; }
+  #prevImageBtn.ring-button { bottom:15px; left:50%; }
+  .nav-button.ring-button:hover { transform:translateX(-50%) scale(1.08); }
 
-#panorama-viewer {
-    width: 100%;
-    height: 100%;
-    background: #1a1a1a;
+  #viewer-loading {
+    display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    z-index:100; background:rgba(0,0,0,0.7); padding:16px 20px; border-radius:10px; text-align:center; color:#fff;
+  }
+  .spinner { width:36px; height:36px; border:4px solid rgba(255,255,255,0.12); border-top-color:#22d3ee; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Mapbox marker z-index for cone (default fine) */
+  .mapboxgl-marker.view-cone { z-index: 10; }
+
+/* When dragging the panorama, ignore all overlay clicks */
+.dragging-pano .image-controls,
+.dragging-pano .image-controls *,
+.dragging-pano .nav-button,
+.dragging-pano .nav-button *,
+.dragging-pano .ring-button,
+.dragging-pano .ring-button * {
+  pointer-events: none !important;
 }
-
-/* Adjust map position for split screen */
-#map {
-    position: absolute;
-    top: 50%; /* Start at 50% for bottom half */
-    bottom: 0;
-    width: 100%;
-}
-
-
-
-
-/* === NEW 360 VIEWER STYLES === */
-#viewer-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 50%;
-    background: #0b1020;
-    z-index: 0;
-}
-
-#canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    touch-action: none; /* Important: prevents browser from handling touch gestures */
-    pointer-events: auto;
-    -webkit-user-select: none; /* Prevent text selection on iOS */
-    user-select: none;
-}
-
-.viewer-controls {
-    position: absolute;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.7);
-    padding: 10px 20px;
-    border-radius: 20px;
-    z-index: 1000;
-    display: flex;
-    gap: 20px;
-    align-items: center;
-    color: white;
-    font-size: 14px;
-    display:none;
-}
-
-
-
-.image-controls {
-    position: absolute;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    z-index: 20;
-    pointer-events:none;
-
-}
-
-.navigation-ring {
-    position: relative;
-    width: 160px;
-    height: 160px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    user-select: none;
-    transition: transform 0.3s ease;
-    pointer-events: none; 
-}
-
-.nav-button.ring-button {
-    position: absolute;
-    width: 40px;
-    height: 40px;
-    border: none;
-    border-radius: 50%;
-    background: rgba(0,0,0,0);
-    color: #fcfaf3;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    cursor: pointer;
-    transform: translateX(-50%);
-    pointer-events: auto; 
-    z-index:21;
-    
-    
-}
-
-#nextImageBtn.ring-button {
-    top: 15px;
-    left: 50%;
-}
-
-#prevImageBtn.ring-button {
-    bottom: 15px;
-    left: 50%;
-}
-
-.nav-button.ring-button:hover {
-    transform: translateX(-50%) scale(1.2);
-}
-
-.time {
-    position: absolute;
-    right: 20px;
-    bottom: 20px;
-    color: #22d3ee;
-    font-weight: 600;
-    font-size: 14px;
-    z-index: 25;
-    display:none;
-}
-
-
-
-#viewer-loading {
-    display: none;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 100;
-    background: rgba(0,0,0,0.7);
-    padding: 20px;
-    border-radius: 10px;
-    text-align: center;
-    color: white;
-}
-
-.spinner {
-    width: 40px;
-    height: 40px;
-    border: 4px solid rgba(255,255,255,0.1);
-    border-radius: 50%;
-    border-top: 4px solid #22d3ee;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 10px;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* View cone on map */
-.mapboxgl-marker.view-cone {
-    z-index: 10;
-}
-    </style>
+</style>
 </head>
 <body>
-    <div id="map"></div>
 
-
-    <div id="controls">
-    <h3>GPX Track Editor</h3>
-    
-    <div class="control-group">
-        <div class="file-input-container">
-            <div class="file-input-button">Load GPX Files</div>
-            <input type="file" id="gpx-file" accept=".gpx" multiple>
-        </div>
-        <div class="tracks-list" id="tracks-list">
-            <div style="text-align: center; padding: 10px; color: #666; font-size: 12px;">
-                No tracks loaded
-            </div>
-        </div>
-    </div>
-    
-    <div class="control-group">
-        <button onclick="toggleEditMode()" id="edit-btn">Edit Mode: OFF</button>
-        <button onclick="clearAllRoutes()">Clear All</button>
-    </div>
-    
-    <div class="control-group">
-        <div class="slider-container">
-            <div class="slider-label">
-                <span>Point Density:</span>
-                <span id="density-value">100%</span>
-            </div>
-            <input type="range" min="1" max="100" value="100" class="slider" id="density-slider">
-            <div class="slider-label">
-                <small id="points-count">0 points</small>
-                <small id="original-count"></small>
-            </div>
-        </div>
-    </div>
-    
-    <div class="control-group">
-        <button onclick="toggleCatmullRom()" id="catmull-btn">Catmull-Rom: OFF</button>
-        <button onclick="resetCurrentTrack()">Reset Current</button>
-    </div>
-    
-    <div class="control-group">
-        <div class="mode-buttons">
-            <button onclick="addPointMode()">Add Points</button>
-            <button onclick="removePointMode()">Remove Points</button>
-            <button onclick="movePointMode()">Move Points</button>
-        </div>
-    </div>
-    
-    <div class="control-group">
-        <div class="stats-container">
-            <div class="slider-label">
-                <small>Distance: <span id="total-distance">0 km</span></small>
-                <small>Avg Speed: <span id="avg-speed">0 km/h</span></small>
-            </div>
-            <div class="slider-label">
-                <small>Points: <span id="stats-points">0</span></small>
-                <small>Duration: <span id="total-duration">0s</span></small>
-            </div>
-        </div>
-    </div>
-
-<div class="control-group">
-    <div class="slider-label">
-        <span>Marble Controls:</span>
-        <div>
-            <button class="small-btn" onclick="addMarble()" title="Add marble at end">+</button>
-            <button class="small-btn" onclick="removeMarble()" title="Remove last marble">-</button>
-            <button class="small-btn" onclick="initializeMarbles()" title="Rebuild all marbles">Rebuild</button>
-            <button class="small-btn" onclick="lockSelectedMarble()" title="Lock selected marble">🔒 Lock</button>
-       
-<button onclick="repairImageAssignment()" class="small-btn">1:1</button>
-        </div>
-    </div>
-    <div class="slider-label">
-        <small id="marble-count">0 marbles</small>
-        <small>Spacing: <span id="marble-spacing">10</span>m</small>
-    </div>
-    <div class="slider-label">
-        <input type="range" min="1" max="50" value="10" class="slider" id="marble-spacing-slider">
-    </div>
-</div>
-    
-    
-    <div class="control-group">
-        <div class="export-buttons">
-            <button onclick="exportCurrentTrack()">Export Current</button>
-            <button onclick="exportAllTracksAsZip()">Export All (ZIP)</button>
-        </div>
-    </div>
-
-    <div class="status" id="status">Ready - Load GPX files to start</div>
-</div>
-
-<!-- NEW 360 VIEWER -->
 <div id="viewer-container">
-    <canvas id="canvas"></canvas>
-    
-    <!-- Loading spinner -->
-    <div class="loading" id="viewer-loading">
-        <div class="spinner"></div>
-        <div id="loading-text">Loading 360° image...</div>
-    </div>
-    
-    <!-- Navigation controls -->
-    <div class="viewer-controls">
-        <button onclick="previousImage()">← Previous</button>
-        <span id="viewer-info">No images loaded</span>
-        <button onclick="nextImage()">Next →</button>
-    </div>
-    
-    <!-- Navigation ring -->
-    <div class="image-controls">
-        <div class="navigation-ring">
-            <button class="nav-button ring-button" id="nextImageBtn">▲</button>
-            <button class="nav-button ring-button" id="prevImageBtn">▼</button>
-        </div>
-          <!-- Branch choices (clickable) -->
-  <div id="branch-buttons" style="margin-top:8px; display:flex; gap:6px; pointer-events:auto;"></div>
+  <canvas id="canvas"></canvas>
 
+  <div class="viewer-controls">
+    <button id="prevImageBtnTop">← Prev</button>
+    <span id="viewer-info">No images loaded</span>
+    <button id="nextImageBtnTop">Next →</button>
+  </div>
+
+  <div class="image-controls">
+    <div class="navigation-ring">
+      <button class="nav-button ring-button" id="nextImageBtn">▲</button>
+      <button class="nav-button ring-button" id="prevImageBtn">▼</button>
     </div>
-    
-    <!-- Image counter -->
-    <div class="time" id="time">-/-</div>
-    
-    <!-- Zoom controls -->
-    <div class="zoom-controls">
-        <button class="zoom-btn" id="zoomIn">+</button>
-        <button class="zoom-btn" id="zoomOut">-</button>
-    </div>
+    <div id="branch-buttons" style="margin-top:8px; display:flex; gap:6px; pointer-events:auto;"></div>
+  </div>
+
+  <div class="time" id="time">-/-</div>
+
+  <div class="loading" id="viewer-loading">
+    <div class="spinner"></div>
+    <div id="loading-text">Loading 360° image...</div>
+  </div>
 </div>
 
-    <!-- Mapbox JS -->
-    <script src="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    
+<div id="map"></div>
+<div id="status">Loading…</div>
 
 <script>
-    // Initialize Mapbox
-    mapboxgl.accessToken = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
+/* =============================== */
+/*            CONSTANTS            */
+/* =============================== */
+mapboxgl.accessToken = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
+const FRAMES_BASE = 'https://lalaland.mx/frames/';
 
-    // Global variables
-    let map;
-    let isEditMode = false;
-    let currentMode = 'view';
-    let allTracks = new Map();
-    let currentTrackId = null;
-    let currentDensity = 100;
-    let isDragging = false;
-    let dragPointId = -1;
-    let nextPointId = 1000;
-    let nextTrackId = 1;
-    let isCatmullRomEnabled = false;
-    let wasCatmullRomEnabledBeforeEdit = false;
-    // ===== 360 VIEWER VARIABLES =====
+/* =============================== */
+/*            GLOBALS              */
+/* =============================== */
+let map;
+let allTracks = new Map();
+let currentTrackId = null;
+
 let scene, camera, renderer, sphere, panoGroup;
 let currentYaw = 0, currentPitch = 0, currentFov = 75;
 let viewerInitialized = false;
+
+let selectedMarbleId = null;
+
+const navGraph = new Map(); // marbleId -> edges[]
+let lastHopBearingDeg = null;
+
+let currentImages = [];
+let currentImageIndex = -1;
+let preloadedImages = {};
+
 let viewConeMarker = null;
-let isGoingForward = true;
 
+/* =============================== */
+/*              INIT               */
+/* =============================== */
+window.addEventListener('DOMContentLoaded', initializeApp);
 
-// ---- NAV GRAPH (for Y-junction choices) ----
-const navGraph = new Map(); // marbleId -> Array<{toMarbleId, distanceM, bearingDeg}>
-let lastHopBearingDeg = null; // optional bias to "keep going straight"
-
-    // Marble system variables - now track-specific
-    let isDraggingMarble = false;
-    let dragMarbleIndex = -1;
-    let selectedMarbleId = null;
-
-    // 360 Viewer variables
-    let viewer;
-    let currentImages = [];
-    // Frames folder (same-origin)
-    const FRAMES_BASE = 'https://lalaland.mx/frames/';
-    let currentImageIndex = -1;
-    let imageAssignments = new Map(); // marbleId -> imageIndex
-
-    // Color palette for tracks
-    const trackColors = [
-        '#EA4335', '#4285F4', '#34A853', '#FBBC05', '#FF6D01',
-        '#46BDC6', '#9334E6', '#E67C73', '#109D58', '#3F51B5'
-    ];
-
-    // Initialize map and viewer
 function initializeApp() {
-    // Initialize Mapbox map
-    map = new mapboxgl.Map({
-        container: 'map',
-        style: 'mapbox://styles/mapbox/outdoors-v12',
-        center: [0, 0],
-        zoom: 1,
-        cooperativeGestures: false
-    });
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/outdoors-v12',
+    center: [0, 0],
+    zoom: 1,
+    cooperativeGestures: false
+  });
 
-    // Wait for map to load
-    map.on('load', async () => {
-        console.log('Map loaded successfully');
-        document.getElementById('gpx-file').addEventListener('change', handleGPXUpload);
-        
-        // Setup density slider
-        const densitySlider = document.getElementById('density-slider');
-        densitySlider.addEventListener('input', handleDensityChange);
-        
-        // Setup marble spacing slider
-        const marbleSpacingSlider = document.getElementById('marble-spacing-slider');
-        marbleSpacingSlider.addEventListener('input', updateMarbleSpacing);
-        
-        // Create sources for tracks
-        map.addSource('tracks-line', {
-            type: 'geojson',
-            data: { type: 'FeatureCollection', features: [] }
-        });
+  map.on('load', async () => {
+    // MARBLES SOURCE ONLY (no tracks or labels)
+    map.addSource('marbles', { type: 'geojson', data: { type:'FeatureCollection', features: [] } });
 
-        map.addSource('control-points', {
-            type: 'geojson',
-            data: { type: 'FeatureCollection', features: [] }
-        });
-
-        // Create source for marbles
-        map.addSource('marbles', {
-            type: 'geojson',
-            data: { type: 'FeatureCollection', features: [] }
-        });
-
-            // Add tracks line layer
-            map.addLayer({
-                id: 'gpx-tracks-line',
-                type: 'line',
-                source: 'tracks-line',
-    paint: {
-        'line-color': ['get', 'color'],
-        'line-width': ['case', ['==', ['get', 'isActive'], true], 4, 2],
-        'line-opacity': ['case', ['==', ['get', 'isActive'], true], 0.8, 0.5]
-    },
-    layout: {
-        'visibility': 'none' // HIDDEN BY DEFAULT
-    }
-            });
-
-            // Add control points layer
-            map.addLayer({
-                id: 'gpx-control-points',
-                type: 'circle',
-                source: 'control-points',
-                paint: {
-                    'circle-radius': 6,
-                    'circle-color': '#EA4335',
-                    'circle-stroke-width': 2,
-                    'circle-stroke-color': '#ffffff',
-                    'circle-opacity': ['case', 
-                        ['all', 
-                ['==', ['get', 'isActive'], true],
-                ['==', ['get', 'isEditMode'], true]
-            ], 1, 0
-        ]
-    },
-    layout: {
-        'visibility': 'none' // HIDDEN BY DEFAULT
-    }
-            });
-
-            // Add marbles layer - FIXED: removed broken comment
+    // VISIBLE marbles
             map.addLayer({
                 id: 'marbles-layer',
                 type: 'circle',
@@ -513,1663 +163,476 @@ function initializeApp() {
                 }
             });
 
-            // Add INVISIBLE click layer (LARGE click area)
-map.addLayer({
-    id: 'marbles-click-layer',
-    type: 'circle',
-    source: 'marbles',
-    paint: {
-        'circle-radius': 8, // Large click area
-        'circle-opacity': 0, // Completely invisible
-        'circle-stroke-width': 0
-    }
-});
-
-            // Add a symbol layer for image numbers on marbles
-map.addLayer({
-    id: 'marble-labels',
-    type: 'symbol',
-    source: 'marbles',
-    layout: {
-        'text-field': ['case',
-            ['==', ['get', 'hasImage'], true],
-            ['concat', ['get', 'imageIndex']],
-            '' // No text for marbles without images
-        ],
-        'text-size': 10,
-        'text-offset': [1, 0],
-        'text-anchor': 'center',
-        'visibility': 'none' // HIDDEN BY DEFAULT
-    },
-    paint: {
-        'text-color': '#FFFFFF',
-        'text-halo-color': '#000000',
-        'text-halo-width': 1
-    }
-});
- addTrackToggle();
-        initConeSystem();
-        addMarbleNavigationButtons();
-        setupMapInteractions();
-
-    setTimeout(() => {
-        try {
-            addCustomImage(map);
-        } catch (error) {
-            console.error('Drone image failed, but continuing:', error);
-        }
-    }, 1000);
-
-        // AUTO-LOAD GPX FILES FROM MANIFEST
-        await loadGPXFromManifest();
-    });
-
-    // Initialize 360 viewer
-    initializeViewer();
-}
-
-
-
-    // Setup map interactions
-    function setupMapInteractions() {
-    map.on('mouseup', () => {
-        if (isDragging) {
-            setTimeout(() => {
-                isDragging = false;
-                dragPointId = -1;
-                map.getCanvas().style.cursor = 'move';
-                enableMapInteractions();
-            }, 50);
-        }
-        if (isDraggingMarble) {
-            stopMarbleDrag();
-        }
-    });
-    
-    // ADD THESE: Update view cone on map interactions
-    map.on('zoom', () => {
-        if (selectedMarbleId) {
-            updateViewCone();
-        }
-    });
-    
-    map.on('move', () => {
-        if (selectedMarbleId) {
-            updateViewCone();
-        }
-    });
-}
-
-// DRONE IMAGE - Add custom recent drone satellite image as a raster layer
-function addCustomImage(map) {
-  try {
-    // Coordinates for the custom drone image (georeferenced)
-    const imageBounds = [
-      [-100.16483, 25.467111], // Top-left corner [lng, lat]
-      [-100.154874, 25.467111], // Top-right corner [lng, lat]
-      [-100.154874, 25.457155], // Bottom-right corner [lng, lat]
-      [-100.16483, 25.457155],  // Bottom-left corner [lng, lat]
-    ];
-
-    map.addSource('drone-satellite', { 
-      type: 'image',
-      url: 'https://lalaland.mx/santte2.jpg', // Your drone image URL
-      coordinates: imageBounds // Set the coordinates for where the image will be placed
-    });
-
+    // INVISIBLE, larger hit area for clicks
     map.addLayer({
-      id: 'drone-satellite-layer',
-      type: 'raster',
-      source: 'drone-satellite',
-      paint: {
-        'raster-opacity': 1
-      }
-    }, 'marbles-layer');  // Insert BELOW 'road' layer, so roads are on top
+      id: 'marbles-click-layer',
+      type: 'circle',
+      source: 'marbles',
+      paint: { 'circle-radius': 8, 'circle-opacity': 0, 'circle-stroke-width': 0 }
+    });
 
-    console.log('Drone image loaded successfully');
-    // showToaster("Cargamos la imágen aérea más actual — (marzo 2025)");
-    
-  } catch (error) {
-    console.error('Error loading drone image:', error);
+    // VIEW CONE source + layers
+    initConeSystem();
+
+    // Raster drone image (optional)
+    try { addCustomImage(map); } catch(e) { console.log('Drone image skipped:', e); }
+
+    addTrackToggleMinimal(); // does nothing visual for tracks; just a placeholder status
+    setupMapInteractions();
+    enableMarbleClickOnly();
+
+    await loadGPXFromManifest();
+  });
+
+  initializeViewer();
+}
+
+/* =============================== */
+/*          DRONE RASTER           */
+/* =============================== */
+function addCustomImage(map) {
+  const imageBounds = [
+    [-100.16483, 25.467111], // TL
+    [-100.154874, 25.467111], // TR
+    [-100.154874, 25.457155], // BR
+    [-100.16483, 25.457155],  // BL
+  ];
+  map.addSource('drone-satellite', {
+    type:'image',
+    url:'https://lalaland.mx/santte2.jpg',
+    coordinates: imageBounds
+  });
+  map.addLayer({
+    id:'drone-satellite-layer',
+    type:'raster',
+    source:'drone-satellite',
+    paint:{ 'raster-opacity': 1 }
+  }, 'marbles-layer');
+}
+
+/* =============================== */
+/*            MANIFEST             */
+/* =============================== */
+async function loadGPXFromManifest() {
+  try {
+
+    const MANIFEST_URL = FRAMES_BASE + 'index.json';
+    const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
+    if (!res.ok) { setStatus('No predefined tracks found'); return; }
+
+    const manifest = await res.json();
+    let gpxFiles = [];
+    if (manifest.gpxFiles && manifest.gpxFiles.length) gpxFiles = manifest.gpxFiles;
+    else if (manifest.files) gpxFiles = manifest.files.filter(f => f.toLowerCase().endsWith('.gpx'));
+
+    if (!gpxFiles.length) { setStatus('No GPX files in manifest'); return; }
+
+    let loadedCount = 0;
+    for (const gpxFile of gpxFiles) {
+      try { await loadSingleGPX(gpxFile); loadedCount++; }
+      catch(e) { console.error('Failed GPX:', gpxFile, e); }
+    }
+
+
+    // Auto-select first
+    if (loadedCount > 0 && allTracks.size > 0) {
+      const firstTrackId = Array.from(allTracks.keys())[0];
+      selectTrack(firstTrackId);
+      const track = allTracks.get(firstTrackId);
+
+    }
+  } catch(e) {
+    console.error(e);
+    setStatus('Error loading manifest');
   }
 }
 
-async function loadGPXFromManifest() {
-    try {
-        setStatus('Loading predefined tracks...');
-        
-        // Hardcoded URL to the manifest
-        const MANIFEST_URL = 'https://lalaland.mx/frames/index.json';
-        
-        console.log('Fetching manifest from:', MANIFEST_URL);
-        
-        const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
-        if (!res.ok) {
-            console.log('No manifest found or unable to load');
-            setStatus('No predefined tracks found');
-            return;
-        }
-        
-        const manifest = await res.json();
-        console.log('Manifest loaded:', manifest);
-        
-        let gpxFiles = [];
-        
-        // Your manifest has BOTH files and gpxFiles arrays
-        if (manifest.gpxFiles && manifest.gpxFiles.length > 0) {
-            // Use the gpxFiles array specifically
-            gpxFiles = manifest.gpxFiles;
-            console.log('Using gpxFiles array:', gpxFiles);
-        } else if (manifest.files) {
-            // Fallback: look for .gpx files in the main files array
-            gpxFiles = manifest.files.filter(file => file.toLowerCase().endsWith('.gpx'));
-            console.log('Found GPX files in files array:', gpxFiles);
-        }
-        
-        console.log('Final GPX files to load:', gpxFiles);
-        
-        if (gpxFiles.length === 0) {
-            console.log('No GPX files found in manifest');
-            setStatus('No predefined tracks in manifest');
-            return;
-        }
-        
-        setStatus(`Loading ${gpxFiles.length} predefined tracks...`);
-        
-        // Load each GPX file
-        let loadedCount = 0;
-        for (const gpxFile of gpxFiles) {
-            try {
-                console.log(`Loading GPX: ${gpxFile}`);
-                await loadSingleGPX(gpxFile);
-                loadedCount++;
-            } catch (error) {
-                console.error(`Failed to load ${gpxFile}:`, error);
-                setStatus(`Failed to load ${gpxFile}`);
-            }
-        }
-        
-        console.log(`Successfully loaded ${loadedCount} tracks`);
-        setStatus(`Auto-loaded ${loadedCount} predefined tracks`);
-        
-        // Auto-select the first track if any were loaded
-        if (loadedCount > 0 && allTracks.size > 0) {
-            const firstTrackId = Array.from(allTracks.keys())[0];
-            if (firstTrackId) {
-                selectTrack(firstTrackId);
-                const track = allTracks.get(firstTrackId);
-                setStatus(`Auto-selected: ${track.name}`);
-            }
-        } else {
-            setStatus('No tracks were successfully loaded');
-        }
-        
-    } catch (error) {
-        console.error('Error loading GPX from manifest:', error);
-        setStatus('Error loading predefined tracks - check console');
-    }
-}
-
 async function loadSingleGPX(filename) {
-    try {
-        // Ensure filename has correct path
-        const fullPath = filename.startsWith(FRAMES_BASE) ? filename : FRAMES_BASE + filename;
-        const response = await fetch(fullPath);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const gpxContent = await response.text();
-        // PASS isPredefined = true for manifest-loaded files
-        parseGPX(gpxContent, filename.split('/').pop(), true);
-        
-    } catch (error) {
-        console.error(`Error loading GPX file ${filename}:`, error);
-        throw error;
-    }
+  const fullPath = filename.startsWith(FRAMES_BASE) ? filename : FRAMES_BASE + filename;
+  const response = await fetch(fullPath);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const gpxContent = await response.text();
+  parseGPX(gpxContent, filename.split('/').pop(), true);
 }
 
-    // Handle multiple GPX file upload
-function handleGPXUpload(event) {
-    const files = Array.from(event.target.files);
-    if (files.length === 0) return;
+/* =============================== */
+/*           GPX PARSING           */
+/* =============================== */
+function parseGPX(gpxContent, fileName, isPredefined=false) {
+  const parser = new DOMParser();
+  const gpxDoc = parser.parseFromString(gpxContent, 'text/xml');
 
-    files.forEach(file => {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const gpxContent = e.target.result;
-            parseGPX(gpxContent, file.name, false); // User-uploaded files are not predefined
-        };
-        reader.readAsText(file);
+  // points
+  const trkpts = gpxDoc.querySelectorAll('trkpt');
+  const pointsWithTime = [];
+  trkpts.forEach((trkpt, idx) => {
+    const lat = parseFloat(trkpt.getAttribute('lat'));
+    const lon = parseFloat(trkpt.getAttribute('lon'));
+    const t = trkpt.querySelector('time');
+    pointsWithTime.push({
+      id: idx,
+      coordinates: [lon, lat],
+      originalIndex: idx,
+      time: t ? t.textContent : null
     });
+  });
+  if (!pointsWithTime.length) return;
+
+  const trackId = `track-${allTracks.size + 1}`;
+  const trackColor = '#4285F4';
+
+  const trackData = {
+    id: trackId,
+    name: fileName.replace('.gpx',''),
+    color: trackColor,
+    originalPoints: pointsWithTime,
+    activePoints: pointsWithTime.map(p => ({...p})), // always full set
+    isActive: false,
+    isPredefined,
+    originalStats: calculateOriginalStatsFromPoints(pointsWithTime),
+    marbles: [],
+    marbleSpacing: 10
+  };
+
+  // Waypoints -> marbles (exact positions)
+  parseWaypointsFromGPX(gpxDoc, trackData);
+
+  allTracks.set(trackId, trackData);
+
+  rebuildNavGraph();
+  updateAllTracksVisualization(false);
+  updateMarbleDisplay();
+  setStatus(`Loaded ${fileName} with ${trackData.marbles.length} waypoints`);
 }
 
-    // Parse GPX and add as new track
-   function parseGPX(gpxContent, fileName, isPredefined = false) {
-    try {
-        const parser = new DOMParser();
-        const gpxDoc = parser.parseFromString(gpxContent, 'text/xml');
-        
-        // Extract ALL track points with their times
-        const trkpts = gpxDoc.querySelectorAll('trkpt');
-        const pointsWithTime = [];
-        
-        trkpts.forEach((trkpt, index) => {
-            const lat = parseFloat(trkpt.getAttribute('lat'));
-            const lon = parseFloat(trkpt.getAttribute('lon'));
-            const timeElement = trkpt.querySelector('time');
-            
-            pointsWithTime.push({
-                id: index,
-                coordinates: [lon, lat],
-                originalIndex: index,
-                time: timeElement ? timeElement.textContent : null
-            });
-        });
-        
-        if (pointsWithTime.length === 0) {
-            if (!isPredefined) { // Only alert for user-uploaded files
-                alert(`No track points found in ${fileName}`);
-            }
-            return;
-        }
-        
-        // Create track with original statistics
-        const trackId = `track-${nextTrackId++}`;
-        const trackColor = trackColors[(nextTrackId - 2) % trackColors.length];
-        
-        const trackData = {
-            id: trackId,
-            name: fileName.replace('.gpx', ''),
-            color: trackColor,
-            originalPoints: pointsWithTime,
-            activePoints: [],
-            density: 100,
-            isActive: false,
-            isPredefined: isPredefined, // Mark as predefined
-            originalStats: calculateOriginalStatsFromPoints(pointsWithTime),
-            marbles: [],
-            marbleSpacing: 10
-        };
-        
-        // Apply initial density
-        applyDensityFilterToTrack(trackData, currentDensity);
-        
-        // Parse waypoints and create marbles
-        parseWaypointsFromGPX(gpxDoc, trackData);
-        
-        // Add to tracks map
-        allTracks.set(trackId, trackData);
-        
-        // Rebuild navigation graph for waypoints
-        rebuildNavGraph();
-        
-        // If first track, select it
-        if (allTracks.size === 1) {
-            selectTrack(trackId);
-        } else {
-            updateTracksList();
-            updateAllTracksVisualization();
-            setStatus(`Loaded ${fileName} with ${trackData.originalPoints.length} points and ${trackData.marbles.length} waypoints`);
-        }
-        
-    } catch (error) {
-        console.error('Error parsing GPX:', error);
-        if (!isPredefined) { // Only alert for user-uploaded files
-            alert(`Error parsing ${fileName}. Please check the file format.`);
-        }
-    }
-}
- 
 function parseWaypointsFromGPX(gpxDoc, trackData) {
-    const waypoints = gpxDoc.querySelectorAll('wpt');
-    const coordinates = getDisplayCoordinates(trackData);
-    const totalDistance = calculateTotalDistance(coordinates);
-    
-    waypoints.forEach((wpt, index) => {
-        const lat = parseFloat(wpt.getAttribute('lat'));
-        const lon = parseFloat(wpt.getAttribute('lon'));
-        const nameElement = wpt.querySelector('name');
-        const descElement = wpt.querySelector('desc');
-        const timeElement = wpt.querySelector('time');
-        
-        const name = nameElement ? nameElement.textContent : `Waypoint_${index + 1}`;
-        const description = descElement ? descElement.textContent : '';
-        const time = timeElement ? timeElement.textContent : null;
-        
-        // USE EXACT POSITION - don't recalculate based on track
-        const marble = {
-            id: Date.now() + index,
-            index: trackData.marbles.length,
-            position: [lon, lat], // This is the exact exported position
-            distanceAlongRoute: 0, // We'll set this below
-            isLocked: false,
-            isFixed: false,
-            assignedImage: extractImageIndexFromWaypoint(name, description),
-            isWaypoint: true,
-            originalName: name,
-            description: description,
-            time: time
-        };
-        
-        // Only find distance for ordering, don't change position
-        const closestPoint = findClosestPointOnRoute([lon, lat], coordinates);
-        if (closestPoint) {
-            marble.distanceAlongRoute = closestPoint.distance;
-            // DON'T change marble.position!
-        }
-        
-        trackData.marbles.push(marble);
-    });
-    
-    // Keep the sorting to maintain order
-    trackData.marbles.sort((a, b) => a.distanceAlongRoute - b.distanceAlongRoute);
-    trackData.marbles.forEach((marble, index) => {
-        marble.index = index;
-    });
-    
-    console.log(`Created ${trackData.marbles.length} marbles from waypoints - USING EXACT POSITIONS`);
-    
-    ensureSequentialConnections(trackData);
+  const waypoints = gpxDoc.querySelectorAll('wpt');
+  const coordinates = getDisplayCoordinates(trackData);
+  const totalDistance = calculateTotalDistance(coordinates);
+
+  waypoints.forEach((wpt, index) => {
+    const lat = parseFloat(wpt.getAttribute('lat'));
+    const lon = parseFloat(wpt.getAttribute('lon'));
+    const nameEl = wpt.querySelector('name');
+    const descEl = wpt.querySelector('desc');
+    const timeEl = wpt.querySelector('time');
+
+    const name = nameEl ? nameEl.textContent : `Waypoint_${index+1}`;
+    const description = descEl ? descEl.textContent : '';
+    const time = timeEl ? timeEl.textContent : null;
+
+    const marble = {
+      id: Date.now() + index + Math.random(),
+      index: trackData.marbles.length,
+      position: [lon, lat],     // exact wpt position
+      distanceAlongRoute: 0,    // set via closest point
+      isLocked: false,
+      isFixed: false,
+      assignedImage: extractImageIndexFromWaypoint(name, description),
+      isWaypoint: true,
+      originalName: name,
+      description,
+      time
+    };
+
+    const closestPoint = findClosestPointOnRoute([lon, lat], coordinates);
+    if (closestPoint) marble.distanceAlongRoute = closestPoint.distance;
+
+    trackData.marbles.push(marble);
+  });
+
+  trackData.marbles.sort((a,b)=>a.distanceAlongRoute - b.distanceAlongRoute);
+  trackData.marbles.forEach((m,i)=>{ m.index = i; });
 }
 
-function ensureSequentialConnections(track) {
-    if (!track || track.marbles.length < 2) return;
-    
-    const marbles = track.marbles;
-    
-    // Ensure consecutive marbles are connected
-    for (let i = 0; i < marbles.length - 1; i++) {
-        const current = marbles[i];
-        const next = marbles[i + 1];
-        
-        const distance = calculateDistance(current.position, next.position);
-        const bearing = bearingDeg(current.position, next.position);
-        const reverseBearing = bearingDeg(next.position, current.position);
-        
-        // Add forward connection
-        if (!navGraph.has(current.id)) navGraph.set(current.id, []);
-        if (!navGraph.get(current.id).some(conn => conn.toMarbleId === next.id)) {
-            navGraph.get(current.id).push({
-                toMarbleId: next.id,
-                distanceM: distance,
-                bearingDeg: bearing
-            });
-        }
-        
-        // Add reverse connection
-        if (!navGraph.has(next.id)) navGraph.set(next.id, []);
-        if (!navGraph.get(next.id).some(conn => conn.toMarbleId === current.id)) {
-            navGraph.get(next.id).push({
-                toMarbleId: current.id,
-                distanceM: distance,
-                bearingDeg: reverseBearing
-            });
-        }
-    }
+/* =============================== */
+/*          BASIC HELPERS          */
+/* =============================== */
+function getDisplayCoordinates(track) {
+  return track.activePoints.map(p => p.coordinates);
 }
 
-function extractImageIndexFromWaypoint(name, description) {
-    // Try to extract image index from waypoint name or description
-    // Looks for patterns like "Image 1" or "Photo_1" etc.
-    
-    const text = (name + ' ' + description).toLowerCase();
-    
-    // Look for "image X" pattern
-    const imageMatch = text.match(/image[^\d]*(\d+)/);
-    if (imageMatch) {
-        return parseInt(imageMatch[1]) - 1; // Convert to 0-based index
-    }
-    
-    // Look for "photo X" pattern  
-    const photoMatch = text.match(/photo[^\d]*(\d+)/);
-    if (photoMatch) {
-        return parseInt(photoMatch[1]) - 1;
-    }
-    
-    // Look for numbers at the end of the name
-    const numberMatch = name.match(/(\d+)$/);
-    if (numberMatch) {
-        return parseInt(numberMatch[1]) - 1;
-    }
-    
-    return null; // No image index found
+function calculateDistance(a, b) {
+  const R = 6371000;
+  const dLat = (b[1]-a[1])*Math.PI/180;
+  const dLon = (b[0]-a[0])*Math.PI/180;
+  const lat1 = a[1]*Math.PI/180, lat2 = b[1]*Math.PI/180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
 }
 
-    // Calculate stats directly from points array
-    function calculateOriginalStatsFromPoints(points) {
-        const coordinates = points.map(p => p.coordinates);
-        const timeData = points.map(p => p.time).filter(t => t);
-        
-        const distance = calculateTotalDistance(coordinates);
-        const duration = calculateDurationFromTimes(timeData);
-        const avgSpeed = calculateAverageSpeedFromStats(distance, duration);
-        
-        return {
-            distance: distance,
-            duration: duration,
-            avgSpeed: avgSpeed,
-            pointCount: points.length
-        };
-    }
+function calculateTotalDistance(points) {
+  if (points.length < 2) return 0;
+  let sum = 0;
+  for (let i=1;i<points.length;i++) sum += calculateDistance(points[i-1], points[i]);
+  return sum;
+}
 
-    // Calculate distance between two coordinates (haversine formula) in meters
-    function calculateDistance(coord1, coord2) {
-        const R = 6371000; // Earth radius in meters
-        const dLat = (coord2[1] - coord1[1]) * Math.PI / 180;
-        const dLon = (coord2[0] - coord1[0]) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                  Math.cos(coord1[1] * Math.PI / 180) * Math.cos(coord2[1] * Math.PI / 180) *
-                  Math.sin(dLon/2) * Math.sin(dLon/2);
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
+function calculateOriginalStatsFromPoints(points){
+  const coords = points.map(p=>p.coordinates);
+  const timeData = points.map(p=>p.time).filter(Boolean);
+  const distance = calculateTotalDistance(coords);
+  const duration = calculateDurationFromTimes(timeData);
+  const avgSpeed = calculateAverageSpeedFromStats(distance, duration);
+  return { distance, duration, avgSpeed, pointCount: points.length };
+}
 
+function calculateDurationFromTimes(timeData){
+  if (timeData.length < 2) return '0s';
+  const start = new Date(timeData[0]), end = new Date(timeData[timeData.length-1]);
+  const ms = end - start;
+  const h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000), s = Math.floor((ms%60000)/1000);
+  if (h>0) return `${h}h ${m}m ${s}s`;
+  if (m>0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
-// ---- Bearing & angle helpers ----
-function bearingDeg(a, b) { // [lng,lat] -> degrees 0..360
-  const toRad = d => d * Math.PI/180, toDeg = r => r * 180/Math.PI;
+function calculateAverageSpeedFromStats(distanceMeters, durationString){
+  if (durationString==='0s' || !distanceMeters) return 0;
+  const hMatch = durationString.match(/(\d+)h/), mMatch = durationString.match(/(\d+)m/), sMatch = durationString.match(/(\d+)s/);
+  const hours = (hMatch?+hMatch[1]:0) + (mMatch?+mMatch[1]/60:0) + (sMatch?+sMatch[1]/3600:0);
+  const km = distanceMeters/1000;
+  return hours>0 ? km/hours : 0;
+}
+
+function calculateBounds(coordinates){
+  if (!coordinates.length) return null;
+  const b = new mapboxgl.LngLatBounds();
+  coordinates.forEach(c=>b.extend(c));
+  return b;
+}
+
+function bearingDeg(a, b){
+  const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
   const φ1 = toRad(a[1]), φ2 = toRad(b[1]);
   const λ1 = toRad(a[0]), λ2 = toRad(b[0]);
-  const y = Math.sin(λ2-λ1) * Math.cos(φ2);
+  const y = Math.sin(λ2-λ1)*Math.cos(φ2);
   const x = Math.cos(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1) - Math.sin(φ1)*Math.sin(φ2);
   return (toDeg(Math.atan2(y,x)) + 360) % 360;
 }
-function angularDiffDeg(a, b) { // smallest |a-b|
-  let d = Math.abs(a-b) % 360;
-  return d > 180 ? 360 - d : d;
+function angularDiffDeg(a,b){ let d=Math.abs(a-b)%360; return d>180?360-d:d; }
+
+/* Closest point along polyline */
+function findClosestPointOnRoute(point, coordinates){
+  let closestPoint=null, minDistance=Infinity, accumulatedDistance=0;
+  for (let i=1;i<coordinates.length;i++){
+    const A=coordinates[i-1], B=coordinates[i];
+    const segLen = calculateDistance(A,B);
+    const cps = findClosestPointOnSegment(point, A, B);
+    const d = calculateDistance(point, cps.point);
+    if (d<minDistance){ minDistance=d; closestPoint={ point: cps.point, distance: accumulatedDistance + cps.distance }; }
+    accumulatedDistance += segLen;
+  }
+  return closestPoint;
+}
+function findClosestPointOnSegment(P, A, B){
+  const Ax=A[0], Ay=A[1], Bx=B[0], By=B[1], Px=P[0], Py=P[1];
+  const ABx=Bx-Ax, ABy=By-Ay, APx=Px-Ax, APy=Py-Ay;
+  const ab2 = ABx*ABx + ABy*ABy;
+  let t = ab2 ? (APx*ABx + APy*ABy)/ab2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const Qx = Ax + ABx*t, Qy = Ay + ABy*t;
+  return { point:[Qx,Qy], distance: Math.sqrt(ab2)*t };
 }
 
+/* =============================== */
+/*        TRACK SELECTION          */
+/* =============================== */
+function selectTrack(trackId){
+  if (currentTrackId && allTracks.has(currentTrackId)) allTracks.get(currentTrackId).isActive=false;
+  currentTrackId = trackId;
+  const track = allTracks.get(trackId);
+  track.isActive = true;
 
-    // Calculate total distance of a track in meters
-    function calculateTotalDistance(points) {
-        if (points.length < 2) return 0;
-        
-        let totalDistance = 0;
-        for (let i = 1; i < points.length; i++) {
-            totalDistance += calculateDistance(points[i-1], points[i]);
-        }
-        return totalDistance;
-    }
+  updateStatistics();
+  updateAllTracksVisualization(false);
+  updateMarbleDisplay();
+  flyToTrack(track);
+  load360Images();
 
-    // Calculate duration from time array
-    function calculateDurationFromTimes(timeData) {
-        if (timeData.length < 2) return '0s';
-        
-        try {
-            const startTime = new Date(timeData[0]);
-            const endTime = new Date(timeData[timeData.length - 1]);
-            const durationMs = endTime - startTime;
-            
-            const hours = Math.floor(durationMs / (1000 * 60 * 60));
-            const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
-            
-            if (hours > 0) {
-                return `${hours}h ${minutes}m ${seconds}s`;
-            } else if (minutes > 0) {
-                return `${minutes}m ${seconds}s`;
-            } else {
-                return `${seconds}s`;
-            }
-        } catch (e) {
-            return '0s';
-        }
-    }
-
-    // Calculate average speed from distance and duration
-    function calculateAverageSpeedFromStats(distanceMeters, durationString) {
-        if (durationString === '0s' || distanceMeters === 0) return 0;
-        
-        try {
-            let totalHours = 0;
-            
-            if (durationString.includes('h')) {
-                const hoursMatch = durationString.match(/(\d+)h/);
-                const minutesMatch = durationString.match(/(\d+)m/);
-                const secondsMatch = durationString.match(/(\d+)s/);
-                
-                const hours = hoursMatch ? parseInt(hoursMatch[1]) : 0;
-                const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 0;
-                const seconds = secondsMatch ? parseInt(secondsMatch[1]) : 0;
-                
-                totalHours = hours + (minutes / 60) + (seconds / 3600);
-            } else if (durationString.includes('m')) {
-                const minutesMatch = durationString.match(/(\d+)m/);
-                const secondsMatch = durationString.match(/(\d+)s/);
-                
-                const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 0;
-                const seconds = secondsMatch ? parseInt(secondsMatch[1]) : 0;
-                
-                totalHours = (minutes / 60) + (seconds / 3600);
-            } else if (durationString.includes('s')) {
-                const secondsMatch = durationString.match(/(\d+)s/);
-                const seconds = secondsMatch ? parseInt(secondsMatch[1]) : 0;
-                
-                totalHours = seconds / 3600;
-            }
-            
-            const distanceKm = distanceMeters / 1000;
-            return totalHours > 0 ? distanceKm / totalHours : 0;
-            
-        } catch (e) {
-            return 0;
-        }
-    }
-
-    // Apply density filter to a specific track
-    function applyDensityFilterToTrack(trackData, densityPercent) {
-        const totalPoints = trackData.originalPoints.length;
-        const targetCount = Math.max(2, Math.floor((totalPoints * densityPercent) / 100));
-        
-        if (targetCount >= totalPoints) {
-            trackData.activePoints = trackData.originalPoints.map(p => ({...p}));
-        } else {
-            trackData.activePoints = selectPointsEvenlyImproved(trackData.originalPoints, targetCount);
-        }
-        
-        trackData.density = densityPercent;
-    }
-
-    // Select points evenly distributed
-    function selectPointsEvenlyImproved(points, targetCount) {
-        if (points.length <= targetCount) return points.map(p => ({...p}));
-        if (targetCount <= 2) return [points[0], points[points.length - 1]].map(p => ({...p}));
-        
-        const selected = [];
-        const totalSegments = targetCount - 1;
-        const segmentSize = (points.length - 1) / totalSegments;
-        
-        selected.push({...points[0]});
-        
-        for (let i = 1; i < targetCount - 1; i++) {
-            const index = Math.round(i * segmentSize);
-            const safeIndex = Math.min(Math.max(index, 1), points.length - 2);
-            selected.push({...points[safeIndex]});
-        }
-        
-        selected.push({...points[points.length - 1]});
-        
-        return removeDuplicatesPreserveOrder(selected);
-    }
-
-    // Remove duplicates while preserving order
-    function removeDuplicatesPreserveOrder(points) {
-        const unique = [];
-        const seenIds = new Set();
-        
-        for (const point of points) {
-            if (!seenIds.has(point.id)) {
-                unique.push(point);
-                seenIds.add(point.id);
-            }
-        }
-        
-        return unique;
-    }
-
-    // Calculate bounds from coordinates
-    function calculateBounds(coordinates) {
-        if (coordinates.length === 0) return null;
-        
-        const bounds = new mapboxgl.LngLatBounds();
-        coordinates.forEach(coord => {
-            bounds.extend(coord);
-        });
-        return bounds;
-    }
-
-    // Fly to track bounds
-    function flyToTrack(trackData) {
-        const coordinates = trackData.activePoints.map(p => p.coordinates);
-        const bounds = calculateBounds(coordinates);
-        
-        if (bounds) {
-            map.fitBounds(bounds, {
-                padding: 50,
-                duration: 1000,
-                essential: true
-            });
-        }
-    }
-
-    // Select a track for editing
-    function selectTrack(trackId) {
-    // Deselect previous track
-    if (currentTrackId && allTracks.has(currentTrackId)) {
-        allTracks.get(currentTrackId).isActive = false;
-    }
-    
-    // Select new track
-    currentTrackId = trackId;
-    const track = allTracks.get(trackId);
-    track.isActive = true;
-    
-    // Update density slider to match selected track
-    currentDensity = track.density;
-    document.getElementById('density-slider').value = currentDensity;
-    document.getElementById('density-value').textContent = currentDensity + '%';
-    
-    // Update marble spacing slider to match current track
-    document.getElementById('marble-spacing-slider').value = track.marbleSpacing;
-    document.getElementById('marble-spacing').textContent = track.marbleSpacing;
-    
-    // Update point counts
-    document.getElementById('points-count').textContent = track.activePoints.length + ' points';
-    document.getElementById('original-count').textContent = 'of ' + track.originalPoints.length;
-
-    updateStatistics();
-    
-    // Reset edit mode but KEEP Catmull-Rom state
-    if (isEditMode) {
-        disableEditing();
-        isEditMode = false;
-        document.getElementById('edit-btn').textContent = 'Edit Mode: OFF';
-        document.getElementById('edit-btn').classList.remove('active');
-    }
-
-    // Keep Catmull-Rom state as is
-    document.getElementById('catmull-btn').textContent = isCatmullRomEnabled ? 'Catmull-Rom: ON' : 'Catmull-Rom: OFF';
-    document.getElementById('catmull-btn').classList.toggle('active', isCatmullRomEnabled);
-    
-    // Clear marble selection state (but keep the track's marbles)
-    selectedMarbleId = null;
-    isDraggingMarble = false;
-    dragMarbleIndex = -1;
-    
-    updateTracksList();
-    updateAllTracksVisualization();
-    updateMarbleDisplay(); // Show current track's marbles
-    
-    // FLY TO THE TRACK BOUNDS
-    flyToTrack(track);
-    
-    // AUTO-LOAD IMAGES WHEN TRACK IS SELECTED
-    load360Images();
-    
-    setStatus(`Selected: ${track.name} - ${track.marbles.length} marbles`);
 }
 
-    // Update statistics display
-    function updateStatistics() {
-        const track = getCurrentTrack();
-        if (!track) {
-            clearStatistics();
-            return;
+function selectTrackWithoutMapReset(trackId){
+  if (currentTrackId && allTracks.has(currentTrackId)) allTracks.get(currentTrackId).isActive=false;
+  currentTrackId = trackId;
+  const track = allTracks.get(trackId);
+  track.isActive = true;
+
+  updateStatistics();
+  updateAllTracksVisualization(false);
+  updateMarbleDisplay();
+
+  if (viewConeMarker){ viewConeMarker.remove(); viewConeMarker = null; }
+  load360Images();
+  setStatus(`Switched to: ${track.name} - ${track.marbles.length} marbles`);
+}
+
+function flyToTrack(track){
+  const coordinates = track.activePoints.map(p=>p.coordinates);
+  const bounds = calculateBounds(coordinates);
+  if (bounds) map.fitBounds(bounds, { padding:50, duration:800, essential:true });
+}
+
+function updateStatistics(){
+  const track = getCurrentTrack();
+  if (!track) return;
+  // minimal: we keep stats internal only; status text sets messages.
+}
+function getCurrentTrack(){ return currentTrackId ? allTracks.get(currentTrackId) : null; }
+
+/* =============================== */
+/*          MAP INTERACTIONS       */
+/* =============================== */
+function setupMapInteractions(){
+  map.on('move', ()=> { if (selectedMarbleId) updateViewCone(); });
+  map.on('zoom', ()=> { if (selectedMarbleId) updateViewCone(); });
+}
+function enableMarbleClickOnly(){
+  map.off('click','marbles-click-layer',handleMarbleClick);
+  map.off('click', handleMapClickForDeselect);
+
+  map.on('click','marbles-click-layer', handleMarbleClick);
+  map.on('click', handleMapClickForDeselect);
+}
+
+/* =============================== */
+/*        MARBLE DISPLAY/CLICK     */
+/* =============================== */
+function updateMarbleDisplay(){
+  const src = map.getSource('marbles');
+  if (!src) return;
+
+  const all = [];
+  allTracks.forEach((track, trackId)=>{
+    track.marbles.forEach((m, index)=>{
+      const hasImage = m.assignedImage !== null;
+      all.push({
+        type:'Feature',
+        geometry:{ type:'Point', coordinates: m.position },
+        properties:{
+          id: m.id,
+          trackId,
+          index,
+          isSelected: (m.id === selectedMarbleId),
+          hasImage
         }
-        
-        const stats = track.originalStats;
-        const distanceKm = stats.distance / 1000;
-        
-        document.getElementById('total-distance').textContent = 
-            distanceKm < 1 ? 
-            `${stats.distance.toFixed(0)} m` : 
-            `${distanceKm.toFixed(2)} km`;
-        
-        document.getElementById('avg-speed').textContent = 
-            `${stats.avgSpeed.toFixed(1)} km/h`;
-        
-        document.getElementById('stats-points').textContent = 
-            stats.pointCount;
-        
-        document.getElementById('total-duration').textContent = 
-            stats.duration;
-    }
-
-    // Clear statistics when no track is selected
-    function clearStatistics() {
-        document.getElementById('total-distance').textContent = '0 km';
-        document.getElementById('avg-speed').textContent = '0 km/h';
-        document.getElementById('stats-points').textContent = '0';
-        document.getElementById('total-duration').textContent = '0s';
-    }
-
-    // Remove a track
-    function removeTrack(trackId) {
-        allTracks.delete(trackId);
-        
-        if (currentTrackId === trackId) {
-            currentTrackId = null;
-            if (allTracks.size > 0) {
-                selectTrack(Array.from(allTracks.keys())[0]);
-            } else {
-                document.getElementById('points-count').textContent = '0 points';
-                document.getElementById('original-count').textContent = '';
-                isCatmullRomEnabled = false;
-                document.getElementById('catmull-btn').textContent = 'Catmull-Rom: OFF';
-                document.getElementById('catmull-btn').classList.remove('active');
-                clearStatistics();
-            }
-        }
-        
-        updateTracksList();
-        updateAllTracksVisualization();
-    }
-
-    // Update tracks list UI
-    function updateTracksList() {
-    const tracksList = document.getElementById('tracks-list');
-    tracksList.innerHTML = '';
-    
-    if (allTracks.size === 0) {
-        tracksList.innerHTML = `
-            <div style="text-align: center; padding: 10px; color: #666; font-size: 12px;">
-                No tracks loaded<br>
-                <small>Drop GPX files or they will auto-load from manifest</small>
-            </div>
-        `;
-        return;
-    }
-    
-    allTracks.forEach((track, trackId) => {
-        const trackItem = document.createElement('div');
-        trackItem.className = `track-item ${track.isActive ? 'track-active' : ''}`;
-        
-        // Add a small indicator for predefined tracks
-        const isPredefined = track.isPredefined ? ' 📁' : '';
-        
-        trackItem.innerHTML = `
-            <div class="track-info">
-                <div class="track-color" style="background-color: ${track.color}"></div>
-                <span title="${track.name}">
-                    ${track.name.length > 20 ? track.name.substring(0, 20) + '...' : track.name}
-                    ${isPredefined}
-                </span>
-            </div>
-            <div class="track-actions">
-                <button class="small-btn" onclick="selectTrack('${trackId}')">Edit</button>
-                <button class="small-btn" onclick="exportSingleTrack('${trackId}')" title="Export this track">💾</button>
-                <button class="small-btn" onclick="removeTrack('${trackId}')">×</button>
-            </div>
-        `;
-        
-        trackItem.onclick = (e) => {
-            if (!e.target.closest('.track-actions')) {
-                selectTrack(trackId);
-            }
-        };
-        
-        tracksList.appendChild(trackItem);
+      });
     });
+  });
+
+  src.setData({ type:'FeatureCollection', features: all });
 }
 
-    // Get current track data
-    function getCurrentTrack() {
-        return currentTrackId ? allTracks.get(currentTrackId) : null;
-    }
+function handleMarbleClick(e){
+  if (!e.features?.length) { deselectMarble(); return; }
+  const marbleId = e.features[0].properties.id;
+  const trackId = e.features[0].properties.trackId;
 
-    // Get current track's marbles
-    function getCurrentMarbles() {
-        const track = getCurrentTrack();
-        return track ? track.marbles : [];
-    }
+  if (trackId !== currentTrackId) {
+    selectTrackAndThenMarble(trackId, marbleId);
+  } else {
+    selectMarble(marbleId);
+    showMarbleImage(marbleId);
+  }
+}
 
-    // Update visualization of all tracks
-    function updateAllTracksVisualization(fitBounds = false) {
-        if (!map.getSource('tracks-line')) return;
+function handleMapClickForDeselect(e){
+  const f = map.queryRenderedFeatures(e.point, { layers:['marbles-click-layer'] });
+  if (!f.length) deselectMarble();
+}
 
-        const features = [];
-        let activeTrackCoordinates = [];
-        
-        allTracks.forEach(track => {
-            let displayCoordinates;
-            
-            if (isCatmullRomEnabled) {
-                displayCoordinates = catmullRomSmooth(
-                    track.activePoints.map(p => p.coordinates), 
-                    15, 
-                    0.5
-                );
-            } else {
-                displayCoordinates = track.activePoints.map(p => p.coordinates);
-            }
-            
-            if (track.isActive) {
-                activeTrackCoordinates = displayCoordinates;
-            }
-            
-            features.push({
-                type: 'Feature',
-                geometry: {
-                    type: 'LineString',
-                    coordinates: displayCoordinates
-                },
-                properties: {
-                    trackId: track.id,
-                    color: track.color,
-                    isActive: track.isActive
-                }
-            });
-        });
-        
-        map.getSource('tracks-line').setData({
-            type: 'FeatureCollection',
-            features: features
-        });
+let isSwitchingToMarble = false;
+async function selectTrackAndThenMarble(trackId, marbleId){
+  const prevTrackId = currentTrackId;
+  try {
+    isSwitchingToMarble = true;
+    selectTrackWithoutMapReset(trackId);
+    await new Promise(r=>setTimeout(r,100));
+    selectMarble(marbleId);
 
-        // Update control points for active track
-        const track = getCurrentTrack();
-        if (track && isEditMode) {
-            const controlPointFeatures = track.activePoints.map((point, index) => {
-                return {
-                    type: 'Feature',
-                    geometry: {
-                        type: 'Point',
-                        coordinates: point.coordinates
-                    },
-                    properties: {
-                        id: point.id,
-                        trackId: track.id,
-                        isActive: true,
-                        isEditMode: isEditMode
-                    }
-                };
-            });
-
-            map.getSource('control-points').setData({
-                type: 'FeatureCollection',
-                features: controlPointFeatures
-            });
-        } else {
-            map.getSource('control-points').setData({
-                type: 'FeatureCollection',
-                features: []
-            });
-        }
-
-        if (fitBounds && activeTrackCoordinates.length > 0) {
-            const bounds = calculateBounds(activeTrackCoordinates);
-            if (bounds) {
-                map.fitBounds(bounds, { padding: 50, duration: 1000 });
-            }
-        }
-    }
-
-    // Handle density slider change for current track
-    function handleDensityChange(e) {
-    currentDensity = parseInt(e.target.value);
-    document.getElementById('density-value').textContent = currentDensity + '%';
-    
     const track = getCurrentTrack();
-    if (track) {
-        wasCatmullRomEnabledBeforeEdit = isCatmullRomEnabled;
-        
-        applyDensityFilterToTrack(track, currentDensity);
-        updateAllTracksVisualization(false);
-        
-        // AUTO-UPDATE MARBLES AFTER DENSITY CHANGE
-        if (track.marbles.length > 0) {
-            reattachMarblesToTrack(track);
-        }
-        
-        document.getElementById('points-count').textContent = track.activePoints.length + ' points';
-        document.getElementById('original-count').textContent = 'of ' + track.originalPoints.length;
-        
-        if (wasCatmullRomEnabledBeforeEdit) {
-            setTimeout(() => enableCatmullRom(), 10);
-        }
-    }
+    const marble = track.marbles.find(m=>m.id===marbleId);
+    if (marble && marble.assignedImage !== null) showImageByIndex(marble.assignedImage);
+
+    setStatus(`Switched to ${allTracks.get(trackId).name} and selected marble`);
+  } catch (err){
+    console.error('Switch error', err);
+    if (prevTrackId) selectTrackWithoutMapReset(prevTrackId);
+  } finally {
+    isSwitchingToMarble = false;
+  }
 }
 
-    // Catmull-Rom smoothing
-    function catmullRomSmooth(points, segments = 20, tension = 0.5) {
-        if (points.length < 3) return points;
-        
-        const smoothed = [points[0]];
-        
-        for (let i = 0; i < points.length - 1; i++) {
-            const p0 = i > 0 ? points[i - 1] : points[i];
-            const p1 = points[i];
-            const p2 = points[i + 1];
-            const p3 = i < points.length - 2 ? points[i + 2] : p2;
-            
-            for (let t = 1; t <= segments; t++) {
-                const percentage = t / segments;
-                
-                const x = catmullRom(percentage, p0[0], p1[0], p2[0], p3[0], tension);
-                const y = catmullRom(percentage, p0[1], p1[1], p2[1], p3[1], tension);
-                
-                smoothed.push([x, y]);
-            }
-        }
-        
-        smoothed.push(points[points.length - 1]);
-        return smoothed;
-    }
+function selectMarble(marbleId){
+  const prevSelected = selectedMarbleId;
+  selectedMarbleId = marbleId;
 
-    function catmullRom(t, p0, p1, p2, p3, tension) {
-        const v0 = (p2 - p0) * tension;
-        const v1 = (p3 - p1) * tension;
-        const t2 = t * t;
-        const t3 = t * t2;
-        
-        return (2 * p1 - 2 * p2 + v0 + v1) * t3 + 
-               (-3 * p1 + 3 * p2 - 2 * v0 - v1) * t2 + 
-               v0 * t + p1;
-    }
+  const track = getCurrentTrack();
+  if (!track) return;
 
-    // Toggle Catmull-Rom for current track
-    function toggleCatmullRom() {
-        const track = getCurrentTrack();
-        if (!track) {
-            setStatus('Please select a track first!');
-            return;
-        }
-        
-        if (isCatmullRomEnabled) {
-            disableCatmullRom();
-        } else {
-            enableCatmullRom();
-        }
-    }
+  // bias "continue straight"
+  if (prevSelected){
+    const prev = track.marbles.find(m=>m.id===prevSelected);
+    const curr = track.marbles.find(m=>m.id===marbleId);
+    if (prev && curr) lastHopBearingDeg = bearingDeg(prev.position, curr.position);
+  }
 
-function fitMapToTrackAndMarbles(track) {
-    if (!track) return;
-    
-    const allCoordinates = [
-        ...track.activePoints.map(p => p.coordinates),
-        ...track.marbles.map(m => m.position)
-    ];
-    
-    if (allCoordinates.length === 0) return;
-    
-    const bounds = new mapboxgl.LngLatBounds();
-    allCoordinates.forEach(coord => {
-        bounds.extend(coord);
-    });
-    
-    map.fitBounds(bounds, {
-        padding: 50,
-        duration: 1000
-    });
+  updateMarbleDisplay();
+  updateViewCone();
+  refreshBranchButtons();
+
 }
 
-function enableCatmullRom() {
-    isCatmullRomEnabled = true;
-    document.getElementById('catmull-btn').textContent = 'Catmull-Rom: ON';
-    document.getElementById('catmull-btn').classList.add('active');
-    updateAllTracksVisualization(false);
-    
-    const track = getCurrentTrack();
-    if (track && track.marbles.length > 0) {
-        snapWaypointsToSmoothedTrack(track);
-        fitMapToTrackAndMarbles(track); // AUTO-FIT
-    }
-    
-    setStatus('Catmull-Rom smoothing applied');
+function deselectMarble(){
+  selectedMarbleId = null;
+  updateMarbleDisplay();
+  hideViewCone();
+
 }
 
-function disableCatmullRom() {
-    isCatmullRomEnabled = false;
-    document.getElementById('catmull-btn').textContent = 'Catmull-Rom: OFF';
-    document.getElementById('catmull-btn').classList.remove('active');
-    updateAllTracksVisualization(false);
-    
-    // REATTACH marbles to the original track
-    const track = getCurrentTrack();
-    if (track && track.marbles.length > 0) {
-        reattachMarblesToTrack(track);
-    }
-    
-    setStatus('Catmull-Rom smoothing disabled');
-}
-
-    // Clear marbles when edit mode is toggled
-    function toggleEditMode() {
-    const track = getCurrentTrack();
-    if (!track) {
-        setStatus('Please select a track first!');
-        return;
-    }
-
-    isEditMode = !isEditMode;
-    const btn = document.getElementById('edit-btn');
-    
-    if (isEditMode) {
-        btn.textContent = 'Edit Mode: ON';
-        btn.classList.add('active');
-        enableEditing();
-        
-        // KEEP marbles instead of clearing them
-        if (track.marbles.length > 0) {
-            setStatus(`Editing track - ${track.marbles.length} marbles preserved`);
-            // Marbles will auto-reposition when track changes
-        } else {
-            setStatus('Editing track - no marbles to preserve');
-        }
-        
-    } else {
-        btn.textContent = 'Edit Mode: OFF';
-        btn.classList.remove('active');
-        disableEditing();
-        
-        // REATTACH marbles to the updated track
-        if (track.marbles.length > 0) {
-            reattachMarblesToTrack(track);
-            setStatus(`Edit complete - ${track.marbles.length} marbles reattached`);
-        } else {
-            setStatus('Edit mode disabled');
-        }
-    }
-    
-    updateAllTracksVisualization(false);
-}
-
-function reattachMarblesToTrack(track) {
-    if (!track || track.marbles.length === 0) return;
-    
-    const coordinates = getDisplayCoordinates(track);
-    const totalDistance = calculateTotalDistance(coordinates);
-    
-    track.marbles.forEach(marble => {
-        // Find new position along the updated track
-        const safeDistance = Math.min(marble.distanceAlongRoute, totalDistance);
-        marble.position = findPositionAtDistance(coordinates, safeDistance);
-        marble.distanceAlongRoute = safeDistance;
-    });
-    
-    updateMarbleDisplay();
-    rebuildNavGraph();
-    setStatus(`Reattached ${track.marbles.length} marbles to updated track`);
-}
-
-    // Enable editing functionality
-    function enableEditing() {
-        map.getCanvas().style.cursor = 'crosshair';
-    }
-
-    // Disable editing functionality
-    function disableEditing() {
-        map.getCanvas().style.cursor = '';
-        currentMode = 'view';
-        
-        map.off('click', handlePointAdd);
-        map.off('click', handlePointRemove);
-        map.off('mousedown', startPointDrag);
-        map.off('mousemove', handlePointDrag);
-        map.off('mouseup', stopPointDrag);
-    }
-
-    // Set current editing mode
-    function addPointMode() {
-        if (!isEditMode || !getCurrentTrack()) return;
-        currentMode = 'add';
-        map.getCanvas().style.cursor = 'crosshair';
-        setStatus('Add Points: Click on map to add points to current track');
-        
-        wasCatmullRomEnabledBeforeEdit = isCatmullRomEnabled;
-        
-        map.off('click', handlePointRemove);
-        map.off('mousedown', startPointDrag);
-        map.off('mousemove', handlePointDrag);
-        map.off('mouseup', stopPointDrag);
-        map.off('click', handlePointAdd);
-        map.on('click', handlePointAdd);
-    }
-
-    function removePointMode() {
-        if (!isEditMode || !getCurrentTrack()) return;
-        currentMode = 'remove';
-        map.getCanvas().style.cursor = 'not-allowed';
-        setStatus('Remove Points: Click on points to remove them');
-        
-        wasCatmullRomEnabledBeforeEdit = isCatmullRomEnabled;
-        
-        map.off('mousedown', startPointDrag);
-        map.off('mousemove', handlePointDrag);
-        map.off('mouseup', stopPointDrag);
-        map.off('click', handlePointAdd);
-        map.off('click', handlePointRemove);
-        map.on('click', handlePointRemove);
-    }
-
-    function movePointMode() {
-        if (!isEditMode || !getCurrentTrack()) return;
-        currentMode = 'move';
-        map.getCanvas().style.cursor = 'move';
-        setStatus('Move Points: Click and drag points to move them');
-        
-        wasCatmullRomEnabledBeforeEdit = isCatmullRomEnabled;
-        
-        map.off('click', handlePointAdd);
-        map.off('click', handlePointRemove);
-        map.off('mousedown', startPointDrag);
-        map.off('mousemove', handlePointDrag);
-        map.off('mouseup', stopPointDrag);
-        
-        enablePointDragging();
-    }
-
-    // Handle adding points to current track
-    function handlePointAdd(e) {
-    if (currentMode !== 'add') return;
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    if (isCatmullRomEnabled) {
-        disableCatmullRom();
-    }
-    
-    const newPoint = {
-        id: nextPointId++,
-        coordinates: [e.lngLat.lng, e.lngLat.lat],
-        originalIndex: -1
-    };
-    
-    const insertIndex = findBestInsertPosition(newPoint.coordinates, track.activePoints);
-    track.activePoints.splice(insertIndex, 0, newPoint);
-    
-    updateAllTracksVisualization(false);
-    
-    // AUTO-UPDATE MARBLES AFTER POINT ADDITION
-    if (track.marbles.length > 0) {
-        reattachMarblesToTrack(track);
-    }
-    
-    if (wasCatmullRomEnabledBeforeEdit) {
-        setTimeout(() => enableCatmullRom(), 10);
-    }
-    
-    document.getElementById('points-count').textContent = track.activePoints.length + ' points';
-    setStatus(`Point added. Total: ${track.activePoints.length}`);
-}
-
-    // Find best position to insert point
-    function findBestInsertPosition(newCoord, points) {
-        if (points.length < 2) return points.length;
-        
-        let bestIndex = points.length - 1;
-        let minDistance = Infinity;
-        
-        for (let i = 0; i < points.length - 1; i++) {
-            const segmentStart = points[i].coordinates;
-            const segmentEnd = points[i + 1].coordinates;
-            const distance = distanceToSegment(newCoord, segmentStart, segmentEnd);
-            
-            if (distance < minDistance) {
-                minDistance = distance;
-                bestIndex = i + 1;
-            }
-        }
-        
-        return bestIndex;
-    }
-
-    // Calculate distance from point to line segment
-    function distanceToSegment(point, segmentStart, segmentEnd) {
-        const A = point[0] - segmentStart[0];
-        const B = point[1] - segmentStart[1];
-        const C = segmentEnd[0] - segmentStart[0];
-        const D = segmentEnd[1] - segmentStart[1];
-
-        const dot = A * C + B * D;
-        const lenSq = C * C + D * D;
-        let param = -1;
-
-        if (lenSq !== 0) param = dot / lenSq;
-
-        let xx, yy;
-
-        if (param < 0) {
-            xx = segmentStart[0];
-            yy = segmentStart[1];
-        } else if (param > 1) {
-            xx = segmentEnd[0];
-            yy = segmentEnd[1];
-        } else {
-            xx = segmentStart[0] + param * C;
-            yy = segmentStart[1] + param * D;
-        }
-
-        const dx = point[0] - xx;
-        const dy = point[1] - yy;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    // Handle removing points from current track
-   function handlePointRemove(e) {
-    if (currentMode !== 'remove') return;
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    if (isCatmullRomEnabled) {
-        disableCatmullRom();
-    }
-    
-    const features = map.queryRenderedFeatures(e.point, {
-        layers: ['gpx-control-points']
-    });
-    
-    if (features.length > 0) {
-        const pointId = features[0].properties.id;
-        const pointIndex = track.activePoints.findIndex(p => p.id === pointId);
-        
-        if (pointIndex !== -1 && track.activePoints.length > 2) {
-            track.activePoints.splice(pointIndex, 1);
-            updateAllTracksVisualization(false);
-            
-            // AUTO-UPDATE MARBLES AFTER POINT REMOVAL
-            if (track.marbles.length > 0) {
-                reattachMarblesToTrack(track);
-            }
-            
-            if (wasCatmullRomEnabledBeforeEdit) {
-                setTimeout(() => enableCatmullRom(), 10);
-            }
-            
-            document.getElementById('points-count').textContent = track.activePoints.length + ' points';
-            setStatus(`Point removed. Total: ${track.activePoints.length}`);
-        } else if (track.activePoints.length <= 2) {
-            setStatus('Cannot remove point - track must have at least 2 points');
-        }
-    }
-}
-
-    // Enable point dragging
-    function enablePointDragging() {
-        map.on('mousedown', 'gpx-control-points', startPointDrag);
-        map.on('mousemove', handlePointDrag);
-        map.on('mouseup', stopPointDrag);
-    }
-
-    function startPointDrag(e) {
-        if (currentMode !== 'move') return;
-        const track = getCurrentTrack();
-        if (!track) return;
-        
-        if (isCatmullRomEnabled) {
-            disableCatmullRom();
-        }
-        
-        e.preventDefault();
-        isDragging = true;
-        dragPointId = e.features[0].properties.id;
-        map.getCanvas().style.cursor = 'grabbing';
-        disableMapInteractions();
-    }
-
-function handlePointDrag(e) {
-    if (!isDragging || dragPointId === -1) return;
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    const pointIndex = track.activePoints.findIndex(p => p.id === dragPointId);
-    if (pointIndex !== -1) {
-        track.activePoints[pointIndex].coordinates = [e.lngLat.lng, e.lngLat.lat];
-        updateAllTracksVisualization(false);
-        
-        // AUTO-UPDATE MARBLES DURING DRAG (real-time)
-        if (track.marbles.length > 0) {
-            reattachMarblesToTrack(track);
-        }
-    }
-}
-
-    function stopPointDrag() {
-        if (isDragging) {
-            isDragging = false;
-            dragPointId = -1;
-            map.getCanvas().style.cursor = 'move';
-            enableMapInteractions();
-            
-            if (wasCatmullRomEnabledBeforeEdit) {
-                setTimeout(() => enableCatmullRom(), 10);
-            }
-            
-            setStatus('Point moved');
-        }
-    }
-
-    // Reset current track to original
-    function resetCurrentTrack() {
-        const track = getCurrentTrack();
-        if (track) {
-            applyDensityFilterToTrack(track, 100);
-            currentDensity = 100;
-            document.getElementById('density-slider').value = 100;
-            document.getElementById('density-value').textContent = '100%';
-            document.getElementById('points-count').textContent = track.activePoints.length + ' points';
-            updateAllTracksVisualization(false);
-            setStatus(`Reset ${track.name} to original`);
-        }
-    }
-
-    // Clear all tracks
-    function clearAllRoutes() {
-        allTracks.clear();
-        currentTrackId = null;
-        resetState();
-        updateTracksList();
-        updateAllTracksVisualization(false);
-        setStatus('All tracks cleared');
-    }
-
-    // Reset state
-    function resetState() {
-        currentDensity = 100;
-        isCatmullRomEnabled = false;
-        wasCatmullRomEnabledBeforeEdit = false;
-        document.getElementById('density-slider').value = 100;
-        document.getElementById('density-value').textContent = '100%';
-        document.getElementById('catmull-btn').textContent = 'Catmull-Rom: OFF';
-        document.getElementById('catmull-btn').classList.remove('active');
-        document.getElementById('points-count').textContent = '0 points';
-        document.getElementById('original-count').textContent = '';
-        
-        // Clear marble selection state
-        selectedMarbleId = null;
-        isDraggingMarble = false;
-        dragMarbleIndex = -1;
-        updateMarbleDisplay();
-    }
-
-    function setStatus(message) {
-        document.getElementById('status').textContent = message;
-    }
-
-    // Map interaction control functions
-    function disableMapInteractions() {
-        if (isDragging) {
-            map.dragPan.disable();
-            map.scrollZoom.disable();
-            map.dragRotate.disable();
-            map.boxZoom.disable();
-            map.doubleClickZoom.disable();
-        }
-    }
-
-    function enableMapInteractions() {
-        if (!isDragging) {
-            map.dragPan.enable();
-            map.scrollZoom.enable();
-            map.dragRotate.enable();
-            map.boxZoom.enable();
-            map.doubleClickZoom.enable();
-        }
-    }
-
-    // ========== MARBLE SYSTEM FUNCTIONS ==========
-
-    function initializeMarbles() {
-    const track = getCurrentTrack();
-    if (!track) {
-        setStatus('Please select a track first!');
-        return;
-    }
-    
-    track.marbles = [];
-    const coordinates = getDisplayCoordinates(track);
-    const totalDistance = calculateTotalDistance(coordinates);
-    
-    // CREATE EXACTLY AS MANY MARBLES AS WE HAVE IMAGES
-    const marbleCount = currentImages.length;
-    
-    if (marbleCount === 0) {
-        setStatus('No images loaded - cannot create marbles');
-        return;
-    }
-    
-    for (let i = 0; i < marbleCount; i++) {
-        const ratio = i / (marbleCount - 1);
-        const targetDistance = ratio * totalDistance;
-        const position = findPositionAtDistance(coordinates, targetDistance);
-        
-        track.marbles.push({
-            id: Date.now() + i,
-            index: i,
-            position: position,
-            distanceAlongRoute: targetDistance,
-            isLocked: (i === 0 || i === marbleCount - 1),
-            isFixed: (i === 0 || i === marbleCount - 1),
-            assignedImage: i // DIRECT 1:1 ASSIGNMENT
-        });
-    }
-    
-    updateMarbleDisplay();
-    rebuildNavGraph();
-    
-    setStatus(`Created ${marbleCount} marbles with 1:1 image assignment`);
-}
-
-    function getDisplayCoordinates(track) {
-        if (isCatmullRomEnabled) {
-            return catmullRomSmooth(
-                track.activePoints.map(p => p.coordinates), 
-                15, 
-                0.5
-            );
-        } else {
-            return track.activePoints.map(p => p.coordinates);
-        }
-    }
-
-function addMarble() {
-    const track = getCurrentTrack();
-    if (!track) {
-        setStatus('Please select a track first!');
-        return;
-    }
-    
-    const marbles = track.marbles;
-    
-    // PREVENT ADDING MARBLES BEYOND AVAILABLE IMAGES
-    if (marbles.length >= currentImages.length) {
-        setStatus(`Cannot add marble - only ${currentImages.length} images available`);
-        return;
-    }
-    
-    if (marbles.length === 0) {
-        initializeMarbles();
-        return;
-    }
-    
-    // ADD AT THE END
-    const coordinates = getDisplayCoordinates(track);
-    const totalDistance = calculateTotalDistance(coordinates);
-    const lastMarble = marbles[marbles.length - 1];
-    const newDistance = lastMarble.distanceAlongRoute + track.marbleSpacing;
-    const safeDistance = Math.min(newDistance, totalDistance);
-    
-    const newMarble = {
-        id: Date.now(),
-        index: marbles.length,
-        position: findPositionAtDistance(coordinates, safeDistance),
-        distanceAlongRoute: safeDistance,
-        isLocked: false,
-        isFixed: false,
-        assignedImage: marbles.length // NEXT AVAILABLE IMAGE INDEX
-    };
-    
-    track.marbles.push(newMarble);
-    respaceAllMarbles();
-    updateMarbleDisplay();
-    
-    setStatus(`Added marble #${marbles.length} with image ${marbles.length}/${currentImages.length}`);
-    rebuildNavGraph();
-}
-
-function repairImageAssignment() {
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    const marbles = track.marbles;
-    const availableImages = currentImages.length;
-    
-    if (marbles.length > availableImages) {
-        // Remove excess marbles
-        track.marbles = marbles.slice(0, availableImages);
-        setStatus(`Removed ${marbles.length - availableImages} excess marbles`);
-    }
-    
-    // Reassign images 1:1
-    marbles.forEach((marble, index) => {
-        marble.assignedImage = index;
-        marble.index = index;
-    });
-    
-    updateMarbleDisplay();
-    setStatus(`Repaired: ${marbles.length} marbles ↔ ${marbles.length} images`);
-}
-
-function autoAssignImageToNewMarble() {
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    const marbles = track.marbles;
-    const newMarble = marbles[marbles.length - 1]; // The one we just added
-    
-    // Find the next available image
-    const usedImageIndices = new Set(marbles.map(m => m.assignedImage).filter(i => i !== null));
-    let nextAvailableImage = 0;
-    
-    while (usedImageIndices.has(nextAvailableImage) && nextAvailableImage < currentImages.length) {
-        nextAvailableImage++;
-    }
-    
-    // Assign if we have an available image
-    if (nextAvailableImage < currentImages.length) {
-        newMarble.assignedImage = nextAvailableImage;
-        setStatus(`Assigned image ${nextAvailableImage + 1} to new marble`);
-    } else {
-        setStatus('No more images available for new marble');
-    }
-    
-    updateMarbleDisplay();
-}
-
-function removeMarble() {
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    const marbles = track.marbles;
-    if (marbles.length <= 2) {
-        setStatus('Cannot remove - must keep start and end marbles');
-        return;
-    }
-    
-    // REMOVE FROM THE END (not from the middle)
-    let removeIndex = marbles.length - 1;
-    
-    // Find the last removable marble (not fixed)
-    while (removeIndex > 0 && marbles[removeIndex].isFixed) {
-        removeIndex--;
-    }
-    
-    // Can't remove if we're at the first marble
-    if (removeIndex <= 0) {
-        setStatus('Cannot remove - only fixed marbles remain');
-        return;
-    }
-    
-    const removedMarble = marbles[removeIndex];
-    const removedImageIndex = removedMarble.assignedImage;
-    
-    // Remove from the array
-    track.marbles.splice(removeIndex, 1);
-    
-    // AUTO-RESPACE ALL MARBLES AFTER REMOVING
-    respaceAllMarbles();
-    
-    // Re-index all marbles
-    track.marbles.forEach((marble, index) => {
-        marble.index = index;
-    });
-    
-    // DO NOT SHIFT IMAGE ASSIGNMENTS - images stay with their original marble indices
-    if (removedImageIndex !== null) {
-        setStatus(`Removed marble with image ${removedImageIndex + 1} - image assignments preserved`);
-    } else {
-        setStatus(`Removed marble without image - ${track.marbles.length} total`);
-    }
-    
-    updateMarbleDisplay();
-    rebuildNavGraph();
-}
-
-
-function respaceAllMarbles() {
-    const track = getCurrentTrack();
-    if (!track || track.marbles.length < 2) return;
-    
-    const marbles = track.marbles;
-    const coordinates = getDisplayCoordinates(track);
-    const totalDistance = calculateTotalDistance(coordinates);
-    
-    // STORE image assignments BEFORE respacing
-    const imageAssignments = marbles.map(marble => ({
-        id: marble.id,
-        assignedImage: marble.assignedImage
-    }));
-    
-    // Create a mapping by marble ID for easy lookup
-    const assignmentMap = new Map();
-    imageAssignments.forEach(assignment => {
-        assignmentMap.set(assignment.id, assignment.assignedImage);
-    });
-    
-    // Respace all marbles evenly along the entire track
-    for (let i = 0; i < marbles.length; i++) {
-        const ratio = i / (marbles.length - 1);
-        marbles[i].distanceAlongRoute = ratio * totalDistance;
-        marbles[i].position = findPositionAtDistance(coordinates, marbles[i].distanceAlongRoute);
-        marbles[i].index = i;
-        
-        // Keep first and last marbles fixed
-        marbles[i].isFixed = (i === 0 || i === marbles.length - 1);
-        
-        // RESTORE the image assignment using the marble ID
-        marbles[i].assignedImage = assignmentMap.get(marbles[i].id);
-    }
-    
-    rebuildNavGraph();
-}
-
-function rebuildNavGraph() {
+/* =============================== */
+/*            NAV GRAPH            */
+/* =============================== */
+function rebuildNavGraph(){
   navGraph.clear();
-
-  // (A) Edges along each track (sequential marbles)
-  allTracks.forEach(track => {
+  // A) sequential edges within each track
+  allTracks.forEach(track=>{
     const m = track.marbles;
-    for (let i = 0; i < m.length - 1; i++) {
-      const a = m[i], b = m[i+1];
+    for (let i=0;i<m.length-1;i++){
+      const a=m[i], b=m[i+1];
       const dAB = calculateDistance(a.position, b.position);
       const brAB = bearingDeg(a.position, b.position);
       const brBA = bearingDeg(b.position, a.position);
-
       if (!navGraph.has(a.id)) navGraph.set(a.id, []);
       if (!navGraph.has(b.id)) navGraph.set(b.id, []);
-      navGraph.get(a.id).push({ toMarbleId: b.id, distanceM: dAB, bearingDeg: brAB });
-      navGraph.get(b.id).push({ toMarbleId: a.id, distanceM: dAB, bearingDeg: brBA });
+      navGraph.get(a.id).push({ toMarbleId:b.id, distanceM:dAB, bearingDeg:brAB });
+      navGraph.get(b.id).push({ toMarbleId:a.id, distanceM:dAB, bearingDeg:brBA });
     }
-    // ensure nodes exist even if isolated
-    m.forEach(mm => { if (!navGraph.has(mm.id)) navGraph.set(mm.id, []); });
+    m.forEach(mm=>{ if(!navGraph.has(mm.id)) navGraph.set(mm.id,[]); });
   });
 
-  // (B) Cross-edges at junctions (nearby marbles)
-  const allMarbles = [];
-  allTracks.forEach(track => track.marbles.forEach(m => allMarbles.push({ trackId: track.id, m })));
-
-  const RADIUS_M = 8; // tweak: what "counts" as a junction
-  for (let i = 0; i < allMarbles.length; i++) {
-    for (let j = i + 1; j < allMarbles.length; j++) {
-      const A = allMarbles[i].m, B = allMarbles[j].m;
+  // B) junctions across tracks (nearby marbles)
+  const all = [];
+  allTracks.forEach(track => track.marbles.forEach(m => all.push({trackId:track.id, m})));
+  const RADIUS_M = 8;
+  for (let i=0;i<all.length;i++){
+    for (let j=i+1;j<all.length;j++){
+      const A=all[i].m, B=all[j].m;
       const d = calculateDistance(A.position, B.position);
-      if (d > RADIUS_M) continue;
-
+      if (d>RADIUS_M) continue;
       const brAB = bearingDeg(A.position, B.position);
       const brBA = bearingDeg(B.position, A.position);
       if (!navGraph.has(A.id)) navGraph.set(A.id, []);
       if (!navGraph.has(B.id)) navGraph.set(B.id, []);
-
-      navGraph.get(A.id).push({ toMarbleId: B.id, distanceM: d, bearingDeg: brAB });
-      navGraph.get(B.id).push({ toMarbleId: A.id, distanceM: d, bearingDeg: brBA });
+      navGraph.get(A.id).push({ toMarbleId:B.id, distanceM:d, bearingDeg:brAB });
+      navGraph.get(B.id).push({ toMarbleId:A.id, distanceM:d, bearingDeg:brBA });
     }
   }
 
-  // (C) De-duplicate edges per node by toMarbleId (keep shortest)
-  navGraph.forEach((edges, key) => {
+  // C) dedupe keep shortest
+  navGraph.forEach((edges, key)=>{
     const byTarget = new Map();
-    edges.forEach(e => {
+    edges.forEach(e=>{
       const prev = byTarget.get(e.toMarbleId);
       if (!prev || e.distanceM < prev.distanceM) byTarget.set(e.toMarbleId, e);
     });
@@ -2177,1371 +640,404 @@ function rebuildNavGraph() {
   });
 }
 
-function getFacingOptions(marbleId, currentYawRad, maxOptions = 3) {
-    const edges = navGraph.get(marbleId) || [];
-    const yawDeg = (THREE.MathUtils.radToDeg(currentYawRad) + 360) % 360;
+function getFacingOptions(marbleId, currentYawRad, maxOptions=3){
+  const edges = navGraph.get(marbleId) || [];
+  const yawDeg = (THREE.MathUtils.radToDeg(currentYawRad) + 360) % 360;
 
-    return edges
-        .map(e => {
-            const angleToView = angularDiffDeg(yawDeg, e.bearingDeg);
-            
-            // Enhanced scoring:
-            // - Perfect alignment (0° diff) = 0 points
-            // - 90° off = 90 points  
-            // - 180° off = 180 points
-            let score = angleToView;
-            
-            // Bonus for continuing straight (if we have previous direction)
-            if (lastHopBearingDeg != null) {
-                const continueDiff = angularDiffDeg(lastHopBearingDeg, e.bearingDeg);
-                // Prefer directions close to our last movement (encourage straight lines)
-                score += continueDiff * 0.3;
-            }
-            
-            // Small preference for shorter distances
-            score += e.distanceM * 0.001;
-            
-            return { ...e, angleToView, score };
-        })
-        .sort((a, b) => a.score - b.score)
-        .slice(0, maxOptions);
+  return edges.map(e=>{
+    const angleToView = angularDiffDeg(yawDeg, e.bearingDeg);
+    let score = angleToView;
+    if (lastHopBearingDeg != null){
+      const continueDiff = angularDiffDeg(lastHopBearingDeg, e.bearingDeg);
+      score += continueDiff * 0.3;
+    }
+    score += e.distanceM * 0.001;
+    return {...e, angleToView, score};
+  })
+  .sort((a,b)=>a.score-b.score)
+  .slice(0, maxOptions);
 }
 
-
-
-function updateMarbleSpacing() {
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    const spacingSlider = document.getElementById('marble-spacing-slider');
-    track.marbleSpacing = parseInt(spacingSlider.value);
-    document.getElementById('marble-spacing').textContent = track.marbleSpacing;
-    
-    if (track.marbles.length > 0) {
-        initializeMarbles(); // Rebuild with new spacing
-    }
-}
-
-function toggleMarbleLock(marbleId) {
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    const marbleIndex = track.marbles.findIndex(m => m.id === marbleId);
-    if (marbleIndex !== -1) {
-        // ALLOW unlocking any marble, including endpoints
-        track.marbles[marbleIndex].isLocked = !track.marbles[marbleIndex].isLocked;
-        updateMarbleDisplay();
-        
-        let positionText;
-        if (marbleIndex === 0) {
-            positionText = 'START';
-        } else if (marbleIndex === track.marbles.length - 1) {
-            positionText = 'END';
-        } else {
-            positionText = `#${marbleIndex + 1}`;
-        }
-        
-        setStatus(`${positionText} marble ${track.marbles[marbleIndex].isLocked ? 'locked' : 'unlocked'}`);
-    }
-}
-
-    // UPDATED: Handle marble click to show assigned image
-function handleMarbleClick(e) {
-    if (e.features.length > 0) {
-        const marbleId = e.features[0].properties.id;
-        const trackId = e.features[0].properties.trackId; // Get the track ID
-        
-        // If Ctrl/Cmd click, toggle lock
-        if (e.originalEvent.ctrlKey || e.originalEvent.metaKey) {
-            toggleMarbleLock(marbleId);
-            return;
-        }
-        
-        // CHECK IF WE NEED TO SWITCH TRACKS
-        if (trackId !== currentTrackId) {
-            // Switch to the marble's track first
-            selectTrackAndThenMarble(trackId, marbleId);
-        } else {
-            // Same track - just select the marble
-            selectMarble(marbleId);
-            showMarbleImage(marbleId);
-        }
-    } else {
-        deselectMarble();
-    }
-}
-
-// NEW FUNCTION: Switch track then select marble
-let isSwitchingToMarble = false;
-
-async function selectTrackAndThenMarble(trackId, marbleId) {
-    const previousTrackId = currentTrackId;
-    
-    try {
-        isSwitchingToMarble = true; // SET FLAG
-        
-        // Switch tracks first
-        selectTrackWithoutMapReset(trackId);
-        
-        // Wait a bit for track switch
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // NOW select the marble
-        selectMarble(marbleId);
-        
-        // Force the image to show for this marble
-        const track = getCurrentTrack();
-        const marble = track.marbles.find(m => m.id === marbleId);
-        if (marble && marble.assignedImage !== null) {
-            showImageByIndex(marble.assignedImage);
-        }
-        
-        setStatus(`Switched to ${allTracks.get(trackId).name} and selected marble`);
-        
-    } catch (error) {
-        console.error('Error switching tracks:', error);
-        if (previousTrackId) {
-            selectTrackWithoutMapReset(previousTrackId);
-        }
-    } finally {
-        isSwitchingToMarble = false; // CLEAR FLAG
-    }
-}
-
-
-
-function navigateToAdjacentMarble(goForward) {
-    const track = getCurrentTrack();
-    if (!track || !selectedMarbleId) return;
-    
-    const marbles = track.marbles;
-    const currentIndex = marbles.findIndex(m => m.id === selectedMarbleId);
-    
-    if (currentIndex === -1) return;
-    
-    let nextIndex = goForward ? currentIndex + 1 : currentIndex - 1;
-    
-    // DON'T wrap around - stop at endpoints
-    if (nextIndex < 0 || nextIndex >= marbles.length) {
-        setStatus(goForward ? 'Already at last marble' : 'Already at first marble');
-        return;
-    }
-    
-    const nextMarble = marbles[nextIndex];
-    selectMarble(nextMarble.id);
-    showMarbleImage(nextMarble.id);
-    
-    setStatus(`Moved to marble ${nextIndex + 1}/${marbles.length}`);
-}
-
-function selectMarble(marbleId) {
-    // NEW: remember previous selection to compute "continue" bearing
-    const prevSelected = selectedMarbleId;
-
-    selectedMarbleId = marbleId;
-    const track = getCurrentTrack();
-    if (!track) return;
-
-    const marbleIndex = track.marbles.findIndex(m => m.id === marbleId);
-
-    // NEW: compute bearing from previous -> current to bias "keep going straight"
-    if (prevSelected) {
-        try {
-            const prev = track.marbles.find(m => m.id === prevSelected);
-            const curr = track.marbles.find(m => m.id === marbleId);
-            if (prev && curr) {
-                lastHopBearingDeg = bearingDeg(prev.position, curr.position);
-            }
-        } catch {}
-    }
-
-    if (marbleIndex !== -1) {
-        updateMarbleDisplay();
-        setStatus(`Selected marble #${marbleIndex + 1} - Drag to move or Ctrl+Click to lock`);
-
-                // UPDATE CONE POSITION
-        updateViewCone();
-    }
-
-    // NEW: update branch buttons for this selection
-    refreshBranchButtons();
-}
-
-    function deselectMarble() {
-        selectedMarbleId = null;
-        updateMarbleDisplay();
-            // HIDE CONE when no marble selected
-    hideViewCone(); // ADD THIS LINE
-        setStatus('Marble deselected');
-    }
-
-    function startMarbleDrag(marbleId) {
-        // Only allow dragging if this marble is selected AND not locked
-        if (marbleId !== selectedMarbleId) return;
-        
-        const track = getCurrentTrack();
-        if (!track) return;
-        
-        const marbleIndex = track.marbles.findIndex(m => m.id === marbleId);
-        if (marbleIndex === -1) return;
-        
-        const marble = track.marbles[marbleIndex];
-        if (marble.isLocked) {
-            setStatus('Marble is locked - cannot drag');
-            return;
-        }
-        
-        isDraggingMarble = true;
-        dragMarbleIndex = marbleIndex;
-        marble.isDragging = true;
-        
-        updateMarbleDisplay();
-        setStatus(`Dragging marble #${marble.index + 1}`);
-        
-        // Prevent map dragging
-        map.dragPan.disable();
-        map.scrollZoom.disable();
-        map.getCanvas().style.cursor = 'grabbing';
-    }
-
-    function handleMarbleDrag(e) {
-        if (!isDraggingMarble || dragMarbleIndex === -1) return;
-        
-        const track = getCurrentTrack();
-        if (!track) return;
-        
-        const coordinates = getDisplayCoordinates(track);
-        const closestPoint = findClosestPointOnRoute([e.lngLat.lng, e.lngLat.lat], coordinates);
-        
-        if (closestPoint) {
-            const totalDistance = calculateTotalDistance(coordinates);
-            
-            // Find boundaries: previous locked marble or start, next locked marble or end
-            let prevBoundaryIndex = -1;
-            let nextBoundaryIndex = -1;
-            
-            // Find previous boundary (locked marble or start)
-            for (let i = dragMarbleIndex - 1; i >= 0; i--) {
-                if (track.marbles[i].isLocked || i === 0) {
-                    prevBoundaryIndex = i;
-                    break;
-                }
-            }
-            
-            // Find next boundary (locked marble or end)
-            for (let i = dragMarbleIndex + 1; i < track.marbles.length; i++) {
-                if (track.marbles[i].isLocked || i === track.marbles.length - 1) {
-                    nextBoundaryIndex = i;
-                    break;
-                }
-            }
-            
-            // Constrain movement between boundaries
-            const minDistance = prevBoundaryIndex !== -1 ? track.marbles[prevBoundaryIndex].distanceAlongRoute : 0;
-            const maxDistance = nextBoundaryIndex !== -1 ? track.marbles[nextBoundaryIndex].distanceAlongRoute : totalDistance;
-            
-            const safeDistance = Math.max(minDistance, Math.min(closestPoint.distance, maxDistance));
-            
-            track.marbles[dragMarbleIndex].position = findPositionAtDistance(coordinates, safeDistance);
-            track.marbles[dragMarbleIndex].distanceAlongRoute = safeDistance;
-            
-            // Redistribute only UNLOCKED marbles between boundaries
-            redistributeMarbles();
-            updateMarbleDisplay();
-        }
-    }
-
-    function stopMarbleDrag() {
-        if (isDraggingMarble) {
-            isDraggingMarble = false;
-            
-            const track = getCurrentTrack();
-            if (track && dragMarbleIndex !== -1) {
-                track.marbles[dragMarbleIndex].isDragging = false;
-            }
-            
-            dragMarbleIndex = -1;
-            updateMarbleDisplay();
-            
-            // Re-enable map
-            map.dragPan.enable();
-            map.scrollZoom.enable();
-            map.getCanvas().style.cursor = '';
-            
-            setStatus('Marble moved - still selected');
-        }
-    }
-
-    function redistributeMarbles() {
-        const track = getCurrentTrack();
-        if (!track || track.marbles.length < 3 || dragMarbleIndex === -1) return;
-        
-        const movedMarble = track.marbles[dragMarbleIndex];
-        const coordinates = getDisplayCoordinates(track);
-        
-        // Find boundaries around the moved marble
-        let prevBoundaryIndex = -1;
-        let nextBoundaryIndex = -1;
-        
-        // Find previous boundary (locked marble or start)
-        for (let i = dragMarbleIndex - 1; i >= 0; i--) {
-            if (track.marbles[i].isLocked || i === 0) {
-                prevBoundaryIndex = i;
-                break;
-            }
-        }
-        
-        // Find next boundary (locked marble or end)
-        for (let i = dragMarbleIndex + 1; i < track.marbles.length; i++) {
-            if (track.marbles[i].isLocked || i === track.marbles.length - 1) {
-                nextBoundaryIndex = i;
-                break;
-            }
-        }
-        
-        if (prevBoundaryIndex !== -1 && nextBoundaryIndex !== -1) {
-            const startDistance = track.marbles[prevBoundaryIndex].distanceAlongRoute;
-            const endDistance = track.marbles[nextBoundaryIndex].distanceAlongRoute;
-            const segmentDistance = endDistance - startDistance;
-            
-            // Get UNLOCKED marbles between boundaries (excluding the moved one)
-            const unlockedMarbles = [];
-            for (let i = prevBoundaryIndex + 1; i < nextBoundaryIndex; i++) {
-                if (i !== dragMarbleIndex && !track.marbles[i].isLocked) {
-                    unlockedMarbles.push({ index: i, marble: track.marbles[i] });
-                }
-            }
-            
-            // Redistribute unlocked marbles proportionally
-            if (unlockedMarbles.length > 0) {
-                const beforeUnlocked = unlockedMarbles.filter(u => u.index < dragMarbleIndex);
-                const afterUnlocked = unlockedMarbles.filter(u => u.index > dragMarbleIndex);
-                
-                // Redistribute marbles BEFORE the moved one
-                if (beforeUnlocked.length > 0) {
-                    const beforeSegmentDistance = movedMarble.distanceAlongRoute - startDistance;
-                    beforeUnlocked.forEach((u, i) => {
-                        const ratio = (i + 1) / (beforeUnlocked.length + 1);
-                        u.marble.distanceAlongRoute = startDistance + (beforeSegmentDistance * ratio);
-                        u.marble.position = findPositionAtDistance(coordinates, u.marble.distanceAlongRoute);
-                    });
-                }
-                
-                // Redistribute marbles AFTER the moved one
-                if (afterUnlocked.length > 0) {
-                    const afterSegmentDistance = endDistance - movedMarble.distanceAlongRoute;
-                    afterUnlocked.forEach((u, i) => {
-                        const ratio = (i + 1) / (afterUnlocked.length + 1);
-                        u.marble.distanceAlongRoute = movedMarble.distanceAlongRoute + (afterSegmentDistance * ratio);
-                        u.marble.position = findPositionAtDistance(coordinates, u.marble.distanceAlongRoute);
-                    });
-                }
-            }
-        }
-    }
-
-    // Find coordinate at specific distance along route
-    function findPositionAtDistance(coordinates, targetDistance) {
-        if (coordinates.length < 2) return coordinates[0];
-        
-        let accumulatedDistance = 0;
-        
-        for (let i = 1; i < coordinates.length; i++) {
-            const segmentStart = coordinates[i-1];
-            const segmentEnd = coordinates[i];
-            const segmentDistance = calculateDistance(segmentStart, segmentEnd);
-            
-            if (accumulatedDistance + segmentDistance >= targetDistance) {
-                const ratio = (targetDistance - accumulatedDistance) / segmentDistance;
-                return [
-                    segmentStart[0] + (segmentEnd[0] - segmentStart[0]) * ratio,
-                    segmentStart[1] + (segmentEnd[1] - segmentStart[1]) * ratio
-                ];
-            }
-            
-            accumulatedDistance += segmentDistance;
-        }
-        
-        return coordinates[coordinates.length - 1];
-    }
-
-    // Find closest point on route to a given point
-    function findClosestPointOnRoute(point, coordinates) {
-        let closestPoint = null;
-        let minDistance = Infinity;
-        let accumulatedDistance = 0;
-        
-        for (let i = 1; i < coordinates.length; i++) {
-            const segmentStart = coordinates[i-1];
-            const segmentEnd = coordinates[i];
-            const segmentDistance = calculateDistance(segmentStart, segmentEnd);
-            
-            const closestOnSegment = findClosestPointOnSegment(point, segmentStart, segmentEnd);
-            const distanceToSegment = calculateDistance(point, closestOnSegment.point);
-            
-            if (distanceToSegment < minDistance) {
-                minDistance = distanceToSegment;
-                closestPoint = {
-                    point: closestOnSegment.point,
-                    distance: accumulatedDistance + closestOnSegment.distance
-                };
-            }
-            
-            accumulatedDistance += segmentDistance;
-        }
-        
-        return closestPoint;
-    }
-
-    // Find closest point on a segment
-    function findClosestPointOnSegment(point, segmentStart, segmentEnd) {
-        const A = point[0] - segmentStart[0];
-        const B = point[1] - segmentStart[1];
-        const C = segmentEnd[0] - segmentStart[0];
-        const D = segmentEnd[1] - segmentStart[1];
-
-        const dot = A * C + B * D;
-        const lenSq = C * C + D * D;
-        let param = -1;
-
-        if (lenSq !== 0) param = dot / lenSq;
-
-        let xx, yy;
-
-        if (param < 0) {
-            xx = segmentStart[0];
-            yy = segmentStart[1];
-        } else if (param > 1) {
-            xx = segmentEnd[0];
-            yy = segmentEnd[1];
-        } else {
-            xx = segmentStart[0] + param * C;
-            yy = segmentStart[1] + param * D;
-        }
-
-        return {
-            point: [xx, yy],
-            distance: param * Math.sqrt(lenSq)
-        };
-    }
-
-function updateMarbleDisplay() {
-    // COLLECT MARBLES FROM ALL TRACKS
-    const allMarbles = [];
-    
-    allTracks.forEach((track, trackId) => {
-        track.marbles.forEach((marble, index) => {
-            const hasImage = marble.assignedImage !== null;
-            const imageIndex = hasImage ? marble.assignedImage + 1 : 0;
-            const isWaypoint = marble.isWaypoint || false;
-            const isFromCurrentTrack = (trackId === currentTrackId);
-            
-            allMarbles.push({
-                type: 'Feature',
-                geometry: {
-                    type: 'Point',
-                    coordinates: marble.position
-                },
-                properties: {
-                    id: marble.id,
-                    trackId: trackId,
-                    index: index,
-                    isDragging: marble.isDragging || false,
-                    isLocked: marble.isLocked || false,
-                    isFixed: marble.isFixed || false,
-                    isSelected: (marble.id === selectedMarbleId),
-                    hasImage: hasImage,
-                    imageIndex: imageIndex,
-                    isWaypoint: isWaypoint,
-                    isFromCurrentTrack: isFromCurrentTrack, // Highlight current track marbles
-                    originalName: marble.originalName || '',
-                    position: `${index + 1}/${track.marbles.length}`,
-                    distance: `${Math.round(marble.distanceAlongRoute)}m`,
-                    name: isWaypoint ? (marble.originalName || `Waypoint ${index + 1}`) : `Marble ${index + 1}`,
-                    trackName: track.name // Include track name for tooltips
-                }
-            });
-        });
-    });
-    
-    // UPDATE THE SOURCE WITH ALL MARBLES
-    map.getSource('marbles').setData({
-        type: 'FeatureCollection',
-        features: allMarbles
-    });
-     
-    // Update marble count for ALL tracks
-    let totalMarbles = 0;
-    let totalWithImages = 0;
-    let totalWaypoints = 0;
-    
-    allTracks.forEach(track => {
-        totalMarbles += track.marbles.length;
-        totalWithImages += track.marbles.filter(m => m.assignedImage !== null).length;
-        totalWaypoints += track.marbles.filter(m => m.isWaypoint).length;
-    });
-    
-    document.getElementById('marble-count').textContent = 
-        `${totalMarbles} marbles across ${allTracks.size} tracks (${totalWaypoints} waypoints, ${totalWithImages} with images)`;
-    
-    enableMarbleDragging();
-}
-
-    function enableMarbleDragging() {
-        // Clear existing handlers to avoid duplicates
-        map.off('click', 'marbles-click-layer', handleMarbleClick);
-        map.off('mousedown', 'marbles-click-layer', handleMarbleMouseDown);
-        map.off('mousemove', handleMarbleDrag);
-        map.off('mouseup', stopMarbleDrag);
-        map.off('click', handleMapClickForDeselect);
-
-        // Add new handlers
-        map.on('click', 'marbles-click-layer', handleMarbleClick);
-        map.on('mousedown', 'marbles-click-layer', handleMarbleMouseDown);
-        map.on('mousemove', handleMarbleDrag);
-        map.on('mouseup', stopMarbleDrag);
-        
-        // Map click to deselect
-        map.on('click', handleMapClickForDeselect);
-    }
-
-    function handleMarbleMouseDown(e) {
-        e.preventDefault();
-        if (e.features.length > 0) {
-            const marbleId = e.features[0].properties.id;
-            startMarbleDrag(marbleId);
-        }
-    }
-
-    function handleMapClickForDeselect(e) {
-        const features = map.queryRenderedFeatures(e.point, { layers: ['marbles-click-layer'] });
-        if (features.length === 0) {
-            deselectMarble();
-        }
-    }
-
-    function lockSelectedMarble() {
-        if (selectedMarbleId) {
-            toggleMarbleLock(selectedMarbleId);
-        } else {
-            setStatus('Select a marble first by clicking on it');
-        }
-    }
-
-    // ========== 360 VIEWER FUNCTIONS ==========
-
-async function load360Images() {
-  try {
-    setStatus('Loading 360 images from frames folder...');
-    await createImagesFromFramesFolder();
-
-    if (currentImages.length > 0) {
-      setStatus(`Loaded ${currentImages.length} images for current track`);
-      
-      // ONLY auto-show first image if we're NOT switching to a specific marble
-      if (!isSwitchingToMarble) {
-        if (selectedMarbleId) {
-          const track = getCurrentTrack();
-          const marble = track.marbles.find(m => m.id === selectedMarbleId);
-          if (marble && marble.assignedImage !== null) {
-            showImageByIndex(marble.assignedImage);
-          } else {
-            showImageByIndex(0);
-          }
-        } else {
-          showImageByIndex(0);
-        }
-      }
-      
-      startBackgroundPreload(3);
-    }
-  } catch (error) {
-    console.error('Error loading 360 images:', error);
-    setStatus('Error loading 360 images');
-  }
-}
-
-function addTrackToggle() {
-    console.log('Adding tracks toggle button...');
-    
-    const controls = document.getElementById('controls');
-    if (!controls) {
-        console.error('Controls element not found!');
-        return;
-    }
-    
-    const toggleHTML = `
-        <div class="control-group">
-            <button onclick="toggleTracksVisibility()" id="tracks-toggle-btn">
-                Show Tracks & Numbers: OFF
-            </button>
-        </div>
-    `;
-    
-    // Try to insert after the edit mode button group
-    const editGroup = controls.querySelector('.control-group:nth-child(2)');
-    if (editGroup) {
-        editGroup.insertAdjacentHTML('afterend', toggleHTML);
-        console.log('Tracks toggle added successfully');
-    } else {
-        // Fallback: add to the end
-        controls.insertAdjacentHTML('beforeend', toggleHTML);
-        console.log('Tracks toggle added to end (fallback)');
-    }
-}
-
-let tracksVisible = false;
-
-function toggleTracksVisibility() {
-    tracksVisible = !tracksVisible;
-    const btn = document.getElementById('tracks-toggle-btn');
-    btn.textContent = `Show Tracks & Numbers: ${tracksVisible ? 'ON' : 'OFF'}`;
-    btn.classList.toggle('active', tracksVisible);
-    
-    // Update map layers visibility - TRACKS AND NUMBER TAGS
-    if (tracksVisible) {
-        map.setLayoutProperty('gpx-tracks-line', 'visibility', 'visible');
-        map.setLayoutProperty('gpx-control-points', 'visibility', 'visible');
-        map.setLayoutProperty('marble-labels', 'visibility', 'visible'); // SHOW NUMBER TAGS
-    } else {
-        map.setLayoutProperty('gpx-tracks-line', 'visibility', 'none');
-        map.setLayoutProperty('gpx-control-points', 'visibility', 'none');
-        map.setLayoutProperty('marble-labels', 'visibility', 'none'); // HIDE NUMBER TAGS
-    }
-}
-
-async function createImagesFromFramesFolder() {
-  // reset state
-  currentImages = [];
-  currentImageIndex = -1;
-
-  const track = getCurrentTrack();
-  if (!track) {
-    setStatus?.('No track selected - cannot load frames.');
-    updateImageCount?.();
-    return;
-  }
-
-  // GPX base name (e.g., Santte2.gpx -> "Santte2")
-  const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
-  if (!gpxName) {
-    setStatus?.('GPX name not available.');
-    return;
-  }
-
-  // case-insensitive prefix match: "<gpx>-"
-  const requiredStartLC = (gpxName + '-').toLowerCase();
-
-  // --- fetch manifest with hardcoded URL ---
-  let list;
-  try {
-    const MANIFEST_URL = 'https://lalaland.mx/frames/index.json';
-    const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
-    if (!res.ok) {
-      setStatus?.(`Could not fetch ${MANIFEST_URL} (${res.status})`);
-      updateImageCount?.();
-      return;
-    }
-    const data = await res.json();
-    list = Array.isArray(data) ? data : Array.isArray(data.files) ? data.files : [];
-  } catch (e) {
-    console.error(e);
-    setStatus?.('Error reading frames manifest.');
-    return;
-  }
-
-  // ... rest of the function remains the same ...
-  // normalize to bare filenames
-  const files = list.map(x => String(x).split('/').pop()).filter(Boolean);
-
-  // filter by prefix, case-insensitive, and keep only images
-  const matches = files
-    .filter(name => name.toLowerCase().startsWith(requiredStartLC))
-    .filter(name => /\.(?:jpe?g|png)$/i.test(name))
-    .sort((a, b) => a.localeCompare(b));
-
-  if (matches.length === 0) {
-    setStatus?.(`No frames for "${gpxName}". Expecting files like "${gpxName}-....jpeg"`);
-    updateImageCount?.();
-    return;
-  }
-
-  // build currentImages using absolute URLs
-  currentImages = matches.map((filename, i) => ({
-    url: FRAMES_BASE + filename,
-    index: i,
-    filename,
-    timestamp: filename,
-    sequence: i
-  }));
-
-  setStatus?.(`Loaded ${currentImages.length} image(s) for "${gpxName}" from ${FRAMES_BASE}`);
-  updateImageCount?.();
-}
- 
-
-
-
-
-    function clear360Images() {
-        currentImages = [];
-        currentImageIndex = -1;
-        updateImageCount();
-        updateViewerDisplay();
-        setStatus('Cleared all 360 images');
-    }
-
-function assignImagesToMarbles() {
-    const track = getCurrentTrack();
-    if (!track) {
-        setStatus('No track selected - cannot assign images to marbles');
-        return;
-    }
-    
-    const marbles = track.marbles;
-    if (marbles.length === 0) {
-        setStatus('No marbles created - create marbles first');
-        return;
-    }
-    
-    // Clear previous assignments
-    marbles.forEach(marble => {
-        marble.assignedImage = null;
-    });
-    
-    // Assign images to marbles in 1:1 order
-    const assignmentCount = Math.min(marbles.length, currentImages.length);
-    
-    for (let i = 0; i < assignmentCount; i++) {
-        marbles[i].assignedImage = i;
-    }
-    
-    updateMarbleDisplay();
-    
-    if (marbles.length > currentImages.length) {
-        setStatus(`Assigned ${assignmentCount} images to ${marbles.length} marbles (${marbles.length - assignmentCount} marbles without images)`);
-    } else if (marbles.length < currentImages.length) {
-        setStatus(`Assigned ${assignmentCount} images to ${marbles.length} marbles (${currentImages.length - assignmentCount} images unused)`);
-    } else {
-        setStatus(`Perfect! All ${assignmentCount} images assigned to marbles`);
-    }
-    
-    return assignmentCount;
-}
-
-function validateImageAssignment() {
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    const marbles = track.marbles;
-    const marblesWithImages = marbles.filter(m => m.assignedImage !== null).length;
-    
-    if (marbles.length !== marblesWithImages) {
-        console.warn(`Mismatch detected: ${marbles.length} marbles but ${marblesWithImages} have images`);
-        return false;
-    }
-    
-    return true;
-}
-
-
-
-
-
-
-
-
-
-
-    function updateImageCount() {
-        const imageCount = document.getElementById('image-count');
-        const currentImage = document.getElementById('current-image');
-        
-        if (imageCount) {
-            imageCount.textContent = `${currentImages.length} loaded`;
-        }
-        if (currentImage) {
-            currentImage.textContent = currentImageIndex >= 0 ? `${currentImageIndex + 1}/${currentImages.length}` : '-';
-        }
-    }
-
-    // Export single track by ID
-    function exportSingleTrack(trackId) {
-        const track = allTracks.get(trackId);
-        if (track) {
-            const gpxContent = generateGPX(track);
-            downloadFile(gpxContent, `${track.name}_edited.gpx`, 'application/gpx+xml');
-            setStatus(`Exported: ${track.name}_edited.gpx`);
-        }
-    }
-
-    // Export current track
-    function exportCurrentTrack() {
-        const track = getCurrentTrack();
-        if (!track) {
-            setStatus('Please select a track first!');
-            return;
-        }
-        exportSingleTrack(track.id);
-    }
-
-    // Export all tracks as ZIP
-    async function exportAllTracksAsZip() {
-        if (allTracks.size === 0) {
-            setStatus('No tracks to export!');
-            return;
-        }
-
-        try {
-            const zip = new JSZip();
-            
-            allTracks.forEach(track => {
-                const gpxContent = generateGPX(track);
-                zip.file(`${track.name}_edited.gpx`, gpxContent);
-            });
-            
-            const content = await zip.generateAsync({type: "blob"});
-            downloadFile(content, 'edited_tracks.zip', 'application/zip');
-            setStatus(`Exported ${allTracks.size} tracks as separate files`);
-            
-        } catch (error) {
-            console.error('Error creating ZIP:', error);
-            setStatus('Error creating ZIP file');
-        }
-    }
-
-    // Generate GPX for a single track
-   function generateGPX(track) {
-    const coordinates = track.activePoints.map(p => p.coordinates);
-    
-    let gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="GPX Editor" xmlns="http://www.topografix.com/GPX/1/1">
-  <trk>
-    <name>${escapeXML(track.name)}_edited</name>
-    <trkseg>
-`;
-    
-    coordinates.forEach(coord => {
-        gpx += `      <trkpt lat="${coord[1].toFixed(6)}" lon="${coord[0].toFixed(6)}"></trkpt>\n`;
-    });
-    
-    gpx += `    </trkseg>
-  </trk>`;
-    
-    // ADD MARBLES AS WAYPOINTS (preserve waypoint info if available)
-    track.marbles.forEach((marble, index) => {
-        const imageInfo = marble.assignedImage !== null ? 
-            ` - Image ${marble.assignedImage + 1}` : '';
-        
-        // Use original waypoint name if available, otherwise generate one
-        const name = marble.originalName || `Photo_${index + 1}`;
-        const desc = marble.description || `Marble position along route${imageInfo}`;
-        
-        gpx += `
-  <wpt lat="${marble.position[1].toFixed(6)}" lon="${marble.position[0].toFixed(6)}">
-    <name>${escapeXML(name)}${imageInfo}</name>
-    <desc>${escapeXML(desc)}</desc>`;
-    
-        // Preserve time if it exists
-        if (marble.time) {
-            gpx += `
-    <time>${marble.time}</time>`;
-        }
-        
-        gpx += `
-  </wpt>`;
-    });
-    
-    gpx += '\n</gpx>';
-    return gpx;
-}
-
-    // Escape XML special characters
-    function escapeXML(str) {
-        return str.replace(/&/g, '&amp;')
-                  .replace(/</g, '&lt;')
-                  .replace(/>/g, '&gt;')
-                  .replace(/"/g, '&quot;')
-                  .replace(/'/g, '&apos;');
-    }
-
-    // Download helper function
-    function downloadFile(content, fileName, mimeType) {
-        const blob = new Blob([content], { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
-    // ===== 360 VIEWER INITIALIZATION =====
-function initThreeJSViewer() {
-    if (viewerInitialized) return;
-    
-    // Scene setup
-    scene = new THREE.Scene();
-    panoGroup = new THREE.Group();
-    scene.add(panoGroup);
-
-    // Camera
-    const canvas = document.getElementById('canvas');
-    camera = new THREE.PerspectiveCamera(currentFov, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
-    camera.position.set(0, 0, 0.1);
-
-    // Renderer - KEEP SIMPLE but add DPR
-    renderer = new THREE.WebGLRenderer({ 
-        canvas: canvas,
-        antialias: true,
-        alpha: false,
-        powerPreference: 'high-performance'
-    });
-    
-    // ADD ONLY DPR (no tone mapping)
-    const dpr = Math.min(window.devicePixelRatio || 4, 4);
-    renderer.setPixelRatio(dpr);
-    renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-    
-    // Event listeners
-    setupViewerEventListeners();
-    
-    // Start animation loop
-    animateViewer();
-    viewerInitialized = true;
-    
-    console.log('Three.js viewer initialized with DPR:', dpr);
-}
-
-function animateViewer() {
-    requestAnimationFrame(animateViewer);
-    updateNavigationRing();
-    if (renderer && scene && camera) {
-        renderer.render(scene, camera);
-    }
-}
-
-function updateNavigationRing(instant = false) {
-    const ring = document.querySelector('.navigation-ring');
-    const nextBtn = document.getElementById('nextImageBtn');
-    const prevBtn = document.getElementById('prevImageBtn');
-    
-    if (!ring || !sphere) return;
-    
-    // Rotate ring to match view
-    let yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
-    ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
-    
-    // Update button tooltips with smart navigation info
-    if (nextBtn) {
-        const forwardTarget = getBestMarbleInDirection(currentYaw);
-        nextBtn.title = forwardTarget ? 
-            `Navigate to marble ${forwardTarget.index + 1} (${Math.round(forwardTarget.distance)}m)` : 
-            'Navigate forward';
-    }
-    
-    if (prevBtn) {
-        const behindTarget = getBestMarbleInDirection(currentYaw + Math.PI);
-        prevBtn.title = behindTarget ? 
-            `Navigate to marble ${behindTarget.index + 1} (${Math.round(behindTarget.distance)}m)` : 
-            'Navigate backward';
-    }
-    
-    if (instant) {
-        ring.style.transition = 'none';
-        requestAnimationFrame(() => {
-            ring.style.transition = '';
-        });
-    }
-}
-
-function getBestMarbleInDirection(directionRad) {
-    if (!selectedMarbleId) return null;
-    
-    const options = getFacingOptions(selectedMarbleId, directionRad, 1);
-    if (options.length === 0) return null;
-    
-    const track = getCurrentTrack();
-    const targetMarble = track.marbles.find(m => m.id === options[0].toMarbleId);
-    
-    return targetMarble ? {
-        index: targetMarble.index,
-        distance: options[0].distanceM
-    } : null;
-}
-
-// ===== IMAGE DISPLAY =====
-function showImageInViewer(imageUrl, imageData) {
-    showViewerLoading('Loading 360° image...');
-    
-    console.log('Loading image:', imageUrl);
-    
-    // Initialize viewer if needed
-    if (!viewerInitialized) {
-        initThreeJSViewer();
-    }
-    
-    // Check if image is already preloaded (double-check)
-    if (preloadedImages[imageUrl]) {
-        console.log('Image preloaded - instant display');
-        hideViewerLoading();
-        applyImageToSphere(preloadedImages[imageUrl], imageData);
-        preloadAdjacentImages();
-        return;
-    }
-    
-    // Load new image
-    const img = new Image();
-    img.crossOrigin = "Anonymous";
-    
-    img.onload = function() {
-        console.log('Image loaded successfully:', imageUrl);
-        preloadedImages[imageUrl] = img; // Add to cache
-        hideViewerLoading();
-        applyImageToSphere(img, imageData);
-        preloadAdjacentImages();
-    };
-    
-    img.onerror = function() {
-        console.error('Failed to load image:', imageUrl);
-        hideViewerLoading();
-        setStatus('Failed to load 360 image: ' + imageUrl);
-    };
-    
-    const timestamp = new Date().getTime();
-    const urlWithCacheBust = imageUrl + (imageUrl.includes('?') ? '&' : '?') + 't=' + timestamp;
-    img.src = urlWithCacheBust;
-}
-
-// ===== IMAGE NAVIGATION =====
-function nextImage() {
-    if (currentImageIndex < currentImages.length - 1) {
-        currentImageIndex++;
-        isGoingForward = true;
-        showImageByIndex(currentImageIndex);
-        updateNavigationRing(true); // ← Instant change
-    }
-    updateNavigationButtons();
-    // NEW: update branch buttons after stepping images
-refreshBranchButtons();
-
-}
-
-function previousImage() {
-    if (currentImageIndex > 0) {
-        currentImageIndex--;
-        isGoingForward = false;
-        showImageByIndex(currentImageIndex);
-        updateNavigationRing(true); // ← Instant change
-    }
-    updateNavigationButtons();
-    // NEW: update branch buttons after stepping images
-refreshBranchButtons();
-
-}
-
-function showImageByIndex(index, preserveOrientation = false) {
-    if (index >= 0 && index < currentImages.length) {
-        const image = currentImages[index];
-        
-        // CHECK IF IMAGE IS PRELOADED
-        if (preloadedImages[image.url]) {
-            console.log('Image already preloaded - instant display');
-            // INSTANT DISPLAY - no loading screen
-            applyImageToSphere(preloadedImages[image.url], image);
-            currentImageIndex = index;
-            updateViewerUI();
-            highlightMarbleWithImage(index);
-        } else {
-            console.log('Image not preloaded - showing loading screen');
-            // NOT PRELOADED - show loading screen
-            showImageInViewer(image.url, image);
-            currentImageIndex = index;
-            updateViewerUI();
-            highlightMarbleWithImage(index);
-            refreshBranchButtons();
-        }
-        
-        // PRELOAD ADJACENT IMAGES FOR NEXT NAVIGATION
-        preloadAdjacentImages();
-    }
-}
-
-function applyImageToSphere(img, imageData) {
-    // Remove old sphere
-    if (sphere) {
-        panoGroup.remove(sphere);
-        if (sphere.geometry) sphere.geometry.dispose();
-        if (sphere.material) {
-            if (sphere.material.map) sphere.material.map.dispose();
-            sphere.material.dispose();
-        }
-    }
-    
-    // Create new sphere with preloaded image
-    const geometry = new THREE.SphereGeometry(100, 60, 40);
-    geometry.scale(-1, 1, 1);
-    geometry.rotateY(Math.PI);
-    
-    // REMOVE the automatic Math.PI rotation entirely
-    // if (isGoingForward) {
-    //     geometry.rotateY(Math.PI);
-    // }
-    
-    const texture = new THREE.Texture(img);
-    texture.needsUpdate = true;
-    
-    const material = new THREE.MeshBasicMaterial({ 
-        map: texture, 
-        side: THREE.DoubleSide 
-    });
-    
-    sphere = new THREE.Mesh(geometry, material);
-    panoGroup.add(sphere);
-
-        // KEEP current orientation - don't reset!
-    // panoGroup.rotation.set(0, 0, 0); ← REMOVE THIS LINE
-    // currentYaw = 0; ← REMOVE THIS LINE  
-    // currentPitch = 0; ← REMOVE THIS LINE
-    
-    // KEEP current orientation
-    updateNavigationRing(true);
-    
-    setStatus(`Loaded image ${currentImageIndex + 1}`);
-}
-
-function preloadAdjacentImages() {
-    // Quick preload of just next/previous for instant navigation
-    const prevIndex = currentImageIndex - 1;
-    const nextIndex = currentImageIndex + 1;
-    
-    if (prevIndex >= 0 && !preloadedImages[currentImages[prevIndex].url]) {
-        preloadOne(prevIndex);
-    }
-    if (nextIndex < currentImages.length && !preloadedImages[currentImages[nextIndex].url]) {
-        preloadOne(nextIndex);
-    }
-}
-
-function updateViewerUI() {
-    document.getElementById('time').textContent = `${currentImageIndex + 1}/${currentImages.length}`;
-    document.getElementById('viewer-info').textContent = `Image ${currentImageIndex + 1}/${currentImages.length}`;
-}
-
-function updateNavigationButtons() {
-    const prevBtn = document.getElementById('prevImageBtn');
-    const nextBtn = document.getElementById('nextImageBtn');
-    
-    if (prevBtn) prevBtn.disabled = currentImageIndex <= 0;
-    if (nextBtn) nextBtn.disabled = currentImageIndex >= currentImages.length - 1;
-}
-
-// ===== MARBLE-IMAGE CONNECTION =====
-function highlightMarbleWithImage(imageIndex) {
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    // Find marble with this image
-    const marble = track.marbles.find(m => m.assignedImage === imageIndex);
-    if (marble) {
-        selectMarble(marble.id);
-
-    }
-}
-
-// ENHANCED: Click marble to show image
-function showMarbleImage(marbleId) {
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    const marble = track.marbles.find(m => m.id === marbleId);
-    if (!marble) return;
-    
-    if (marble.assignedImage === null) {
-        setStatus(`Marble ${marble.index + 1} has no image assigned`);
-        return;
-    }
-    
-    const imageIndex = marble.assignedImage;
-    showImageByIndex(imageIndex, true);
-    setStatus(`Showing image ${imageIndex + 1}/${currentImages.length} for marble ${marble.index + 1}`);
-
-    // NEW: update branch buttons after showing this image
-refreshBranchButtons();
-
-}
-
-function refreshBranchButtons() {
-  if (!selectedMarbleId) {
-    const host = document.getElementById('branch-buttons');
-    if (host) host.innerHTML = '';
-    return;
-  }
-  const picks = getFacingOptions(selectedMarbleId, currentYaw);
+function refreshBranchButtons(){
   const host = document.getElementById('branch-buttons');
   if (!host) return;
+  host.innerHTML = '';
+  if (!selectedMarbleId) return;
 
-  host.innerHTML = ''; // clear
-  picks.forEach((p, idx) => {
+  const picks = getFacingOptions(selectedMarbleId, currentYaw);
+  picks.forEach((p, idx)=>{
     const btn = document.createElement('button');
-    btn.className = 'small-btn';
+    btn.className='small-btn';
     const meters = Math.round(p.distanceM);
-    btn.textContent = idx === 0 ? `Go → (${meters}m)` : `Alt ${idx+1} →`;
-    btn.onclick = async () => {
-  const track = getCurrentTrack();
-  if (!track) return;
-  
-  // SEARCH IN ALL TRACKS, not just current track
-  let target = null;
-  let targetTrack = null;
-  
-  // Look through all tracks to find the marble
-  for (const [trackId, track] of allTracks) {
-    target = track.marbles.find(m => m.id === p.toMarbleId);
-    if (target) {
-      targetTrack = track;
-      break;
-    }
-  }
-  
-  if (!target) return;
+    btn.textContent = idx===0 ? `Go → (${meters}m)` : `Alt ${idx+1} →`;
+    btn.onclick = async ()=>{
+      const track = getCurrentTrack(); if(!track) return;
 
-  // Store current map view BEFORE switching
-  const currentZoom = map.getZoom();
-  
-  // If target is in a different track, switch to that track properly
-  if (targetTrack.id !== currentTrackId) {
-    // Switch tracks first
-    selectTrackWithoutMapReset(targetTrack.id);
-    
-    // Load images for the new track
-    await load360Images();
-    
-    // NOW select the target marble after images are loaded
-    selectMarble(target.id);
-  } else {
-    // Same track - just select the marble
-    selectMarble(target.id);
-  }
+      // find target marble across all tracks
+      let target=null, targetTrack=null;
+      for (const [tid, tr] of allTracks){
+        target = tr.marbles.find(m=>m.id===p.toMarbleId);
+        if (target){ targetTrack = tr; break; }
+      }
+      if (!target) return;
 
-  // store "continue direction" bias
-  const current = track.marbles.find(m => m.id === selectedMarbleId);
-  if (current) lastHopBearingDeg = bearingDeg(current.position, target.position);
+      const currentZoom = map.getZoom();
+      if (targetTrack.id !== currentTrackId){
+        selectTrackWithoutMapReset(targetTrack.id);
+        await load360Images();
+        selectMarble(target.id);
+      } else {
+        selectMarble(target.id);
+      }
 
-  if (target.assignedImage != null) {
-    showMarbleImage(target.id);
-  } else {
-    // Smoothly move to target position while preserving zoom
-    map.flyTo({
-      center: target.position,
-      zoom: currentZoom, // Keep current zoom level
-      duration: 1000
-    });
-    setStatus(`Moved to marble ${target.index+1}${targetTrack.id !== currentTrackId ? ` in ${targetTrack.name}` : ''}`);
-  }
-  updateNavigationRing(true);
-};
+      const current = track.marbles.find(m=>m.id===selectedMarbleId);
+      if (current) lastHopBearingDeg = bearingDeg(current.position, target.position);
+
+      if (target.assignedImage != null){
+        showMarbleImage(target.id);
+      } else {
+        map.flyTo({ center: target.position, zoom: currentZoom, duration: 1000 });
+        setStatus(`Moved to marble ${target.index+1}${targetTrack.id!==currentTrackId?` in ${targetTrack.name}`:''}`);
+      }
+      updateNavigationRing(true);
+    };
     host.appendChild(btn);
   });
 }
 
-function selectTrackWithoutMapReset(trackId) {
-    // Deselect previous track
-    if (currentTrackId && allTracks.has(currentTrackId)) {
-        allTracks.get(currentTrackId).isActive = false;
-    }
-    
-    // Select new track
-    currentTrackId = trackId;
-    const track = allTracks.get(trackId);
-    track.isActive = true;
-    
-    // Update UI elements
-    currentDensity = track.density;
-    document.getElementById('density-slider').value = currentDensity;
-    document.getElementById('density-value').textContent = currentDensity + '%';
-    document.getElementById('marble-spacing-slider').value = track.marbleSpacing;
-    document.getElementById('marble-spacing').textContent = track.marbleSpacing;
-    document.getElementById('points-count').textContent = track.activePoints.length + ' points';
-    document.getElementById('original-count').textContent = 'of ' + track.originalPoints.length;
+/* =============================== */
+/*           VIEWER (Three)        */
+/* =============================== */
+function initializeViewer(){ console.log('Viewer ready'); }
 
-    updateStatistics();
-    
-    // Reset edit mode
-    if (isEditMode) {
-        disableEditing();
-        isEditMode = false;
-        document.getElementById('edit-btn').textContent = 'Edit Mode: OFF';
-        document.getElementById('edit-btn').classList.remove('active');
-    }
+function initThreeJSViewer(){
+  if (viewerInitialized) return;
+  scene = new THREE.Scene();
+  panoGroup = new THREE.Group();
+  scene.add(panoGroup);
 
-    // Clear marble selection
-    selectedMarbleId = null;
-    isDraggingMarble = false;
-    dragMarbleIndex = -1;
-    
-    updateTracksList();
-    updateAllTracksVisualization(false); // Don't fit bounds!
-    updateMarbleDisplay();
-    
-    // Remove cone when switching tracks
-    if (viewConeMarker) {
-        viewConeMarker.remove();
-        viewConeMarker = null;
-    }
-     
-    // IMPORTANT: Load images for the new track
-    load360Images();
-    
-    setStatus(`Switched to: ${track.name} - ${track.marbles.length} marbles`);
+  const canvas = document.getElementById('canvas');
+  camera = new THREE.PerspectiveCamera(currentFov, canvas.clientWidth/canvas.clientHeight, 0.1, 1000);
+  camera.position.set(0,0,0.1);
+
+  renderer = new THREE.WebGLRenderer({
+    canvas, antialias:true, alpha:false, powerPreference:'high-performance'
+  });
+  const dpr = Math.min(window.devicePixelRatio || 4, 4);
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+
+  setupViewerEventListeners();
+  animateViewer();
+  viewerInitialized = true;
 }
 
-// ===== VIEW CONE =====
-// ===== CONE SYSTEM FUNCTIONS =====
-
-// Forward geodesic (bearing+distance -> dest lon/lat)
-function destFromBearingDistance(lat, lon, bearingDeg, distMeters) {
-    const R = 6378137;
-    const brng = degToRad(bearingDeg);
-    const φ1 = degToRad(lat), λ1 = degToRad(lon);
-    const φ2 = Math.asin(Math.sin(φ1) * Math.cos(distMeters / R) +
-                         Math.cos(φ1) * Math.sin(distMeters / R) * Math.cos(brng));
-    const λ2 = λ1 + Math.atan2(
-        Math.sin(brng) * Math.sin(distMeters / R) * Math.cos(φ1),
-        Math.cos(distMeters / R) - Math.sin(φ1) * Math.sin(φ2)
-    );
-    return [radToDeg(λ2), radToDeg(φ2)];
+function animateViewer(){
+  requestAnimationFrame(animateViewer);
+  updateNavigationRing();
+  if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
-// Build a polygon ring for a FOV cone
-function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters = 7, steps = 24) {
-    // Use the fovDeg parameter to control the cone angle
-    const half = Math.max(0, Math.min(89, fovDeg / 2)); // Max 89° to avoid full circle
-    
-    console.log(`Cone FOV: ${fovDeg}° (half: ${half}°)`); // Debug log
-    
-    const start = headingDeg - half;
-    const end = headingDeg + half;
+function updateNavigationRing(instant=false){
+  const ring=document.querySelector('.navigation-ring');
+  const nextBtn=document.getElementById('nextImageBtn');
+  const prevBtn=document.getElementById('prevImageBtn');
+  if (!ring || !sphere) return;
+  let yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
+  ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
 
-    const ring = [[lon, lat]]; // start at origin
-    for (let s = 0; s <= steps; s++) {
-        const t = s / steps;
-        const brg = start + (end - start) * t;
-        ring.push(destFromBearingDistance(lat, lon, brg, radiusMeters));
+  if (nextBtn){
+    const fwd = getBestMarbleInDirection(currentYaw);
+    nextBtn.title = fwd ? `Navigate to marble ${fwd.index+1} (${Math.round(fwd.distance)}m)` : 'Navigate forward';
+  }
+  if (prevBtn){
+    const back = getBestMarbleInDirection(currentYaw + Math.PI);
+    prevBtn.title = back ? `Navigate to marble ${back.index+1} (${Math.round(back.distance)}m)` : 'Navigate backward';
+  }
+
+  if (instant){
+    ring.style.transition='none';
+    requestAnimationFrame(()=>{ ring.style.transition=''; });
+  }
+}
+
+function getBestMarbleInDirection(directionRad){
+  if (!selectedMarbleId) return null;
+  const opts = getFacingOptions(selectedMarbleId, directionRad, 1);
+  if (!opts.length) return null;
+  const track = getCurrentTrack();
+  const target = track.marbles.find(m=>m.id===opts[0].toMarbleId);
+  return target ? { index: target.index, distance: opts[0].distanceM } : null;
+}
+
+/* ====== Image Loading/Navigation ====== */
+function showImageInViewer(imageUrl, imageData){
+  showViewerLoading('Loading 360° image...');
+  if (!viewerInitialized) initThreeJSViewer();
+
+  if (preloadedImages[imageUrl]){
+    hideViewerLoading();
+    applyImageToSphere(preloadedImages[imageUrl], imageData);
+    preloadAdjacentImages();
+    return;
+  }
+
+  const img = new Image();
+  img.crossOrigin = 'Anonymous';
+  img.onload = function(){
+    preloadedImages[imageUrl] = img;
+    hideViewerLoading();
+    applyImageToSphere(img, imageData);
+    preloadAdjacentImages();
+  };
+  img.onerror = function(){
+    console.error('Failed to load image:', imageUrl);
+    hideViewerLoading();
+    setStatus('Failed to load 360 image');
+  };
+  img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
+}
+
+function applyImageToSphere(img, imageData){
+  if (sphere){
+    panoGroup.remove(sphere);
+    sphere.geometry?.dispose();
+    if (sphere.material){
+      sphere.material.map?.dispose();
+      sphere.material.dispose();
     }
-    ring.push([lon, lat]); // close polygon
-    return ring;
+  }
+
+  const geometry = new THREE.SphereGeometry(100, 60, 40);
+  geometry.scale(-1,1,1);
+  geometry.rotateY(Math.PI);
+
+  const texture = new THREE.Texture(img);
+  texture.needsUpdate = true;
+
+  const material = new THREE.MeshBasicMaterial({ map:texture, side:THREE.DoubleSide });
+  sphere = new THREE.Mesh(geometry, material);
+  panoGroup.add(sphere);
+
+  updateNavigationRing(true);
+
 }
 
-// Get horizontal FOV from vertical FOV
-function getHorizontalFovDeg() {
-    const vRad = THREE.MathUtils.degToRad(currentFov);
-    const hRad = 2 * Math.atan(Math.tan(vRad / 2) * camera.aspect);
-    return THREE.MathUtils.radToDeg(hRad);
+function preloadAdjacentImages(){
+  const prev = currentImageIndex - 1;
+  const next = currentImageIndex + 1;
+  if (prev>=0 && !preloadedImages[currentImages[prev].url]) preloadOne(prev);
+  if (next<currentImages.length && !preloadedImages[currentImages[next].url]) preloadOne(next);
+}
+function preloadOne(index){
+  return new Promise(res=>{
+    const item = currentImages[index]; if (!item) return res();
+    const src = item.url; if (preloadedImages[src]) return res();
+    const img = new Image();
+    img.crossOrigin='Anonymous';
+    img.onload = ()=>{ preloadedImages[src]=img; res(); };
+    img.onerror = ()=> res();
+    img.src = src;
+    if (img.decode) img.decode().catch(()=>{});
+  });
 }
 
+function nextImage(){
+  if (currentImageIndex < currentImages.length-1){
+    currentImageIndex++;
+    showImageByIndex(currentImageIndex);
+    updateNavigationRing(true);
+  }
+  updateViewerUI(); refreshBranchButtons();
+}
+function previousImage(){
+  if (currentImageIndex > 0){
+    currentImageIndex--;
+    showImageByIndex(currentImageIndex);
+    updateNavigationRing(true);
+  }
+  updateViewerUI(); refreshBranchButtons();
+}
+function showImageByIndex(index){
+  if (index<0 || index>=currentImages.length) return;
+  const image = currentImages[index];
+  if (preloadedImages[image.url]){
+    applyImageToSphere(preloadedImages[image.url], image);
+    currentImageIndex = index;
+    updateViewerUI();
+    highlightMarbleWithImage(index);
+  } else {
+    showImageInViewer(image.url, image);
+    currentImageIndex = index;
+    updateViewerUI();
+    highlightMarbleWithImage(index);
+  }
+  preloadAdjacentImages();
+}
+function updateViewerUI(){
+  document.getElementById('time').textContent = `${currentImageIndex+1}/${currentImages.length}`;
+  document.getElementById('viewer-info').textContent = `Image ${currentImageIndex+1}/${currentImages.length}`;
+}
+document.getElementById('nextImageBtn').addEventListener('click', nextImage);
+document.getElementById('prevImageBtn').addEventListener('click', previousImage);
+document.getElementById('nextImageBtnTop').addEventListener('click', nextImage);
+document.getElementById('prevImageBtnTop').addEventListener('click', previousImage);
+
+/* ====== Click marble -> image ====== */
+function highlightMarbleWithImage(imageIndex){
+  const track = getCurrentTrack(); if (!track) return;
+  const marble = track.marbles.find(m=>m.assignedImage===imageIndex);
+  if (marble) selectMarble(marble.id);
+}
+function showMarbleImage(marbleId){
+  const track = getCurrentTrack(); if(!track) return;
+  const m = track.marbles.find(x=>x.id===marbleId); if (!m) return;
+  if (m.assignedImage == null){ setStatus(`Marble ${m.index+1} has no image`); return; }
+  showImageByIndex(m.assignedImage);
+ 
+  refreshBranchButtons();
+}
+
+/* ====== Viewer events (pan + wheel zoom) ====== */
+function setupViewerEventListeners(){
+  const canvas = document.getElementById('canvas');
+  let isDragging=false, lastX=0, lastY=0;
+
+  canvas.addEventListener('mousedown', e=>{
+    isDragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor='grabbing';
+    document.body.classList.add('dragging-pano');
+  });
+  canvas.addEventListener('mousemove', e=>{
+    if (!isDragging || !sphere) return;
+    const dx=e.clientX-lastX, dy=e.clientY-lastY;
+    panoGroup.rotation.y -= dx*0.01;
+    panoGroup.rotation.x -= dy*0.01;
+    currentYaw = panoGroup.rotation.y; currentPitch = panoGroup.rotation.x;
+    lastX=e.clientX; lastY=e.clientY;
+    updateNavigationRing(); updateViewCone(); refreshBranchButtons();
+  });
+  canvas.addEventListener('mouseup', ()=>{
+    isDragging=false; setTimeout(()=>{ canvas.style.cursor='grab'; }, 50);
+    document.body.classList.remove('dragging-pano');
+  });
+  canvas.addEventListener('mouseenter', ()=>{ canvas.style.cursor='grab'; });
+  canvas.addEventListener('mouseleave', ()=>{ isDragging=false; canvas.style.cursor='default'; });
+
+  canvas.addEventListener('wheel', handleWheelZoom, { passive:false });
+}
+function handleWheelZoom(e){
+  e.preventDefault(); e.stopPropagation();
+  const zoomSpeed = e.deltaMode===0 ? 2 : 60;
+  const delta = e.deltaY>0 ? zoomSpeed : -zoomSpeed;
+  const old = currentFov;
+  currentFov = Math.max(30, Math.min(120, currentFov + delta));
+  if (currentFov !== old){
+    camera.fov = currentFov; camera.updateProjectionMatrix();
+    updateViewCone(); renderer.render(scene, camera);
+  }
+}
+
+/* ====== Loading overlay ====== */
+function showViewerLoading(msg){
+  const l=document.getElementById('viewer-loading'), t=document.getElementById('loading-text');
+  if (l && t){ t.textContent=msg; l.style.display='block'; }
+}
+function hideViewerLoading(){ const l=document.getElementById('viewer-loading'); if (l) l.style.display='none'; }
+
+/* =============================== */
+/*          IMAGE SOURCING         */
+/* =============================== */
+async function load360Images(){
+  try{
+
+    await createImagesFromFramesFolder();
+    if (currentImages.length>0){
+      if (!isSwitchingToMarble){
+        const track=getCurrentTrack();
+        if (selectedMarbleId){
+          const m=track.marbles.find(x=>x.id===selectedMarbleId);
+          if (m && m.assignedImage!=null) showImageByIndex(m.assignedImage); else showImageByIndex(0);
+        } else { showImageByIndex(0); }
+      }
+      startBackgroundPreload(3);
+    }
+  } catch(e){
+    console.error(e);
+    setStatus('Error loading 360 images');
+  }
+}
+
+async function createImagesFromFramesFolder(){
+  currentImages=[]; currentImageIndex=-1;
+  const track = getCurrentTrack(); if (!track){ setStatus('No track selected'); return; }
+  const gpxName = (track.name||'').replace(/\.[^.]+$/,'');
+  if (!gpxName){ setStatus('GPX name missing'); return; }
+
+  const requiredStartLC = (gpxName+'-').toLowerCase();
+
+  let list;
+  try{
+    const res=await fetch(FRAMES_BASE+'index.json', { cache:'no-store' });
+    if (!res.ok){ setStatus('Could not fetch frames index'); return; }
+    const data = await res.json();
+    list = Array.isArray(data) ? data : Array.isArray(data.files) ? data.files : [];
+  }catch(e){ setStatus('Error reading frames manifest'); return; }
+
+  const files = list.map(x=>String(x).split('/').pop()).filter(Boolean);
+  const matches = files
+    .filter(n=>n.toLowerCase().startsWith(requiredStartLC))
+    .filter(n=>/\.(?:jpe?g|png)$/i.test(n))
+    .sort((a,b)=>a.localeCompare(b));
+
+  if (!matches.length){ setStatus(`No frames for "${gpxName}"`); return; }
+
+  currentImages = matches.map((filename,i)=>({ url: FRAMES_BASE+filename, index:i, filename, timestamp:filename, sequence:i }));
+
+}
+
+/* background preload */
+function startBackgroundPreload(concurrency=3){
+  if (currentImages.length<=1) return;
+  const order = buildPreloadOrder(currentImageIndex, currentImages.length);
+  runPreloadPool(order, concurrency);
+}
+function buildPreloadOrder(center,total){
+  const seq=[]; for(let step=1; step<total; step++){ const f=center+step, b=center-step; if(f<total) seq.push(f); if(b>=0) seq.push(b); }
+  return seq;
+}
+function runPreloadPool(indexes, concurrency){
+  let i=0;
+  const workers = Array.from({length:Math.min(concurrency, indexes.length)}, async ()=>{
+    while(i<indexes.length){ const idx=indexes[i++]; await preloadOne(idx).catch(()=>{}); }
+  });
+  Promise.all(workers).then(()=>console.log('Background preload complete'));
+}
+
+/* =============================== */
+/*            VIEW CONE            */
+/* =============================== */
+function initConeSystem(){
+  if (!map.getSource('view-cone')){
+    map.addSource('view-cone', {
+      type:'geojson',
+      data:{ type:'Feature', geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] } }
+    });
+    map.addLayer({ id:'view-cone-fill', type:'fill', source:'view-cone', paint:{ 'fill-color':'#ff8400', 'fill-opacity':0.5 } });
+    map.addLayer({ id:'view-cone-outline', type:'line', source:'view-cone', paint:{ 'line-color':'#ff6b6b', 'line-width':2, 'line-opacity':0 } });
+  }
+}
+function hideViewCone(){
+  if (map && map.getSource('view-cone')){
+    map.getSource('view-cone').setData({ type:'Feature', geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] } });
+  }
+}
+function getHorizontalFovDeg(){
+  const c=document.getElementById('canvas');
+  const aspect = (camera && camera.aspect) || (c && c.clientHeight ? c.clientWidth/c.clientHeight : 16/9);
+  const vRad = THREE.MathUtils.degToRad(currentFov);
+  const hRad = 2 * Math.atan(Math.tan(vRad/2)*aspect);
+  return THREE.MathUtils.radToDeg(hRad);
+}
 // Update the map polygon to match current yaw + FOV
 function updateViewCone() {
     if (!map || !map.getSource('view-cone')) return;
@@ -3585,535 +1081,51 @@ function updateViewCone() {
     });
 }
 
-// Initialize the cone source and layers
-function initConeSystem() {
-    if (!map.getSource('view-cone')) {
-        map.addSource('view-cone', {
-            type: 'geojson',
-            data: { 
-                type: 'Feature', 
-                geometry: { 
-                    type: 'Polygon', 
-                    coordinates: [[[0,0],[0,0],[0,0]]] 
-                } 
-            }
-        });
+function destFromBearingDistance(lat, lon, bearingDegVal, distMeters){
+  const R=6378137, brng=degToRad(bearingDegVal);
+  const φ1=degToRad(lat), λ1=degToRad(lon);
+  const φ2=Math.asin(Math.sin(φ1)*Math.cos(distMeters/R)+Math.cos(φ1)*Math.sin(distMeters/R)*Math.cos(brng));
+  const λ2=λ1+Math.atan2(Math.sin(brng)*Math.sin(distMeters/R)*Math.cos(φ1), Math.cos(distMeters/R)-Math.sin(φ1)*Math.sin(φ2));
+  return [radToDeg(λ2), radToDeg(φ2)];
+}
+function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters=7, steps=24){
+  const half = Math.max(0, Math.min(89, fovDeg/2));
+  const start = headingDeg - half, end = headingDeg + half;
+  const ring = [[lon,lat]];
+  for (let s=0;s<=steps;s++){
+    const t=s/steps, brg=start + (end-start)*t;
+    ring.push(destFromBearingDistance(lat, lon, brg, radiusMeters));
+  }
+  ring.push([lon,lat]); return ring;
+}
+function radToDeg(r){ return r*180/Math.PI; }
+function degToRad(d){ return d*Math.PI/180; }
 
-        map.addLayer({
-            id: 'view-cone-fill',
-            type: 'fill',
-            source: 'view-cone',
-            paint: { 
-                'fill-color': '#ff8400', 
-                'fill-opacity': 0.5 
-            }
-        });
+/* =============================== */
+/*      MINIMAL TRACKS VIS UPG     */
+/* =============================== */
+function updateAllTracksVisualization(){ /* no track lines by design */ }
+function addTrackToggleMinimal(){ setStatus('Viewer ready'); }
 
-        map.addLayer({
-            id: 'view-cone-outline',
-            type: 'line',
-            source: 'view-cone',
-            paint: { 
-                'line-color': '#ff6b6b', 
-                'line-width': 2, 
-                'line-opacity': 0 
-            }
-        });
-    }
+/* =============================== */
+/*          IMAGE INDEXING         */
+/* =============================== */
+function extractImageIndexFromWaypoint(name, description){
+  const text = (name + ' ' + description).toLowerCase();
+  const m1 = text.match(/image[^\d]*(\d+)/); if (m1) return parseInt(m1[1])-1;
+  const m2 = text.match(/photo[^\d]*(\d+)/); if (m2) return parseInt(m2[1])-1;
+  const m3 = name?.match(/(\d+)$/); if (m3) return parseInt(m3[1])-1;
+  return null;
 }
 
-// Hide cone when no marble selected
-function hideViewCone() {
-    if (map && map.getSource('view-cone')) {
-        map.getSource('view-cone').setData({
-            type: 'Feature',
-            geometry: { type: 'Polygon', coordinates: [[[0,0],[0,0],[0,0]]] }
-        });
-    }
-}
+/* =============================== */
+/*              UI MISC            */
+/* =============================== */
+function setStatus(msg){ const el=document.getElementById('status'); if (el) el.textContent=msg; }
 
-// Math helpers (add if not already in your code)
-function radToDeg(r) { return r * 180 / Math.PI; }
-function degToRad(d) { return d * Math.PI / 180; }
-function normDeg(d) { d = d % 360; return d < 0 ? d + 360 : d; }
-
-
-
-
-
-// ===== VIEWER CONTROLS =====
-function setupViewerEventListeners() {
-    const canvas = document.getElementById('canvas');
-    
-    // Mouse drag to look around
-    let isDragging = false;
-    let lastX = 0, lastY = 0;
-    setupTouchGestures(canvas);
-    
-    canvas.addEventListener('mousedown', (e) => {
-        isDragging = true;
-        disableNavigationButtons(); 
-        lastX = e.clientX;
-        lastY = e.clientY;
-        canvas.style.cursor = 'grabbing';
-    });
-    
-    canvas.addEventListener('mousemove', (e) => {
-        if (isDragging && sphere) {
-            const deltaX = e.clientX - lastX;
-            const deltaY = e.clientY - lastY;
-            
-            panoGroup.rotation.y -= deltaX * 0.01;
-            panoGroup.rotation.x -= deltaY * 0.01;
-            
-            currentYaw = panoGroup.rotation.y;
-            currentPitch = panoGroup.rotation.x;
-            
-            lastX = e.clientX;
-            lastY = e.clientY;
-            
-            updateNavigationRing();
-   
-                    updateViewCone(); // ADD THIS LINE
-            refreshBranchButtons();
-        }
-    });
-    
-    canvas.addEventListener('mouseup', () => {
-        isDragging = false;
-         setTimeout(() => {
-        enableNavigationButtons(); // ← Re-enable buttons after drag
-    }, 50);
-        canvas.style.cursor = 'grab';
-    });
-    
-    canvas.addEventListener('mouseenter', () => {
-        canvas.style.cursor = 'grab';
-    });
-    
-    canvas.addEventListener('mouseleave', () => {
-        isDragging = false;
-        canvas.style.cursor = 'default';
-    });
-    
-    
-    // Zoom controls
-    document.getElementById('zoomIn').addEventListener('click', zoomIn);
-    document.getElementById('zoomOut').addEventListener('click', zoomOut);
-
-    canvas.addEventListener('wheel', handleWheelZoom, { passive: false });
-    
-    // Navigation buttons
-document.getElementById('nextImageBtn').addEventListener('click', navigateToBestMarbleInView);
-document.getElementById('prevImageBtn').addEventListener('click', navigateToBestMarbleBehind);
-    
-
-}
-
-function setupTouchGestures(canvas) {
-    let touchStartDistance = 0;
-    let touchStartFov = currentFov;
-    let isTouching = false;
-    let lastTouchX = 0, lastTouchY = 0;
-
-    canvas.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 1) {
-            // Single touch - panning (looking around)
-            isTouching = true;
-            lastTouchX = e.touches[0].clientX;
-            lastTouchY = e.touches[0].clientY;
-            e.preventDefault();
-        } else if (e.touches.length === 2) {
-            // Pinch start - store initial distance and FOV
-            touchStartDistance = getTouchDistance(e.touches);
-            touchStartFov = currentFov;
-            e.preventDefault();
-        }
-    }, { passive: false });
-
-    canvas.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 1 && isTouching) {
-            // Single touch panning - look around
-            const deltaX = e.touches[0].clientX - lastTouchX;
-            const deltaY = e.touches[0].clientY - lastTouchY;
-            
-            // Apply rotation (same as mouse drag)
-            panoGroup.rotation.y -= deltaX * 0.01;
-            panoGroup.rotation.x -= deltaY * 0.01;
-            
-            // Clamp pitch to avoid flipping
-            panoGroup.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, panoGroup.rotation.x));
-            
-            currentYaw = panoGroup.rotation.y;
-            currentPitch = panoGroup.rotation.x;
-            
-            lastTouchX = e.touches[0].clientX;
-            lastTouchY = e.touches[0].clientY;
-            
-            // UPDATE CONE IN REAL-TIME DURING TOUCH PAN
-            updateViewCone();
-            updateNavigationRing();
-            refreshBranchButtons();
-            
-            e.preventDefault();
-        } else if (e.touches.length === 2) {
-            // Pinch gesture - zoom
-            const currentDistance = getTouchDistance(e.touches);
-            const scale = touchStartDistance / currentDistance;
-            
-            // Adjust FOV based on pinch scale
-            const newFov = Math.max(30, Math.min(120, touchStartFov * scale));
-            
-            if (newFov !== currentFov) {
-                currentFov = newFov;
-                camera.fov = currentFov;
-                camera.updateProjectionMatrix();
-                
-                // Update cone and render
-                updateViewCone();
-                renderer.render(scene, camera);
-            }
-            
-            e.preventDefault();
-        }
-    }, { passive: false });
-
-    canvas.addEventListener('touchend', (e) => {
-        if (e.touches.length === 0) {
-            // All touches ended
-            isTouching = false;
-            touchStartDistance = 0;
-        } else if (e.touches.length === 1) {
-            // Went from pinch to single touch - update touch position
-            lastTouchX = e.touches[0].clientX;
-            lastTouchY = e.touches[0].clientY;
-        }
-    }, { passive: false });
-}
-
-// Helper function to calculate distance between two touches
-function getTouchDistance(touches) {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-}
-
-function enableNavigationButtons() {
-    const buttons = document.querySelectorAll('.nav-button.ring-button');
-    buttons.forEach(button => {
-        button.style.pointerEvents = 'auto';
-    });
-}
-
-function disableNavigationButtons() {
-    const buttons = document.querySelectorAll('.nav-button.ring-button');
-    buttons.forEach(button => {
-        button.style.pointerEvents = 'none';
-    });
-}
-
-function navigateToBestMarbleInView() {
-    navigateToAdjacentMarble(true); // Always go to next marble
-}
-
-function navigateToBestMarbleBehind() {
-    navigateToAdjacentMarble(false); // Always go to previous marble
-}
-
-function findClosestMarbleInViewDirection() {
-    const track = getCurrentTrack();
-    if (!track || track.marbles.length === 0) return null;
-    
-    const viewDirection = THREE.MathUtils.radToDeg(currentYaw);
-    
-    // Find marble that best aligns with current view direction
-    let bestMarble = null;
-    let bestScore = Infinity;
-    
-    track.marbles.forEach(marble => {
-        // Calculate bearing from current view position to marble
-        // For simplicity, use map center or current selected position
-        const fromPosition = selectedMarbleId ? 
-            track.marbles.find(m => m.id === selectedMarbleId).position : 
-            [map.getCenter().lng, map.getCenter().lat];
-            
-        const bearingToMarble = bearingDeg(fromPosition, marble.position);
-        const angleDiff = angularDiffDeg(viewDirection, bearingToMarble);
-        
-        // Score based on angle alignment and distance
-        const distance = calculateDistance(fromPosition, marble.position);
-        const score = angleDiff + (distance * 0.01); // Weight distance slightly
-        
-        if (score < bestScore) {
-            bestScore = score;
-            bestMarble = marble;
-        }
-    });
-    
-    return bestMarble;
-}
-
-function findClosestMarbleBehindView() {
-    const track = getCurrentTrack();
-    if (!track || track.marbles.length === 0) return null;
-    
-    const behindDirection = (THREE.MathUtils.radToDeg(currentYaw) + 180) % 360;
-    
-    let bestMarble = null;
-    let bestScore = Infinity;
-    
-    track.marbles.forEach(marble => {
-        const fromPosition = selectedMarbleId ? 
-            track.marbles.find(m => m.id === selectedMarbleId).position : 
-            [map.getCenter().lng, map.getCenter().lat];
-            
-        const bearingToMarble = bearingDeg(fromPosition, marble.position);
-        const angleDiff = angularDiffDeg(behindDirection, bearingToMarble);
-        
-        const distance = calculateDistance(fromPosition, marble.position);
-        const score = angleDiff + (distance * 0.01);
-        
-        if (score < bestScore) {
-            bestScore = score;
-            bestMarble = marble;
-        }
-    });
-    
-    return bestMarble;
-}
-
-function zoomIn() {
-    if (currentFov > 30) {
-        currentFov -= 5;
-        camera.fov = currentFov;
-        camera.updateProjectionMatrix();
-        updateZoomDisplay();
-        updateViewCone(); // UPDATE CONE ON ZOOM
-    }
-}
-
-function zoomOut() {
-    if (currentFov < 120) {
-        currentFov += 5;
-        camera.fov = currentFov;
-        camera.updateProjectionMatrix();
-        updateZoomDisplay();
-        updateViewCone(); // UPDATE CONE ON ZOOM
-    }
-}
-
-function handleWheelZoom(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Use a consistent zoom speed regardless of device
-    const zoomSpeed = e.deltaMode === 0 ? 2 : 60; // Adjust for different delta modes
-    const delta = e.deltaY > 0 ? zoomSpeed : -zoomSpeed;
-    
-    const oldFov = currentFov;
-    currentFov = Math.max(30, Math.min(120, currentFov + delta));
-    
-    if (currentFov !== oldFov) {
-        camera.fov = currentFov;
-        camera.updateProjectionMatrix();
-        
-        updateViewCone();
-        renderer.render(scene, camera);
-        
-        console.log(`Zoom: ${currentFov}°`);
-    }
-}
-
-// ===== LOADING FUNCTIONS =====
-function showViewerLoading(message) {
-    const loading = document.getElementById('viewer-loading');
-    const loadingText = document.getElementById('loading-text');
-    if (loading && loadingText) {
-        loadingText.textContent = message;
-        loading.style.display = 'block';
-    }
-}
-
-function hideViewerLoading() {
-    const loading = document.getElementById('viewer-loading');
-    if (loading) loading.style.display = 'none';
-}
-
-// Function to get marble by image index
-function getMarbleByImageIndex(imageIndex) {
-    const track = getCurrentTrack();
-    if (!track) return null;
-    
-    return track.marbles.find(marble => marble.assignedImage === imageIndex);
-}
-
-// Function to navigate to next/previous marble WITH image
-function navigateToMarbleWithImage(direction) {
-    const track = getCurrentTrack();
-    if (!track) return;
-    
-    const marbles = track.marbles;
-    const marblesWithImages = marbles.filter(m => m.assignedImage !== null);
-    
-    if (marblesWithImages.length === 0) {
-        setStatus('No marbles have images assigned');
-        return;
-    }
-    
-    let currentIndex = 0;
-    if (selectedMarbleId) {
-        const currentMarble = marbles.find(m => m.id === selectedMarbleId);
-        if (currentMarble && currentMarble.assignedImage !== null) {
-            currentIndex = marblesWithImages.findIndex(m => m.id === selectedMarbleId);
-        }
-    }
-    
-    let newIndex;
-    if (direction === 'next') {
-        newIndex = (currentIndex + 1) % marblesWithImages.length;
-    } else {
-        newIndex = (currentIndex - 1 + marblesWithImages.length) % marblesWithImages.length;
-    }
-    
-    const nextMarble = marblesWithImages[newIndex];
-    selectMarble(nextMarble.id);
-    showMarbleImage(nextMarble.id);
-}
-
-
-
-// Add this to your existing keyboard event listeners
-document.addEventListener('keydown', (e) => {
-    // Use 'd' or 'D' key to toggle controls panel
-    if (e.key === 'd' || e.key === 'D') {
-        toggleControlsPanel();
-        e.preventDefault(); // Prevent any default browser behavior
-    }
-});
-
-function toggleControlsPanel() {
-    const controls = document.getElementById('controls');
-    if (controls.style.display === 'none' || controls.style.display === '') {
-        controls.style.display = 'block';
-        setStatus('Controls panel shown - press D to hide');
-    } else {
-        controls.style.display = 'none';
-        setStatus('Controls panel hidden - press D to show');
-    }
-}
-
-// Add buttons to navigate marbles with images
-function addMarbleNavigationButtons() {
-    // Add these buttons to your controls HTML or create them dynamically
-    const marbleNavHTML = `
-        <div class="control-group">
-            <div class="slider-label">
-                <span>Marble Navigation:</span>
-                <div>
-                    <button class="small-btn" onclick="navigateToMarbleWithImage('prev')">← Prev</button>
-                    <button class="small-btn" onclick="navigateToMarbleWithImage('next')">Next →</button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Add to controls (you might need to adjust the selector based on your HTML structure)
-    const controls = document.getElementById('controls');
-    const exportGroup = controls.querySelector('.export-buttons').parentElement;
-    exportGroup.insertAdjacentHTML('beforebegin', marbleNavHTML);
-}
-
-// ===== MISSING: IMAGE PRELOADING SYSTEM =====
-let preloadedImages = {}; // ADD THIS VARIABLE at the top with other globals
-
-function startBackgroundPreload(concurrency = 3) {
-    if (currentImages.length <= 1) return;
-    
-    const order = buildPreloadOrder(currentImageIndex, currentImages.length);
-    runPreloadPool(order, concurrency);
-}
-
-function buildPreloadOrder(center, total) {
-    const seq = [];
-    for (let step = 1; step < total; step++) {
-        const fwd = center + step;
-        const back = center - step;
-        if (fwd < total) seq.push(fwd);
-        if (back >= 0) seq.push(back);
-    }
-    return seq;
-}
-
-function runPreloadPool(indexes, concurrency) {
-    let i = 0;
-    const workers = Array.from({ length: Math.min(concurrency, indexes.length) }, async () => {
-        while (i < indexes.length) {
-            const idx = indexes[i++];
-            await preloadOne(idx).catch(() => {});
-        }
-    });
-    
-    Promise.all(workers).then(() => {
-        console.log('Background preload complete');
-    });
-}
-
-function preloadOne(index) {
-    return new Promise((resolve) => {
-        const item = currentImages[index];
-        if (!item) return resolve();
-
-        const src = item.url;
-        if (preloadedImages[src]) return resolve(); // already cached
-
-        const img = new Image();
-        img.crossOrigin = 'Anonymous';
-        img.onload = () => {
-            preloadedImages[src] = img;
-            resolve();
-        };
-        img.onerror = () => resolve(); // swallow errors; keep going
-        img.src = src;
-
-        if (img.decode) img.decode().catch(() => {});
-    });
-}
-
-// ===== MISSING: UPDATE VIEWER DISPLAY =====
-function updateViewerDisplay() {
-    const panoImage = document.getElementById('pano-image');
-    const noImage = document.getElementById('no-image');
-    
-    if (panoImage && noImage) {
-        if (currentImages.length > 0 && currentImageIndex >= 0) {
-            panoImage.style.display = 'block';
-            noImage.style.display = 'none';
-        } else {
-            panoImage.style.display = 'none';
-            noImage.style.display = 'flex';
-        }
-    }
-}
-
-// ===== MISSING: INITIALIZE VIEWER =====
-function initializeViewer() {
-    // Simple initialization - the Three.js viewer will be initialized when images are loaded
-    console.log('Viewer container ready');
-}
-
-// ===== MISSING: SHOW IMAGE (legacy function) =====
-function showImage(index) {
-    // This is called by the old viewer controls, redirect to new system
-    showImageByIndex(index);
-}
-  
-
-  
-   
-
-    // Initialize the application
-    initializeApp();
-</script> 
-
+/* Top controls mirror ring buttons */
+document.getElementById('prevImageBtnTop').addEventListener('click', previousImage);
+document.getElementById('nextImageBtnTop').addEventListener('click', nextImage);
+</script>
 </body>
 </html>
