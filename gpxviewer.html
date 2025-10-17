@@ -472,17 +472,45 @@ function selectTrack(trackId){
 
 }
 
+/* =============================== */
+/*     RESET ORIENTATION FOR TRACK */
+/* =============================== */
+function resetViewerOrientationForTrack(track) {
+  if (!track || !panoGroup) return;
+  
+  // Reset to forward-looking orientation
+  currentYaw = 0;
+  currentPitch = 0;
+  
+  // Reset the panorama group rotation FIRST
+  panoGroup.rotation.y = currentYaw;
+  panoGroup.rotation.x = currentPitch;
+  
+  // Clear any previous hop bearing
+  lastHopBearingDeg = null;
+  
+  console.log(`Orientation reset for track: ${track.name}`);
+}
+
 function selectTrackWithoutMapReset(trackId){
   if (currentTrackId && allTracks.has(currentTrackId)) allTracks.get(currentTrackId).isActive=false;
   currentTrackId = trackId;
   const track = allTracks.get(trackId);
   track.isActive = true;
 
+  // 🔹 RESET ORIENTATION FIRST, before any image loading
+  resetViewerOrientationForTrack(track);
+
   updateStatistics();
   updateAllTracksVisualization(false);
   updateMarbleDisplay();
 
   if (viewConeMarker){ viewConeMarker.remove(); viewConeMarker = null; }
+  
+  // 🔹 Force immediate UI update before loading images
+  updateNavigationRing(true);
+  updateViewCone();
+  
   load360Images();
   setStatus(`Switched to: ${track.name} - ${track.marbles.length} marbles`);
 }
@@ -564,25 +592,32 @@ function handleMapClickForDeselect(e){
 let isSwitchingTrack = false;
 
 async function selectTrackAndThenMarble(trackId, marbleId) {
-  if (isSwitchingTrack) return; // Prevent re-entry during transition
-  isSwitchingTrack = true; // Flag to block further actions
+  if (isSwitchingTrack) return;
+  isSwitchingTrack = true;
 
   const prevTrackId = currentTrackId;
   try {
     selectTrackWithoutMapReset(trackId);
-    await new Promise(r => setTimeout(r, 100)); // Small delay before selecting marble
+    
+    // 🔹 Wait for orientation reset and initial UI updates
+    await new Promise(r => setTimeout(r, 100));
+    
     selectMarble(marbleId);
 
     const track = getCurrentTrack();
     const marble = track.marbles.find(m => m.id === marbleId);
-    if (marble && marble.assignedImage !== null) showImageByIndex(marble.assignedImage);
+    if (marble && marble.assignedImage !== null) {
+      // 🔹 Small additional delay to ensure orientation is fully reset
+      await new Promise(r => setTimeout(r, 50));
+      showImageByIndex(marble.assignedImage);
+    }
  
     setStatus(`Switched to ${allTracks.get(trackId).name} and selected marble`);
   } catch (err) {
     console.error('Switch error', err);
     if (prevTrackId) selectTrackWithoutMapReset(prevTrackId);
   } finally {
-    isSwitchingTrack = false; // Allow track switch again
+    isSwitchingTrack = false;
   }
 }
 
@@ -931,7 +966,8 @@ function applyImageToSphere(img, imageData) {
   geometry.scale(-1, 1, 1);
   geometry.rotateY(Math.PI);
 
-  // 🔹 Apply per-track yaw correction
+  // 🔹 Apply per-track yaw correction - but DON'T modify the base geometry rotation
+  // This ensures the correction is applied consistently without affecting currentYaw
   const track = getCurrentTrack();
   if (track && track.yawFixDeg) {
     geometry.rotateY(THREE.MathUtils.degToRad(track.yawFixDeg));
@@ -942,6 +978,11 @@ function applyImageToSphere(img, imageData) {
 
   const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
   sphere = new THREE.Mesh(geometry, material);
+  
+  // 🔹 Apply the current orientation to the sphere, not the group
+  sphere.rotation.y = currentYaw;
+  sphere.rotation.x = currentPitch;
+  
   panoGroup.add(sphere);
 
   updateNavigationRing(true);
@@ -1035,9 +1076,14 @@ function setupViewerEventListeners(){
   canvas.addEventListener('mousemove', e=>{
     if (!isDragging || !sphere) return;
     const dx=e.clientX-lastX, dy=e.clientY-lastY;
-    panoGroup.rotation.y -= dx*0.01;
-    panoGroup.rotation.x -= dy*0.01;
-    currentYaw = panoGroup.rotation.y; currentPitch = panoGroup.rotation.x;
+    
+    // 🔹 Rotate the sphere, not the group
+    sphere.rotation.y -= dx*0.01;
+    sphere.rotation.x -= dy*0.01;
+    
+    currentYaw = sphere.rotation.y; 
+    currentPitch = sphere.rotation.x;
+    
     lastX=e.clientX; lastY=e.clientY;
     updateNavigationRing(); updateViewCone(); refreshBranchButtons();
   });
@@ -1050,6 +1096,7 @@ function setupViewerEventListeners(){
 
   canvas.addEventListener('wheel', handleWheelZoom, { passive:false });
 }
+
 function handleWheelZoom(e){
   e.preventDefault(); e.stopPropagation();
   const zoomSpeed = e.deltaMode===0 ? 2 : 60;
@@ -1272,4 +1319,4 @@ document.getElementById('prevImageBtnTop').addEventListener('click', previousIma
 document.getElementById('nextImageBtnTop').addEventListener('click', nextImage);
 </script>
 </body>
-</html>
+</html> 
