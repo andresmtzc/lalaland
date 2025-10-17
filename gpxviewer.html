@@ -54,10 +54,33 @@
   pointer-events: none !important;
 }
 
+/* Default branch button position (right side) - points right */
 #branchImageBtn.ring-button {
   right: 15px;
   top: 50%;
   transform: translateY(-50%);
+}
+
+/* When at endpoint with branch, position branch button at bottom and point down */
+.navigation-ring.has-branch #branchImageBtn.ring-button {
+  bottom: 15px;
+  left: 50%;
+  transform: translateX(-50%) rotate(90deg); /* Rotate to point down */
+  right: auto;
+  top: auto;
+}
+
+/* Reposition other buttons when branch is at bottom */
+.navigation-ring.has-branch #nextImageBtn.ring-button {
+  top: 15px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.navigation-ring.has-branch #prevImageBtn.ring-button {
+  top: 50%;
+  left: 70%;
+  transform: translate(-50%, -50%);
 }
 </style>
 </head>
@@ -76,7 +99,7 @@
     <div class="navigation-ring">
       <button class="nav-button ring-button" id="nextImageBtn">▲</button>
       <button class="nav-button ring-button" id="prevImageBtn">▼</button>
-      <button class="nav-button ring-button" id="branchImageBtn">➤</button>
+      <button class="nav-button ring-button" id="branchImageBtn">▶</button>
     </div>
     <div id="branch-buttons" style="margin-top:8px; display:flex; gap:6px; pointer-events:auto;"></div>
   </div>
@@ -811,10 +834,84 @@ function animateViewer(){
 }
 
 
+function getBranchPosition() {
+  if (!selectedMarbleId) return 'right'; // default
+  
+  const track = getCurrentTrack();
+  if (!track) return 'right';
+  
+  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+  const isEndpoint = marbleIndex === 0 || marbleIndex === track.marbles.length - 1;
+  
+  if (!isEndpoint) return 'right';
+  
+  const edges = navGraph.get(selectedMarbleId) || [];
+  
+  // Find the main branch direction (excluding the normal sequential connection)
+  const normalConnectionIndex = marbleIndex === 0 ? 1 : marbleIndex - 1;
+  const normalConnectionMarble = track.marbles[normalConnectionIndex];
+  
+  const branchEdges = edges.filter(edge => {
+    return edge.toMarbleId !== normalConnectionMarble?.id;
+  });
+  
+  if (branchEdges.length === 0) return 'right';
+  
+  // Calculate average bearing of all branches
+  let totalBearing = 0;
+  branchEdges.forEach(edge => {
+    totalBearing += edge.bearingDeg;
+  });
+  const avgBearing = totalBearing / branchEdges.length;
+  
+  // Convert current yaw to map bearing
+  const currentYawDeg = THREE.MathUtils.radToDeg(currentYaw);
+  
+  // Determine if branches are mostly to the left or right of current view
+  const relativeBearing = (avgBearing - currentYawDeg + 360) % 360;
+  
+  return relativeBearing > 180 ? 'left' : 'right';
+}
+
+
+function shouldShowBranchAtBottom() {
+  if (!selectedMarbleId) return false;
+  
+  const track = getCurrentTrack();
+  if (!track) return false;
+  
+  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+  const isEndpoint = marbleIndex === 0 || marbleIndex === track.marbles.length - 1;
+  
+  if (!isEndpoint) return false;
+  
+  // Check if there are ANY nearby marbles that represent alternative paths
+  const edges = navGraph.get(selectedMarbleId) || [];
+  
+  // For endpoints, we want to show branch at bottom if there are ANY connections
+  // that aren't just the single sequential connection
+  if (isEndpoint) {
+    // If we're at start (index 0), the normal connection is to index 1
+    // If we're at end (last index), the normal connection is to previous index
+    const normalConnectionIndex = marbleIndex === 0 ? 1 : marbleIndex - 1;
+    const normalConnectionMarble = track.marbles[normalConnectionIndex];
+    
+    // Count connections that aren't the normal sequential one
+    const alternativeConnections = edges.filter(edge => {
+      return edge.toMarbleId !== normalConnectionMarble?.id;
+    });
+    
+    return alternativeConnections.length > 0;
+  }
+  
+  return false;
+}
+
+
 function updateNavigationRing(instant = false) {
   const ring = document.querySelector('.navigation-ring');
-  const nextBtn   = document.getElementById('nextImageBtn');
-  const prevBtn   = document.getElementById('prevImageBtn');
+  const nextBtn = document.getElementById('nextImageBtn');
+  const prevBtn = document.getElementById('prevImageBtn');
   const branchBtn = document.getElementById('branchImageBtn');
   if (!ring || !sphere) return;
 
@@ -825,7 +922,7 @@ function updateNavigationRing(instant = false) {
   if (!track || !selectedMarbleId) return;
 
   const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  const total       = track.marbles.length;
+  const total = track.marbles.length;
 
   // --- Original forward/back logic preserved ---
   let canForward = false;
@@ -834,13 +931,13 @@ function updateNavigationRing(instant = false) {
 
   // Endpoint logic
   if (marbleIndex < total - 1) canForward = true;
-  if (marbleIndex > 0)         canBackward = true;
+  if (marbleIndex > 0) canBackward = true;
 
   // Directional refinement (same as before)
   if (marbleIndex > 0 && marbleIndex < total - 1) {
-    const fwd  = getBestMarbleInDirection(currentYaw);
+    const fwd = getBestMarbleInDirection(currentYaw);
     const back = getBestMarbleInDirection(currentYaw + Math.PI);
-    canForward  = !!fwd;
+    canForward = !!fwd;
     canBackward = !!back;
   }
 
@@ -848,7 +945,7 @@ function updateNavigationRing(instant = false) {
 
   // Junction fix
   if (edges.length > 2) {
-    canForward  = true;
+    canForward = true;
     canBackward = true;
   }
 
@@ -861,25 +958,33 @@ function updateNavigationRing(instant = false) {
   //  - OR any node with more than 2 connections (true junction)
   canBranch = (isEndpoint && totalConnections >= 2) || totalConnections > 2;
 
+  // --- Branch positioning logic ---
+  const showBranchAtBottom = shouldShowBranchAtBottom();
+  
+  if (showBranchAtBottom) {
+    ring.classList.add('has-branch');
+  } else {
+    ring.classList.remove('has-branch');
+  }
+
   // --- Apply visual state ---
-  nextBtn.disabled   = !canForward;
-  prevBtn.disabled   = !canBackward;
+  nextBtn.disabled = !canForward;
+  prevBtn.disabled = !canBackward;
   branchBtn.disabled = !canBranch;
 
-  nextBtn.style.opacity   = canForward  ? 1 : 0.35;
-  prevBtn.style.opacity   = canBackward ? 1 : 0.35;
-  branchBtn.style.opacity = canBranch   ? 1 : 0.35;
+  nextBtn.style.opacity = canForward ? 1 : 0;
+  prevBtn.style.opacity = canBackward ? 1 : 0;
+  branchBtn.style.opacity = canBranch ? 1 : 0;
 
-  nextBtn.title   = canForward  ? 'Move forward' : 'No next marble';
-  prevBtn.title   = canBackward ? 'Move backward' : 'No previous marble';
-  branchBtn.title = canBranch   ? 'Branch to alternative path' : 'No branch available';
+  nextBtn.title = canForward ? 'Move forward' : 'No next marble';
+  prevBtn.title = canBackward ? 'Move backward' : 'No previous marble';
+  branchBtn.title = canBranch ? 'Branch to alternative path' : 'No branch available';
 
   if (instant) {
     ring.style.transition = 'none';
     requestAnimationFrame(() => (ring.style.transition = ''));
   }
 }
-
 
 
 document.getElementById('branchImageBtn').addEventListener('click', async () => {
