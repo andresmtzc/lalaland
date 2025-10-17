@@ -215,12 +215,17 @@ function addCustomImage(map) {
 /* =============================== */
 async function loadGPXFromManifest() {
   try {
-
     const MANIFEST_URL = FRAMES_BASE + 'index.json';
     const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
     if (!res.ok) { setStatus('No predefined tracks found'); return; }
 
     const manifest = await res.json();
+
+    // 🔹 NEW: load yawfix mapping safely
+    window.yawFixesByFile = manifest.yawfixes || {};
+    console.log("Yaw fixes loaded:", window.yawFixesByFile);
+
+    // Existing logic for gpx file list
     let gpxFiles = [];
     if (manifest.gpxFiles && manifest.gpxFiles.length) gpxFiles = manifest.gpxFiles;
     else if (manifest.files) gpxFiles = manifest.files.filter(f => f.toLowerCase().endsWith('.gpx'));
@@ -229,40 +234,47 @@ async function loadGPXFromManifest() {
 
     let loadedCount = 0;
     for (const gpxFile of gpxFiles) {
-      try { await loadSingleGPX(gpxFile); loadedCount++; }
-      catch(e) { console.error('Failed GPX:', gpxFile, e); }
+      try { 
+        await loadSingleGPX(gpxFile); 
+        loadedCount++; 
+      } catch(e) { 
+        console.error('Failed GPX:', gpxFile, e); 
+      }
     }
 
-
-    // Auto-select first
     if (loadedCount > 0 && allTracks.size > 0) {
       const firstTrackId = Array.from(allTracks.keys())[0];
       selectTrack(firstTrackId);
       const track = allTracks.get(firstTrackId);
-
     }
+
   } catch(e) {
     console.error(e);
     setStatus('Error loading manifest');
   }
 }
 
+
 async function loadSingleGPX(filename) {
   const fullPath = filename.startsWith(FRAMES_BASE) ? filename : FRAMES_BASE + filename;
   const response = await fetch(fullPath);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const baseName = filename.split('/').pop();
+  const yawFixDeg = window.yawFixesByFile?.[baseName] ?? 0;
+  console.log(`Applying yaw fix ${yawFixDeg}° to ${baseName}`);
+
   const gpxContent = await response.text();
-  parseGPX(gpxContent, filename.split('/').pop(), true);
+  parseGPX(gpxContent, baseName, true, yawFixDeg);
 }
 
 /* =============================== */
 /*           GPX PARSING           */
 /* =============================== */
-function parseGPX(gpxContent, fileName, isPredefined=false) {
+function parseGPX(gpxContent, fileName, isPredefined=false, yawFixDeg=0) {
   const parser = new DOMParser();
   const gpxDoc = parser.parseFromString(gpxContent, 'text/xml');
 
-  // points
   const trkpts = gpxDoc.querySelectorAll('trkpt');
   const pointsWithTime = [];
   trkpts.forEach((trkpt, idx) => {
@@ -285,8 +297,9 @@ function parseGPX(gpxContent, fileName, isPredefined=false) {
     id: trackId,
     name: fileName.replace('.gpx',''),
     color: trackColor,
+    yawFixDeg: yawFixDeg,       // 🔹 NEW: store the per-track yaw correction
     originalPoints: pointsWithTime,
-    activePoints: pointsWithTime.map(p => ({...p})), // always full set
+    activePoints: pointsWithTime.map(p => ({...p})),
     isActive: false,
     isPredefined,
     originalStats: calculateOriginalStatsFromPoints(pointsWithTime),
@@ -294,7 +307,6 @@ function parseGPX(gpxContent, fileName, isPredefined=false) {
     marbleSpacing: 10
   };
 
-  // Waypoints -> marbles (exact positions)
   parseWaypointsFromGPX(gpxDoc, trackData);
 
   allTracks.set(trackId, trackData);
@@ -304,6 +316,7 @@ function parseGPX(gpxContent, fileName, isPredefined=false) {
   updateMarbleDisplay();
   setStatus(`Loaded ${fileName} with ${trackData.marbles.length} waypoints`);
 }
+
 
 function parseWaypointsFromGPX(gpxDoc, trackData) {
   const waypoints = gpxDoc.querySelectorAll('wpt');
@@ -798,30 +811,36 @@ function showImageInViewer(imageUrl, imageData){
   img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
 }
 
-function applyImageToSphere(img, imageData){
-  if (sphere){
+function applyImageToSphere(img, imageData) {
+  if (sphere) {
     panoGroup.remove(sphere);
     sphere.geometry?.dispose();
-    if (sphere.material){
+    if (sphere.material) {
       sphere.material.map?.dispose();
       sphere.material.dispose();
     }
   }
 
   const geometry = new THREE.SphereGeometry(100, 60, 40);
-  geometry.scale(-1,1,1);
+  geometry.scale(-1, 1, 1);
   geometry.rotateY(Math.PI);
+
+  // 🔹 Apply per-track yaw correction
+  const track = getCurrentTrack();
+  if (track && track.yawFixDeg) {
+    geometry.rotateY(THREE.MathUtils.degToRad(track.yawFixDeg));
+  }
 
   const texture = new THREE.Texture(img);
   texture.needsUpdate = true;
 
-  const material = new THREE.MeshBasicMaterial({ map:texture, side:THREE.DoubleSide });
+  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
   sphere = new THREE.Mesh(geometry, material);
   panoGroup.add(sphere);
 
   updateNavigationRing(true);
-
 }
+
 
 function preloadAdjacentImages(){
   const prev = currentImageIndex - 1;
@@ -961,12 +980,12 @@ async function load360Images(){
       }
       startBackgroundPreload(3);
     }
-  } catch(e){
+  } catch(e){ 
     console.error(e);
     setStatus('Error loading 360 images');
   }
 }
-
+  
 async function createImagesFromFramesFolder(){
   currentImages=[]; currentImageIndex=-1;
   const track = getCurrentTrack(); if (!track){ setStatus('No track selected'); return; }
