@@ -428,14 +428,18 @@ function handleMarbleClick(e) {
   const marbleId = e.features[0].properties.id;
   const trackId = e.features[0].properties.trackId;
 
+  // 🔥 PROPER TRACK SWITCHING
   if (trackId !== currentTrackId) {
     currentTrackId = trackId;
+    // Reload images for the new track
+    currentImages = [];
+    currentImageIndex = -1;
   }
   
   selectedMarbleId = marbleId;
   updateMarbleDisplay();
   
-  // 🔥 CRITICAL: Ensure cone system is initialized and updated
+  // Initialize and show cone
   initConeSystem();
   updateViewCone();
   
@@ -450,6 +454,7 @@ function handleMarbleClick(e) {
 }
 
 /* OPEN MODAL WITH 360 VIEWER */
+/* OPEN MODAL WITH 360 VIEWER - USING ORIGINAL GPX VIEWER FLOW */
 function openMarbleModal(marbleId) {
   const modal = document.getElementById('lotModal');
   const viewerContainer = document.getElementById('viewer-container');
@@ -470,12 +475,26 @@ function openMarbleModal(marbleId) {
   document.getElementById('headerFracc').textContent = '360° VIEWER';
   document.querySelector('.header-lot-number').style.display = 'none';
   
-  // 🔥 CRITICAL: Use your ORIGINAL GPX viewer initialization
+  // 🔥 USE ORIGINAL GPX VIEWER INITIALIZATION
   if (!viewerInitialized) {
     initThreeJSViewer();
   }
   
-  // Resize canvas after modal is visible
+  const track = getCurrentTrack();
+  const marble = track?.marbles.find(m => m.id === marbleId);
+  
+  if (marble && marble.assignedImage !== null) {
+    // 🔥 USE ORIGINAL GPX VIEWER FLOW
+    selectMarble(marble.id);
+    
+    // Load images and show using original GPX viewer system
+    load360Images().then(() => {
+      // This uses your proven applyImageToSphere with 180° rotation
+      openMarbleByIndex(marble.assignedImage);
+    });
+  }
+  
+  // Resize after modal is visible
   setTimeout(() => {
     const canvas = document.getElementById('canvas');
     if (canvas && renderer && camera) {
@@ -484,23 +503,6 @@ function openMarbleModal(marbleId) {
       camera.updateProjectionMatrix();
     }
   }, 100);
-  
-  // 🔥 CRITICAL: Use the ORIGINAL GPX viewer image loading flow
-  const track = getCurrentTrack();
-  const marble = track?.marbles.find(m => m.id === marbleId);
-  
-  if (marble && marble.assignedImage !== null) {
-    // This bypasses showImageByIndex and goes directly to your proven system
-    highlightMarbleWithImage(marble.assignedImage);
-    
-    // Load and show the image using your original GPX viewer logic
-    load360Images().then(() => {
-      // 🔥 Use showImageInViewer which calls applyImageToSphere
-      if (typeof showImageInViewer === 'function' && currentImages[marble.assignedImage]) {
-        showImageInViewer(currentImages[marble.assignedImage].url, currentImages[marble.assignedImage]);
-      }
-    });
-  }
 }
 
 /* THREE.JS VIEWER - Exact from gpxviewer */
@@ -533,83 +535,63 @@ function animateViewer(){
 }
 
 function updateNavigationRing(instant = false) {
-  try {
-    const ring = document.querySelector('.navigation-ring');
-    const nextBtn = document.getElementById('nextImageBtn');
-    const prevBtn = document.getElementById('prevImageBtn');
-    const branchBtn = document.getElementById('branchImageBtn');
-    
-    if (!ring || !sphere || !nextBtn || !prevBtn || !branchBtn) return;
-
-    const yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
-    ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
-
-    const track = getCurrentTrack();
-    if (!track || !selectedMarbleId) return;
-
-    const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
-    const total = track.marbles.length;
-    
-    if (marbleIndex === -1) return;
-
-    // Rest of your logic with safe function calls
-    let canForward = false;
-    let canBackward = false;
-    let canBranch = false;
-
-    // Basic navigation
-    if (marbleIndex < total - 1) canForward = true;
-    if (marbleIndex > 0) canBackward = true;
-
-    // Safe function calls with fallbacks
-    let fwd = null, back = null;
     try {
-      if (marbleIndex > 0 && marbleIndex < total - 1) {
-        fwd = typeof getBestMarbleInDirection === 'function' ? getBestMarbleInDirection(currentYaw) : null;
-        back = typeof getBestMarbleInDirection === 'function' ? getBestMarbleInDirection(currentYaw + Math.PI) : null;
-        canForward = !!fwd;
-        canBackward = !!back;
-      }
-    } catch (e) {
-      console.warn('Directional navigation failed:', e);
+        const ring = document.querySelector('.navigation-ring');
+        const nextBtn = document.getElementById('nextImageBtn');
+        const prevBtn = document.getElementById('prevImageBtn');
+        const branchBtn = document.getElementById('branchImageBtn');
+        
+        if (!ring || !sphere || !nextBtn || !prevBtn || !branchBtn) return;
+
+        const yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
+        ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
+
+        const track = getCurrentTrack();
+        if (!track || !selectedMarbleId) return;
+
+        const currentMarble = track.marbles.find(m => m.id === selectedMarbleId);
+        if (!currentMarble) return;
+
+        const currentIndex = track.marbles.indexOf(currentMarble);
+        
+        // 🔥 IMPROVED NAVIGATION DETECTION
+        
+        // 1. Check for directional navigation
+        const canForward = !!getBestMarbleInDirection(currentYaw);
+        const canBackward = !!getBestMarbleInDirection(currentYaw + Math.PI);
+        
+        // 2. Check for branches (marbles at same position)
+        const branches = track.marbles.filter(m => 
+            m.id !== selectedMarbleId &&
+            Math.abs(m.position[0] - currentMarble.position[0]) < 0.00001 &&
+            Math.abs(m.position[1] - currentMarble.position[1]) < 0.00001
+        );
+        const canBranch = branches.length > 0;
+
+        // 3. Fallback: sequential navigation
+        const canSequentialForward = currentIndex < track.marbles.length - 1;
+        const canSequentialBackward = currentIndex > 0;
+
+        // Update UI
+        nextBtn.disabled = !(canForward || canSequentialForward);
+        prevBtn.disabled = !(canBackward || canSequentialBackward);
+        branchBtn.disabled = !canBranch;
+
+        nextBtn.style.opacity = (canForward || canSequentialForward) ? '1' : '0.3';
+        prevBtn.style.opacity = (canBackward || canSequentialBackward) ? '1' : '0.3';
+        branchBtn.style.opacity = canBranch ? '1' : '0.3';
+
+        // Update branch button position
+        ring.classList.toggle('has-branch', canBranch);
+
+        if (instant) {
+            ring.style.transition = 'none';
+            requestAnimationFrame(() => (ring.style.transition = ''));
+        }
+        
+    } catch (error) {
+        console.error('Navigation ring update failed:', error);
     }
-
-    const edges = navGraph.get(selectedMarbleId) || [];
-    if (edges.length > 2) {
-      canForward = true;
-      canBackward = true;
-    }
-
-    const isEndpoint = marbleIndex === 0 || marbleIndex === total - 1;
-    const totalConnections = edges.length;
-    canBranch = (isEndpoint && totalConnections >= 2) || totalConnections > 2;
-
-    // Safe class manipulation
-    try {
-      const showBranchAtBottom = typeof shouldShowBranchAtBottom === 'function' ? shouldShowBranchAtBottom() : false;
-      ring.classList.toggle('has-branch', showBranchAtBottom);
-    } catch (e) {
-      console.warn('Branch positioning failed:', e);
-    }
-
-    // Update UI safely
-    nextBtn.disabled = !canForward;
-    prevBtn.disabled = !canBackward;
-    branchBtn.disabled = !canBranch;
-
-    nextBtn.style.opacity = canForward ? '1' : '0.3';
-    prevBtn.style.opacity = canBackward ? '1' : '0.3';
-    branchBtn.style.opacity = canBranch ? '1' : '0.3';
-
-    if (instant) {
-      ring.style.transition = 'none';
-      requestAnimationFrame(() => (ring.style.transition = ''));
-    }
-    
-  } catch (error) {
-    console.error('Navigation ring update failed:', error);
-    // Don't break the animation loop - just return
-  }
 }
 
 /* ====== Viewer events (pan + wheel zoom) ====== */
@@ -794,6 +776,7 @@ async function showImageByIndex(idx){
       const material = new THREE.MeshBasicMaterial();
       sphere = new THREE.Mesh(geometry, material);
       panoGroup.add(sphere);
+       geometry.rotateY(Math.PI);
     }
     
     sphere.material.map = texture;
@@ -817,31 +800,35 @@ function previousImage() {
   }
 }
 
+// 🔥 REPLACE YOUR CURRENT NAVIGATION BUTTON HANDLERS WITH THESE:
+
+// Next button - original GPX viewer logic
 document.getElementById('nextImageBtn')?.addEventListener('click', () => {
   if (currentImageIndex < currentImages.length - 1) {
-    showImageByIndex(currentImageIndex + 1);
-    // Update selection and cone
-    const track = getCurrentTrack();
-    const marble = track?.marbles.find(m => m.assignedImage === currentImageIndex + 1);
-    if (marble) {
-      selectedMarbleId = marble.id;
-      updateMarbleDisplay();
-      updateViewCone();
-    }
+    openMarbleByIndex(currentImageIndex + 1);
   }
 });
 
+// Previous button - original GPX viewer logic  
 document.getElementById('prevImageBtn')?.addEventListener('click', () => {
   if (currentImageIndex > 0) {
-    showImageByIndex(currentImageIndex - 1);
-    // Update selection and cone
-    const track = getCurrentTrack();
-    const marble = track?.marbles.find(m => m.assignedImage === currentImageIndex - 1);
-    if (marble) {
-      selectedMarbleId = marble.id;
-      updateMarbleDisplay();
-      updateViewCone();
-    }
+    openMarbleByIndex(currentImageIndex - 1);
+  }
+});
+
+// Branch button - original GPX viewer logic
+document.getElementById('branchImageBtn')?.addEventListener('click', () => {
+  // This will use your original branch navigation logic
+  const track = getCurrentTrack();
+  if (!track) return;
+  
+  const currentMarble = track.marbles.find(m => m.assignedImage === currentImageIndex);
+  if (!currentMarble) return;
+  
+  const edges = navGraph.get(currentMarble.id) || [];
+  const branch = edges.find(e => e.type === 'branch');
+  if (branch) {
+    openMarbleByIndex(branch.targetImageIndex);
   }
 });
 
@@ -987,13 +974,28 @@ function highlightMarbleWithImage(imageIndex){
      FRAMES_BASE
    ================================================ */
 
-function getBestMarbleInDirection(directionRad){
+function getBestMarbleInDirection(directionRad) {
   if (!selectedMarbleId) return null;
-  const opts = getFacingOptions(selectedMarbleId, directionRad, 1);
-  if (!opts.length) return null;
+  
   const track = getCurrentTrack();
-  const target = track.marbles.find(m=>m.id===opts[0].toMarbleId);
-  return target ? { index: target.index, distance: opts[0].distanceM } : null;
+  const currentMarble = track.marbles.find(m => m.id === selectedMarbleId);
+  if (!currentMarble) return null;
+  
+  const options = getFacingOptions(selectedMarbleId, directionRad, 30);
+  if (!options.length) return null;
+  
+  // Return the closest marble in the viewing direction
+  const bestOption = options[0];
+  const targetMarble = track.marbles.find(m => m.id === bestOption.toMarbleId);
+  
+  if (targetMarble) {
+    return {
+      index: track.marbles.indexOf(targetMarble),
+      distance: bestOption.distanceM
+    };
+  }
+  
+  return null;
 }
 
 function getFacingOptions(marbleId, directionRad, maxDistance = 50) {
@@ -1086,6 +1088,7 @@ window.addTrackToggleMinimal = window.addTrackToggleMinimal || function(){
 };
 
 /* --- 360° image application helpers --- */
+// Original sphere application with 180° rotation
 function applyImageToSphere(img, imageData) {
   if (sphere) {
     panoGroup.remove(sphere);
@@ -1098,10 +1101,11 @@ function applyImageToSphere(img, imageData) {
 
   const geometry = new THREE.SphereGeometry(100, 60, 40);
   geometry.scale(-1, 1, 1);
+  
+  // 🔥 ORIGINAL 180° ROTATION
   geometry.rotateY(Math.PI);
 
-  // 🔹 Apply per-track yaw correction - but DON'T modify the base geometry rotation
-  // This ensures the correction is applied consistently without affecting currentYaw
+  // Apply per-track yaw correction
   const track = getCurrentTrack();
   if (track && track.yawFixDeg) {
     geometry.rotateY(THREE.MathUtils.degToRad(track.yawFixDeg));
@@ -1113,7 +1117,6 @@ function applyImageToSphere(img, imageData) {
   const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
   sphere = new THREE.Mesh(geometry, material);
   
-  // 🔹 Apply the current orientation to the sphere, not the group
   sphere.rotation.y = currentYaw;
   sphere.rotation.x = currentPitch;
   
@@ -1122,11 +1125,36 @@ function applyImageToSphere(img, imageData) {
   updateNavigationRing(true);
 }
 
-function showImageInViewer(imageUrl, imageData){
+// Original navigation functions
+function preloadAdjacentImages() {
+  if (!Array.isArray(currentImages) || !currentImages.length) return;
+  const order = buildPreloadOrder(currentImages, currentImageIndex, 2);
+  const loader = new THREE.TextureLoader();
+  order.forEach(idx => {
+    const img = currentImages[idx];
+    if (!img || preloadedImages[img.url]) return;
+    loader.load(img.url, tex => { preloadedImages[img.url] = tex; });
+  });
+}
+
+function buildPreloadOrder(images, startIndex, radius = 2) {
+  const n = (images && images.length) || 0;
+  if (!n) return [];
+  const order = [];
+  for (let d = 1; d <= radius; d++) {
+    const f = startIndex + d, b = startIndex - d;
+    if (f < n) order.push(f);
+    if (b >= 0) order.push(b);
+  }
+  return order;
+}
+
+// Original image loading flow
+function showImageInViewer(imageUrl, imageData) {
   showViewerLoading('Loading 360° image...');
   if (!viewerInitialized) initThreeJSViewer();
 
-  if (preloadedImages[imageUrl]){
+  if (preloadedImages[imageUrl]) {
     hideViewerLoading();
     applyImageToSphere(preloadedImages[imageUrl], imageData);
     preloadAdjacentImages();
@@ -1135,16 +1163,15 @@ function showImageInViewer(imageUrl, imageData){
 
   const img = new Image();
   img.crossOrigin = 'Anonymous';
-  img.onload = function(){
+  img.onload = function() {
     preloadedImages[imageUrl] = img;
     hideViewerLoading();
     applyImageToSphere(img, imageData);
     preloadAdjacentImages();
   };
-  img.onerror = function(){
+  img.onerror = function() {
     console.error('Failed to load image:', imageUrl);
     hideViewerLoading();
-    setStatus('Failed to load 360 image');
   };
   img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
 }
