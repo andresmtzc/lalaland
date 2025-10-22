@@ -6103,33 +6103,65 @@ function initializeViewer() {
   loadGPXFromManifest();
 }
 
-function initThreeJSViewer(){
-  if (viewerInitialized) return;
+function initThreeJSViewer() {
+  if (viewerInitialized) {
+    console.log('✅ Three.js already initialized');
+    handleViewerResize(); // Just update size if needed
+    return;
+  }
+  
+  console.log('🔄 Initializing Three.js viewer...');
   
   const viewerContainer = document.getElementById('viewer-container');
   const canvas = document.getElementById('canvas');
+  
+  if (!viewerContainer || !canvas) {
+    console.error('❌ Viewer container or canvas not found');
+    return;
+  }
+
+  // Get dimensions from the now-visible container
+  const width = viewerContainer.clientWidth;
+  const height = viewerContainer.clientHeight;
+  
+  console.log('📐 Container dimensions:', width, 'x', height);
+  
+  if (width === 0 || height === 0) {
+    console.error('❌ Container has zero dimensions, cannot initialize');
+    return;
+  }
+
+  // Set canvas dimensions
+  canvas.width = width;
+  canvas.height = height;
   
   scene = new THREE.Scene();
   panoGroup = new THREE.Group();
   scene.add(panoGroup);
 
-  camera = new THREE.PerspectiveCamera(currentFov, canvas.clientWidth/canvas.clientHeight, 0.1, 1000);
-  camera.position.set(0,0,0.1);
+  camera = new THREE.PerspectiveCamera(
+    currentFov, 
+    width / height, 
+    0.1, 
+    1000
+  );
+  camera.position.set(0, 0, 0.1);
 
   renderer = new THREE.WebGLRenderer({
     canvas, 
-    antialias:true, 
-    alpha:false, 
-    powerPreference:'high-performance'
+    antialias: true, 
+    alpha: false, 
+    powerPreference: 'high-performance'
   });
   
   const dpr = Math.min(window.devicePixelRatio || 4, 4);
   renderer.setPixelRatio(dpr);
-  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+  renderer.setSize(width, height, false);
+  
+  console.log('✅ Three.js initialized successfully');
+  console.log('📊 Renderer dimensions:', width, 'x', height);
 
-  animateViewer();
   viewerInitialized = true;
-  console.log('Three.js viewer initialized');
 }
 
 function animateViewer(){
@@ -6976,10 +7008,14 @@ function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters=7, steps=24
 
 // ===== IMAGE LOADING AND DISPLAY =====
 function showImageInViewer(imageUrl, imageData) {
+  console.log('🖼️ Loading image:', imageUrl);
   showViewerLoading('Loading 360° image...');
-  if (!viewerInitialized) initThreeJSViewer();
+
+  // 🟢 REMOVED: Don't initialize Three.js here anymore
+  // if (!viewerInitialized) initThreeJSViewer();
 
   if (preloadedImages[imageUrl]) {
+    console.log('✅ Using preloaded image');
     hideViewerLoading();
     applyImageToSphere(preloadedImages[imageUrl], imageData);
     preloadAdjacentImages();
@@ -6988,17 +7024,22 @@ function showImageInViewer(imageUrl, imageData) {
 
   const img = new Image();
   img.crossOrigin = 'Anonymous';
+  
   img.onload = function() {
+    console.log('✅ Image loaded successfully:', imageUrl);
     preloadedImages[imageUrl] = img;
     hideViewerLoading();
     applyImageToSphere(img, imageData);
     preloadAdjacentImages();
   };
+  
   img.onerror = function() {
-    console.error('Failed to load image:', imageUrl);
+    console.error('❌ Failed to load image:', imageUrl);
     hideViewerLoading();
     showToaster('Failed to load 360 image');
   };
+  
+  console.log('📤 Setting image src:', imageUrl);
   img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
 }
 
@@ -7025,7 +7066,7 @@ function applyImageToSphere(img, imageData) {
   const texture = new THREE.Texture(img);
   texture.needsUpdate = true;
 
-  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
   sphere = new THREE.Mesh(geometry, material);
   
   // Apply the current orientation to the sphere
@@ -7119,17 +7160,23 @@ function showMarbleImage(marbleId) {
   if (!track) return;
   const m = track.marbles.find(x => x.id === marbleId); 
   if (!m) return;
+  
   if (m.assignedImage == null) {
+    console.log('❌ Marble has no assigned image:', m);
     showToaster(`Marble ${m.index+1} has no image`);
     return;
   }
   
-  // 🟢 OPEN THE MODAL WITH 360 VIEWER
-  open360ViewerInModal();
+  console.log('🖼️ Showing image for marble:', m);
+  console.log('🖼️ Assigned image index:', m.assignedImage);
   
-  // Then show the image
+ open360ViewerInModal();
+
+// Wait for Three.js to initialize before showing image
+setTimeout(() => {
   showImageByIndex(m.assignedImage);
   refreshBranchButtons();
+}, 300); // Wait for Three.js to initialize
 }
 
 // Loading overlay functions
@@ -7152,16 +7199,7 @@ async function load360Images() {
   try {
     await createImagesFromFramesFolder();
     if (currentImages.length > 0) {
-      if (!isSwitchingTrack) {
-        const track = getCurrentTrack();
-        if (selectedMarbleId) {
-          const m = track.marbles.find(x => x.id === selectedMarbleId);
-          if (m && m.assignedImage != null) showImageByIndex(m.assignedImage); 
-          else showImageByIndex(0);
-        } else { 
-          showImageByIndex(0); 
-        }
-      }
+
       startBackgroundPreload(3);
     }
   } catch(e) { 
@@ -7252,6 +7290,7 @@ function runPreloadPool(indexes, concurrency) {
 function open360ViewerInModal() {
   const modal = document.getElementById('lotModal');
   const viewerContainer = document.getElementById('viewer-container');
+  const contentWrapper = document.querySelector('.modal-content-wrapper');
   const lotDetails = document.getElementById('lotDetails');
   const modalInfo = document.getElementById('modalInfo');
   const calendlyEl = document.getElementById('calendlyEmbed');
@@ -7267,7 +7306,10 @@ function open360ViewerInModal() {
   if (calendlyEl) calendlyEl.style.display = 'none';
 
   // Show viewer container
-  if (viewerContainer) viewerContainer.style.display = 'block';
+  if (viewerContainer) {
+    viewerContainer.style.display = 'block';
+    console.log('🔄 Viewer container shown');
+  }
 
   // Update modal classes and state
   modal.classList.add('viewer-mode');
@@ -7297,6 +7339,25 @@ function open360ViewerInModal() {
   document.getElementById('lalalandInfoBtn')?.classList.add('hide');
 
   console.log('360 Viewer opened in modal');
+  
+  // 🟢 CRITICAL FIX: Initialize Three.js RIGHT AFTER container becomes visible
+// Initialize Three.js viewer AFTER container is visible
+if (!viewerInitialized) {
+  initThreeJSViewer();
+}
+
+// Resize renderer after container becomes visible
+setTimeout(() => {
+  const canvas = document.getElementById('canvas');
+  if (canvas && renderer && camera) {
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    console.log(`Renderer resized to ${width}x${height}`);
+  }
+}, 100);
 }
 
 // Update the back button handler to support 360 viewer
@@ -7417,4 +7478,4 @@ async function selectTrackAndThenMarble(trackId, marbleId) {
 </script>
 
 </body> 
-</html>   
+</html>    
