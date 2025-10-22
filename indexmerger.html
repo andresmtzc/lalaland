@@ -423,7 +423,7 @@ function updateMarbleDisplay(){
 }
 
 /* MARBLE CLICK HANDLER - Modified to open modal */
-function handleMarbleClick(e){
+function handleMarbleClick(e) {
   if (!e.features?.length) return;
   const marbleId = e.features[0].properties.id;
   const trackId = e.features[0].properties.trackId;
@@ -435,10 +435,14 @@ function handleMarbleClick(e){
   selectedMarbleId = marbleId;
   updateMarbleDisplay();
   
+  // 🔥 CRITICAL: Ensure cone system is initialized and updated
+  initConeSystem();
+  updateViewCone();
+  
   // Open modal with 360 viewer
   openMarbleModal(marbleId);
   
-  // CRITICAL: Stop event propagation to prevent map click from closing modal
+  // Stop event propagation
   e.preventDefault();
   if (e.originalEvent) {
     e.originalEvent.stopPropagation();
@@ -466,7 +470,7 @@ function openMarbleModal(marbleId) {
   document.getElementById('headerFracc').textContent = '360° VIEWER';
   document.querySelector('.header-lot-number').style.display = 'none';
   
-  // Init viewer if needed
+  // 🔥 CRITICAL: Use your ORIGINAL GPX viewer initialization
   if (!viewerInitialized) {
     initThreeJSViewer();
   }
@@ -481,14 +485,22 @@ function openMarbleModal(marbleId) {
     }
   }, 100);
   
-  // Load and show image
-  load360Images().then(() => {
-    const track = getCurrentTrack();
-    const marble = track?.marbles.find(m => m.id === marbleId);
-    if (marble && marble.assignedImage !== null) {
-      showImageByIndex(marble.assignedImage);
-    }
-  });
+  // 🔥 CRITICAL: Use the ORIGINAL GPX viewer image loading flow
+  const track = getCurrentTrack();
+  const marble = track?.marbles.find(m => m.id === marbleId);
+  
+  if (marble && marble.assignedImage !== null) {
+    // This bypasses showImageByIndex and goes directly to your proven system
+    highlightMarbleWithImage(marble.assignedImage);
+    
+    // Load and show the image using your original GPX viewer logic
+    load360Images().then(() => {
+      // 🔥 Use showImageInViewer which calls applyImageToSphere
+      if (typeof showImageInViewer === 'function' && currentImages[marble.assignedImage]) {
+        showImageInViewer(currentImages[marble.assignedImage].url, currentImages[marble.assignedImage]);
+      }
+    });
+  }
 }
 
 /* THREE.JS VIEWER - Exact from gpxviewer */
@@ -805,8 +817,33 @@ function previousImage() {
   }
 }
 
-document.getElementById('nextImageBtn')?.addEventListener('click', nextImage);
-document.getElementById('prevImageBtn')?.addEventListener('click', previousImage);
+document.getElementById('nextImageBtn')?.addEventListener('click', () => {
+  if (currentImageIndex < currentImages.length - 1) {
+    showImageByIndex(currentImageIndex + 1);
+    // Update selection and cone
+    const track = getCurrentTrack();
+    const marble = track?.marbles.find(m => m.assignedImage === currentImageIndex + 1);
+    if (marble) {
+      selectedMarbleId = marble.id;
+      updateMarbleDisplay();
+      updateViewCone();
+    }
+  }
+});
+
+document.getElementById('prevImageBtn')?.addEventListener('click', () => {
+  if (currentImageIndex > 0) {
+    showImageByIndex(currentImageIndex - 1);
+    // Update selection and cone
+    const track = getCurrentTrack();
+    const marble = track?.marbles.find(m => m.assignedImage === currentImageIndex - 1);
+    if (marble) {
+      selectedMarbleId = marble.id;
+      updateMarbleDisplay();
+      updateViewCone();
+    }
+  }
+});
 
 /* VIEW CONE SYSTEM - From gpxviewer */
 function initConeSystem(){
@@ -957,6 +994,44 @@ function getBestMarbleInDirection(directionRad){
   const track = getCurrentTrack();
   const target = track.marbles.find(m=>m.id===opts[0].toMarbleId);
   return target ? { index: target.index, distance: opts[0].distanceM } : null;
+}
+
+function getFacingOptions(marbleId, directionRad, maxDistance = 50) {
+    const track = getCurrentTrack();
+    if (!track) return [];
+    
+    const currentMarble = track.marbles.find(m => m.id === marbleId);
+    if (!currentMarble) return [];
+    
+    const options = [];
+    const currentPos = currentMarble.position;
+    
+    track.marbles.forEach(otherMarble => {
+        if (otherMarble.id === marbleId) return;
+        
+        const dx = otherMarble.position[0] - currentPos[0];
+        const dy = otherMarble.position[1] - currentPos[1];
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance > maxDistance) return;
+        
+        const bearing = Math.atan2(dx, dy);
+        const angleDiff = Math.abs(((bearing - directionRad + Math.PI) % (2 * Math.PI)) - Math.PI);
+        
+        if (angleDiff < Math.PI / 2) {
+            options.push({
+                toMarbleId: otherMarble.id,
+                distanceM: distance,
+                bearing: bearing
+            });
+        }
+    });
+    
+    return options.sort((a, b) => a.distanceM - b.distanceM);
+}
+
+function refreshBranchButtons() {
+    updateNavigationRing();
 }
 
 /* --- Small utils --- */
