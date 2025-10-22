@@ -8,9 +8,8 @@
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
 <link rel="stylesheet" href="styles.css">
 
   <script>
@@ -127,25 +126,6 @@
   <div class="modal-content-wrapper">
     <div class="loading-spinner" id="loadingSpinner"></div>
 
-
-<!-- 360 VIEWER CANVAS - Shows when marble clicked -->
-<div id="viewer-container" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:#0b1020; z-index:5;">
-  <canvas id="canvas" style="width:100%; height:100%; touch-action:none;"></canvas>
-  
-  <div class="image-controls">
-    <div class="navigation-ring">
-      <button class="nav-button ring-button" id="nextImageBtn">△</button>
-      <button class="nav-button ring-button" id="prevImageBtn">▽</button>
-      <button class="nav-button ring-button" id="branchImageBtn">▷</button> 
-    </div>
-  </div>
-  
-  <div id="viewer-loading" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:100; background:rgba(0,0,0,0.7); padding:16px 20px; border-radius:10px; color:#fff;">
-    <div class="spinner" style="width:36px; height:36px; border:4px solid rgba(255,255,255,0.12); border-top-color:#22d3ee; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 8px;"></div>
-    <div>Loading 360° image...</div>
-  </div>
-</div>
-
 <div class="lot-details" id="lotDetails"></div>
 
 <!-- Calendly must be a sibling, not inside lotDetails -->
@@ -156,6 +136,34 @@
           frameborder="0"
           style="width:100%;height:100%;"></iframe>
 </div>
+
+<!-- 🟢 ADD 360 VIEWER HERE (right after calendly) -->
+    <div id="viewer-container" class="viewer-mode" style="display: none;">
+      <canvas id="canvas"></canvas>
+      
+      <div class="viewer-controls">
+        <button id="prevImageBtnTop">← Prev</button>
+        <span id="viewer-info">No images loaded</span>
+        <button id="nextImageBtnTop">Next →</button>
+      </div>
+
+      <div class="image-controls">
+        <div class="navigation-ring">
+          <button class="nav-button ring-button" id="nextImageBtn">△</button>
+          <button class="nav-button ring-button" id="prevImageBtn">▽</button>
+          <button class="nav-button ring-button" id="branchImageBtn">▷</button> 
+        </div>
+        <div id="branch-buttons" style="margin-top:8px; display:flex; gap:6px; pointer-events:auto;"></div>
+      </div>
+
+      <div class="time" id="time">-/-</div>
+
+      <div class="loading" id="viewer-loading">
+        <div class="spinner"></div>
+        <div id="loading-text">Loading 360° image...</div>
+      </div>
+    </div>
+    <!-- 🟢 END 360 VIEWER -->
 
 <div class="modal-info" id="modalInfo"></div>
     <div class="custom-scrollbar" id="customScrollbar">
@@ -271,17 +279,9 @@
 </svg>
 </button>
 
-
 <script>
-// ============================================================================
-// GPX VIEWER CODE - From gpxvieweroct21v0.html
-// ============================================================================
 
-/* CONSTANTS */
-mapboxgl.accessToken = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWN4ZWZvc3MwNjNjMnJwd3h6ZXdyOGJoIn0.ahgRYAxpOnGnnqOjQvJZTA';
-const FRAMES_BASE = 'https://lalaland.mx/frames/';
-
-/* GLOBALS */
+// ===== 360 VIEWER GLOBALS =====
 let allTracks = new Map();
 let currentTrackId = null;
 let scene, camera, renderer, sphere, panoGroup;
@@ -294,1080 +294,10 @@ let currentImages = [];
 let currentImageIndex = -1;
 let preloadedImages = {};
 let viewConeMarker = null;
+let isSwitchingTrack = false;
 
-function getCurrentTrack() {
-  return currentTrackId ? allTracks.get(currentTrackId) : null;
-}
-
-/* MANIFEST LOADING - Exact from gpxviewer */
-async function loadGPXFromManifest() {
-  try {
-    const MANIFEST_URL = FRAMES_BASE + 'index.json';
-    const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
-    if (!res.ok) { console.log('No predefined tracks found'); return; }
-
-    const manifest = await res.json();
-    window.yawFixesByFile = manifest.yawfixes || {};
-
-    let gpxFiles = [];
-    if (manifest.gpxFiles && manifest.gpxFiles.length) gpxFiles = manifest.gpxFiles;
-    else if (manifest.files) gpxFiles = manifest.files.filter(f => f.toLowerCase().endsWith('.gpx'));
-
-    if (!gpxFiles.length) { console.log('No GPX files in manifest'); return; }
-
-    let loadedCount = 0;
-    for (const gpxFile of gpxFiles) {
-      try { 
-        await loadSingleGPX(gpxFile); 
-        loadedCount++; 
-      } catch(e) { 
-        console.error('Failed GPX:', gpxFile, e); 
-      }
-    }
-
-    if (loadedCount > 0 && allTracks.size > 0) {
-      const firstTrackId = Array.from(allTracks.keys())[0];
-      currentTrackId = firstTrackId;
-      updateMarbleDisplay();
-      console.log('✅ Loaded', allTracks.size, 'GPX tracks with', getTotalMarbleCount(), 'marbles');
-    }
-
-  } catch(e) {
-    console.error(e);
-  }
-}
-
-function getTotalMarbleCount() {
-  let count = 0;
-  allTracks.forEach(track => count += track.marbles.length);
-  return count;
-}
-
-async function loadSingleGPX(filename) {
-  const fullPath = filename.startsWith(FRAMES_BASE) ? filename : FRAMES_BASE + filename;
-  const response = await fetch(fullPath);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-  const baseName = filename.split('/').pop();
-  const yawFixDeg = window.yawFixesByFile?.[baseName] ?? 0;
-
-  const text = await response.text();
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(text, 'text/xml');
-  const geoJSON = toGeoJSON.gpx(xmlDoc);
-
-  if (!geoJSON?.features?.length) return;
-
-  const trackId = baseName.replace(/\.gpx$/i,'');
-  const track = {
-    id: trackId,
-    name: baseName,
-    geoJSON,
-    marbles: [],
-    visible: true,
-    yawFixDeg
-  };
-
-  geoJSON.features.forEach((feat, i)=>{
-    if (feat.geometry?.type === 'Point'){
-      const coords = feat.geometry.coordinates;
-      const marbleId = `${trackId}-${i}`;
-      track.marbles.push({
-        id: marbleId,
-        position: [coords[0], coords[1]],
-        index: i,
-        properties: feat.properties || {},
-        assignedImage: extractImageIndexFromWaypoint(feat.properties?.name||'', feat.properties?.desc||'')
-      });
-    }
-  });
-
-  allTracks.set(trackId, track);
-}
-
-function extractImageIndexFromWaypoint(name, description){
-  const text = (name + ' ' + description).toLowerCase();
-  const m1 = text.match(/image[^\d]*(\d+)/); if (m1) return parseInt(m1[1])-1;
-  const m2 = text.match(/photo[^\d]*(\d+)/); if (m2) return parseInt(m2[1])-1;
-  const m3 = name?.match(/(\d+)$/); if (m3) return parseInt(m3[1])-1;
-  return null;
-}
-
-/* MARBLE DISPLAY */
-function updateMarbleDisplay(){
-  const src = map.getSource('marbles');
-  if (!src) return;
-
-  const all = [];
-  allTracks.forEach((track, trackId)=>{
-    track.marbles.forEach((m, index)=>{
-      const hasImage = m.assignedImage !== null;
-      all.push({
-        type:'Feature',
-        geometry:{ type:'Point', coordinates: m.position },
-        properties:{
-          id: m.id,
-          trackId,
-          index,
-          isSelected: (m.id === selectedMarbleId),
-          hasImage,
-          isDragging: false,
-          isFixed: false,
-          isLocked: false
-        }
-      });
-    });
-  });
-
-  src.setData({ type:'FeatureCollection', features: all });
-}
-
-/* MARBLE CLICK HANDLER - Modified to open modal */
-function handleMarbleClick(e) {
-  if (!e.features?.length) return;
-  const marbleId = e.features[0].properties.id;
-  const trackId = e.features[0].properties.trackId;
-
-  // 🔥 PROPER TRACK SWITCHING
-  if (trackId !== currentTrackId) {
-    currentTrackId = trackId;
-    // Reload images for the new track
-    currentImages = [];
-    currentImageIndex = -1;
-  }
-  
-  selectedMarbleId = marbleId;
-  updateMarbleDisplay();
-  
-  // Initialize and show cone
-  initConeSystem();
-  updateViewCone();
-  
-  // Open modal with 360 viewer
-  openMarbleModal(marbleId);
-  
-  // Stop event propagation
-  e.preventDefault();
-  if (e.originalEvent) {
-    e.originalEvent.stopPropagation();
-  }
-}
-
-/* OPEN MODAL WITH 360 VIEWER */
-/* OPEN MODAL WITH 360 VIEWER - USING ORIGINAL GPX VIEWER FLOW */
-function openMarbleModal(marbleId) {
-  const modal = document.getElementById('lotModal');
-  const viewerContainer = document.getElementById('viewer-container');
-  const lotDetails = document.getElementById('lotDetails');
-  const modalInfo = document.getElementById('modalInfo');
-  
-  // Hide lot content, show viewer
-  if (lotDetails) lotDetails.style.display = 'none';
-  if (modalInfo) modalInfo.style.display = 'none';
-  if (viewerContainer) viewerContainer.style.display = 'block';
-  
-  // Open modal
-  modal.style.display = 'block';
-  modal.classList.add('show', 'viewer-mode');
-  document.body.classList.add('modal-open');
-  
-  // Update header
-  document.getElementById('headerFracc').textContent = '360° VIEWER';
-  document.querySelector('.header-lot-number').style.display = 'none';
-  
-  // 🔥 USE ORIGINAL GPX VIEWER INITIALIZATION
-  if (!viewerInitialized) {
-    initThreeJSViewer();
-  }
-  
-  const track = getCurrentTrack();
-  const marble = track?.marbles.find(m => m.id === marbleId);
-  
-  if (marble && marble.assignedImage !== null) {
-    // 🔥 USE ORIGINAL GPX VIEWER FLOW
-    selectMarble(marble.id);
-    
-    // Load images and show using original GPX viewer system
-    load360Images().then(() => {
-      // This uses your proven applyImageToSphere with 180° rotation
-      openMarbleByIndex(marble.assignedImage);
-    });
-  }
-  
-  // Resize after modal is visible
-  setTimeout(() => {
-    const canvas = document.getElementById('canvas');
-    if (canvas && renderer && camera) {
-      renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-      camera.aspect = canvas.clientWidth / canvas.clientHeight;
-      camera.updateProjectionMatrix();
-    }
-  }, 100);
-}
-
-/* THREE.JS VIEWER - Exact from gpxviewer */
-function initThreeJSViewer(){
-  if (viewerInitialized) return;
-  scene = new THREE.Scene();
-  panoGroup = new THREE.Group();
-  scene.add(panoGroup);
-
-  const canvas = document.getElementById('canvas');
-  camera = new THREE.PerspectiveCamera(currentFov, canvas.clientWidth/canvas.clientHeight, 0.1, 1000);
-  camera.position.set(0,0,0.1);
-
-  renderer = new THREE.WebGLRenderer({
-    canvas, antialias:true, alpha:false, powerPreference:'high-performance'
-  });
-  const dpr = Math.min(window.devicePixelRatio || 4, 4);
-  renderer.setPixelRatio(dpr);
-  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-
-  setupViewerEventListeners();
-  animateViewer();
-  viewerInitialized = true;
-}
-
-function animateViewer(){
-  requestAnimationFrame(animateViewer);
-  updateNavigationRing();
-  if (renderer && scene && camera) renderer.render(scene, camera);
-}
-
-function updateNavigationRing(instant = false) {
-    try {
-        const ring = document.querySelector('.navigation-ring');
-        const nextBtn = document.getElementById('nextImageBtn');
-        const prevBtn = document.getElementById('prevImageBtn');
-        const branchBtn = document.getElementById('branchImageBtn');
-        
-        if (!ring || !sphere || !nextBtn || !prevBtn || !branchBtn) return;
-
-        const yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
-        ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
-
-        const track = getCurrentTrack();
-        if (!track || !selectedMarbleId) return;
-
-        const currentMarble = track.marbles.find(m => m.id === selectedMarbleId);
-        if (!currentMarble) return;
-
-        const currentIndex = track.marbles.indexOf(currentMarble);
-        
-        // 🔥 IMPROVED NAVIGATION DETECTION
-        
-        // 1. Check for directional navigation
-        const canForward = !!getBestMarbleInDirection(currentYaw);
-        const canBackward = !!getBestMarbleInDirection(currentYaw + Math.PI);
-        
-        // 2. Check for branches (marbles at same position)
-        const branches = track.marbles.filter(m => 
-            m.id !== selectedMarbleId &&
-            Math.abs(m.position[0] - currentMarble.position[0]) < 0.00001 &&
-            Math.abs(m.position[1] - currentMarble.position[1]) < 0.00001
-        );
-        const canBranch = branches.length > 0;
-
-        // 3. Fallback: sequential navigation
-        const canSequentialForward = currentIndex < track.marbles.length - 1;
-        const canSequentialBackward = currentIndex > 0;
-
-        // Update UI
-        nextBtn.disabled = !(canForward || canSequentialForward);
-        prevBtn.disabled = !(canBackward || canSequentialBackward);
-        branchBtn.disabled = !canBranch;
-
-        nextBtn.style.opacity = (canForward || canSequentialForward) ? '1' : '0.3';
-        prevBtn.style.opacity = (canBackward || canSequentialBackward) ? '1' : '0.3';
-        branchBtn.style.opacity = canBranch ? '1' : '0.3';
-
-        // Update branch button position
-        ring.classList.toggle('has-branch', canBranch);
-
-        if (instant) {
-            ring.style.transition = 'none';
-            requestAnimationFrame(() => (ring.style.transition = ''));
-        }
-        
-    } catch (error) {
-        console.error('Navigation ring update failed:', error);
-    }
-}
-
-/* ====== Viewer events (pan + wheel zoom) ====== */
-function setupViewerEventListeners(){
-  const canvas = document.getElementById('canvas');
-  let isDragging=false, lastX=0, lastY=0;
-  let touchStartX = 0, touchStartY = 0;  // Variables for touch events
-  let initialDistance = 0;  // Variable to track the initial distance between two fingers
-
-  // Mouse drag events
-  canvas.addEventListener('mousedown', e=>{
-    isDragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor='grabbing';
-    document.body.classList.add('dragging-pano');
-  });
-  
-  canvas.addEventListener('mousemove', e=>{
-    if (!isDragging || !sphere) return;
-    const dx=e.clientX-lastX, dy=e.clientY-lastY;
-    
-    // Rotate the sphere, not the group
-    sphere.rotation.y -= dx*0.01;
-    sphere.rotation.x -= dy*0.01;
-    
-    currentYaw = sphere.rotation.y; 
-    currentPitch = sphere.rotation.x;
-    
-    lastX=e.clientX; lastY=e.clientY;
-    updateNavigationRing(); updateViewCone(); refreshBranchButtons();
-  });
-
-  canvas.addEventListener('mouseup', ()=>{
-    isDragging=false; setTimeout(()=>{ canvas.style.cursor='grab'; }, 50);
-    document.body.classList.remove('dragging-pano');
-  });
-
-  canvas.addEventListener('mouseenter', ()=>{ canvas.style.cursor='grab'; });
-  canvas.addEventListener('mouseleave', ()=>{ isDragging=false; canvas.style.cursor='default'; });
-
-  canvas.addEventListener('wheel', handleWheelZoom, { passive:false });
-
-  // Add touch events for mobile support
-canvas.addEventListener('touchstart', (e) => {
-  if (e.touches.length == 1) {  // Single touch to drag
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-  }
-
-  if (e.touches.length == 2) {  // Pinch-to-zoom with two fingers
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    initialDistance = Math.sqrt(dx * dx + dy * dy);  // Initial pinch distance
-  }
-});
-
-canvas.addEventListener('touchmove', (e) => {
-  if (e.touches.length == 1) {  // Single touch to move (dragging)
-    const dx = e.touches[0].clientX - touchStartX;
-    const dy = e.touches[0].clientY - touchStartY;
-
-    // Rotate the sphere based on touch movement
-    sphere.rotation.y -= dx * 0.01;
-    sphere.rotation.x -= dy * 0.01;
-
-    currentYaw = sphere.rotation.y;
-    currentPitch = sphere.rotation.x;
-
-    touchStartX = e.touches[0].clientX;  // Update the touch positions
-    touchStartY = e.touches[0].clientY;
-
-    updateNavigationRing();
-    updateViewCone();
-    refreshBranchButtons();
-  }
-
-  if (e.touches.length == 2) {  // Pinch-to-zoom with two fingers
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    const currentDistance = Math.sqrt(dx * dx + dy * dy);  // Current pinch distance
-
-    if (initialDistance > 0) {
-      const zoomChange = initialDistance - currentDistance; // INVERTED: pinch in = zoom out, pinch out = zoom in
-
-      // Adjust FOV (zoom in or zoom out based on pinch distance)
-      const zoomSpeed = 2;  // Adjust the zoom sensitivity
-      currentFov = Math.max(30, Math.min(120, currentFov + zoomChange * zoomSpeed * 0.1));  // Ensure FOV is within bounds
-
-      camera.fov = currentFov;  // Update camera FOV
-      camera.updateProjectionMatrix();  // Apply the FOV change
-      initialDistance = currentDistance;  // Update initial distance
-      updateViewCone();  // Update the view cone to reflect new zoom
-    }
-  }
-});
-
-canvas.addEventListener('touchend', () => {
-  // Reset touch data after the touch ends
-  touchStartX = 0;
-  touchStartY = 0;
-  initialDistance = 0;  // Reset pinch distance
-});
-}
-
-
-function handleWheelZoom(e){
-  e.preventDefault(); e.stopPropagation();
-  const zoomSpeed = e.deltaMode===0 ? 2 : 60;
-  const delta = e.deltaY>0 ? zoomSpeed : -zoomSpeed;
-  const old = currentFov;
-  currentFov = Math.max(30, Math.min(120, currentFov + delta));
-  if (currentFov !== old){
-    camera.fov = currentFov; camera.updateProjectionMatrix();
-    updateViewCone(); renderer.render(scene, camera);
-  }
-}
-
-/* ====== Loading overlay ====== */
-function showViewerLoading(msg){
-  const l=document.getElementById('viewer-loading'), t=document.getElementById('loading-text');
-  if (l && t){ t.textContent=msg; l.style.display='block'; }
-}
-function hideViewerLoading(){ const l=document.getElementById('viewer-loading'); if (l) l.style.display='none'; }
-
-/* IMAGE LOADING - Exact from gpxviewer */
-async function load360Images(){
-  try{
-    await createImagesFromFramesFolder();
-  } catch(e){ 
-    console.error(e);
-  }
-}
-
-async function createImagesFromFramesFolder(){
-  currentImages=[]; currentImageIndex=-1;
-  const track = getCurrentTrack(); if (!track) return;
-  const gpxName = (track.name||'').replace(/\.[^.]+$/,'');
-  if (!gpxName) return;
-
-  const requiredStartLC = (gpxName+'-').toLowerCase();
-
-  let list;
-  try{
-    const res=await fetch(FRAMES_BASE+'index.json', { cache:'no-store' });
-    if (!res.ok) return;
-    const data = await res.json();
-    list = Array.isArray(data) ? data : Array.isArray(data.files) ? data.files : [];
-  }catch(e){ return; }
-
-  const files = list.map(x=>String(x).split('/').pop()).filter(Boolean);
-  const matches = files
-    .filter(n=>n.toLowerCase().startsWith(requiredStartLC))
-    .filter(n=>/\.(?:jpe?g|png)$/i.test(n))
-    .sort((a,b)=>a.localeCompare(b));
-
-  if (!matches.length) return;
-
-  currentImages = matches.map((filename,i)=>({ url: FRAMES_BASE+filename, index:i, filename, timestamp:filename, sequence:i }));
-}
-
-async function showImageByIndex(idx){
-  if (idx < 0 || idx >= currentImages.length) return;
-  
-  currentImageIndex = idx;
-  const img = currentImages[idx];
-  
-  const loadingEl = document.getElementById('viewer-loading');
-  if (loadingEl) loadingEl.style.display = 'block';
-  
-  try {
-    let texture = preloadedImages[img.url];
-    if (!texture) {
-      texture = await new Promise((resolve, reject) => {
-        const loader = new THREE.TextureLoader();
-        loader.load(img.url, resolve, undefined, reject);
-      });
-      preloadedImages[img.url] = texture;
-    }
-    
-    // Create sphere if needed
-    if (!sphere) {
-      const geometry = new THREE.SphereGeometry(500, 60, 40);
-      geometry.scale(-1, 1, 1);
-      const material = new THREE.MeshBasicMaterial();
-      sphere = new THREE.Mesh(geometry, material);
-      panoGroup.add(sphere);
-       geometry.rotateY(Math.PI);
-    }
-    
-    sphere.material.map = texture;
-    sphere.material.needsUpdate = true;
-  } catch (err) {
-    console.error('Error loading image:', err);
-  } finally {
-    if (loadingEl) loadingEl.style.display = 'none';
-  }
-}
-
-function nextImage() {
-  if (currentImageIndex < currentImages.length - 1) {
-    showImageByIndex(currentImageIndex + 1);
-  }
-}
-
-function previousImage() {
-  if (currentImageIndex > 0) {
-    showImageByIndex(currentImageIndex - 1);
-  }
-}
-
-// 🔥 REPLACE YOUR CURRENT NAVIGATION BUTTON HANDLERS WITH THESE:
-
-// Next button - original GPX viewer logic
-document.getElementById('nextImageBtn')?.addEventListener('click', () => {
-  if (currentImageIndex < currentImages.length - 1) {
-    openMarbleByIndex(currentImageIndex + 1);
-  }
-});
-
-// Previous button - original GPX viewer logic  
-document.getElementById('prevImageBtn')?.addEventListener('click', () => {
-  if (currentImageIndex > 0) {
-    openMarbleByIndex(currentImageIndex - 1);
-  }
-});
-
-// Branch button - original GPX viewer logic
-document.getElementById('branchImageBtn')?.addEventListener('click', () => {
-  // This will use your original branch navigation logic
-  const track = getCurrentTrack();
-  if (!track) return;
-  
-  const currentMarble = track.marbles.find(m => m.assignedImage === currentImageIndex);
-  if (!currentMarble) return;
-  
-  const edges = navGraph.get(currentMarble.id) || [];
-  const branch = edges.find(e => e.type === 'branch');
-  if (branch) {
-    openMarbleByIndex(branch.targetImageIndex);
-  }
-});
-
-/* VIEW CONE SYSTEM - From gpxviewer */
-function initConeSystem(){
-  if (!map.getSource('view-cone')){
-    map.addSource('view-cone', {
-      type:'geojson',
-      data:{ type:'Feature', geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] } }
-    });
-    map.addLayer({ id:'view-cone-fill', type:'fill', source:'view-cone', paint:{ 'fill-color':'#ff8400', 'fill-opacity':0.5 } });
-    map.addLayer({ id:'view-cone-outline', type:'line', source:'view-cone', paint:{ 'line-color':'#ff6b6b', 'line-width':2, 'line-opacity':0 } });
-  }
-}
-
-function hideViewCone(){
-  if (map && map.getSource('view-cone')){
-    map.getSource('view-cone').setData({ type:'Feature', geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] } });
-  }
-}
-
-function getHorizontalFovDeg(){
-  const c=document.getElementById('canvas');
-  const aspect = (camera && camera.aspect) || (c && c.clientHeight ? c.clientWidth/c.clientHeight : 16/9);
-  const vRad = THREE.MathUtils.degToRad(currentFov);
-  const hRad = 2 * Math.atan(Math.tan(vRad/2)*aspect);
-  return THREE.MathUtils.radToDeg(hRad);
-}
-
-function updateViewCone() {
-    if (!map || !map.getSource('view-cone')) return;
-    
-    const track = getCurrentTrack();
-    if (!track || !selectedMarbleId) return;
-    
-    const marble = track.marbles.find(m => m.id === selectedMarbleId);
-    if (!marble) return;
-
-    const currentIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
-    
-    let pathBearing = track._lastPathBearing || 0;
-
-    if (currentIndex < track.marbles.length - 1) {
-        const nextMarble = track.marbles[currentIndex + 1];
-        const dx = nextMarble.position[0] - marble.position[0];
-        const dy = nextMarble.position[1] - marble.position[1];
-        pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
-    } else if (currentIndex > 0) {
-        const prevMarble = track.marbles[currentIndex - 1];
-        const dx = marble.position[0] - prevMarble.position[0];
-        const dy = marble.position[1] - prevMarble.position[1];
-        pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
-    }
-
-    if (track._lastPathBearing !== undefined) {
-        const diff = pathBearing - track._lastPathBearing;
-        if (Math.abs(diff) > 180) {
-            pathBearing += diff > 0 ? -360 : 360;
-        }
-    }
-    track._lastPathBearing = pathBearing;
-
-    const userYawDeg = THREE.MathUtils.radToDeg(currentYaw);
-    const finalHeading = (pathBearing + userYawDeg + 360) % 360;
-
-    const fovH = getHorizontalFovDeg();
-    const radiusMeters = 15;
-    
-    const ring = makeViewConeRing(
-        marble.position[1],
-        marble.position[0],
-        finalHeading,
-        fovH,
-        radiusMeters,
-        24
-    );
-
-    map.getSource('view-cone').setData({
-        type: 'Feature',
-        geometry: { type: 'Polygon', coordinates: [ring] }
-    });
-}
-
-function destFromBearingDistance(lat, lon, bearingDegVal, distMeters){
-  const R=6378137, brng=degToRad(bearingDegVal);
-  const φ1=degToRad(lat), λ1=degToRad(lon);
-  const φ2=Math.asin(Math.sin(φ1)*Math.cos(distMeters/R)+Math.cos(φ1)*Math.sin(distMeters/R)*Math.cos(brng));
-  const λ2=λ1+Math.atan2(Math.sin(brng)*Math.sin(distMeters/R)*Math.cos(φ1), Math.cos(distMeters/R)-Math.sin(φ1)*Math.sin(φ2));
-  return [radToDeg(λ2), radToDeg(φ2)];
-}
-
-function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters=7, steps=24){
-  const half = Math.max(0, Math.min(89, fovDeg/2));
-  const start = headingDeg - half, end = headingDeg + half;
-  const ring = [[lon,lat]];
-  for (let s=0;s<=steps;s++){
-    const t=s/steps, brg=start + (end-start)*t;
-    ring.push(destFromBearingDistance(lat, lon, brg, radiusMeters));
-  }
-  ring.push([lon,lat]); return ring;
-}
-
-function radToDeg(r){ return r*180/Math.PI; }
-function degToRad(d){ return d*Math.PI/180; }
-
-/* MARBLE SELECTION - From gpxviewer */
-function selectMarble(marbleId){
-  selectedMarbleId = marbleId;
-  updateMarbleDisplay();
-  updateViewCone();
-}
-
-function deselectMarble(){
-  selectedMarbleId = null;
-  updateMarbleDisplay();
-  hideViewCone();
-}
-
-function highlightMarbleWithImage(imageIndex){
-  const track = getCurrentTrack(); 
-  if (!track) return;
-  const marble = track.marbles.find(m=>m.assignedImage===imageIndex);
-  if (marble) selectMarble(marble.id);
-}
-
-// ============================================================================
-// END GPX VIEWER CODE
-// ============================================================================
-
-</script>
-
-<script>
-/* ================================================
-   MISSING-FUNCTIONS PATCH (from gpxviewer)
-   Safe to paste into clauseAlmost.html
-   - Guards avoid redefining if later integrated twice
-   - Assumes globals already defined in clauseAlmost:
-     map, scene, camera, renderer, panoGroup, sphere,
-     allTracks, currentTrackId, navGraph, currentImages,
-     currentImageIndex, preloadedImages, selectedMarbleId,
-     getCurrentTrack, selectMarble, updateViewCone,
-     showImageByIndex, initThreeJSViewer, viewerInitialized,
-     FRAMES_BASE
-   ================================================ */
-
-function getBestMarbleInDirection(directionRad) {
-  if (!selectedMarbleId) return null;
-  
-  const track = getCurrentTrack();
-  const currentMarble = track.marbles.find(m => m.id === selectedMarbleId);
-  if (!currentMarble) return null;
-  
-  const options = getFacingOptions(selectedMarbleId, directionRad, 30);
-  if (!options.length) return null;
-  
-  // Return the closest marble in the viewing direction
-  const bestOption = options[0];
-  const targetMarble = track.marbles.find(m => m.id === bestOption.toMarbleId);
-  
-  if (targetMarble) {
-    return {
-      index: track.marbles.indexOf(targetMarble),
-      distance: bestOption.distanceM
-    };
-  }
-  
-  return null;
-}
-
-function getFacingOptions(marbleId, directionRad, maxDistance = 50) {
-    const track = getCurrentTrack();
-    if (!track) return [];
-    
-    const currentMarble = track.marbles.find(m => m.id === marbleId);
-    if (!currentMarble) return [];
-    
-    const options = [];
-    const currentPos = currentMarble.position;
-    
-    track.marbles.forEach(otherMarble => {
-        if (otherMarble.id === marbleId) return;
-        
-        const dx = otherMarble.position[0] - currentPos[0];
-        const dy = otherMarble.position[1] - currentPos[1];
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance > maxDistance) return;
-        
-        const bearing = Math.atan2(dx, dy);
-        const angleDiff = Math.abs(((bearing - directionRad + Math.PI) % (2 * Math.PI)) - Math.PI);
-        
-        if (angleDiff < Math.PI / 2) {
-            options.push({
-                toMarbleId: otherMarble.id,
-                distanceM: distance,
-                bearing: bearing
-            });
-        }
-    });
-    
-    return options.sort((a, b) => a.distanceM - b.distanceM);
-}
-
-function refreshBranchButtons() {
-    updateNavigationRing();
-}
-
-/* --- Small utils --- */
-window.toRad = window.toRad || function(d){ return d * Math.PI / 180; };
-window.angularDiffDeg = window.angularDiffDeg || function(a,b){ let d=Math.abs(a-b)%360; return d>180?360-d:d; };
-
-/* -- Display coordinates for route helpers (robust to data shape) -- */
-window.getDisplayCoordinates = window.getDisplayCoordinates || function(track){
-  if (!track) return [];
-  // Prefer activePoints (viewer version)
-  if (Array.isArray(track.activePoints) && track.activePoints.length) {
-    return track.activePoints.map(p => p.coordinates);
-  }
-  // Try LineString(s) from GeoJSON (clause version loads geoJSON)
-  if (track.geoJSON?.features?.length) {
-    const coords = [];
-    track.geoJSON.features.forEach(f=>{
-      if (f.geometry?.type === 'LineString') coords.push(...f.geometry.coordinates);
-    });
-    if (coords.length) return coords;
-  }
-  // Fallback: marble positions
-  if (Array.isArray(track.marbles) && track.marbles.length) {
-    return track.marbles.map(m => m.position);
-  }
-  return [];
-};
-
-/* --- Viewer loading HUD --- */
-window.showViewerLoading = window.showViewerLoading || function(text){
-  const el = document.getElementById('viewer-loading');
-  const t  = document.getElementById('loading-text');
-  if (el){ if (t && text) t.textContent = text; el.style.display = 'block'; }
-};
-window.hideViewerLoading = window.hideViewerLoading || function(){
-  const el = document.getElementById('viewer-loading');
-  if (el) el.style.display = 'none';
-};
-
-/* --- Wheel zoom (noop if your handlers already cover it) --- */
-window.handleWheelZoom = window.handleWheelZoom || function(){
-  const canvas = document.getElementById('canvas');
-  if (!canvas) return;
-  // In clauseAlmost you already attach wheel in setupViewerEventListeners(),
-  // so we keep this as a no-op guard to satisfy references.
-};
-
-/* --- Minimal “track toggle” status hook (viewer uses a small stub) --- */
-window.addTrackToggleMinimal = window.addTrackToggleMinimal || function(){
-  // Optional: surface a tiny status; keep as no-op to avoid UI duplication.
-  // typeof setStatus === 'function' && setStatus('Tracks ready');
-};
-
-/* --- 360° image application helpers --- */
-// Original sphere application with 180° rotation
-function applyImageToSphere(img, imageData) {
-  if (sphere) {
-    panoGroup.remove(sphere);
-    sphere.geometry?.dispose();
-    if (sphere.material) {
-      sphere.material.map?.dispose();
-      sphere.material.dispose();
-    }
-  }
-
-  const geometry = new THREE.SphereGeometry(100, 60, 40);
-  geometry.scale(-1, 1, 1);
-  
-  // 🔥 ORIGINAL 180° ROTATION
-  geometry.rotateY(Math.PI);
-
-  // Apply per-track yaw correction
-  const track = getCurrentTrack();
-  if (track && track.yawFixDeg) {
-    geometry.rotateY(THREE.MathUtils.degToRad(track.yawFixDeg));
-  }
-
-  const texture = new THREE.Texture(img);
-  texture.needsUpdate = true;
-
-  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
-  sphere = new THREE.Mesh(geometry, material);
-  
-  sphere.rotation.y = currentYaw;
-  sphere.rotation.x = currentPitch;
-  
-  panoGroup.add(sphere);
-
-  updateNavigationRing(true);
-}
-
-// Original navigation functions
-function preloadAdjacentImages() {
-  if (!Array.isArray(currentImages) || !currentImages.length) return;
-  const order = buildPreloadOrder(currentImages, currentImageIndex, 2);
-  const loader = new THREE.TextureLoader();
-  order.forEach(idx => {
-    const img = currentImages[idx];
-    if (!img || preloadedImages[img.url]) return;
-    loader.load(img.url, tex => { preloadedImages[img.url] = tex; });
-  });
-}
-
-function buildPreloadOrder(images, startIndex, radius = 2) {
-  const n = (images && images.length) || 0;
-  if (!n) return [];
-  const order = [];
-  for (let d = 1; d <= radius; d++) {
-    const f = startIndex + d, b = startIndex - d;
-    if (f < n) order.push(f);
-    if (b >= 0) order.push(b);
-  }
-  return order;
-}
-
-// Original image loading flow
-function showImageInViewer(imageUrl, imageData) {
-  showViewerLoading('Loading 360° image...');
-  if (!viewerInitialized) initThreeJSViewer();
-
-  if (preloadedImages[imageUrl]) {
-    hideViewerLoading();
-    applyImageToSphere(preloadedImages[imageUrl], imageData);
-    preloadAdjacentImages();
-    return;
-  }
-
-  const img = new Image();
-  img.crossOrigin = 'Anonymous';
-  img.onload = function() {
-    preloadedImages[imageUrl] = img;
-    hideViewerLoading();
-    applyImageToSphere(img, imageData);
-    preloadAdjacentImages();
-  };
-  img.onerror = function() {
-    console.error('Failed to load image:', imageUrl);
-    hideViewerLoading();
-  };
-  img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
-}
-
-window.buildPreloadOrder = window.buildPreloadOrder || function(images, startIndex, radius=2){
-  const n = (images && images.length) || 0; if (!n) return [];
-  const order = [];
-  for (let d=1; d<=radius; d++){
-    const f = startIndex + d, b = startIndex - d;
-    if (f < n) order.push(f);
-    if (b >= 0) order.push(b);
-  }
-  return order;
-};
-
-window.startBackgroundPreload = window.startBackgroundPreload || function(startIndex, radius=3){
-  if (!Array.isArray(currentImages) || !currentImages.length) return;
-  const order = buildPreloadOrder(currentImages, startIndex, radius);
-  const loader = new THREE.TextureLoader();
-  order.forEach(idx=>{
-    const img = currentImages[idx];
-    if (!img || preloadedImages[img.url]) return;
-    loader.load(img.url, tex => { preloadedImages[img.url] = tex; });
-  });
-};
-
-/* --- Initialize viewer (wrapper) --- */
-window.initializeViewer = window.initializeViewer || function(){
-  if (!window.viewerInitialized && typeof initThreeJSViewer === 'function') {
-    initThreeJSViewer();
-  }
-  // Bind branch button (if not already)
-  const branchBtn = document.getElementById('branchImageBtn');
-  if (branchBtn && !branchBtn._bound){
-    branchBtn.addEventListener('click', () => {
-      const track = getCurrentTrack();
-      if (!track) return;
-      const idx = typeof currentImageIndex === 'number' ? currentImageIndex : -1;
-      const m = track.marbles?.find(mm => mm.assignedImage === idx);
-      if (!m) return;
-      const edges = navGraph.get(m.id) || [];
-      const branch = edges.find(e => e.type === 'branch');
-      if (branch) openMarbleByIndex(branch.targetImageIndex);
-    });
-    branchBtn._bound = true;
-  }
-};
-
-/* --- Index + endpoint checks --- */
-window.isValidIndex = window.isValidIndex || function(idx){
-  return Array.isArray(currentImages) && idx >= 0 && idx < currentImages.length;
-};
-
-window.isEndpointMarble = window.isEndpointMarble || function(track, idx){
-  if (!track) return false;
-  const atStart = idx === 0;
-  const atEnd   = Array.isArray(currentImages) && idx === currentImages.length - 1;
-  return atStart || atEnd;
-};
-
-/* --- Open specific panorama by index; also sync marble selection --- */
-window.openMarbleByIndex = window.openMarbleByIndex || function(idx){
-  if (!isValidIndex(idx)) return;
-  showViewerLoading('Loading 360° image...');
-  showImageByIndex(idx);
-  const track = getCurrentTrack();
-  if (track && Array.isArray(track.marbles)) {
-    const m = track.marbles.find(mm => mm.assignedImage === idx);
-    if (m) { selectMarble(m.id); typeof updateViewCone === 'function' && updateViewCone(); }
-  }
-  hideViewerLoading();
-  startBackgroundPreload?.(idx, 3);
-};
-
-/* --- Build a simple nav graph (next/prev + optional branches) --- */
-window.rebuildNavGraph = window.rebuildNavGraph || function(){
-  navGraph.clear();
-  const track = getCurrentTrack();
-  if (!track || !Array.isArray(track.marbles)) return;
-
-  // Map imageIndex -> marble for quick lookups
-  const byImage = new Map();
-  track.marbles.forEach(m => {
-    if (m.assignedImage != null) byImage.set(m.assignedImage, m);
-  });
-
-  const nImgs = Array.isArray(currentImages) ? currentImages.length : 0;
-
-  track.marbles.forEach((m, i) => {
-    const edges = [];
-    const curIdx = (m.assignedImage != null) ? m.assignedImage : i;
-    const nextIdx = curIdx + 1;
-    const prevIdx = curIdx - 1;
-
-    if (nImgs && nextIdx < nImgs) {
-      const nm = byImage.get(nextIdx) || track.marbles[i+1];
-      if (nm) edges.push({ type:'next', targetMarbleId: nm.id, targetImageIndex: nextIdx });
-    }
-    if (nImgs && prevIdx >= 0) {
-      const pm = byImage.get(prevIdx) || track.marbles[i-1];
-      if (pm) edges.push({ type:'prev', targetMarbleId: pm.id, targetImageIndex: prevIdx });
-    }
-
-    // Optional “branch” edges: same coordinates (within tiny epsilon) but different image index
-    const eps = 1e-6;
-    const siblings = track.marbles.filter(o =>
-      o !== m &&
-      Math.abs(o.position[0] - m.position[0]) < eps &&
-      Math.abs(o.position[1] - m.position[1]) < eps &&
-      o.assignedImage != null
-    );
-    siblings.forEach(s => {
-      edges.push({ type:'branch', targetMarbleId: s.id, targetImageIndex: s.assignedImage });
-    });
-
-    navGraph.set(m.id, edges);
-  });
-};
-
-/* --- Branch buttons + ring state --- */
-window.setBranchButtons = window.setBranchButtons || function(){
-  const container = document.getElementById('branch-buttons');
-  const ring = document.querySelector('.navigation-ring');
-  if (!container || !ring) return;
-
-  container.innerHTML = '';
-
-  const track = getCurrentTrack();
-  if (!track || !Array.isArray(track.marbles)) { ring.classList.remove('has-branch'); return; }
-
-  const idx = currentImageIndex;
-  const currentMarble = track.marbles.find(m => m.assignedImage === idx);
-  if (!currentMarble) { ring.classList.remove('has-branch'); return; }
-
-  const edges = navGraph.get(currentMarble.id) || [];
-  const branches = edges.filter(e => e.type === 'branch' && e.targetImageIndex !== idx);
-
-  if (!branches.length) { ring.classList.remove('has-branch'); return; }
-
-  ring.classList.add('has-branch');
-
-  branches.forEach((b, j) => {
-    const btn = document.createElement('button');
-    btn.className = 'nav-button small-btn';
-    btn.textContent = `B${j+1}`;
-    btn.addEventListener('click', () => openMarbleByIndex(b.targetImageIndex));
-    container.appendChild(btn);
-  });
-
-  // Let your existing (placeholder) updateNavigationRing run if present
-  if (typeof updateNavigationRing === 'function') { try { updateNavigationRing(); } catch {} }
-};
-
-function shouldShowBranchAtBottom() {
-  if (!selectedMarbleId) return false;
-  
-  const track = getCurrentTrack();
-  if (!track) return false;
-  
-  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  const isEndpoint = marbleIndex === 0 || marbleIndex === track.marbles.length - 1;
-  
-  if (!isEndpoint) return false;
-  
-  // Check if there are ANY nearby marbles that represent alternative paths
-  const edges = navGraph.get(selectedMarbleId) || [];
-  
-  // For endpoints, we want to show branch at bottom if there are ANY connections
-  // that aren't just the single sequential connection
-  if (isEndpoint) {
-    // If we're at start (index 0), the normal connection is to index 1
-    // If we're at end (last index), the normal connection is to previous index
-    const normalConnectionIndex = marbleIndex === 0 ? 1 : marbleIndex - 1;
-    const normalConnectionMarble = track.marbles[normalConnectionIndex];
-    
-    // Count connections that aren't the normal sequential one
-    const alternativeConnections = edges.filter(edge => {
-      return edge.toMarbleId !== normalConnectionMarble?.id;
-    });
-    
-    return alternativeConnections.length > 0;
-  }
-  
-  return false;
-}
-
-/* --- Convenience wrapper used in some flows --- */
-window.showMarbleImage = window.showMarbleImage || function(imageIndex){
-  openMarbleByIndex(imageIndex);
-};
-</script>
-
-
-<script>
-
-
+// Constants
+const FRAMES_BASE = 'https://lalaland.mx/frames/';
 // ===== REST OF YOUR EXISTING CODE STARTS HERE =====
 //button tracking here
 </script>
@@ -1871,66 +801,59 @@ function setupCommunitySearchMenu() {
         setupCommunitySearchMenu();
         // ===== END COMMUNITY SEARCH =====
 
-// ===== MARBLE INTEGRATION =====
-// Add marbles source
-map.addSource('marbles', { type: 'geojson', data: { type:'FeatureCollection', features: [] } });
+// ===== 🟢 ADD MARBLE LAYERS HERE =====
+        // 🟢 MARBLES SOURCE
+        map.addSource('marbles', { 
+          type: 'geojson', 
+          data: { type:'FeatureCollection', features: [] } 
+        });
 
-// VISIBLE marbles - EXACT styling from gpxviewer
-map.addLayer({
-    id: 'marbles-layer',
-    type: 'circle',
-    source: 'marbles',
-    paint: {
-        'circle-radius': ['case',
-            ['==', ['get', 'isDragging'], true], 7,
-            ['==', ['get', 'isSelected'], true], 6,
-            ['==', ['get', 'isFixed'], true], 5,
-            ['==', ['get', 'isLocked'], true], 4.5,
-            ['==', ['get', 'hasImage'], true], 2,
-            4
-        ],
-        'circle-color': ['case',
-            ['==', ['get', 'isDragging'], true], '#FFD700',
-            ['==', ['get', 'isSelected'], true], '#ff8400',
-            ['==', ['get', 'isFixed'], true], '#FF0000',
-            ['==', ['get', 'isLocked'], true], '#FF6B35',
-            ['==', ['get', 'hasImage'], true], 'rgba(52, 168, 83, 0)',
-            '#8B4513'
-        ],
-        'circle-stroke-width': ['case',
-            ['==', ['get', 'isSelected'], true], 0,
-            ['==', ['get', 'hasImage'], true], 1,
-            0
-        ],
-        'circle-stroke-color': '#FFFFFF'
-    }
-});
+        // VISIBLE marbles layer
+        map.addLayer({
+          id: 'marbles-layer',
+          type: 'circle',
+          source: 'marbles',
+          paint: {
+            'circle-radius': ['case',
+              ['==', ['get', 'isSelected'], true], 6,
+              ['==', ['get', 'hasImage'], true], 2, // Larger for marbles with images
+              3 // Smaller for marbles without images
+            ],
+            'circle-color': ['case',
+              ['==', ['get', 'isSelected'], true], '#ff8400',
+              ['==', ['get', 'hasImage'], true], 'rgba(52, 168, 83, 0)', // GREEN for marbles with images
+              '#8B4513' // Brown for marbles without images
+            ],
+            'circle-stroke-width': ['case',
+              ['==', ['get', 'isSelected'], true], 0,
+              ['==', ['get', 'hasImage'], true], 1, // Thin stroke for marbles with images
+              0
+            ],
+            'circle-stroke-color': '#FFFFFF'
+          }
+        });
 
-// INVISIBLE, larger hit area for clicks
-map.addLayer({
-  id: 'marbles-click-layer',
-  type: 'circle',
-  source: 'marbles',
-  paint: { 'circle-radius': 8, 'circle-opacity': 0, 'circle-stroke-width': 0 }
-});
+        // INVISIBLE, larger hit area for clicks
+        map.addLayer({
+          id: 'marbles-click-layer',
+          type: 'circle',
+          source: 'marbles',
+          paint: { 
+            'circle-radius': 8, 
+            'circle-opacity': 0, 
+            'circle-stroke-width': 0 
+          }
+        });
 
-// Marble click handler
-map.on('click','marbles-click-layer', handleMarbleClick);
+        // VIEW CONE source + layers
+        initConeSystem();
+        // ===== 🟢 END MARBLE LAYERS =====
 
-// Change cursor on marble hover
-map.on('mouseenter', 'marbles-click-layer', () => {
-  map.getCanvas().style.cursor = 'pointer';
-});
-
-map.on('mouseleave', 'marbles-click-layer', () => {
-  map.getCanvas().style.cursor = '';
-});
-
-// Load GPX tracks
-loadGPXFromManifest();
-// ===== END MARBLE INTEGRATION =====
-
-
+        // ===== 🟢 INITIALIZE 360 VIEWER SYSTEM =====
+        console.log('Initializing 360 viewer system...');
+        initializeViewer();
+        setupMapInteractions();
+        // ===== 🟢 END 360 VIEWER INIT =====
 
 // Replace your map.on('moveend') event handler with this:
 let isUserDragging = false;
@@ -1980,8 +903,8 @@ map.on('click', 'lots-final-click', (e) => {
     map.on('click', (e) => {
       // Don't close if clicking inside modal
       if (e.originalEvent?.target.closest('#lotModal')) return;
-      
-      // Check if clicking on lots OR cones OR marbles
+  
+   // Check if clicking on lots OR cones OR marbles
       const lotFeatures = map.queryRenderedFeatures(e.point, { 
         layers: ['lots-final-click'] 
       });
@@ -1989,10 +912,10 @@ map.on('click', 'lots-final-click', (e) => {
       const coneFeatures = map.queryRenderedFeatures(e.point, { 
         layers: ['ps-cones-fill'] 
       });
-      
-      const marbleFeatures = map.queryRenderedFeatures(e.point, { 
-        layers: ['marbles-click-layer'] 
-      });
+
+        const marbleFeatures = map.queryRenderedFeatures(e.point, { 
+    layers: ['marbles-click-layer'] 
+  });
       
       // If clicking on a lot while pin modal is open
       if (lotFeatures.length > 0 && document.getElementById('lotModal').classList.contains('pin-mode')) {
@@ -2007,9 +930,9 @@ map.on('click', 'lots-final-click', (e) => {
         }
       }
       
-      // Only close if clicking outside lots, cones, AND marbles
-      if (lotFeatures.length === 0 && coneFeatures.length === 0 && marbleFeatures.length === 0) {
-        closeModal();
+  // Only close if clicking outside lots, cones, AND marbles
+  if (lotFeatures.length === 0 && coneFeatures.length === 0 && marbleFeatures.length === 0) {
+    closeModal();
       }
     });
 
@@ -2052,7 +975,7 @@ map.on('click', 'lots-final-click', (e) => {
 map.on('click', 'lots-final-click', (e) => {
   if (e.features.length === 0) return;
 
-  // 🟢 ADD THIS ONE LINE - Check edit mode first
+  // 🟢 UPDATED: Check edit mode first (now includes marble check)
   if (handleEditClick(e)) return;
 
   const feature = e.features[0];
@@ -4069,17 +2992,6 @@ function openModal(lot = null, baseIndex = 0) {
   const modal = document.getElementById('lotModal');
   const wasHidden = !modal.classList.contains('show');
 
-  // Hide viewer if opening lot modal
-  if (lot) {
-    const viewerContainer = document.getElementById('viewer-container');
-    const lotDetails = document.getElementById('lotDetails');
-    const modalInfo = document.getElementById('modalInfo');
-    if (viewerContainer) viewerContainer.style.display = 'none';
-    if (lotDetails) lotDetails.style.display = '';
-    if (modalInfo) modalInfo.style.display = '';
-    modal.classList.remove('viewer-mode');
-  }
-
   // Check if we're just switching lots in an already-open modal
   const isJustSwitchingLots = wasHidden === false && lot && !infoMode && !modal.classList.contains('pin-mode');
   
@@ -4311,16 +3223,7 @@ document.getElementById('authControls').classList.remove('hide-in-detail');
   
 
   // --- 1) Kill special modes / embeds
-  modal.classList.remove('info-mode', 'pin-mode', 'expanded', 'lot-mode', 'viewer-mode');
-  
-  // Hide 360 viewer
-  const viewerContainer = document.getElementById('viewer-container');
-  if (viewerContainer) viewerContainer.style.display = 'none';
-  
-  // Show lot details
-  if (lotDetails) lotDetails.style.display = '';
-  if (modalInfo) modalInfo.style.display = '';
-  
+  modal.classList.remove('info-mode', 'pin-mode', 'expanded', 'lot-mode');
   hideCalendlyEmbed();                       // blanks iframe + hides container
   isDetailOpen = false;
 
@@ -6918,38 +5821,49 @@ document.getElementById('editBtn').addEventListener('click', function() {
 
 // Edit mode click handler
 function handleEditClick(e) {
-    if (!editMode) return false;
-    
-    console.log('Edit click detected');
-    
-    if (e.features && e.features.length > 0) {
-        const feature = e.features[0];
-        const lotName = feature.properties.name;
-        const lotNumber = extractLotNumber(lotName);
-        
-        // Toggle selection
-        if (selectedLots.has(lotName)) {
-            selectedLots.delete(lotName);
-            showToaster(`❌ Removed ${lotNumber}`);
-        } else {
-            selectedLots.add(lotName);
-            showToaster(`✅ Added ${lotNumber}`);
-        }
-        
-        console.log('Selected lots:', Array.from(selectedLots));
-        
-        // Update visuals
-        updateEditOutlines();
-        updateModalList();
-        
-        // Stop normal modal from opening
-        e.preventDefault();
-        if (e.originalEvent) {
-            e.originalEvent.stopPropagation();
-        }
-        return true;
-    }
+  if (!editMode) return false;
+  
+  // 🟢 CHECK IF CLICKING ON MARBLES (NOT LOTS)
+  const marbleFeatures = map.queryRenderedFeatures(e.point, { 
+    layers: ['marbles-click-layer'] 
+  });
+  
+  if (marbleFeatures.length > 0) {
+    // This is a marble click, not a lot click - let the marble handler deal with it
     return false;
+  }
+  
+  console.log('Edit click detected');
+  
+  // Rest of your existing edit mode logic...
+  if (e.features && e.features.length > 0) {
+    const feature = e.features[0];
+    const lotName = feature.properties.name;
+    const lotNumber = extractLotNumber(lotName);
+    
+    // Toggle selection
+    if (selectedLots.has(lotName)) {
+      selectedLots.delete(lotName);
+      showToaster(`❌ Removed ${lotNumber}`);
+    } else {
+      selectedLots.add(lotName);
+      showToaster(`✅ Added ${lotNumber}`);
+    }
+    
+    console.log('Selected lots:', Array.from(selectedLots));
+    
+    // Update visuals
+    updateEditOutlines();
+    updateModalList();
+    
+    // Stop normal modal from opening
+    e.preventDefault();
+    if (e.originalEvent) {
+      e.originalEvent.stopPropagation();
+    }
+    return true;
+  }
+  return false;
 }
 
 // Update outlines - SIMPLE ORANGE LINES
@@ -7121,9 +6035,1386 @@ if (map) {
         }
     });
 }
+</script>
 
+<script>
+  // ===== 360 VIEWER UTILITY FUNCTIONS =====
+function calculateDistance(a, b) {
+  const R = 6371000;
+  const dLat = (b[1]-a[1])*Math.PI/180;
+  const dLon = (b[0]-a[0])*Math.PI/180;
+  const lat1 = a[1]*Math.PI/180, lat2 = b[1]*Math.PI/180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
+}
 
+function bearingDeg(a, b){
+  const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+  const φ1 = toRad(a[1]), φ2 = toRad(b[1]);
+  const λ1 = toRad(a[0]), λ2 = toRad(b[0]);
+  const y = Math.sin(λ2-λ1)*Math.cos(φ2);
+  const x = Math.cos(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1) - Math.sin(φ1)*Math.sin(φ2);
+  return (toDeg(Math.atan2(y,x)) + 360) % 360;
+}
+
+function angularDiffDeg(a,b){ 
+  let d=Math.abs(a-b)%360; 
+  return d>180?360-d:d; 
+}
+
+function findClosestPointOnSegment(P, A, B){
+  const Ax=A[0], Ay=A[1], Bx=B[0], By=B[1], Px=P[0], Py=P[1];
+  const ABx=Bx-Ax, ABy=By-Ay, APx=Px-Ax, APy=Py-Ay;
+  const ab2 = ABx*ABx + ABy*ABy;
+  let t = ab2 ? (APx*ABx + APy*ABy)/ab2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const Qx = Ax + ABx*t, Qy = Ay + ABy*t;
+  return { point:[Qx,Qy], distance: Math.sqrt(ab2)*t };
+}
+
+function findClosestPointOnRoute(point, coordinates){
+  let closestPoint=null, minDistance=Infinity, accumulatedDistance=0;
+  for (let i=1;i<coordinates.length;i++){
+    const A=coordinates[i-1], B=coordinates[i];
+    const segLen = calculateDistance(A,B);
+    const cps = findClosestPointOnSegment(point, A, B);
+    const d = calculateDistance(point, cps.point);
+    if (d<minDistance){ minDistance=d; closestPoint={ point: cps.point, distance: accumulatedDistance + cps.distance }; }
+    accumulatedDistance += segLen;
+  }
+  return closestPoint;
+}
+
+function destFromBearingDistance(lat, lon, bearingDegVal, distMeters){
+  const R=6378137, brng=degToRad(bearingDegVal);
+  const φ1=degToRad(lat), λ1=degToRad(lon);
+  const φ2=Math.asin(Math.sin(φ1)*Math.cos(distMeters/R)+Math.cos(φ1)*Math.sin(distMeters/R)*Math.cos(brng));
+  const λ2=λ1+Math.atan2(Math.sin(brng)*Math.sin(distMeters/R)*Math.cos(φ1), Math.cos(distMeters/R)-Math.sin(φ1)*Math.sin(φ2));
+  return [radToDeg(λ2), radToDeg(φ2)];
+}
+
+function radToDeg(r){ return r*180/Math.PI; }
+function degToRad(d){ return d*Math.PI/180; }
+
+// ===== 360 VIEWER INITIALIZATION =====
+function initializeViewer() {
+  console.log('360 Viewer system ready');
+  setupViewerEventListeners();
+  loadGPXFromManifest();
+}
+
+function initThreeJSViewer(){
+  if (viewerInitialized) return;
+  
+  const viewerContainer = document.getElementById('viewer-container');
+  const canvas = document.getElementById('canvas');
+  
+  scene = new THREE.Scene();
+  panoGroup = new THREE.Group();
+  scene.add(panoGroup);
+
+  camera = new THREE.PerspectiveCamera(currentFov, canvas.clientWidth/canvas.clientHeight, 0.1, 1000);
+  camera.position.set(0,0,0.1);
+
+  renderer = new THREE.WebGLRenderer({
+    canvas, 
+    antialias:true, 
+    alpha:false, 
+    powerPreference:'high-performance'
+  });
+  
+  const dpr = Math.min(window.devicePixelRatio || 4, 4);
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+
+  animateViewer();
+  viewerInitialized = true;
+  console.log('Three.js viewer initialized');
+}
+
+function animateViewer(){
+  if (!viewerInitialized) return;
+  requestAnimationFrame(animateViewer);
+  updateNavigationRing();
+  if (renderer && scene && camera) renderer.render(scene, camera);
+}
+
+function setupViewerEventListeners(){
+  const canvas = document.getElementById('canvas');
+  if (!canvas) return;
+  
+  let isDragging=false, lastX=0, lastY=0;
+  let touchStartX = 0, touchStartY = 0;
+  let initialDistance = 0;
+
+  // Mouse events
+  canvas.addEventListener('mousedown', e=>{
+    isDragging=true; lastX=e.clientX; lastY=e.clientY; 
+    canvas.style.cursor='grabbing';
+    document.body.classList.add('dragging-pano');
+  });
+  
+  canvas.addEventListener('mousemove', e=>{
+    if (!isDragging || !sphere) return;
+    const dx=e.clientX-lastX, dy=e.clientY-lastY;
+    
+    sphere.rotation.y -= dx*0.01;
+    sphere.rotation.x -= dy*0.01;
+    
+    currentYaw = sphere.rotation.y; 
+    currentPitch = sphere.rotation.x;
+    
+    lastX=e.clientX; lastY=e.clientY;
+    updateNavigationRing(); 
+    updateViewCone(); 
+    refreshBranchButtons();
+  });
+
+  canvas.addEventListener('mouseup', ()=>{
+    isDragging=false; 
+    setTimeout(()=>{ canvas.style.cursor='grab'; }, 50);
+    document.body.classList.remove('dragging-pano');
+  });
+
+  canvas.addEventListener('mouseenter', ()=>{ canvas.style.cursor='grab'; });
+  canvas.addEventListener('mouseleave', ()=>{ isDragging=false; canvas.style.cursor='default'; });
+
+  canvas.addEventListener('wheel', handleWheelZoom, { passive:false });
+
+  // Touch events
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length == 1) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }
+    if (e.touches.length == 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      initialDistance = Math.sqrt(dx * dx + dy * dy);
+    }
+  });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length == 1 && sphere) {
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+
+      sphere.rotation.y -= dx * 0.01;
+      sphere.rotation.x -= dy * 0.01;
+
+      currentYaw = sphere.rotation.y;
+      currentPitch = sphere.rotation.x;
+
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+
+      updateNavigationRing();
+      updateViewCone();
+      refreshBranchButtons();
+    }
+
+    if (e.touches.length == 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const currentDistance = Math.sqrt(dx * dx + dy * dy);
+
+      if (initialDistance > 0) {
+        const zoomChange = initialDistance - currentDistance;
+        const zoomSpeed = 2;
+        currentFov = Math.max(30, Math.min(120, currentFov + zoomChange * zoomSpeed * 0.1));
+        camera.fov = currentFov;
+        camera.updateProjectionMatrix();
+        initialDistance = currentDistance;
+        updateViewCone();
+      }
+    }
+  });
+
+  canvas.addEventListener('touchend', () => {
+    touchStartX = 0;
+    touchStartY = 0;
+    initialDistance = 0;
+  });
+}
+
+function handleWheelZoom(e){
+  e.preventDefault(); 
+  e.stopPropagation();
+  const zoomSpeed = e.deltaMode===0 ? 2 : 60;
+  const delta = e.deltaY>0 ? zoomSpeed : -zoomSpeed;
+  const old = currentFov;
+  currentFov = Math.max(30, Math.min(120, currentFov + delta));
+  if (currentFov !== old){
+    camera.fov = currentFov; 
+    camera.updateProjectionMatrix();
+    updateViewCone(); 
+    if (renderer) renderer.render(scene, camera);
+  }
+}
+
+// ===== NAVIGATION CONTROLS =====
+function updateNavigationRing(instant = false) {
+  const ring = document.querySelector('.navigation-ring');
+  const nextBtn = document.getElementById('nextImageBtn');
+  const prevBtn = document.getElementById('prevImageBtn');
+  const branchBtn = document.getElementById('branchImageBtn');
+  if (!ring || !sphere) return;
+
+  const yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
+  ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
+
+  const track = getCurrentTrack();
+  if (!track || !selectedMarbleId) return;
+
+  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+  const total = track.marbles.length;
+
+  let canForward = false;
+  let canBackward = false;
+  let canBranch = false;
+
+  if (marbleIndex < total - 1) canForward = true;
+  if (marbleIndex > 0) canBackward = true;
+
+  if (marbleIndex > 0 && marbleIndex < total - 1) {
+    const fwd = getBestMarbleInDirection(currentYaw);
+    const back = getBestMarbleInDirection(currentYaw + Math.PI);
+    canForward = !!fwd;
+    canBackward = !!back;
+  }
+
+  const edges = navGraph.get(selectedMarbleId) || [];
+  if (edges.length > 2) {
+    canForward = true;
+    canBackward = true;
+  }
+
+  const isEndpoint = marbleIndex === 0 || marbleIndex === total - 1;
+  const totalConnections = edges.length;
+  canBranch = (isEndpoint && totalConnections >= 2) || totalConnections > 2;
+
+  const showBranchAtBottom = shouldShowBranchAtBottom();
+  if (showBranchAtBottom) {
+    ring.classList.add('has-branch');
+  } else {
+    ring.classList.remove('has-branch');
+  }
+
+  nextBtn.disabled = !canForward;
+  prevBtn.disabled = !canBackward;
+  branchBtn.disabled = !canBranch;
+
+  nextBtn.style.opacity = canForward ? 1 : 0;
+  prevBtn.style.opacity = canBackward ? 1 : 0;
+  branchBtn.style.opacity = canBranch ? 1 : 0;
+
+  if (instant) {
+    ring.style.transition = 'none';
+    requestAnimationFrame(() => (ring.style.transition = ''));
+  }
+}
+
+function shouldShowBranchAtBottom() {
+  if (!selectedMarbleId) return false;
+  const track = getCurrentTrack();
+  if (!track) return false;
+  
+  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+  const isEndpoint = marbleIndex === 0 || marbleIndex === track.marbles.length - 1;
+  
+  if (!isEndpoint) return false;
+  
+  const edges = navGraph.get(selectedMarbleId) || [];
+  const normalConnectionIndex = marbleIndex === 0 ? 1 : marbleIndex - 1;
+  const normalConnectionMarble = track.marbles[normalConnectionIndex];
+  
+  const alternativeConnections = edges.filter(edge => {
+    return edge.toMarbleId !== normalConnectionMarble?.id;
+  });
+  
+  return alternativeConnections.length > 0;
+}
+
+function getBestMarbleInDirection(directionRad){
+  if (!selectedMarbleId) return null;
+  const opts = getFacingOptions(selectedMarbleId, directionRad, 1);
+  if (!opts.length) return null;
+  const track = getCurrentTrack();
+  const target = track.marbles.find(m=>m.id===opts[0].toMarbleId);
+  return target ? { index: target.index, distance: opts[0].distanceM } : null;
+}
+
+function getFacingOptions(marbleId, currentYawRad, maxOptions=3){
+  const edges = navGraph.get(marbleId) || [];
+  const yawDeg = (THREE.MathUtils.radToDeg(currentYawRad) + 360) % 360;
+
+  return edges.map(e => {
+    const angleToView = angularDiffDeg(yawDeg, e.bearingDeg);
+    let score = angleToView;
+
+    if (lastHopBearingDeg != null) {
+      const continueDiff = angularDiffDeg(lastHopBearingDeg, e.bearingDeg);
+      score += continueDiff * 0.3;
+    }
+
+    const targetTrackId = [...allTracks.entries()]
+      .find(([tid, tr]) => tr.marbles.some(m => m.id === e.toMarbleId))?.[0];
+    const currentTrackId = getCurrentTrack()?.id;
+    const sameTrack = targetTrackId === currentTrackId;
+
+    if (sameTrack && e.distanceM < 8) {
+      score += 20;
+    } else {
+      score += e.distanceM * 0.001;
+    }
+
+    return { ...e, angleToView, score };
+  })
+  .sort((a,b)=>a.score-b.score)
+  .slice(0, maxOptions);
+}
+
+// ===== GPX LOADING AND MARBLE MANAGEMENT =====
+async function loadGPXFromManifest() {
+  try {
+    const MANIFEST_URL = FRAMES_BASE + 'index.json';
+    const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
+    if (!res.ok) { 
+      console.log('No predefined tracks found'); 
+      return; 
+    }
+
+    const manifest = await res.json();
+
+    // Load yawfix mapping
+    window.yawFixesByFile = manifest.yawfixes || {};
+    console.log("Yaw fixes loaded:", window.yawFixesByFile);
+
+    // Get GPX files from manifest
+    let gpxFiles = [];
+    if (manifest.gpxFiles && manifest.gpxFiles.length) gpxFiles = manifest.gpxFiles;
+    else if (manifest.files) gpxFiles = manifest.files.filter(f => f.toLowerCase().endsWith('.gpx'));
+
+    if (!gpxFiles.length) { 
+      console.log('No GPX files in manifest'); 
+      return; 
+    }
+
+    let loadedCount = 0;
+    for (const gpxFile of gpxFiles) {
+      try { 
+        await loadSingleGPX(gpxFile); 
+        loadedCount++; 
+      } catch(e) { 
+        console.error('Failed GPX:', gpxFile, e); 
+      }
+    }
+
+    if (loadedCount > 0 && allTracks.size > 0) {
+      const firstTrackId = Array.from(allTracks.keys())[0];
+      selectTrack(firstTrackId);
+      console.log(`Loaded ${loadedCount} GPX files with marbles`);
+    }
+
+  } catch(e) {
+    console.error('Error loading manifest:', e);
+  }
+}
+
+async function loadSingleGPX(filename) {
+  const fullPath = filename.startsWith(FRAMES_BASE) ? filename : FRAMES_BASE + filename;
+  const response = await fetch(fullPath);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const baseName = filename.split('/').pop();
+  const yawFixDeg = window.yawFixesByFile?.[baseName] ?? 0;
+  console.log(`Applying yaw fix ${yawFixDeg}° to ${baseName}`);
+
+  const gpxContent = await response.text();
+  parseGPX(gpxContent, baseName, true, yawFixDeg);
+}
+
+function parseGPX(gpxContent, fileName, isPredefined=false, yawFixDeg=0) {
+  const parser = new DOMParser();
+  const gpxDoc = parser.parseFromString(gpxContent, 'text/xml');
+
+  const trkpts = gpxDoc.querySelectorAll('trkpt');
+  const pointsWithTime = [];
+  trkpts.forEach((trkpt, idx) => {
+    const lat = parseFloat(trkpt.getAttribute('lat'));
+    const lon = parseFloat(trkpt.getAttribute('lon'));
+    const t = trkpt.querySelector('time');
+    pointsWithTime.push({
+      id: idx,
+      coordinates: [lon, lat],
+      originalIndex: idx,
+      time: t ? t.textContent : null
+    });
+  });
+  if (!pointsWithTime.length) return;
+
+  const trackId = `track-${allTracks.size + 1}`;
+  const trackColor = '#4285F4';
+
+  const trackData = {
+    id: trackId,
+    name: fileName.replace('.gpx',''),
+    color: trackColor,
+    yawFixDeg: yawFixDeg,
+    originalPoints: pointsWithTime,
+    activePoints: pointsWithTime.map(p => ({...p})),
+    isActive: false,
+    isPredefined,
+    originalStats: calculateOriginalStatsFromPoints(pointsWithTime),
+    marbles: [],
+    marbleSpacing: 10
+  };
+
+  parseWaypointsFromGPX(gpxDoc, trackData);
+
+  allTracks.set(trackId, trackData);
+
+  rebuildNavGraph();
+  updateMarbleDisplay();
+  console.log(`Parsed ${fileName} with ${trackData.marbles.length} marbles`);
+}
+
+function parseWaypointsFromGPX(gpxDoc, trackData) {
+  const waypoints = gpxDoc.querySelectorAll('wpt');
+  const coordinates = getDisplayCoordinates(trackData);
+  const totalDistance = calculateTotalDistance(coordinates);
+
+  waypoints.forEach((wpt, index) => {
+    const lat = parseFloat(wpt.getAttribute('lat'));
+    const lon = parseFloat(wpt.getAttribute('lon'));
+    const nameEl = wpt.querySelector('name');
+    const descEl = wpt.querySelector('desc');
+    const timeEl = wpt.querySelector('time');
+
+    const name = nameEl ? nameEl.textContent : `Waypoint_${index+1}`;
+    const description = descEl ? descEl.textContent : '';
+    const time = timeEl ? timeEl.textContent : null;
+
+    const marble = {
+      id: Date.now() + index + Math.random(),
+      index: trackData.marbles.length,
+      position: [lon, lat],
+      distanceAlongRoute: 0,
+      isLocked: false,
+      isFixed: false,
+      assignedImage: extractImageIndexFromWaypoint(name, description),
+      isWaypoint: true,
+      originalName: name,
+      description,
+      time
+    };
+
+    const closestPoint = findClosestPointOnRoute([lon, lat], coordinates);
+    if (closestPoint) marble.distanceAlongRoute = closestPoint.distance;
+
+    trackData.marbles.push(marble);
+  });
+
+  trackData.marbles.sort((a,b)=>a.distanceAlongRoute - b.distanceAlongRoute);
+  trackData.marbles.forEach((m,i)=>{ m.index = i; });
+}
+
+function getDisplayCoordinates(track) {
+  return track.activePoints.map(p => p.coordinates);
+}
+
+function calculateTotalDistance(points) {
+  if (points.length < 2) return 0;
+  let sum = 0;
+  for (let i=1;i<points.length;i++) sum += calculateDistance(points[i-1], points[i]);
+  return sum;
+}
+
+function calculateOriginalStatsFromPoints(points){
+  const coords = points.map(p=>p.coordinates);
+  const timeData = points.map(p=>p.time).filter(Boolean);
+  const distance = calculateTotalDistance(coords);
+  const duration = calculateDurationFromTimes(timeData);
+  const avgSpeed = calculateAverageSpeedFromStats(distance, duration);
+  return { distance, duration, avgSpeed, pointCount: points.length };
+}
+
+function calculateDurationFromTimes(timeData){
+  if (timeData.length < 2) return '0s';
+  const start = new Date(timeData[0]), end = new Date(timeData[timeData.length-1]);
+  const ms = end - start;
+  const h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000), s = Math.floor((ms%60000)/1000);
+  if (h>0) return `${h}h ${m}m ${s}s`;
+  if (m>0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function calculateAverageSpeedFromStats(distanceMeters, durationString){
+  if (durationString==='0s' || !distanceMeters) return 0;
+  const hMatch = durationString.match(/(\d+)h/), mMatch = durationString.match(/(\d+)m/), sMatch = durationString.match(/(\d+)s/);
+  const hours = (hMatch?+hMatch[1]:0) + (mMatch?+mMatch[1]/60:0) + (sMatch?+sMatch[1]/3600:0);
+  const km = distanceMeters/1000;
+  return hours>0 ? km/hours : 0;
+}
+
+function extractImageIndexFromWaypoint(name, description){
+  const text = (name + ' ' + description).toLowerCase();
+  const m1 = text.match(/image[^\d]*(\d+)/); if (m1) return parseInt(m1[1])-1;
+  const m2 = text.match(/photo[^\d]*(\d+)/); if (m2) return parseInt(m2[1])-1;
+  const m3 = name?.match(/(\d+)$/); if (m3) return parseInt(m3[1])-1;
+  return null;
+}
+
+// ===== TRACK AND MARBLE SELECTION =====
+function selectTrack(trackId){
+  if (currentTrackId && allTracks.has(currentTrackId)) {
+    allTracks.get(currentTrackId).isActive = false;
+  }
+  
+  currentTrackId = trackId;
+  const track = allTracks.get(trackId);
+  track.isActive = true;
+
+  updateMarbleDisplay();
+  load360Images();
+  console.log(`Selected track: ${track.name}`);
+}
+
+function selectTrackWithoutMapReset(trackId){
+  if (currentTrackId && allTracks.has(currentTrackId)) {
+    allTracks.get(currentTrackId).isActive = false;
+  }
+  
+  currentTrackId = trackId;
+  const track = allTracks.get(trackId);
+  track.isActive = true;
+
+  resetViewerOrientationForTrack(track);
+  updateMarbleDisplay();
+
+  if (viewConeMarker){ 
+    viewConeMarker.remove(); 
+    viewConeMarker = null; 
+  }
+  
+  updateNavigationRing(true);
+  updateViewCone();
+  load360Images();
+  
+  console.log(`Switched to track: ${track.name} - ${track.marbles.length} marbles`);
+}
+
+function resetViewerOrientationForTrack(track) {
+  if (!track || !panoGroup) return;
+  
+  currentYaw = 0;
+  currentPitch = 0;
+  
+  if (panoGroup) {
+    panoGroup.rotation.y = currentYaw;
+    panoGroup.rotation.x = currentPitch;
+  }
+  
+  lastHopBearingDeg = null;
+  console.log(`Orientation reset for track: ${track.name}`);
+}
+
+function getCurrentTrack(){ 
+  return currentTrackId ? allTracks.get(currentTrackId) : null; 
+}
+
+function selectMarble(marbleId){
+  const prevSelected = selectedMarbleId;
+  selectedMarbleId = marbleId;
+
+  const track = getCurrentTrack();
+  if (!track) return;
+
+  // Update last hop bearing for navigation
+  if (prevSelected){
+    const prev = track.marbles.find(m=>m.id===prevSelected);
+    const curr = track.marbles.find(m=>m.id===marbleId);
+    if (prev && curr) {
+      lastHopBearingDeg = bearingDeg(prev.position, curr.position);
+    }
+  }
+
+  updateMarbleDisplay();
+  updateViewCone();
+  refreshBranchButtons();
+  console.log(`Selected marble: ${marbleId}`);
+}
+
+function deselectMarble(){
+  selectedMarbleId = null;
+  updateMarbleDisplay();
+  hideViewCone();
+}
+
+// ===== NAVIGATION GRAPH =====
+function rebuildNavGraph(){
+  navGraph.clear();
+  
+  // A) sequential edges within each track
+  allTracks.forEach(track=>{
+    const m = track.marbles;
+    for (let i=0;i<m.length-1;i++){
+      const a=m[i], b=m[i+1];
+      const dAB = calculateDistance(a.position, b.position);
+      const brAB = bearingDeg(a.position, b.position);
+      const brBA = bearingDeg(b.position, a.position);
+      
+      if (!navGraph.has(a.id)) navGraph.set(a.id, []);
+      if (!navGraph.has(b.id)) navGraph.set(b.id, []);
+      
+      navGraph.get(a.id).push({ toMarbleId:b.id, distanceM:dAB, bearingDeg:brAB });
+      navGraph.get(b.id).push({ toMarbleId:a.id, distanceM:dAB, bearingDeg:brBA });
+    }
+    m.forEach(mm=>{ if(!navGraph.has(mm.id)) navGraph.set(mm.id,[]); });
+  });
+
+  // B) junctions across tracks (nearby marbles)
+  const all = [];
+  allTracks.forEach(track => track.marbles.forEach(m => {
+    all.push({trackId:track.id, m});
+  }));
+  
+  const RADIUS_M = 8;
+  for (let i=0;i<all.length;i++){
+    for (let j=i+1;j<all.length;j++){
+      const A=all[i].m, B=all[j].m;
+      const d = calculateDistance(A.position, B.position);
+      if (d>RADIUS_M) continue;
+      
+      const brAB = bearingDeg(A.position, B.position);
+      const brBA = bearingDeg(B.position, A.position);
+      
+      if (!navGraph.has(A.id)) navGraph.set(A.id, []);
+      if (!navGraph.has(B.id)) navGraph.set(B.id, []);
+      
+      navGraph.get(A.id).push({ toMarbleId:B.id, distanceM:d, bearingDeg:brAB });
+      navGraph.get(B.id).push({ toMarbleId:A.id, distanceM:d, bearingDeg:brBA });
+    }
+  }
+
+  // C) dedupe keep shortest
+  navGraph.forEach((edges, key)=>{
+    const byTarget = new Map();
+    edges.forEach(e=>{
+      const prev = byTarget.get(e.toMarbleId);
+      if (!prev || e.distanceM < prev.distanceM) byTarget.set(e.toMarbleId, e);
+    });
+    navGraph.set(key, Array.from(byTarget.values()));
+  });
+  
+  console.log('Navigation graph rebuilt');
+}
+
+// ===== BRANCH NAVIGATION =====
+function refreshBranchButtons(){
+  const host = document.getElementById('branch-buttons');
+  if (!host) return;
+  host.innerHTML = '';
+  
+  if (!selectedMarbleId) return;
+
+  const picks = getFacingOptions(selectedMarbleId, currentYaw);
+  picks.forEach((p, idx)=>{
+    const btn = document.createElement('button');
+    btn.className='small-btn';
+    const meters = Math.round(p.distanceM);
+    btn.textContent = idx===0 ? `Go → (${meters}m)` : `Alt ${idx+1} →`;
+    btn.onclick = async ()=>{
+      const track = getCurrentTrack(); 
+      if(!track) return;
+
+      // find target marble across all tracks
+      let target=null, targetTrack=null;
+      for (const [tid, tr] of allTracks){
+        target = tr.marbles.find(m=>m.id===p.toMarbleId);
+        if (target){ targetTrack = tr; break; }
+      }
+      if (!target) return;
+
+      const currentZoom = map.getZoom();
+      if (targetTrack.id !== currentTrackId){
+        selectTrackWithoutMapReset(targetTrack.id);
+        await load360Images();
+        selectMarble(target.id);
+      } else {
+        selectMarble(target.id);
+      }
+
+      const current = track.marbles.find(m=>m.id===selectedMarbleId);
+      if (current) {
+        lastHopBearingDeg = bearingDeg(current.position, target.position);
+      }
+
+      if (target.assignedImage != null){
+        showMarbleImage(target.id);
+      } else {
+        map.flyTo({ center: target.position, zoom: currentZoom, duration: 1000 });
+        console.log(`Moved to marble ${target.index+1}${targetTrack.id!==currentTrackId?` in ${targetTrack.name}`:''}`);
+      }
+      updateNavigationRing(true);
+    };
+    host.appendChild(btn);
+  });
+}
+
+// Branch button main handler
+document.getElementById('branchImageBtn').addEventListener('click', async () => {
+  if (!selectedMarbleId) return;
+  const edges = navGraph.get(selectedMarbleId) || [];
+  const nearby = edges.filter(e => e.distanceM < 10);
+  if (!nearby.length) {
+    console.log('No nearby marble (<10 m)');
+    return;
+  }
+
+  // Pick nearest neighbor
+  const targetEdge = nearby.sort((a, b) => a.distanceM - b.distanceM)[0];
+  let targetTrack = null, targetMarble = null;
+
+  for (const [tid, tr] of allTracks) {
+    const m = tr.marbles.find(x => x.id === targetEdge.toMarbleId);
+    if (m) { targetTrack = tr; targetMarble = m; break; }
+  }
+  if (!targetTrack || !targetMarble) return;
+
+  // Perform jump
+  if (targetTrack.id !== currentTrackId) {
+    selectTrackWithoutMapReset(targetTrack.id);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  
+  selectMarble(targetMarble.id);
+  if (targetMarble.assignedImage != null) {
+    showMarbleImage(targetMarble.id);
+  } else {
+    map.flyTo({ center: targetMarble.position, zoom: map.getZoom(), duration: 800 });
+  }
+
+  console.log(`Jumped to ${targetTrack.name} (${Math.round(targetEdge.distanceM)} m)`);
+});
+
+// ===== MARBLE VISUALIZATION =====
+function updateMarbleDisplay(){
+  const src = map.getSource('marbles');
+  if (!src) return;
+
+  const all = [];
+  allTracks.forEach((track, trackId)=>{
+    track.marbles.forEach((m, index)=>{
+      const hasImage = m.assignedImage !== null;
+      all.push({
+        type:'Feature',
+        geometry:{ type:'Point', coordinates: m.position },
+        properties:{
+          id: m.id,
+          trackId,
+          index,
+          isSelected: (m.id === selectedMarbleId),
+          hasImage
+        }
+      });
+    });
+  });
+
+  src.setData({ type:'FeatureCollection', features: all });
+}
+
+// ===== MAP INTERACTIONS FOR MARBLES =====
+function setupMapInteractions(){
+  map.on('move', ()=> { if (selectedMarbleId) updateViewCone(); });
+  map.on('zoom', ()=> { if (selectedMarbleId) updateViewCone(); });
+  
+  // 🟢 ADD MARBLE CLICK HANDLERS
+  enableMarbleClickOnly();
+}
+
+function enableMarbleClickOnly(){
+  // Remove existing handlers to avoid duplicates
+  map.off('click','marbles-click-layer',handleMarbleClick);
+  map.off('click', handleMapClickForDeselect);
+
+  // Add new handlers
+  map.on('click','marbles-click-layer', handleMarbleClick);
+  map.on('click', handleMapClickForDeselect);
+}
+
+function handleMarbleClick(e){
+  // 🟢 STOP EVENT PROPAGATION - PREVENT MODAL FROM CLOSING
+  e.originalEvent.stopPropagation();
+  
+  if (!e.features?.length) { 
+    deselectMarble(); 
+    return; 
+  }
+  const marbleId = e.features[0].properties.id;
+  const trackId = e.features[0].properties.trackId;
+
+  if (trackId !== currentTrackId) {
+    selectTrackAndThenMarble(trackId, marbleId);
+  } else {
+    selectMarble(marbleId);
+    showMarbleImage(marbleId);
+  }
+}
+
+function handleMapClickForDeselect(e){
+  const f = map.queryRenderedFeatures(e.point, { layers:['marbles-click-layer'] });
+  if (!f.length) deselectMarble();
+}
+
+// ===== VIEW CONE SYSTEM =====
+function initConeSystem(){
+  if (!map.getSource('view-cone')){
+    map.addSource('view-cone', {
+      type:'geojson',
+      data:{ type:'Feature', geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] } }
+    });
+    map.addLayer({ 
+      id:'view-cone-fill', 
+      type:'fill', 
+      source:'view-cone', 
+      paint:{ 'fill-color':'#ff8400', 'fill-opacity':0.5 } 
+    });
+    map.addLayer({ 
+      id:'view-cone-outline', 
+      type:'line', 
+      source:'view-cone', 
+      paint:{ 'line-color':'#ff6b6b', 'line-width':2, 'line-opacity':0 } 
+    });
+  }
+}
+
+function hideViewCone(){
+  if (map && map.getSource('view-cone')){
+    map.getSource('view-cone').setData({ 
+      type:'Feature', 
+      geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] } 
+    });
+  }
+}
+
+function getHorizontalFovDeg(){
+  const c=document.getElementById('canvas');
+  const aspect = (camera && camera.aspect) || (c && c.clientHeight ? c.clientWidth/c.clientHeight : 16/9);
+  const vRad = THREE.MathUtils.degToRad(currentFov);
+  const hRad = 2 * Math.atan(Math.tan(vRad/2)*aspect);
+  return THREE.MathUtils.radToDeg(hRad);
+}
+
+function updateViewCone() {
+  if (!map || !map.getSource('view-cone')) return;
+  
+  const track = getCurrentTrack();
+  if (!track || !selectedMarbleId) return;
+  
+  const marble = track.marbles.find(m => m.id === selectedMarbleId);
+  if (!marble) return;
+
+  const currentIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+  
+  // Get path direction
+  let pathBearing = track._lastPathBearing || 0;
+  if (currentIndex < track.marbles.length - 1) {
+    const nextMarble = track.marbles[currentIndex + 1];
+    const dx = nextMarble.position[0] - marble.position[0];
+    const dy = nextMarble.position[1] - marble.position[1];
+    pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+  } else if (currentIndex > 0) {
+    const prevMarble = track.marbles[currentIndex - 1];
+    const dx = marble.position[0] - prevMarble.position[0];
+    const dy = marble.position[1] - prevMarble.position[1];
+    pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+  }
+
+  // Smooth continuity
+  if (track._lastPathBearing !== undefined) {
+    const diff = pathBearing - track._lastPathBearing;
+    if (Math.abs(diff) > 180) {
+      pathBearing += diff > 0 ? -360 : 360;
+    }
+  }
+  track._lastPathBearing = pathBearing;
+
+  // Apply user yaw offset
+  const userYawDeg = THREE.MathUtils.radToDeg(currentYaw);
+  const finalHeading = (pathBearing + userYawDeg + 360) % 360;
+
+  const fovH = getHorizontalFovDeg();
+  const radiusMeters = 15;
+  
+  const ring = makeViewConeRing(
+    marble.position[1],
+    marble.position[0],
+    finalHeading,
+    fovH,
+    radiusMeters,
+    24
+  );
+
+  map.getSource('view-cone').setData({
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [ring] }
+  });
+}
+
+function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters=7, steps=24){
+  const half = Math.max(0, Math.min(89, fovDeg/2));
+  const start = headingDeg - half, end = headingDeg + half;
+  const ring = [[lon,lat]];
+  for (let s=0;s<=steps;s++){
+    const t=s/steps, brg=start + (end-start)*t;
+    ring.push(destFromBearingDistance(lat, lon, brg, radiusMeters));
+  }
+  ring.push([lon,lat]); 
+  return ring;
+}
+
+// ===== IMAGE LOADING AND DISPLAY =====
+function showImageInViewer(imageUrl, imageData) {
+  showViewerLoading('Loading 360° image...');
+  if (!viewerInitialized) initThreeJSViewer();
+
+  if (preloadedImages[imageUrl]) {
+    hideViewerLoading();
+    applyImageToSphere(preloadedImages[imageUrl], imageData);
+    preloadAdjacentImages();
+    return;
+  }
+
+  const img = new Image();
+  img.crossOrigin = 'Anonymous';
+  img.onload = function() {
+    preloadedImages[imageUrl] = img;
+    hideViewerLoading();
+    applyImageToSphere(img, imageData);
+    preloadAdjacentImages();
+  };
+  img.onerror = function() {
+    console.error('Failed to load image:', imageUrl);
+    hideViewerLoading();
+    showToaster('Failed to load 360 image');
+  };
+  img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
+}
+
+function applyImageToSphere(img, imageData) {
+  if (sphere) {
+    panoGroup.remove(sphere);
+    sphere.geometry?.dispose();
+    if (sphere.material) {
+      sphere.material.map?.dispose();
+      sphere.material.dispose();
+    }
+  }
+
+  const geometry = new THREE.SphereGeometry(100, 60, 40);
+  geometry.scale(-1, 1, 1);
+  geometry.rotateY(Math.PI);
+
+  // Apply per-track yaw correction
+  const track = getCurrentTrack();
+  if (track && track.yawFixDeg) {
+    geometry.rotateY(THREE.MathUtils.degToRad(track.yawFixDeg));
+  }
+
+  const texture = new THREE.Texture(img);
+  texture.needsUpdate = true;
+
+  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+  sphere = new THREE.Mesh(geometry, material);
+  
+  // Apply the current orientation to the sphere
+  sphere.rotation.y = currentYaw;
+  sphere.rotation.x = currentPitch;
+  
+  panoGroup.add(sphere);
+
+  updateNavigationRing(true);
+}
+
+function preloadAdjacentImages() {
+  const prev = currentImageIndex - 1;
+  const next = currentImageIndex + 1;
+  if (prev >= 0 && !preloadedImages[currentImages[prev].url]) preloadOne(prev);
+  if (next < currentImages.length && !preloadedImages[currentImages[next].url]) preloadOne(next);
+}
+
+function preloadOne(index) {
+  return new Promise(res => {
+    const item = currentImages[index]; 
+    if (!item) return res();
+    const src = item.url; 
+    if (preloadedImages[src]) return res();
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => { preloadedImages[src] = img; res(); };
+    img.onerror = () => res();
+    img.src = src;
+    if (img.decode) img.decode().catch(() => {});
+  });
+}
+
+function nextImage() {
+  if (currentImageIndex < currentImages.length - 1) {
+    currentImageIndex++;
+    showImageByIndex(currentImageIndex);
+    updateNavigationRing(true);
+  }
+  updateViewerUI(); 
+  refreshBranchButtons();
+}
+
+function previousImage() {
+  if (currentImageIndex > 0) {
+    currentImageIndex--;
+    showImageByIndex(currentImageIndex);
+    updateNavigationRing(true);
+  }
+  updateViewerUI(); 
+  refreshBranchButtons();
+}
+
+function showImageByIndex(index) {
+  if (index < 0 || index >= currentImages.length) return;
+  const image = currentImages[index];
+  if (preloadedImages[image.url]) {
+    applyImageToSphere(preloadedImages[image.url], image);
+    currentImageIndex = index;
+    updateViewerUI();
+    highlightMarbleWithImage(index);
+  } else {
+    showImageInViewer(image.url, image);
+    currentImageIndex = index;
+    updateViewerUI();
+    highlightMarbleWithImage(index);
+  }
+  preloadAdjacentImages();
+}
+
+function updateViewerUI() {
+  document.getElementById('time').textContent = `${currentImageIndex+1}/${currentImages.length}`;
+  document.getElementById('viewer-info').textContent = `Image ${currentImageIndex+1}/${currentImages.length}`;
+}
+
+// Set up navigation button event listeners
+document.getElementById('nextImageBtn').addEventListener('click', nextImage);
+document.getElementById('prevImageBtn').addEventListener('click', previousImage);
+document.getElementById('nextImageBtnTop').addEventListener('click', nextImage);
+document.getElementById('prevImageBtnTop').addEventListener('click', previousImage);
+
+function highlightMarbleWithImage(imageIndex) {
+  const track = getCurrentTrack(); 
+  if (!track) return;
+  const marble = track.marbles.find(m => m.assignedImage === imageIndex);
+  if (marble) selectMarble(marble.id);
+}
+
+function showMarbleImage(marbleId) {
+  const track = getCurrentTrack(); 
+  if (!track) return;
+  const m = track.marbles.find(x => x.id === marbleId); 
+  if (!m) return;
+  if (m.assignedImage == null) {
+    showToaster(`Marble ${m.index+1} has no image`);
+    return;
+  }
+  
+  // 🟢 OPEN THE MODAL WITH 360 VIEWER
+  open360ViewerInModal();
+  
+  // Then show the image
+  showImageByIndex(m.assignedImage);
+  refreshBranchButtons();
+}
+
+// Loading overlay functions
+function showViewerLoading(msg) {
+  const l = document.getElementById('viewer-loading'), 
+        t = document.getElementById('loading-text');
+  if (l && t) { 
+    t.textContent = msg; 
+    l.style.display = 'block'; 
+  }
+}
+
+function hideViewerLoading() { 
+  const l = document.getElementById('viewer-loading'); 
+  if (l) l.style.display = 'none'; 
+}
+
+// ===== IMAGE SOURCING =====
+async function load360Images() {
+  try {
+    await createImagesFromFramesFolder();
+    if (currentImages.length > 0) {
+      if (!isSwitchingTrack) {
+        const track = getCurrentTrack();
+        if (selectedMarbleId) {
+          const m = track.marbles.find(x => x.id === selectedMarbleId);
+          if (m && m.assignedImage != null) showImageByIndex(m.assignedImage); 
+          else showImageByIndex(0);
+        } else { 
+          showImageByIndex(0); 
+        }
+      }
+      startBackgroundPreload(3);
+    }
+  } catch(e) { 
+    console.error(e);
+    showToaster('Error loading 360 images');
+  }
+}
+  
+async function createImagesFromFramesFolder() {
+  currentImages = []; 
+  currentImageIndex = -1;
+  const track = getCurrentTrack(); 
+  if (!track) { 
+    showToaster('No track selected'); 
+    return; 
+  }
+  const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
+  if (!gpxName) { 
+    showToaster('GPX name missing'); 
+    return; 
+  }
+
+  const requiredStartLC = (gpxName + '-').toLowerCase();
+
+  let list;
+  try {
+    const res = await fetch(FRAMES_BASE + 'index.json', { cache: 'no-store' });
+    if (!res.ok) { 
+      showToaster('Could not fetch frames index'); 
+      return; 
+    }
+    const data = await res.json();
+    list = Array.isArray(data) ? data : Array.isArray(data.files) ? data.files : [];
+  } catch(e) { 
+    showToaster('Error reading frames manifest'); 
+    return; 
+  }
+
+  const files = list.map(x => String(x).split('/').pop()).filter(Boolean);
+  const matches = files
+    .filter(n => n.toLowerCase().startsWith(requiredStartLC))
+    .filter(n => /\.(?:jpe?g|png)$/i.test(n))
+    .sort((a, b) => a.localeCompare(b));
+
+  if (!matches.length) { 
+    showToaster(`No frames for "${gpxName}"`); 
+    return; 
+  }
+
+  currentImages = matches.map((filename, i) => ({
+    url: FRAMES_BASE + filename, 
+    index: i, 
+    filename, 
+    timestamp: filename, 
+    sequence: i
+  }));
+}
+
+// Background preload
+function startBackgroundPreload(concurrency = 3) {
+  if (currentImages.length <= 1) return;
+  const order = buildPreloadOrder(currentImageIndex, currentImages.length);
+  runPreloadPool(order, concurrency);
+}
+
+function buildPreloadOrder(center, total) {
+  const seq = []; 
+  for (let step = 1; step < total; step++) { 
+    const f = center + step, b = center - step; 
+    if (f < total) seq.push(f); 
+    if (b >= 0) seq.push(b); 
+  }
+  return seq;
+}
+
+function runPreloadPool(indexes, concurrency) {
+  let i = 0;
+  const workers = Array.from({length: Math.min(concurrency, indexes.length)}, async () => {
+    while (i < indexes.length) { 
+      const idx = indexes[i++]; 
+      await preloadOne(idx).catch(() => {}); 
+    }
+  });
+  Promise.all(workers).then(() => console.log('Background preload complete'));
+}
+
+// ===== MODAL INTEGRATION FUNCTIONS =====
+function open360ViewerInModal() {
+  const modal = document.getElementById('lotModal');
+  const viewerContainer = document.getElementById('viewer-container');
+  const lotDetails = document.getElementById('lotDetails');
+  const modalInfo = document.getElementById('modalInfo');
+  const calendlyEl = document.getElementById('calendlyEmbed');
+  const backButton = document.getElementById('backButton');
+  const headerFracc = document.getElementById('headerFracc');
+  const headerLotNumber = document.getElementById('headerLotNumber');
+  const plusButton = document.querySelector('.plus-button');
+  const bottomPlus = document.querySelector('.bottom-plus-button');
+
+  // Hide other modal content
+  if (lotDetails) lotDetails.style.display = 'none';
+  if (modalInfo) modalInfo.style.display = 'none';
+  if (calendlyEl) calendlyEl.style.display = 'none';
+
+  // Show viewer container
+  if (viewerContainer) viewerContainer.style.display = 'block';
+
+  // Update modal classes and state
+  modal.classList.add('viewer-mode');
+  modal.classList.remove('pin-mode', 'info-mode', 'lot-mode');
+  
+  // Update header
+  if (headerFracc) headerFracc.textContent = '360 VIEWER';
+  if (headerLotNumber) headerLotNumber.style.display = 'none';
+  
+  // Show back button, hide plus buttons
+  if (backButton) backButton.style.display = 'flex';
+  if (plusButton) plusButton.style.display = 'none';
+  if (bottomPlus) bottomPlus.style.display = 'none';
+
+  // Ensure modal is open
+  if (!modal.classList.contains('show')) {
+    modal.classList.add('show');
+    modal.style.display = 'block';
+    adjustMapForModal();
+  }
+
+  // Update internal state
+  isDetailOpen = true;
+  
+  // Hide floating buttons
+  document.getElementById('communitySearchBtn')?.classList.add('hide');
+  document.getElementById('lalalandInfoBtn')?.classList.add('hide');
+
+  console.log('360 Viewer opened in modal');
+}
+
+// Update the back button handler to support 360 viewer
+const originalBackButtonHandler = backButton.onclick;
+backButton.onclick = function(e) {
+  const modal = document.getElementById('lotModal');
+  
+  // If in viewer mode, close viewer and show lot list
+  if (modal.classList.contains('viewer-mode')) {
+    close360ViewerInModal();
+    return;
+  }
+  
+  // Otherwise use original handler
+  if (originalBackButtonHandler) {
+    originalBackButtonHandler.call(this, e);
+  }
+};
+
+function close360ViewerInModal() {
+  const modal = document.getElementById('lotModal');
+  const viewerContainer = document.getElementById('viewer-container');
+  const lotDetails = document.getElementById('lotDetails');
+  const modalInfo = document.getElementById('modalInfo');
+  const backButton = document.getElementById('backButton');
+  const headerLotNumber = document.getElementById('headerLotNumber');
+  const plusButton = document.querySelector('.plus-button');
+
+  // Hide viewer
+  if (viewerContainer) viewerContainer.style.display = 'none';
+  
+  // Show lot list
+  if (modalInfo) modalInfo.style.display = '';
+  if (lotDetails) lotDetails.style.display = 'block';
+
+  // Update modal classes
+  modal.classList.remove('viewer-mode');
+  modal.classList.add('lot-mode');
+  
+  // Update header
+  if (headerLotNumber) headerLotNumber.style.display = 'none';
+  
+  // Hide back button, show plus button
+  if (backButton) backButton.style.display = 'none';
+  if (plusButton) plusButton.style.display = 'none';
+
+  // Update internal state
+  isDetailOpen = false;
+  
+  // Show floating buttons
+  document.getElementById('communitySearchBtn')?.classList.remove('hide');
+  document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
+
+  console.log('360 Viewer closed in modal');
+}
+
+// Update closeModal to handle 360 viewer
+const originalCloseModal = window.closeModal;
+window.closeModal = function() {
+  const modal = document.getElementById('lotModal');
+  
+  // If in viewer mode, just close the viewer, not the whole modal
+  if (modal.classList.contains('viewer-mode')) {
+    close360ViewerInModal();
+    return;
+  }
+  
+  // Otherwise use original closeModal
+  if (originalCloseModal) {
+    originalCloseModal();
+  }
+};
+
+// ===== MISSING UTILITY FUNCTIONS =====
+function calculateBounds(coordinates) {
+  if (!coordinates.length) return null;
+  const b = new mapboxgl.LngLatBounds();
+  coordinates.forEach(c => b.extend(c));
+  return b;
+}
+
+// UI status function
+function setStatus(msg) { 
+  console.log(msg); 
+  // Optional: show in your toaster if you want
+  // showToaster(msg);
+}
+
+async function selectTrackAndThenMarble(trackId, marbleId) {
+  if (isSwitchingTrack) return;
+  isSwitchingTrack = true;
+
+  const prevTrackId = currentTrackId;
+  try {
+    selectTrackWithoutMapReset(trackId);
+    
+    // 🔹 Wait for orientation reset and initial UI updates
+    await new Promise(r => setTimeout(r, 100));
+    
+    selectMarble(marbleId);
+
+    const track = getCurrentTrack();
+    const marble = track.marbles.find(m => m.id === marbleId);
+    if (marble && marble.assignedImage !== null) {
+      // 🔹 Small additional delay to ensure orientation is fully reset
+      await new Promise(r => setTimeout(r, 50));
+      showImageByIndex(marble.assignedImage);
+    }
+ 
+    console.log(`Switched to ${allTracks.get(trackId).name} and selected marble`);
+  } catch (err) {
+    console.error('Switch error', err);
+    if (prevTrackId) selectTrackWithoutMapReset(prevTrackId);
+  } finally {
+    isSwitchingTrack = false;
+  }
+}
 </script>
 
 </body> 
-</html>
+</html>   
