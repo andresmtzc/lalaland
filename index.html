@@ -975,16 +975,13 @@ map.on('click', 'lots-final-click', (e) => {
 map.on('click', 'lots-final-click', (e) => {
   if (e.features.length === 0) return;
 
-   // 🟢 FIX: Check if we're in 360 viewer mode and exit it first
-  const viewerContainer = document.getElementById('viewer-container');
-  if (viewerContainer && viewerContainer.style.display !== 'none') {
-    // Hide 360 viewer
-    viewerContainer.style.display = 'none';
-    
-    // Reset viewer state
-    if (typeof resetViewerState === 'function') {
-      resetViewerState();
-    }
+  // 🟢 FIX: Check if we're in 360 viewer mode and exit to list mode
+  const modal = document.getElementById('lotModal');
+  if (modal.classList.contains('viewer-mode')) {
+    close360ViewerInModal();
+    e.preventDefault();
+    e.originalEvent.stopPropagation();
+    return; // Exit here - just close viewer, don't open the clicked lot
   }
 
   // 🟢 UPDATED: Check edit mode first (now includes marble check)
@@ -1013,7 +1010,6 @@ map.on('click', 'lots-final-click', (e) => {
   removeSideLengthLabels();
   
   // 🟢 FIX: Check if we're already in detail view
-  const modal = document.getElementById('lotModal');
   const isInDetailView = modal.classList.contains('info-mode') && isDetailOpen;
   
   if (isInDetailView) {
@@ -2140,14 +2136,6 @@ function setupLotClickHandlers() {
 
       if (status === 'sold') return;
 
-      // 🟢 NEW: If modal is in viewer mode, close viewer first
-      const modal = document.getElementById('lotModal');
-      if (modal.classList.contains('viewer-mode')) {
-        close360ViewerInModal();
-        // Small delay to let viewer close before opening lot details
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
       // If a detail is already open, switch to the new lot
       if (isDetailOpen) {
         // Save the current map state before switching
@@ -2506,7 +2494,7 @@ backButton.addEventListener('click', () => {
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const calendly = document.getElementById('calendlyEmbed');
 
-  // 🟢 FIX: Handle 360 viewer back navigation first
+  // 🟢 FIX: Handle 360 viewer back navigation FIRST
   if (modal.classList.contains('viewer-mode')) {
     close360ViewerInModal();
     return;
@@ -7422,7 +7410,6 @@ function close360ViewerInModal() {
   const backButton = document.getElementById('backButton');
   const headerLotNumber = document.getElementById('headerLotNumber');
   const headerFracc = document.getElementById('headerFracc');
-
   const plusButton = document.querySelector('.plus-button');
 
   // Hide viewer
@@ -7440,7 +7427,7 @@ function close360ViewerInModal() {
   if (headerFracc) headerFracc.textContent = 'SANTTE';
   if (headerLotNumber) headerLotNumber.style.display = 'none';
   
-  // Hide back button, hide plus button (list mode doesn't need them)
+  // Hide back button and plus button (list mode doesn't need them)
   if (backButton) backButton.style.display = 'none';
   if (plusButton) plusButton.style.display = 'none';
 
@@ -7451,7 +7438,7 @@ function close360ViewerInModal() {
   document.getElementById('communitySearchBtn')?.classList.remove('hide');
   document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
 
-  // === Re-arm scrolling + hover (same as back button) ===
+  // Re-arm scrolling + hover (same as back button from detail mode)
   try {
     enableInfiniteScrollbar();
   } catch {}
