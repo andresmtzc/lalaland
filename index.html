@@ -983,18 +983,18 @@ map.on('click', 'lots-final-click', (e) => {
     const lotName = feature.properties.name;
     const lot = lotData.find(l => l.name === lotName);
     
-    // Close the viewer
-    close360ViewerInModal();
-    
-    // Scroll list to the clicked lot
+    // Get the baseIndex to scroll to
+    let targetBaseIndex = null;
     if (lot) {
-      const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
-      if (baseIndex !== -1) {
-        requestAnimationFrame(() => {
-          scrollToBaseIndex(baseIndex, true);
-        });
+      targetBaseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+      // If baseLots is empty (data not loaded yet), store the lot number for later
+      if (targetBaseIndex === -1 && !isDataLoaded) {
+        targetBaseIndex = extractLotNumber(lot.name);
       }
     }
+    
+    // Close the viewer and pass the target index
+    close360ViewerInModal(targetBaseIndex);
     
     e.preventDefault();
     e.originalEvent.stopPropagation();
@@ -7419,60 +7419,107 @@ function open360ViewerInModal() {
   });
 }
 
-function close360ViewerInModal() {
+function close360ViewerInModal(targetBaseIndex = null) {
   const modal = document.getElementById('lotModal');
   const viewerContainer = document.getElementById('viewer-container');
+  const wrapper = document.querySelector('.modal-content-wrapper');
   const lotDetails = document.getElementById('lotDetails');
   const modalInfo = document.getElementById('modalInfo');
+  const customScrollbar = document.getElementById('customScrollbar');
   const backButton = document.getElementById('backButton');
   const headerLotNumber = document.getElementById('headerLotNumber');
   const headerFracc = document.getElementById('headerFracc');
-  const plusButton = document.querySelector('.plus-button');
+  const plusBtn = document.querySelector('.plus-button');
+  const bottomPlus = document.querySelector('.bottom-plus-button');
 
   // Hide viewer
   if (viewerContainer) viewerContainer.style.display = 'none';
-  
-  // Show lot list, hide lot details
-  if (modalInfo) modalInfo.style.display = '';
-  if (lotDetails) lotDetails.style.display = 'none';
 
-  // Update modal classes
-  modal.classList.remove('viewer-mode', 'info-mode');
+  // --- Copy working logic from closeModal ---
+  
+  // Remove all modal mode classes
+  modal.classList.remove('info-mode', 'pin-mode', 'viewer-mode', 'expanded');
   modal.classList.add('lot-mode');
   
-  // Update header back to SANTTE
+  isDetailOpen = false;
+
+  // Reset panes (detail vs list) & content
+  if (wrapper) wrapper.classList.remove('show-details');
+  if (lotDetails) {
+    lotDetails.classList.remove('active');
+    lotDetails.style.display = 'block';
+    lotDetails.innerHTML = '';
+  }
+  if (modalInfo) {
+    modalInfo.style.display = '';
+    modalInfo.style.opacity = '1';
+  }
+  if (customScrollbar) customScrollbar.style.display = '';
+
+  // Reset controls visibility & header
+  if (backButton) backButton.style.display = 'none';
   if (headerFracc) headerFracc.textContent = 'SANTTE';
   if (headerLotNumber) headerLotNumber.style.display = 'none';
-  
-  // Hide back button and plus button (list mode doesn't need them)
-  if (backButton) backButton.style.display = 'none';
-  if (plusButton) plusButton.style.display = 'none';
+  if (plusBtn) plusBtn.style.display = 'none';
+  if (bottomPlus) bottomPlus.style.display = 'none';
 
-  // Update internal state
-  isDetailOpen = false;
-  
+  // Reset internal scroll/animation flags
+  try { scrollHandlerAttached = true; } catch {}
+  try { clampCooldown = false; } catch {}
+
   // Show floating buttons
   document.getElementById('communitySearchBtn')?.classList.remove('hide');
   document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
 
-  // Re-arm scrolling + hover (same as back button from detail mode)
-  try {
-    enableInfiniteScrollbar();
-  } catch {}
+  // --- End copied logic ---
 
-  try {
-    highlightCenter();
-    updateScrollbar();
-  } catch {}
+  // 🟢 Load list data if never loaded before
+  if (!isDataLoaded) {
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    if (loadingSpinner) loadingSpinner.style.display = 'block';
+    
+    fetchLots().then(() => {
+      render();
+      setupLotClickHandlers();
+      
+      try {
+        enableInfiniteScrollbar();
+        highlightCenter();
+        updateScrollbar();
+      } catch {}
 
-  // Recenter the list if needed
-  if (typeof lastOpenedBaseIndex === 'number') {
-    requestAnimationFrame(() => {
-      scrollToBaseIndex(lastOpenedBaseIndex, false);
+      const scrollTarget = (targetBaseIndex !== null && typeof targetBaseIndex === 'number') 
+        ? targetBaseIndex 
+        : (typeof targetBaseIndex === 'string' 
+          ? baseLots.findIndex(l => l.number === targetBaseIndex)
+          : lastOpenedBaseIndex);
+          
+      if (typeof scrollTarget === 'number' && scrollTarget !== -1) {
+        requestAnimationFrame(() => {
+          scrollToBaseIndex(scrollTarget, false);
+        });
+      }
+      
+      if (loadingSpinner) loadingSpinner.style.display = 'none';
+      console.log('List loaded and 360 Viewer closed');
     });
-  }
+  } else {
+    // List already loaded
+    try {
+      enableInfiniteScrollbar();
+      highlightCenter();
+      updateScrollbar();
+    } catch {}
 
-  console.log('360 Viewer closed in modal');
+    const scrollTarget = (targetBaseIndex !== null) ? targetBaseIndex : lastOpenedBaseIndex;
+    if (typeof scrollTarget === 'number' && scrollTarget !== -1) {
+      requestAnimationFrame(() => {
+        scrollToBaseIndex(scrollTarget, false);
+      });
+    }
+    
+    console.log('360 Viewer closed in modal');
+  }
 }
 
 // Update closeModal to handle 360 viewer
@@ -7552,5 +7599,5 @@ function resetViewerState() {
 }
 </script>
 
-</body>  
+</body> 
 </html>
