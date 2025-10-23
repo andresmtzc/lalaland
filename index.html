@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2141,6 +2140,14 @@ function setupLotClickHandlers() {
 
       if (status === 'sold') return;
 
+      // 🟢 NEW: If modal is in viewer mode, close viewer first
+      const modal = document.getElementById('lotModal');
+      if (modal.classList.contains('viewer-mode')) {
+        close360ViewerInModal();
+        // Small delay to let viewer close before opening lot details
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
       // If a detail is already open, switch to the new lot
       if (isDetailOpen) {
         // Save the current map state before switching
@@ -2499,17 +2506,14 @@ backButton.addEventListener('click', () => {
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const calendly = document.getElementById('calendlyEmbed');
 
-  isDetailOpen = false;
-  removeSideLengthLabels(); // keep it
-
-    // 🟢 FIX: Handle 360 viewer back navigation
-  if (viewerContainer && viewerContainer.style.display !== 'none') {
-    // Exit 360 viewer mode, go back to detail view
-    viewerContainer.style.display = 'none';
-    document.getElementById('lotDetails').style.display = 'block';
-    resetViewerState();
+  // 🟢 FIX: Handle 360 viewer back navigation first
+  if (modal.classList.contains('viewer-mode')) {
+    close360ViewerInModal();
     return;
   }
+
+  isDetailOpen = false;
+  removeSideLengthLabels(); // keep it
 
   // If we were in Calendly, just go back to details
   if (calendly && calendly.style.display === 'block') {
@@ -7410,23 +7414,6 @@ function open360ViewerInModal() {
   });
 }
 
-// Update the back button handler to support 360 viewer
-const originalBackButtonHandler = backButton.onclick;
-backButton.onclick = function(e) {
-  const modal = document.getElementById('lotModal');
-  
-  // If in viewer mode, close viewer and show lot list
-  if (modal.classList.contains('viewer-mode')) {
-    close360ViewerInModal();
-    return;
-  }
-  
-  // Otherwise use original handler
-  if (originalBackButtonHandler) {
-    originalBackButtonHandler.call(this, e);
-  }
-};
-
 function close360ViewerInModal() {
   const modal = document.getElementById('lotModal');
   const viewerContainer = document.getElementById('viewer-container');
@@ -7434,24 +7421,26 @@ function close360ViewerInModal() {
   const modalInfo = document.getElementById('modalInfo');
   const backButton = document.getElementById('backButton');
   const headerLotNumber = document.getElementById('headerLotNumber');
+  const headerFracc = document.getElementById('headerFracc');
 
   const plusButton = document.querySelector('.plus-button');
 
   // Hide viewer
   if (viewerContainer) viewerContainer.style.display = 'none';
   
-  // Show lot list
+  // Show lot list, hide lot details
   if (modalInfo) modalInfo.style.display = '';
-  if (lotDetails) lotDetails.style.display = 'block';
+  if (lotDetails) lotDetails.style.display = 'none';
 
   // Update modal classes
-  modal.classList.remove('viewer-mode');
+  modal.classList.remove('viewer-mode', 'info-mode');
   modal.classList.add('lot-mode');
   
-  // Update header
+  // Update header back to SANTTE
+  if (headerFracc) headerFracc.textContent = 'SANTTE';
   if (headerLotNumber) headerLotNumber.style.display = 'none';
   
-  // Hide back button, show plus button
+  // Hide back button, hide plus button (list mode doesn't need them)
   if (backButton) backButton.style.display = 'none';
   if (plusButton) plusButton.style.display = 'none';
 
@@ -7461,6 +7450,23 @@ function close360ViewerInModal() {
   // Show floating buttons
   document.getElementById('communitySearchBtn')?.classList.remove('hide');
   document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
+
+  // === Re-arm scrolling + hover (same as back button) ===
+  try {
+    enableInfiniteScrollbar();
+  } catch {}
+
+  try {
+    highlightCenter();
+    updateScrollbar();
+  } catch {}
+
+  // Recenter the list if needed
+  if (typeof lastOpenedBaseIndex === 'number') {
+    requestAnimationFrame(() => {
+      scrollToBaseIndex(lastOpenedBaseIndex, false);
+    });
+  }
 
   console.log('360 Viewer closed in modal');
 }
@@ -7544,4 +7550,3 @@ function resetViewerState() {
 
 </body> 
 </html>
- 
