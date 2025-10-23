@@ -976,6 +976,18 @@ map.on('click', 'lots-final-click', (e) => {
 map.on('click', 'lots-final-click', (e) => {
   if (e.features.length === 0) return;
 
+   // 🟢 FIX: Check if we're in 360 viewer mode and exit it first
+  const viewerContainer = document.getElementById('viewer-container');
+  if (viewerContainer && viewerContainer.style.display !== 'none') {
+    // Hide 360 viewer
+    viewerContainer.style.display = 'none';
+    
+    // Reset viewer state
+    if (typeof resetViewerState === 'function') {
+      resetViewerState();
+    }
+  }
+
   // 🟢 UPDATED: Check edit mode first (now includes marble check)
   if (handleEditClick(e)) return;
 
@@ -2487,10 +2499,17 @@ backButton.addEventListener('click', () => {
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const calendly = document.getElementById('calendlyEmbed');
 
-
-
   isDetailOpen = false;
   removeSideLengthLabels(); // keep it
+
+    // 🟢 FIX: Handle 360 viewer back navigation
+  if (viewerContainer && viewerContainer.style.display !== 'none') {
+    // Exit 360 viewer mode, go back to detail view
+    viewerContainer.style.display = 'none';
+    document.getElementById('lotDetails').style.display = 'block';
+    resetViewerState();
+    return;
+  }
 
   // If we were in Calendly, just go back to details
   if (calendly && calendly.style.display === 'block') {
@@ -2989,9 +3008,63 @@ modalInfo.addEventListener('wheel', (e) => {
 
 
 
+
 function openModal(lot = null, baseIndex = 0) {
   const modal = document.getElementById('lotModal');
   const wasHidden = !modal.classList.contains('show');
+
+  // 🟢 FIX: Reset ALL modal modes and content areas when opening fresh
+  if (wasHidden || !lot) {
+    // Reset modal classes
+    modal.classList.remove('pin-mode', 'info-mode', 'lot-mode', 'expanded');
+    
+    // Reset content areas
+    const lotDetails = document.getElementById('lotDetails');
+    const modalInfo = document.getElementById('modalInfo');
+    const calendly = document.getElementById('calendlyEmbed');
+    const viewerContainer = document.getElementById('viewer-container');
+    const customScrollbar = document.getElementById('customScrollbar');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    
+    if (lotDetails) {
+      lotDetails.classList.remove('active');
+      lotDetails.style.display = 'block';
+      lotDetails.innerHTML = '';
+    }
+    
+    if (modalInfo) {
+      modalInfo.style.display = '';
+      modalInfo.style.opacity = '1';
+      modalInfo.innerHTML = ''; // Clear any existing content
+    }
+    
+    if (calendly) calendly.style.display = 'none';
+    if (viewerContainer) viewerContainer.style.display = 'none';
+    if (customScrollbar) customScrollbar.style.display = '';
+    if (loadingSpinner) loadingSpinner.style.display = 'block';
+    
+    // Reset UI controls
+    const backButton = document.getElementById('backButton');
+    const plusButton = document.querySelector('.plus-button');
+    const bottomPlusButton = document.querySelector('.bottom-plus-button');
+    const headerLotNumber = document.getElementById('headerLotNumber');
+    
+    if (backButton) backButton.style.display = 'none';
+    if (plusButton) plusButton.style.display = 'none';
+    if (bottomPlusButton) bottomPlusButton.style.display = 'none';
+    if (headerLotNumber) headerLotNumber.style.display = 'none';
+    
+    // Reset content wrapper
+    const contentWrapper = document.querySelector('.modal-content-wrapper');
+    if (contentWrapper) contentWrapper.classList.remove('show-details');
+    
+    // Reset internal states
+    isDetailOpen = false;
+    scrollHandlerAttached = true;
+    
+    // Reset auth controls
+    document.getElementById('authControls')?.classList.remove('hide-in-detail');
+  }
 
   // Check if we're just switching lots in an already-open modal
   const isJustSwitchingLots = wasHidden === false && lot && !infoMode && !modal.classList.contains('pin-mode');
@@ -3006,33 +3079,33 @@ function openModal(lot = null, baseIndex = 0) {
 
   // 🔥 CONSOLIDATED: Apply fraccionamiento filter function
   function applyFraccFilter(shouldRender = true) {
-  try {
-    // Get fracc directly from the lot data - this should work if your Supabase data is correct
-    const fracc = (lot && (lot.fraccionamiento || '').toString().trim()) || 'santte1';
-    
-    const modalEl = document.getElementById('lotModal');
-    const currentFracc = modalEl?.dataset.fracc || '';
-    
-    // Only re-filter if the fraccionamiento has changed
-    if (fracc !== currentFracc) {
-      if (modalEl) modalEl.dataset.fracc = fracc;
-      const headerFraccEl = document.getElementById('headerFracc');
-      if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
-      if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
-        // Filter baseLots by fraccionamiento
-        baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
-        updateLotsArray();
-        // Only re-render when requested
-        if (shouldRender) {
-          render();
+    try {
+      // Get fracc directly from the lot data - this should work if your Supabase data is correct
+      const fracc = (lot && (lot.fraccionamiento || '').toString().trim()) || 'santte1';
+      
+      const modalEl = document.getElementById('lotModal');
+      const currentFracc = modalEl?.dataset.fracc || '';
+      
+      // Only re-filter if the fraccionamiento has changed
+      if (fracc !== currentFracc) {
+        if (modalEl) modalEl.dataset.fracc = fracc;
+        const headerFraccEl = document.getElementById('headerFracc');
+        if (headerFraccEl) headerFraccEl.textContent = fracc ? fracc.toUpperCase() : 'SANTTE';
+        if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
+          // Filter baseLots by fraccionamiento
+          baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
+          updateLotsArray();
+          // Only re-render when requested
+          if (shouldRender) {
+            render();
+          }
         }
       }
+      if (window.resetUnitButtons) window.resetUnitButtons();
+    } catch (e) {
+      console.warn('Fraccionamiento filter failed:', e);
     }
-    if (window.resetUnitButtons) window.resetUnitButtons();
-  } catch (e) {
-    console.warn('Fraccionamiento filter failed:', e);
   }
-}
 
   // If just switching lots, handle it efficiently without resetting everything
   if (isJustSwitchingLots) {
@@ -3066,32 +3139,6 @@ function openModal(lot = null, baseIndex = 0) {
     return; // Exit early - no need to reset the modal
   }
 
-  // 🧹 Reset modal state (only when actually opening/closing modal, not switching lots)
-  headerLotNumber.style.display = 'none';
-  document.querySelector('.modal-content-wrapper').classList.remove('show-details');
-  lotDetails.classList.remove('active');
-  backButton.style.display = 'none';
-  document.querySelector('.plus-button').style.display = 'none';
-  modal.classList.remove('info-mode','expanded', 'lot-mode');
-  scrollHandlerAttached = true;
-  document.getElementById('calendlyEmbed').style.display = 'none';
-  document.getElementById('lotDetails').style.display = 'block';
-
-  // 🔶 If we're going to list mode, clear previous INFO content *before showing the modal*
-  const modalInfoEl = document.getElementById('modalInfo');
-  const customScrollbarEl = document.getElementById('customScrollbar');
-  const spinnerEl = document.getElementById('loadingSpinner');
-
-  if (!infoMode) {
-    // Only clear content if modal wasn't already open or we're not just switching lots
-    if (wasHidden || !lot) {
-      modalInfoEl.innerHTML = '';
-      customScrollbarEl.style.display = '';   // make sure scrollbar is back for list
-      spinnerEl.style.display = 'block';      // show spinner immediately
-      modalInfoEl.style.opacity = '0';        // hide list container until rendered
-    }
-  }
-
   document.getElementById('communitySearchBtn')?.classList.add('hide');
   document.getElementById('lalalandInfoBtn')?.classList.add('hide');
   
@@ -3103,6 +3150,11 @@ function openModal(lot = null, baseIndex = 0) {
   // 🔸 INFO MODE short-circuit (your existing block)
   if (infoMode) {
     modal.classList.add('expanded', 'info-mode');
+    
+    const modalInfoEl = document.getElementById('modalInfo');
+    const customScrollbarEl = document.getElementById('customScrollbar');
+    const spinnerEl = document.getElementById('loadingSpinner');
+    
     modalInfoEl.innerHTML = `
       <div style="padding:20px; color:#8a8880; height:2000px;">
         <h2 style="color:#a17345; margin-bottom:10px;">Sobre Santte 2</h2>
@@ -3116,7 +3168,7 @@ function openModal(lot = null, baseIndex = 0) {
     scrollHandlerAttached = false;
     infoMode = false;
 
-document.getElementById('authControls').classList.remove('hide-in-detail');
+    document.getElementById('authControls').classList.remove('hide-in-detail');
 
     // ✅ Use natural scrollbar for info page
     setTimeout(() => {
@@ -3131,6 +3183,10 @@ document.getElementById('authControls').classList.remove('hide-in-detail');
   // 👇 Normal list flow
   modal.classList.add('lot-mode');
   modal.classList.remove('info-mode');
+
+  const modalInfoEl = document.getElementById('modalInfo');
+  const customScrollbarEl = document.getElementById('customScrollbar');
+  const spinnerEl = document.getElementById('loadingSpinner');
 
   const doScrollAndHighlight = () => {
     const scrollToIndex = lot
@@ -3195,7 +3251,6 @@ document.getElementById('authControls').classList.remove('hide-in-detail');
     }
   }
 }
-
 
 
 
@@ -5086,7 +5141,7 @@ Zoom: ${zoom}
     ];
     const N = 8;                 // Keep 8 positions in the circle
     const baseDeg = 0;           // 0° rotation
-    const zeroAtTop = true;      // 0° at top
+    const zeroAtTop = true;      // 0° at top 
     const rootStyles = getComputedStyle(document.documentElement);
     const btnPx  = parseFloat(rootStyles.getPropertyValue('--btn')) || 56;
     const diamPx = parseFloat(rootStyles.getPropertyValue('--orbit-diam')) || 160;
@@ -5357,6 +5412,12 @@ function getCurrentFraccZoom() {
       const modal = document.getElementById('lotModal');
       if (!modal) return;
       
+      
+       // 🔥 ADD THIS: Hide 360 viewer when closing modal
+  const viewerContainer = document.getElementById('viewer-container');
+  if (viewerContainer) {
+    viewerContainer.style.display = 'none';
+  }
       // Clear URL first
       clearLotURL();
       
@@ -7295,7 +7356,7 @@ function open360ViewerInModal() {
   const backButton = document.getElementById('backButton');
   const headerFracc = document.getElementById('headerFracc');
   const headerLotNumber = document.getElementById('headerLotNumber');
-  const modalHeader = document.querySelector('.modal-header');
+
   const plusButton = document.querySelector('.plus-button');
   const bottomPlus = document.querySelector('.bottom-plus-button');
 
@@ -7313,12 +7374,9 @@ function open360ViewerInModal() {
   modal.classList.add('viewer-mode');
   modal.classList.remove('pin-mode', 'info-mode', 'lot-mode');
   
-  // Hide header for full screen
-  if (modalHeader) modalHeader.style.display = 'none';
-  
-  // Expand viewer to full height
-  if (contentWrapper) contentWrapper.style.height = '100%';
-  if (viewerContainer) viewerContainer.style.height = '100%';
+  // Update header
+  if (headerFracc) headerFracc.textContent = 'STREET VIEW';
+  if (headerLotNumber) headerLotNumber.style.display = 'none';
   
   // Show back button, hide plus buttons
   if (backButton) backButton.style.display = 'flex';
@@ -7376,7 +7434,7 @@ function close360ViewerInModal() {
   const modalInfo = document.getElementById('modalInfo');
   const backButton = document.getElementById('backButton');
   const headerLotNumber = document.getElementById('headerLotNumber');
-  const modalHeader = document.querySelector('.modal-header');
+
   const plusButton = document.querySelector('.plus-button');
 
   // Hide viewer
@@ -7390,14 +7448,8 @@ function close360ViewerInModal() {
   modal.classList.remove('viewer-mode');
   modal.classList.add('lot-mode');
   
-  // Show header again
-  if (modalHeader) modalHeader.style.display = '';
+  // Update header
   if (headerLotNumber) headerLotNumber.style.display = 'none';
-  
-  // Reset viewer height
-  if (viewerContainer) viewerContainer.style.height = '';
-  const contentWrapper = document.querySelector('.modal-content-wrapper');
-  if (contentWrapper) contentWrapper.style.height = '';
   
   // Hide back button, show plus button
   if (backButton) backButton.style.display = 'none';
@@ -7472,6 +7524,20 @@ async function selectTrackAndThenMarble(trackId, marbleId) {
     if (prevTrackId) selectTrackWithoutMapReset(prevTrackId);
   } finally {
     isSwitchingTrack = false;
+  }
+}
+
+function resetViewerState() {
+  // Reset 360 viewer globals
+  currentTrackId = null;
+  selectedMarbleId = null;
+  currentImages = [];
+  currentImageIndex = -1;
+  isSwitchingTrack = false;
+  
+  // Reset any Three.js scene if needed
+  if (renderer) {
+    // Clean up Three.js resources if necessary
   }
 }
 </script>
