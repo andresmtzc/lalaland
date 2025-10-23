@@ -272,6 +272,16 @@
   </svg>
 </button>
 
+<!-- Compare BUTTON -->
+<button id="compareBtn" class="gps-button" title="Compare Lots" style="bottom: 440px;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="black" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Left cover -->
+  <path d="M2.5 5c3.2-1.6 6.5-1.6 9.5 0v14c-3.2-1.6-6.5-1.6-9.5 0z"/>
+  <!-- Right cover -->
+  <path d="M21.5 5c-3.2-1.6-6.5-1.6-9.5 0v14c3.2-1.6 6.5-1.6 9.5 0z"/>
+</svg> 
+</button>
+
 <!-- Edit BUTTON -->
 <button id="editBtn" class="gps-button" title="Edit Button" style="bottom: 380px;">
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -4818,6 +4828,7 @@ function toggleAuthButtons(isAuthenticated) {
   const addPinBtn = document.getElementById('addPinBtn');
   const gpsButton = document.getElementById('gpsButton');
   const driveBtn = document.getElementById('driveBtn');
+  const compareBtn = document.getElementById('compareBtn'); // Added compareBtn
   const editBtn = document.getElementById('editBtn'); // Added editBtn
 
   console.log('Toggle buttons - Authenticated:', isAuthenticated);
@@ -4833,6 +4844,9 @@ function toggleAuthButtons(isAuthenticated) {
   }
   if (driveBtn) {
     driveBtn.classList.toggle('hide-button', !isAuthenticated);
+  }
+  if (compareBtn) { // Added compareBtn condition
+    compareBtn.classList.toggle('hide-button', !isAuthenticated);
   }
   if (editBtn) { // Added editBtn condition
     editBtn.classList.toggle('hide-button', !isAuthenticated);
@@ -5855,7 +5869,48 @@ function initChatAvailability() {
 <script>
 // ===== EDIT MODE FUNCTIONALITY =====
 let editMode = false;
+let compareMode = false;
 let selectedLots = new Set();
+
+// Compare button event listener
+document.getElementById('compareBtn').addEventListener('click', function() {
+    compareMode = !compareMode;
+    
+    if (compareMode) {
+        // Enter compare mode
+        this.style.boxShadow = '0 0 0 3px rgba(255,132,0,1)';
+        this.style.backgroundColor = '#ff8400';
+        showToaster('🔍 Compare mode ON - Click lots to compare');
+        console.log('Compare mode ON');
+        
+        // 🟢 FIX: Ensure data is loaded before compare mode
+        if (!isDataLoaded) {
+            fetchLots().then(() => {
+                console.log('Data loaded for compare mode');
+            });
+        }
+    } else {
+        // Exit compare mode
+        this.style.boxShadow = '';
+        this.style.backgroundColor = '#fcfaf3';
+        selectedLots.clear();
+        removeEditOutlines();
+        
+        // 🟢 RESTORE original baseLots
+        if (window.originalBaseLots) {
+            baseLots = window.originalBaseLots;
+            updateLotsArray();
+            window.originalBaseLots = null; // Clean up
+        }
+        
+        // Restore normal list
+        if (isDataLoaded) {
+            render();
+        }
+        showToaster('Compare mode OFF');
+        console.log('Compare mode OFF');
+    }
+});
 
 // Edit button event listener
 document.getElementById('editBtn').addEventListener('click', function() {
@@ -5865,34 +5920,20 @@ document.getElementById('editBtn').addEventListener('click', function() {
         // Enter edit mode
         this.style.boxShadow = '0 0 0 3px rgba(255,132,0,1)';
         this.style.backgroundColor = '#ff8400';
-        showToaster('✏️ Edit mode ON - Click lots to compare');
+        showToaster('✏️ Edit mode ON - Edit prices in detail view');
         console.log('Edit mode ON');
 } else {
     // Exit edit mode
     this.style.boxShadow = '';
     this.style.backgroundColor = '#fcfaf3';
-    selectedLots.clear();
-    removeEditOutlines();
-    
-    // 🟢 RESTORE original baseLots
-    if (window.originalBaseLots) {
-        baseLots = window.originalBaseLots;
-        updateLotsArray();
-        window.originalBaseLots = null; // Clean up
-    }
-    
-    // Restore normal list
-    if (isDataLoaded) {
-        render();
-    }
     showToaster('Edit mode OFF');
     console.log('Edit mode OFF');
 }
 });
 
-// Edit mode click handler
+// Compare mode click handler (renamed from handleEditClick)
 function handleEditClick(e) {
-  if (!editMode) return false;
+  if (!compareMode) return false;
   
   // 🟢 CHECK IF CLICKING ON MARBLES (NOT LOTS)
   const marbleFeatures = map.queryRenderedFeatures(e.point, { 
@@ -5904,7 +5945,7 @@ function handleEditClick(e) {
     return false;
   }
   
-  console.log('Edit click detected');
+  console.log('Compare click detected');
   
   // Rest of your existing edit mode logic...
   if (e.features && e.features.length > 0) {
@@ -6048,9 +6089,15 @@ function updateModalList() {
         return;
     }
     
-    // Auto-open modal if closed
+    // 🟢 FIX: Don't call openModal() - just show modal if needed
     if (!modal.classList.contains('show')) {
-        openModal(); // Open without specific lot
+        modal.classList.add('show', 'lot-mode');
+        modal.style.display = 'block';
+        adjustMapForModal();
+        
+        // Hide floating buttons
+        document.getElementById('communitySearchBtn')?.classList.add('hide');
+        document.getElementById('lalalandInfoBtn')?.classList.add('hide');
     }
     
     // Get selected lots data
@@ -6101,7 +6148,7 @@ function updateModalList() {
 // Update outlines on map move
 if (map) {
     map.on('move', function() {
-        if (editMode && selectedLots.size > 0) {
+        if (compareMode && selectedLots.size > 0) {
             // For map layers, they auto-update with map movement
         }
     });
