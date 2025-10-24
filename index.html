@@ -3793,7 +3793,7 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
   PS.createPinAt = async function (lngLat) {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
-      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat, heading: 0 }).select().single();
+      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat, heading: 0, title: 'PIN' }).select().single();
     if (error) { console.error(error); toast('Could not create pin'); return; }
     PS.addMarker(data);
     toast('Pin added');
@@ -3980,6 +3980,54 @@ PS.openPinInModal = async function (pin) {
 
   modal.classList.add('pin-mode');
   modal.classList.remove('lot-mode');
+
+  // Set header title for pin
+  const headerFracc = document.getElementById('headerFracc');
+  const headerLotNumber = document.getElementById('headerLotNumber');
+  
+  if (headerFracc) {
+    headerFracc.textContent = pin.title || 'PIN';
+    headerLotNumber.style.display = 'none';
+    
+    // Make header editable if authenticated
+    if (isAuthenticated) {
+      headerFracc.contentEditable = 'true';
+      headerFracc.style.cursor = 'text';
+      headerFracc.style.outline = 'none';
+      
+      // Save on blur
+      headerFracc.onblur = async function() {
+        const newTitle = this.textContent.trim() || 'PIN';
+        if (newTitle !== pin.title) {
+          pin.title = newTitle;
+          
+          // Save to database
+          const { error } = await window.supabaseClient
+            .from('pins')
+            .update({ title: newTitle })
+            .eq('id', pin.id);
+          
+          if (error) {
+            console.warn('Failed to save pin title', error);
+          } else {
+            console.log('Pin title saved:', newTitle);
+          }
+        }
+      };
+      
+      // Allow Enter key to blur/save
+      headerFracc.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.blur();
+        }
+      };
+    } else {
+      headerFracc.contentEditable = 'false';
+      headerFracc.style.cursor = 'default';
+    }
+  }
+
   if (backButton) backButton.style.display = 'none';
   document.querySelector('.plus-button')?.style && (document.querySelector('.plus-button').style.display = 'none');
   document.querySelector('.bottom-plus-button')?.style && (document.querySelector('.bottom-plus-button').style.display = 'none');
@@ -4009,16 +4057,6 @@ PS.openPinInModal = async function (pin) {
   
   // Only show controls if authenticated
   const authControlsHtml = isAuthenticated ? `
-    <!-- Heading control (on top of photo) -->
-    <div style="display:flex; align-items:center; gap:10px; color:#fff;">
-      <div style="font-size:12px; opacity:.85; min-width:70px;">Heading</div>
-      <input id="ps-heading-${pin.id}" type="range" min="0" max="359" step="1"
-             value="${currentHeading}" style="flex:1;">
-      <input id="ps-heading-num-${pin.id}" type="number" min="0" max="359" step="1"
-             value="${currentHeading}"
-             style="width:64px; padding:4px 6px; border:1px solid #ddd; border-radius:6px; background:#fff; color:#111;">
-    </div>
-
     <!-- Actions (Upload / Delete) -->
     <div style="display:flex; gap:10px; align-items:center;">
       <label style="display:inline-block; background:#ff8400; color:#fff; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">
@@ -4093,28 +4131,6 @@ PS.openPinInModal = async function (pin) {
       if (ok) { try { modal.classList.remove('show'); modal.style.display = 'none'; } catch {} }
     });
 
-    // heading controls
-    const range = container.querySelector(`#ps-heading-${pin.id}`);
-    const num   = container.querySelector(`#ps-heading-num-${pin.id}`);
-    const syncPair = (v) => { range.value = v; num.value = v; };
-    const updateLive = (v) => PS.setPinHeading(pin.id, Number(v), { persist:false });
-    const saveDebounced = ((fn)=>{ let t; return (v)=>{ clearTimeout(t); t=setTimeout(()=>fn(v),300); }; })
-      (async (v) => {
-        await PS.setPinHeading(pin.id, Number(v), { persist:true });
-        const rec = PS.markers.get(pin.id); if (rec) rec.pin.heading = Number(v);
-      });
-
-    range.addEventListener('input',  (e) => { syncPair(e.target.value); updateLive(e.target.value); });
-    range.addEventListener('change', (e) => saveDebounced(e.target.value));
-    num.addEventListener('input',    (e) => {
-      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
-      syncPair(v); updateLive(v);
-    });
-    num.addEventListener('change',   (e) => {
-      const v = Math.max(0, Math.min(359, Number(e.target.value || 0)));
-      syncPair(v); saveDebounced(v);
-    });
-
     // upload: replace full-width image (no thumbnails)
     const input = container.querySelector(`#ps-upload-${pin.id}`);
     input.addEventListener('change', async (e) => {
@@ -4183,7 +4199,7 @@ PS.openPinInModal = async function (pin) {
   PS.loadPins = async function () {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
-      .from('pins').select('id,lng,lat,heading').order('created_at', { ascending: true });
+      .from('pins').select('id,lng,lat,heading,title').order('created_at', { ascending: true });
     if (error) return;
 
     _ensureConeLayer();
