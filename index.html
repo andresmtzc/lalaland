@@ -932,18 +932,14 @@ map.on('click', 'lots-final-click', (e) => {
       // Don't close if clicking inside modal
       if (e.originalEvent?.target.closest('#lotModal')) return;
   
-   // Check if clicking on lots OR cones OR marbles
+   // Check if clicking on lots OR marbles
       const lotFeatures = map.queryRenderedFeatures(e.point, { 
         layers: ['lots-final-click'] 
       });
       
-      const coneFeatures = map.queryRenderedFeatures(e.point, { 
-        layers: ['ps-cones-fill'] 
+      const marbleFeatures = map.queryRenderedFeatures(e.point, { 
+        layers: ['marbles-click-layer'] 
       });
-
-        const marbleFeatures = map.queryRenderedFeatures(e.point, { 
-    layers: ['marbles-click-layer'] 
-  });
       
       // If clicking on a lot while pin modal is open
       if (lotFeatures.length > 0 && document.getElementById('lotModal').classList.contains('pin-mode')) {
@@ -958,9 +954,9 @@ map.on('click', 'lots-final-click', (e) => {
         }
       }
       
-  // Only close if clicking outside lots, cones, AND marbles
-  if (lotFeatures.length === 0 && coneFeatures.length === 0 && marbleFeatures.length === 0) {
-    closeModal();
+      // Only close if clicking outside lots AND marbles
+      if (lotFeatures.length === 0 && marbleFeatures.length === 0) {
+        closeModal();
       }
     });
 
@@ -3590,18 +3586,12 @@ function hideCalendlyEmbed() {
   PS._mapClickHandler = null;
   PS._isVisible = false;       // markers start hidden (button is now always visible)
 
-  // === Cone visibility & size ===
-  PS._conesVisible = false; 
-  PS._coneFillOpacity = 0.30;  // final fill opacity when visible
-  PS._coneLineOpacity = 0;     // final line opacity when visible
-  PS.coneRadiusMeters = 30;    // cone length (meters)
-  PS.coneFovDegrees   = 60;    // cone width (degrees)
+  // Cone visualization removed
 
-  // GeoJSON store for all cone triangles
-  PS._coneFC = { type: 'FeatureCollection', features: [] };
+  // Cone visualization removed
 
   // Track pins awaiting cone appearance order
-  PS._pinsAwaitingCone = new Set();  // ids that will get cone after dot is visible
+  PS._pinsAwaitingCone = new Set();  // ids awaiting reveal animation
 
   const toast = (m, t=2500) => { try{ window.showToaster?.(m, t);}catch{} };
   const debounce = (fn, wait=400) => { let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), wait); }; };
@@ -3651,120 +3641,11 @@ function hideCalendlyEmbed() {
     return [ ((λ2 * 180) / Math.PI + 540) % 360 - 180, (φ2 * 180) / Math.PI ];
   }
 
-  // Build a triangular cone polygon for a pin
-  function _buildConeFeature(pin) {
-    const heading = ((pin.heading ?? 0) % 360 + 360) % 360;
-    const half = PS.coneFovDegrees / 2;
-    const leftBrg  = heading - half;
-    const rightBrg = heading + half;
 
-    const pLeft  = destination(pin.lng, pin.lat, PS.coneRadiusMeters, leftBrg);
-    const pRight = destination(pin.lng, pin.lat, PS.coneRadiusMeters, rightBrg);
 
-    return {
-      type: 'Feature',
-      properties: { role: 'cone', pin_id: pin.id, heading },
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[
-          [pin.lng, pin.lat],
-          pLeft,
-          pRight,
-          [pin.lng, pin.lat]
-        ]]
-      }
-    };
-  }
 
-  function _ensureConeLayer() {
-  if (!window.map) return;
-  if (!map.getSource('ps-cones')) {
-    map.addSource('ps-cones', { type: 'geojson', data: PS._coneFC });
-  }
-  if (!map.getLayer('ps-cones-fill')) {
-    map.addLayer({
-      id: 'ps-cones-fill',
-      type: 'fill',
-      source: 'ps-cones',
-      paint: {
-        'fill-color': '#ff8400',
-        'fill-opacity': 0 // start hidden
-      },
-      filter: ['==', ['get', 'role'], 'cone']
-    });
-  } 
-  if (!map.getLayer('ps-cones-outline')) {
-    map.addLayer({
-      id: 'ps-cones-outline',
-      type: 'line',
-      source: 'ps-cones',
-      paint: {
-        'line-color': '#ff8400',
-        'line-width': 0, 
-        'line-opacity': 0 // start hidden
-      },
-      filter: ['==', ['get', 'role'], 'cone']
-    });
-  }
-  
-  // Add click handler for cone layer (only once)
-  if (!map._coneClickHandlerAdded) {
-    map.on('click', 'ps-cones-fill', (e) => {
-      if (e.features.length > 0) {
-        const pinId = e.features[0].properties.pin_id;
-        const pinRec = PS.markers.get(pinId);
-        if (pinRec) {
-          // Prevent the event from bubbling to the map's click handler
-          e.preventDefault();
-          e.originalEvent.stopPropagation();
-          e.originalEvent.stopImmediatePropagation();
-          
-          PS.openPinInModal(pinRec.pin);
-        }
-      }
-    });
-    
-    map._coneClickHandlerAdded = true;
-  }
-  
-  try {
-    map.setPaintProperty('ps-cones-fill', 'fill-opacity-transition', { duration: 250 });
-    map.setPaintProperty('ps-cones-outline', 'line-opacity-transition', { duration: 250 });
-  } catch {}
-}
 
-  function _syncConesSource() {
-    const src = map?.getSource('ps-cones');
-    if (src) src.setData(PS._coneFC);
-  }
 
-  function _addConeFeatureNow(pin) {
-    // upsert feature and sync source
-    const idx = PS._coneFC.features.findIndex(f => f.properties?.pin_id === pin.id);
-    const feat = _buildConeFeature(pin);
-    if (idx >= 0) PS._coneFC.features[idx] = feat;
-    else PS._coneFC.features.push(feat);
-    _syncConesSource();
-  }
-
-  function _removeConeForPinId(pinId) {
-    const before = PS._coneFC.features.length;
-    PS._coneFC.features = PS._coneFC.features.filter(f => f.properties?.pin_id !== pinId);
-    if (PS._coneFC.features.length !== before) _syncConesSource();
-  }
-
-function _ensureConesShown() {
-  if (!window.map) return;
-  // Ensure sources/layers exist before setting paint
-  _ensureConeLayer(); // <— safe no-op if already present
-
-  if (!PS._conesVisible) {
-    const fill = PS._coneFillOpacity, line = PS._coneLineOpacity;
-    map.setPaintProperty('ps-cones-fill', 'fill-opacity', fill);
-    map.setPaintProperty('ps-cones-outline', 'line-opacity', line);
-    PS._conesVisible = true;
-  }
-}
 
   // ---- Add Pin button (ALWAYS visible now)
   PS.addAddPinButton = function () {
@@ -3817,7 +3698,7 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
     toast('Pin added');
   };
 
-  // ---- Delete pin (DB + local cleanup + cone)
+  // ---- Delete pin (DB + local cleanup)
   PS.deletePin = async function (pinId) {
     try {
       await window.supabaseReady;
@@ -3828,7 +3709,7 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
       // Optimistic local cleanup (RT delete will also do this)
       const rec = PS.markers.get(pinId);
       if (rec) { rec.marker.remove(); PS.markers.delete(pinId); }
-      _removeConeForPinId(pinId);
+
 
       toast('Pin deleted');
       return true;
@@ -3853,7 +3734,7 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
     return el;
   };
 
-  // ---- Add marker + schedule cone strictly AFTER dot is visible
+  // ---- Add marker with reveal animation
   PS.addMarker = function (pin) {
     const updating = PS.markers.has(pin.id);
     if (updating) {
@@ -3871,11 +3752,6 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
     // Add marker to map immediately if pins are already visible
     if (PS._isVisible && window.map) {
       marker.addTo(map);
-      // schedule cone AFTER this dot paints (2 RAFs)
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        _addConeFeatureNow(pin);
-        _ensureConesShown();
-      }));
     } else {
       // Initial load path: marker is not yet on map; _revealMarkers will add + fade-in.
       PS._pinsAwaitingCone.add(pin.id);
@@ -3889,7 +3765,7 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
       const rec = PS.markers.get(pin.id);
       if (rec) {
         rec.pin.lng = ll.lng; rec.pin.lat = ll.lat;
-        _addConeFeatureNow(rec.pin); // move cone with pin
+
       }
     });
 
@@ -3909,7 +3785,6 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
     if (!rec) return;
     const h = (Math.round(newHeading) % 360 + 360) % 360;
     rec.pin.heading = h;
-    _addConeFeatureNow(rec.pin); // redraw cone polygon
     if (persist) {
       await window.supabaseReady;
       const { error } = await window.supabaseClient
@@ -3918,7 +3793,7 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
     }
   };
 
-  // ---- Reveal markers (fade-in) and then reveal cones per-pin on transition end
+  // ---- Reveal markers (fade-in animation)
   PS._revealMarkers = function () {
     if (PS._isVisible) return;
     PS._isVisible = true;
@@ -3935,16 +3810,13 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
       el.style.opacity = '0';
       el.style.transition = 'opacity 600ms ease';
 
-      // After fade finishes for this dot, add its cone, then maybe show layer
       const onDone = () => {
         el.removeEventListener('transitionend', onDone);
         if (awaitingIds.has(pin.id)) {
-          _addConeFeatureNow(pin);
           awaitingIds.delete(pin.id);
         }
         revealedCount++;
         if (revealedCount === totalToReveal) {
-          _ensureConesShown(); // only after all initially pending dots are visible
           PS._pinsAwaitingCone.clear();
         }
       };
@@ -4220,10 +4092,9 @@ PS.openPinInModal = async function (pin) {
       .from('pins').select('id,lng,lat,heading,title').order('created_at', { ascending: true });
     if (error) return;
 
-    _ensureConeLayer();
 
     (data || []).forEach(p => {
-      PS.addMarker(p); // cones deferred until dot visible
+      PS.addMarker(p); // reveal animation deferred
     });
   };
 
@@ -4231,7 +4102,7 @@ PS.openPinInModal = async function (pin) {
     window.supabaseClient
       .channel('pins-rt')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins' }, (payload) => {
-        PS.addMarker(payload.new); // for live inserts, cone is delayed 2 RAFs inside addMarker
+        PS.addMarker(payload.new); // for live inserts
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pins' }, (payload) => {
         const rec = PS.markers.get(payload.new.id);
@@ -4244,12 +4115,12 @@ PS.openPinInModal = async function (pin) {
         if (typeof heading === 'number') {
           rec.pin.heading = ((heading % 360) + 360) % 360;
         }
-        _addConeFeatureNow(rec.pin); // move/rotate cone with updates
+
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pins' }, (payload) => {
         const rec = PS.markers.get(payload.old.id);
         if (rec) { rec.marker.remove(); PS.markers.delete(payload.old.id); }
-        _removeConeForPinId(payload.old.id);
+
       })
       .subscribe();
   };
@@ -4266,7 +4137,7 @@ PS.openPinInModal = async function (pin) {
       PS.loadPins();
       PS.subscribe();
     }
-map.once('idle', () => { _ensureConeLayer(); /* wait for animations */ });
+
   };
 
   if (document.readyState === 'loading') {
