@@ -9,7 +9,7 @@
       --modal-w: min(92vw, 520px);
       --radius: 16px;
       --pad: 16px;
-      --gif-w: min(86vw, 314px); /* design target; JS may override inline */
+      --gif-w: min(86vw, 314px); /* design target; JS may override */
       --shadow: 0 10px 30px rgba(0,0,0,.25);
       --gap: 16px;
     }
@@ -80,17 +80,17 @@
     }
 
     .gif-wrap {
-      width: var(--gif-w);     /* JS can override via style.width = '###px' */
+      width: var(--gif-w);     /* JS can override */
       align-self: center;
       border-radius: var(--radius);
       overflow: hidden;        /* crop window */
       box-shadow: 0 2px 12px rgba(0,0,0,.08);
       position: relative;
-      /* height set via JS */
+      min-height: 120px;       /* prevents initial collapse on slow paints */
     }
     .gif-img {
       display:block;
-      width: 100%;             /* follow wrap width */
+      width: 100%;
       height:auto;
       user-select:none;
       -webkit-user-drag:none;
@@ -101,7 +101,7 @@
     .controls {
       display:flex; align-items:center; justify-content:space-between;
       flex: 0 0 auto;
-      min-height: 44px; /* stabilizes measurement */
+      min-height: 44px; /* stabilize measurement */
     }
     .tbtn { border:1px solid #d8d8d8; background:#fff; padding:8px 10px; border-radius: 12px; cursor:pointer; font-size: 14px; }
     .tbtn:hover { background:#fafafa; }
@@ -134,7 +134,7 @@
 
       <main class="card-main" id="cardMain">
         <div class="gif-wrap" id="gifWrap">
-          <img class="gif-img" id="gifImg" alt="tutorial step" draggable="false" />
+          <img class="gif-img" id="gifImg" alt="tutorial step" draggable="false" decoding="async" loading="eager" />
         </div>
 
         <div class="controls" id="controls">
@@ -167,8 +167,8 @@
       { src: "https://lalaland.mx/tutorial/Streetview.gif",    header: "¿Sin Google Streetview? Nosotros nos encargamos", cropTop: 57, cropBottom: 57 },
     ];
 
-    const SOFT_FADE = false;
     const REDIRECT_URL = "https://lalaland.mx/wa?link=tuto";
+    const SOFT_FADE = false;
 
     let open = false;
     let index = 0;
@@ -190,6 +190,9 @@
     const dots      = document.getElementById('dots');
     const closeLink = document.getElementById('closeLink');
 
+    // ===== UTIL =====
+    const raf2 = (fn) => requestAnimationFrame(() => requestAnimationFrame(fn));
+
     function setOpen(v) {
       open = v;
       modal.setAttribute('aria-hidden', String(!v));
@@ -202,21 +205,20 @@
     function goNext() { index = (index + 1) % SLIDES.length; render(); }
     function goPrev() { index = (index - 1 + SLIDES.length) % SLIDES.length; render(); }
 
-    // Helpers
     function designMaxGifWidth() {
-      // Mirrors CSS: min(86vw, 314px)
       return Math.min(window.innerWidth * 0.86, 314);
     }
 
     function availableMainHeight() {
-      const cardH = card.clientHeight;
-      const hdH   = cardHd.offsetHeight;
-      const ftH   = cardFt.offsetHeight;
+      // Use bounding rects for iOS reliability
+      const cardH = card.getBoundingClientRect().height;
+      const hdH   = cardHd.getBoundingClientRect().height;
+      const ftH   = cardFt.getBoundingClientRect().height;
       return Math.max(0, cardH - hdH - ftH);
     }
 
-    function layoutAndSizeGif(s) {
-      // Build dots first for stable controls height
+    function layoutAndSizeGif(s, retryOnce = true) {
+      // Build dots first so controls have final height
       dots.innerHTML = '';
       SLIDES.forEach((_, i) => {
         const b = document.createElement('button');
@@ -228,37 +230,35 @@
         dots.appendChild(b);
       });
 
-      // Measure paddings & controls
       const cs = getComputedStyle(cardMain);
       const padTB = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
       const mainAvail = availableMainHeight();
-      const controlsH = controls.offsetHeight;
-      const gap = 12; // space between GIF and controls
+      const controlsH = controls.getBoundingClientRect().height || 44;
+      const gap = 12;
       const availableForGif = Math.max(0, mainAvail - padTB - controlsH - gap);
 
-      // Desired visible height in ORIGINAL pixels after masking
+      // If layout hasn't settled yet (iOS first paint), retry once next frame
+      if (availableForGif < 40 && retryOnce) {
+        return raf2(() => layoutAndSizeGif(s, false));
+      }
+
+      // Desired visible height in original pixels
       const visibleOrig = Math.max(1, (ORIGINAL_H - s.cropTop - s.cropBottom));
 
-      // Width that makes visibleH fit into availableForGif:
+      // Width that satisfies height constraint
       const widthCapByHeight = Math.floor((availableForGif / visibleOrig) * ORIGINAL_W);
+      const finalW = Math.max(160, Math.min(designMaxGifWidth(), widthCapByHeight || designMaxGifWidth()));
 
-      // Final width is limited by design and by height cap
-      const finalW = Math.max(160, Math.min(designMaxGifWidth(), widthCapByHeight));
-
-      // Apply width to wrapper and image
       gifWrap.style.width = finalW + 'px';
 
-      // Compute resulting rendered dims and masks
       const renderedH = Math.round(finalW * (ORIGINAL_H / ORIGINAL_W));
       const scale = finalW / ORIGINAL_W;
       const maskTop = Math.round(s.cropTop * scale);
       const maskBottom = Math.round(s.cropBottom * scale);
-
-      // Final visible height
       const visibleH = Math.max(0, renderedH - maskTop - maskBottom);
       const finalH = Math.min(visibleH, availableForGif);
 
-      gifWrap.style.height = finalH + 'px';
+      gifWrap.style.height = Math.max(1, finalH) + 'px';
       gifImg.style.transform = `translateY(-${maskTop}px)`;
 
       if (!SOFT_FADE) {
@@ -284,12 +284,15 @@
       title.textContent = s.header;
       gifImg.src = s.src;
 
-      // After the browser paints header/controls/dots, size the GIF
-      requestAnimationFrame(() => layoutAndSizeGif(s));
+      // Wait two frames so iOS paints the modal, then measure
+      raf2(() => layoutAndSizeGif(s, true));
     }
 
-    // Recompute when the image actually loads (stabilizes first frame)
-    gifImg.addEventListener('load', () => { if (open) layoutAndSizeGif(SLIDES[index]); });
+    // Re-run when the GIF actually loads its first frame
+    gifImg.addEventListener('load', () => { if (open) layoutAndSizeGif(SLIDES[index], false); });
+
+    // iOS bfcache restore
+    window.addEventListener('pageshow', () => { if (open) layoutAndSizeGif(SLIDES[index], true); });
 
     // Events
     openBtn.addEventListener('click', () => { setOpen(true); render(); });
@@ -305,11 +308,11 @@
       if (e.key === 'ArrowLeft') goPrev();
     });
 
-    // Keep sizing stable on rotate/resize
-    window.addEventListener('resize', () => { if (open) layoutAndSizeGif(SLIDES[index]); });
+    // Recompute on rotate/resize
+    window.addEventListener('resize', () => { if (open) layoutAndSizeGif(SLIDES[index], true); });
 
     // Initial (hidden) render
-    render();
-  </script> 
+    // (Don’t open automatically; sizing depends on open state)
+  </script>
 </body>
-</html> 
+</html>
