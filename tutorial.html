@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Tutorial Modal + Carousel (GIF mask)</title>
+  <title>Lalaland Tutorial</title>
+  <link rel="preload" href="https://lalaland.mx/tutorial/QuickSearch.gif" as="image" />
   <style>
     :root {
       --modal-w: min(92vw, 520px);
       --radius: 16px;
       --pad: 16px;
-      --gif-w: min(86vw, 314px);
+      --gif-w-max: min(86vw, 314px);
       --shadow: 0 10px 30px rgba(0,0,0,.25);
       --gap: 16px;
     }
@@ -18,7 +19,7 @@
     body {
       margin: 0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans";
-      background: #f5f5f5;
+      background: #1a1a1a;
       min-height: 100dvh;
       display: grid;
       place-items: center;
@@ -32,13 +33,15 @@
     .btn { border: 1px solid #111; background:#111; color:#fff; padding:12px 18px; border-radius: 14px; cursor:pointer; }
     .btn:hover { opacity:.9; }
 
-    .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); display:none; }
-    .backdrop[aria-hidden="false"] { display:block; }
+    .backdrop { 
+      position: fixed; inset: 0; background: #1a1a1a;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    .backdrop[aria-hidden="false"] { opacity: 1; pointer-events: auto; }
 
     .modal {
       position: fixed; inset: 0;
-      display: grid; place-items: center;
-      pointer-events:none;
+      display: grid; place-items: center; pointer-events:none;
       padding: max(var(--gap), env(safe-area-inset-top))
                max(var(--gap), env(safe-area-inset-right))
                max(var(--gap), env(safe-area-inset-bottom))
@@ -48,21 +51,20 @@
 
     .card {
       width: var(--modal-w);
-      background:#fff;
+      background:#fcfaf3;
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       overflow: hidden;
       pointer-events: auto;
       max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2*var(--gap));
-      display: flex;
-      flex-direction: column;
+      display: flex; flex-direction: column;
     }
 
     header.card-hd {
       padding: 16px 20px 8px;
       border-bottom: 1px solid #e6e6e6;
       text-align: center;
-      background:#fff;
+      background:#fcfaf3;
       flex: 0 0 auto;
     }
     .eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color:#777; }
@@ -70,53 +72,38 @@
 
     main.card-main {
       padding: var(--pad) calc(var(--pad) + 4px);
-      overflow: auto;
-      -webkit-overflow-scrolling: touch;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      flex: 1 1 auto;
-      background:#fff;
+      overflow: hidden;
+      display: flex; flex-direction: column; gap: 12px;
+      flex: 1 1 auto; background:#fcfaf3; min-height: 0;
     }
 
-    .gif-wrap {
-      width: var(--gif-w);
-      align-self: center;
-      border-radius: var(--radius);
-      overflow: hidden; /* crop window */
-      box-shadow: 0 2px 12px rgba(0,0,0,.08);
-      position: relative;
-      /* height set via JS */
+    .gif-container { 
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      align-self: center; flex: 1 1 auto; min-height: 0; width: 100%; max-width: calc(var(--gif-w-max) + 96px);
     }
-    .gif-img {
-      display:block;
-      width: var(--gif-w);
-      height:auto;
-      user-select:none;
-      -webkit-user-drag:none;
-      will-change: transform;
-      transform: translateY(0); /* reset default */
-    }
+    .gif-wrap { width: 100%; max-width: var(--gif-w-max); border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.08); position: relative; min-height: 120px; }
+    .gif-img { display:block; width: 100%; height:auto; user-select:none; -webkit-user-drag:none; transform: translateY(0); }
 
-    .controls {
-      display:flex; align-items:center; justify-content:space-between;
-      flex: 0 0 auto;
-      min-height: 44px; /* stabilize measurement between slides */
+    .nav-btn {
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.95); border: 1px solid rgba(0,0,0,0.1);
+      width: 40px; height: 40px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 18px; color: #111;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 100; transition: all 0.2s;
     }
-    .tbtn { border:1px solid #d8d8d8; background:#fff; padding:8px 10px; border-radius: 12px; cursor:pointer; font-size: 14px; }
-    .tbtn:hover { background:#fafafa; }
-    .dots { display:flex; gap:8px; }
-    .dot { width:10px; height:10px; border-radius:50%; background:#d0d0d0; border:none; cursor:pointer; }
-    .dot[aria-current="true"] { background:#111; }
+    .nav-btn:hover { background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+    .nav-btn:active { transform: scale(0.95); }
 
     footer.card-ft {
       border-top: 1px solid #e6e6e6;
       padding: 10px 20px;
-      display:flex; align-items:center; justify-content:space-between;
-      color:#666; font-size:12px;
-      background:#fff;
-      flex: 0 0 auto;
+      display:flex; align-items:center; justify-content: space-between;
+      color:#666; font-size:12px; background:#fcfaf3; flex: 0 0 auto;
     }
+    .dots { display:flex; gap:6px; flex: 1; justify-content: center; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; border: 1.5px solid #999; cursor: pointer; padding: 0; transition: all 0.2s; }
+    .dot[aria-current="true"] { background: #111; border-color: #111; }
     .link { color:#333; text-decoration: underline; cursor:pointer; }
   </style>
 </head>
@@ -133,28 +120,24 @@
       </header>
 
       <main class="card-main" id="cardMain">
-        <div class="gif-wrap" id="gifWrap">
-          <img class="gif-img" id="gifImg" alt="tutorial step" draggable="false" />
-        </div>
-
-        <div class="controls" id="controls">
-          <button class="tbtn" id="prevBtn" aria-label="Previous slide">← Prev</button>
-          <div class="dots" id="dots"></div>
-          <button class="tbtn" id="nextBtn" aria-label="Next slide">Next →</button>
+        <div class="gif-container" id="gifContainer">
+          <button class="nav-btn" id="prevBtn" aria-label="Previous slide">‹</button>
+          <div class="gif-wrap" id="gifWrap">
+            <!-- image is injected per slide -->
+          </div>
+          <button class="nav-btn" id="nextBtn" aria-label="Next slide">›</button>
         </div>
       </main>
 
       <footer class="card-ft" id="cardFt">
-        <span>Tip, use ← → keys, Esc to close</span>
+        <div class="dots" id="dots"></div>
         <span class="link" id="closeLink">Close</span>
       </footer>
     </div>
   </div>
 
   <script>
-    // ===== CONFIG =====
-    const ORIGINAL_W = 514;
-    const ORIGINAL_H = 1138;
+    const ORIGINAL_W = 514, ORIGINAL_H = 1138;
 
     const SLIDES = [
       { src: "https://lalaland.mx/tutorial/QuickSearch.gif",   header: "Búsqueda rápida de fraccionamientos", cropTop: 57, cropBottom: 57 },
@@ -170,142 +153,154 @@
     const SOFT_FADE = false;
     const REDIRECT_URL = "https://lalaland.mx/wa?link=tuto";
 
-    let open = false;
-    let index = 0;
+    let open = false, index = 0;
 
-    // ===== EL REFS =====
-    const openBtn   = document.getElementById('openBtn');
-    const backdrop  = document.getElementById('backdrop');
-    const modal     = document.getElementById('modal');
-    const card      = document.getElementById('card');
-    const cardHd    = document.getElementById('cardHd');
-    const cardMain  = document.getElementById('cardMain');
-    const cardFt    = document.getElementById('cardFt');
-    const title     = document.getElementById('slideTitle');
-    const gifWrap   = document.getElementById('gifWrap');
-    const gifImg    = document.getElementById('gifImg');
-    const controls  = document.getElementById('controls');
-    const prevBtn   = document.getElementById('prevBtn');
-    const nextBtn   = document.getElementById('nextBtn');
-    const dots      = document.getElementById('dots');
-    const closeLink = document.getElementById('closeLink');
+    const $ = (id)=>document.getElementById(id);
+    const openBtn=$('openBtn'), backdrop=$('backdrop'), modal=$('modal'), card=$('card');
+    const cardHd=$('cardHd'), cardMain=$('cardMain'), cardFt=$('cardFt'), title=$('slideTitle');
+    const gifContainer=$('gifContainer'), gifWrap=$('gifWrap');
+    const prevBtn=$('prevBtn'), nextBtn=$('nextBtn'), dots=$('dots'), closeLink=$('closeLink');
 
-    function setOpen(v) {
-      open = v;
-      modal.setAttribute('aria-hidden', String(!v));
-      backdrop.setAttribute('aria-hidden', String(!v));
-    }
-    function handleClose() {
-      setOpen(false);
-      setTimeout(() => window.location.href = REDIRECT_URL, 200);
-    }
-    function goNext() { index = (index + 1) % SLIDES.length; render(); }
-    function goPrev() { index = (index - 1 + SLIDES.length) % SLIDES.length; render(); }
+    const raf2 = (fn)=>requestAnimationFrame(()=>requestAnimationFrame(fn));
 
-    // Compute max gif height so everything fits without scrolling
-    function layoutGifHeight(renderedH, maskTop, maskBottom) {
-      // Calculate from viewport down (avoiding circular dependency)
+    function setOpen(v){ open=v; modal.setAttribute('aria-hidden', String(!v)); backdrop.setAttribute('aria-hidden', String(!v)); }
+    function handleClose(){ setOpen(false); setTimeout(()=>location.href=REDIRECT_URL, 200); }
+    function goNext(){ index=(index+1)%SLIDES.length; render(); }
+    function goPrev(){ index=(index-1+SLIDES.length)%SLIDES.length; render(); }
+
+    function calculateGifDimensions(cropTop, cropBottom) {
+      const maxW = Math.min(window.innerWidth * 0.86, 314);
       const vh = window.innerHeight;
-      
-      // Get gap (16px as defined in CSS --gap)
       const gap = 16;
-      
-      // Account for safe area insets (will be 0 on most devices)
-      const style = getComputedStyle(document.documentElement);
-      const safeTop = parseFloat(style.paddingTop) || 0;
-      const safeBottom = parseFloat(style.paddingBottom) || 0;
-      
-      // Total available height for card
-      const cardMaxH = vh - (2 * gap) - safeTop - safeBottom;
-      
-      // Measure actual header and footer heights
+      const cardMaxH = vh - (2 * gap);
       const hdH = cardHd.offsetHeight;
       const ftH = cardFt.offsetHeight;
-      
-      // Get main padding
       const cs = getComputedStyle(cardMain);
       const mainPadTop = parseFloat(cs.paddingTop);
       const mainPadBottom = parseFloat(cs.paddingBottom);
-      
-      // Get controls height and gap between gif and controls
-      const controlsH = controls.offsetHeight;
       const innerGap = 12;
-      
-      // Calculate available space for GIF
-      const availableForGif = cardMaxH - hdH - ftH - mainPadTop - mainPadBottom - controlsH - innerGap;
-      
-      // Natural visible height after masking
-      const visibleH = renderedH - maskTop - maskBottom;
-      
-      // Return the smaller of natural size or available space
-      return Math.max(1, Math.min(visibleH, availableForGif));
+      const availableH = cardMaxH - hdH - ftH - mainPadTop - mainPadBottom - innerGap;
+
+      const visibleRatio = (ORIGINAL_H - cropTop - cropBottom) / ORIGINAL_H;
+
+      let finalW = maxW;
+      let scale = finalW / ORIGINAL_W;
+      let renderedH = finalW * (ORIGINAL_H / ORIGINAL_W);
+      let visibleH = renderedH * visibleRatio;
+
+      if (visibleH > availableH) {
+        visibleH = availableH;
+        renderedH = visibleH / visibleRatio;
+        finalW = (renderedH / ORIGINAL_H) * ORIGINAL_W;
+        scale = finalW / ORIGINAL_W;
+      }
+
+      return {
+        width: Math.max(160, finalW),
+        height: Math.max(1, visibleH),
+        renderedHeight: renderedH,
+        maskTop: Math.round(cropTop * scale),
+        maskBottom: Math.round(cropBottom * scale)
+      };
     }
 
-    function render() {
-      const s = SLIDES[index];
-      title.textContent = s.header;
+    function applyLayout(imgEl, slide) {
+      const d = calculateGifDimensions(slide.cropTop, slide.cropBottom);
+      gifWrap.style.width = d.width + "px";
+      gifWrap.style.height = d.height + "px";
+      imgEl.style.transform = `translateY(-${d.maskTop}px)`;
+      if (!SOFT_FADE) {
+        imgEl.style.clipPath = ''; imgEl.style.webkitMaskImage = ''; imgEl.style.maskImage = '';
+      } else {
+        imgEl.style.clipPath = 'none';
+        imgEl.style.webkitMaskImage = `linear-gradient(0deg, transparent 0, transparent ${d.maskBottom}px, black ${d.maskBottom}px, black ${d.renderedHeight - d.maskTop}px, transparent ${d.renderedHeight - d.maskTop}px)`;
+        imgEl.style.maskImage = imgEl.style.webkitMaskImage;
+      }
+    }
 
-      // Build dots first (stabilizes controls height)
+    // Create, decode off-DOM, then swap in
+    async function mountImage(slide) {
+      // Build dots first so heights are stable
       dots.innerHTML = '';
       SLIDES.forEach((_, i) => {
         const b = document.createElement('button');
-        b.className = 'dot';
-        b.type = 'button';
+        b.className = 'dot'; b.type = 'button';
         b.setAttribute('aria-label', `Go to slide ${i+1}`);
         if (i === index) b.setAttribute('aria-current', 'true');
         b.addEventListener('click', () => { index = i; render(); });
         dots.appendChild(b);
       });
 
-      // Set src (may not be loaded yet)
-      gifImg.src = s.src;
+      const newImg = new Image();
+      newImg.className = 'gif-img';
+      newImg.alt = 'tutorial step';
+      newImg.draggable = false;
+      newImg.decoding = 'async';
+      newImg.loading = 'eager';
+      newImg.fetchPriority = 'high';
+      newImg.style.visibility = 'hidden'; // avoid flash if decode resolves instantly
 
-      // After the browser paints dots/controls, measure and size
-      requestAnimationFrame(() => {
-        const renderedW = gifWrap.getBoundingClientRect().width || parseFloat(getComputedStyle(gifWrap).width);
-        const renderedH = Math.round(renderedW * (ORIGINAL_H / ORIGINAL_W));
-        const scale = renderedW / ORIGINAL_W;
+      const src = slide.src;
+      newImg.src = src;
 
-        const maskTop = Math.round(s.cropTop * scale);
-        const maskBottom = Math.round(s.cropBottom * scale);
+      // Decode off-DOM; if decode rejects (some GIFs), we still insert after onload
+      try { await newImg.decode(); } catch(_) {}
 
-        const finalH = layoutGifHeight(renderedH, maskTop, maskBottom);
-        gifWrap.style.height = finalH + "px";
-        gifImg.style.transform = `translateY(-${maskTop}px)`;
+      // Ensure at least one paint has happened for layout to be valid
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-        if (!SOFT_FADE) {
-          gifImg.style.clipPath = '';
-          gifImg.style.webkitMaskImage = '';
-          gifImg.style.maskImage = '';
-        } else {
-          gifImg.style.clipPath = 'none';
-          gifImg.style.webkitMaskImage = `linear-gradient(0deg, transparent 0, transparent ${maskBottom}px, black ${maskBottom}px, black ${renderedH - maskTop}px, transparent ${renderedH - maskTop}px)`;
-          gifImg.style.maskImage = gifImg.style.webkitMaskImage;
-        }
-      });
+      // Swap: remove old img, insert new
+      const old = gifWrap.querySelector('img');
+      if (old) old.remove();
+      gifWrap.appendChild(newImg);
+
+      // If image not fully loaded yet, wait for load then layout
+      if (!newImg.complete) {
+        newImg.addEventListener('load', () => {
+          applyLayout(newImg, slide);
+          newImg.style.visibility = 'visible';
+          requestAnimationFrame(() => applyLayout(newImg, slide));
+        }, { once: true });
+      }
+
+      // First layout pass (works when decode succeeded)
+      applyLayout(newImg, slide);
+      newImg.style.visibility = 'visible';
+      // Second pass next paint—fixes iOS late viewport adjustments
+      requestAnimationFrame(() => applyLayout(newImg, slide));
     }
 
-    // Recompute when the image actually loads (prevents "compressed start")
-    gifImg.addEventListener('load', () => { if (open) render(); });
+    function render() {
+      const s = SLIDES[index];
+      title.textContent = s.header;
+      mountImage(s);
+    }
 
-    // Events
-    openBtn.addEventListener('click', () => { setOpen(true); render(); });
-    backdrop.addEventListener('click', handleClose);
-    closeLink.addEventListener('click', handleClose);
-    prevBtn.addEventListener('click', goPrev);
-    nextBtn.addEventListener('click', goNext);
+    // Open after a paint so initial sizes exist
+    openBtn.addEventListener('click', () => { setOpen(true); requestAnimationFrame(render); });
+
+    // Nav + close
+    $('backdrop').addEventListener('click', ()=>{ setOpen(false); setTimeout(()=>location.href=REDIRECT_URL, 200); });
+    $('closeLink').addEventListener('click', ()=>{ setOpen(false); setTimeout(()=>location.href=REDIRECT_URL, 200); });
+    $('prevBtn').addEventListener('click', goPrev);
+    $('nextBtn').addEventListener('click', goNext);
+
     window.addEventListener('keydown', (e) => {
       if (!open) return;
-      if (e.key === 'Escape') handleClose();
+      if (e.key === 'Escape') { setOpen(false); setTimeout(()=>location.href=REDIRECT_URL, 200); }
       if (e.key === 'ArrowRight') goNext();
       if (e.key === 'ArrowLeft') goPrev();
     });
 
-    // Keep sizing stable on rotate/resize
-    window.addEventListener('resize', () => { if (open) render(); });
-
-    // Initial measurement
-    render();
+    // Keep sizing stable on rotate/resize/bfcache
+    window.addEventListener('resize', () => {
+      if (!open) return;
+      const img = gifWrap.querySelector('img'); if (img) applyLayout(img, SLIDES[index]);
+    });
+    window.addEventListener('pageshow', () => {
+      if (!open) return;
+      const img = gifWrap.querySelector('img'); if (img) applyLayout(img, SLIDES[index]);
+    });
   </script> 
 </body>
 </html>
