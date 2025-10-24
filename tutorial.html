@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
   <title>Tutorial Modal + Carousel (GIF mask)</title>
   <style>
     :root {
@@ -11,42 +14,108 @@
       --pad: 16px;
       --gif-w: min(86vw, 314px);
       --shadow: 0 10px 30px rgba(0,0,0,.25);
+      --gap: 16px;
     }
+
     html, body { height: 100%; }
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans";
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
       background: #f5f5f5;
+      min-height: 100dvh;               /* dynamic viewport height (iOS safe) */
       display: grid;
       place-items: center;
-      padding: 24px;
+      padding: clamp(16px, 2vw, 24px);
+      /* Safe-area padding so content never hides under notch/home bar */
+      padding-top: calc(clamp(16px, 2vw, 24px) + env(safe-area-inset-top));
+      padding-bottom: calc(clamp(16px, 2vw, 24px) + env(safe-area-inset-bottom));
+      padding-left: calc(clamp(16px, 2vw, 24px) + env(safe-area-inset-left));
+      padding-right: calc(clamp(16px, 2vw, 24px) + env(safe-area-inset-right));
     }
+
     .btn { border: 1px solid #111; background:#111; color:#fff; padding:12px 18px; border-radius: 14px; cursor:pointer; }
     .btn:hover { opacity:.9; }
-    .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); display:none; }
+
+    /* Backdrop */
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.6);
+      display:none;
+    }
     .backdrop[aria-hidden="false"] { display:block; }
-    .modal { position: fixed; inset: 0; display: grid; place-items: center; pointer-events:none; }
+
+    /* Modal root respects safe areas with internal padding */
+    .modal {
+      position: fixed; inset: 0;
+      display: grid; place-items: center;
+      pointer-events:none;
+      padding-top: max(var(--gap), env(safe-area-inset-top));
+      padding-bottom: max(var(--gap), env(safe-area-inset-bottom));
+      padding-left: max(var(--gap), env(safe-area-inset-left));
+      padding-right: max(var(--gap), env(safe-area-inset-right));
+      box-sizing: border-box;
+    }
+
     .card {
       width: var(--modal-w);
       background:#fff;
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      overflow:hidden;
+      overflow:hidden;      /* clip rounded corners */
       pointer-events:auto;
+      /* Keep the whole card visible on small iOS screens */
+      max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2*var(--gap));
+      display: flex;
+      flex-direction: column;
     }
-    .card header { padding: 16px 20px 8px; border-bottom: 1px solid #e6e6e6; text-align: center; }
+
+    .card header {
+      padding: 16px 20px 8px;
+      border-bottom: 1px solid #e6e6e6;
+      text-align: center;
+      position: sticky; top: 0; background:#fff; z-index: 1;  /* keep header visible if content scrolls */
+    }
     .eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color:#777; }
     .title { margin:6px 0 0; font-size: 18px; font-weight: 700; color:#111; }
-    .card main { padding: var(--pad) calc(var(--pad) + 4px); }
-    .gif-wrap { width: var(--gif-w); margin: 0 auto; border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
-    .gif-img { display:block; width: var(--gif-w); height:auto; user-select:none; -webkit-user-drag:none; will-change: transform; }
+
+    .card main {
+      padding: var(--pad) calc(var(--pad) + 4px);
+      overflow: auto;        /* scroll inner content if needed */
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .gif-wrap {
+      width: var(--gif-w);
+      margin: 0 auto;
+      border-radius: var(--radius);
+      overflow: hidden; /* critical for crop */
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+      position: relative;
+    }
+    .gif-img {
+      display:block;
+      width: var(--gif-w);
+      height:auto;
+      user-select:none;
+      -webkit-user-drag:none;
+      will-change: transform; /* smoother translate */
+    }
+
     .controls { margin-top: 12px; display:flex; align-items:center; justify-content:space-between; }
     .tbtn { border:1px solid #d8d8d8; background:#fff; padding:8px 10px; border-radius: 12px; cursor:pointer; font-size: 14px; }
     .tbtn:hover { background:#fafafa; }
+
     .dots { display:flex; gap:8px; }
     .dot { width:10px; height:10px; border-radius:50%; background:#d0d0d0; border:none; cursor:pointer; }
     .dot[aria-current="true"] { background:#111; }
-    .footer { margin-top:8px; display:flex; align-items:center; justify-content:space-between; color:#666; font-size:12px; }
+
+    .footer {
+      margin-top:8px;
+      display:flex; align-items:center; justify-content:space-between;
+      color:#666; font-size:12px;
+      position: sticky; bottom: 0; background:#fff; padding-top: 8px;  /* keep Close visible */
+    }
     .link { color:#333; text-decoration: underline; cursor:pointer; }
   </style>
 </head>
@@ -71,7 +140,7 @@
           <button class="tbtn" id="nextBtn" aria-label="Next slide">Next →</button>
         </div>
         <div class="footer">
-          <span></span>
+          <span>Tip, use ← → keys, Esc to close</span>
           <span class="link" id="closeLink">Close</span>
         </div>
       </main>
@@ -79,8 +148,10 @@
   </div>
 
   <script>
+    // ===== CONFIG =====
     const ORIGINAL_W = 514;
     const ORIGINAL_H = 1138;
+
     const SLIDES = [
       { src: "https://lalaland.mx/tutorial/QuickSearch.gif",   header: "Búsqueda rápida de fraccionamientos", cropTop: 57, cropBottom: 57 },
       { src: "https://lalaland.mx/tutorial/ViewList.gif",      header: "Lista de disponibilidad en tiempo real", cropTop: 57, cropBottom: 57 },
@@ -114,7 +185,6 @@
       modal.setAttribute('aria-hidden', String(!v));
       backdrop.setAttribute('aria-hidden', String(!v));
     }
-
     function goNext() { index = (index + 1) % SLIDES.length; render(); }
     function goPrev() { index = (index - 1 + SLIDES.length) % SLIDES.length; render(); }
 
@@ -134,7 +204,7 @@
 
       const maskTop = Math.round(s.cropTop * scale);
       const maskBottom = Math.round(s.cropBottom * scale);
-      const visibleH = renderedH - maskTop - maskBottom;
+      const visibleH = Math.max(0, renderedH - maskTop - maskBottom);
       gifWrap.style.height = visibleH + "px";
       gifImg.style.transform = `translateY(-${maskTop}px)`;
 
