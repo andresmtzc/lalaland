@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tutorial Modal + Carousel (GIF mask)</title>
+  <style>
+    :root {
+      --modal-w: min(92vw, 520px);
+      --radius: 16px;
+      --pad: 16px;
+      --gif-w: min(86vw, 314px);
+      --shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans";
+      background: #f5f5f5;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .btn { border: 1px solid #111; background:#111; color:#fff; padding:12px 18px; border-radius: 14px; cursor:pointer; }
+    .btn:hover { opacity:.9; }
+    .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); display:none; }
+    .backdrop[aria-hidden="false"] { display:block; }
+    .modal { position: fixed; inset: 0; display: grid; place-items: center; pointer-events:none; }
+    .card {
+      width: var(--modal-w);
+      background:#fff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      pointer-events:auto;
+    }
+    .card header { padding: 16px 20px 8px; border-bottom: 1px solid #e6e6e6; text-align: center; }
+    .eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color:#777; }
+    .title { margin:6px 0 0; font-size: 18px; font-weight: 700; color:#111; }
+    .card main { padding: var(--pad) calc(var(--pad) + 4px); }
+    .gif-wrap { width: var(--gif-w); margin: 0 auto; border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+    .gif-img { display:block; width: var(--gif-w); height:auto; user-select:none; -webkit-user-drag:none; will-change: transform; }
+    .controls { margin-top: 12px; display:flex; align-items:center; justify-content:space-between; }
+    .tbtn { border:1px solid #d8d8d8; background:#fff; padding:8px 10px; border-radius: 12px; cursor:pointer; font-size: 14px; }
+    .tbtn:hover { background:#fafafa; }
+    .dots { display:flex; gap:8px; }
+    .dot { width:10px; height:10px; border-radius:50%; background:#d0d0d0; border:none; cursor:pointer; }
+    .dot[aria-current="true"] { background:#111; }
+    .footer { margin-top:8px; display:flex; align-items:center; justify-content:space-between; color:#666; font-size:12px; }
+    .link { color:#333; text-decoration: underline; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <button class="btn" id="openBtn">Open Tutorial</button>
+
+  <div class="backdrop" id="backdrop" aria-hidden="true"></div>
+
+  <div class="modal" id="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Quick tutorial">
+    <div class="card" role="document">
+      <header>
+        <div class="eyebrow">Tutorial LALALAND</div>
+        <h2 class="title" id="slideTitle">Loading…</h2>
+      </header>
+      <main>
+        <div class="gif-wrap" id="gifWrap">
+          <img class="gif-img" id="gifImg" alt="tutorial step" draggable="false" />
+        </div>
+        <div class="controls">
+          <button class="tbtn" id="prevBtn" aria-label="Previous slide">← Prev</button>
+          <div class="dots" id="dots"></div>
+          <button class="tbtn" id="nextBtn" aria-label="Next slide">Next →</button>
+        </div>
+        <div class="footer">
+          <span></span>
+          <span class="link" id="closeLink">Close</span>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const ORIGINAL_W = 514;
+    const ORIGINAL_H = 1138;
+    const SLIDES = [
+      { src: "https://lalaland.mx/tutorial/QuickSearch.gif",   header: "Búsqueda rápida de fraccionamientos", cropTop: 57, cropBottom: 57 },
+      { src: "https://lalaland.mx/tutorial/ViewList.gif",      header: "Lista de disponibilidad en tiempo real", cropTop: 57, cropBottom: 57 },
+      { src: "https://lalaland.mx/tutorial/ChangeStatus.gif",  header: "Cambia a vendido con un click", cropTop: 57, cropBottom: 57 },
+      { src: "https://lalaland.mx/tutorial/LotDetails.gif",    header: "Precio x m2, dimensiones y CTA's", cropTop: 57, cropBottom: 57 },
+      { src: "https://lalaland.mx/tutorial/POI.gif",           header: "Agrega los puntos de interés del proyecto", cropTop: 57, cropBottom: 57 },
+      { src: "https://lalaland.mx/tutorial/PriceQuickEdit.gif",header: "¿Necesitas actualizar un precio rápido?", cropTop: 57, cropBottom: 57 },
+      { src: "https://lalaland.mx/tutorial/CompareLots.gif",   header: "Compara precios para decidir inteligente", cropTop: 57, cropBottom: 57 },
+      { src: "https://lalaland.mx/tutorial/Streetview.gif",    header: "¿Sin Google Streetview? Nosotros nos encargamos", cropTop: 57, cropBottom: 57 },
+    ];
+
+    const SOFT_FADE = false;
+    let open = false;
+    let index = 0;
+
+    const openBtn   = document.getElementById('openBtn');
+    const backdrop  = document.getElementById('backdrop');
+    const modal     = document.getElementById('modal');
+    const title     = document.getElementById('slideTitle');
+    const gifWrap   = document.getElementById('gifWrap');
+    const gifImg    = document.getElementById('gifImg');
+    const prevBtn   = document.getElementById('prevBtn');
+    const nextBtn   = document.getElementById('nextBtn');
+    const dots      = document.getElementById('dots');
+    const closeLink = document.getElementById('closeLink');
+
+    const REDIRECT_URL = "https://lalaland.mx/wa?link=tuto";
+
+    function setOpen(v) {
+      open = v;
+      modal.setAttribute('aria-hidden', String(!v));
+      backdrop.setAttribute('aria-hidden', String(!v));
+    }
+
+    function goNext() { index = (index + 1) % SLIDES.length; render(); }
+    function goPrev() { index = (index - 1 + SLIDES.length) % SLIDES.length; render(); }
+
+    function handleClose() {
+      setOpen(false);
+      setTimeout(() => window.location.href = REDIRECT_URL, 200);
+    }
+
+    function render() {
+      const s = SLIDES[index];
+      title.textContent = s.header;
+      gifImg.src = s.src;
+
+      const renderedW = gifWrap.getBoundingClientRect().width || parseFloat(getComputedStyle(gifWrap).width);
+      const renderedH = Math.round(renderedW * (ORIGINAL_H / ORIGINAL_W));
+      const scale = renderedW / ORIGINAL_W;
+
+      const maskTop = Math.round(s.cropTop * scale);
+      const maskBottom = Math.round(s.cropBottom * scale);
+      const visibleH = renderedH - maskTop - maskBottom;
+      gifWrap.style.height = visibleH + "px";
+      gifImg.style.transform = `translateY(-${maskTop}px)`;
+
+      if (!SOFT_FADE) {
+        gifImg.style.clipPath = '';
+        gifImg.style.webkitMaskImage = '';
+        gifImg.style.maskImage = '';
+      } else {
+        gifImg.style.clipPath = 'none';
+        gifImg.style.webkitMaskImage = `linear-gradient(0deg, transparent 0, transparent ${maskBottom}px, black ${maskBottom}px, black ${renderedH - maskTop}px, transparent ${renderedH - maskTop}px)`;
+        gifImg.style.maskImage = gifImg.style.webkitMaskImage;
+      }
+
+      dots.innerHTML = '';
+      SLIDES.forEach((_, i) => {
+        const b = document.createElement('button');
+        b.className = 'dot';
+        b.type = 'button';
+        b.setAttribute('aria-label', `Go to slide ${i+1}`);
+        if (i === index) b.setAttribute('aria-current', 'true');
+        b.addEventListener('click', () => { index = i; render(); });
+        dots.appendChild(b);
+      });
+    }
+
+    openBtn.addEventListener('click', () => { setOpen(true); render(); });
+    backdrop.addEventListener('click', handleClose);
+    closeLink.addEventListener('click', handleClose);
+    prevBtn.addEventListener('click', goPrev);
+    nextBtn.addEventListener('click', goNext);
+
+    window.addEventListener('keydown', (e) => {
+      if (!open) return;
+      if (e.key === 'Escape') handleClose();
+      if (e.key === 'ArrowRight') goNext();
+      if (e.key === 'ArrowLeft') goPrev();
+    });
+
+    render();
+  </script>
+</body>
+</html>
