@@ -202,26 +202,42 @@
     function goNext() { index = (index + 1) % SLIDES.length; render(); }
     function goPrev() { index = (index - 1 + SLIDES.length) % SLIDES.length; render(); }
 
-    // Compute max gif height so everything fits at once
+    // Compute max gif height so everything fits without scrolling
     function layoutGifHeight(renderedH, maskTop, maskBottom) {
-      // Build a style calc of paddings in main (top+bottom)
+      // Calculate from viewport down (avoiding circular dependency)
+      const vh = window.innerHeight;
+      
+      // Get gap (16px as defined in CSS --gap)
+      const gap = 16;
+      
+      // Account for safe area insets (will be 0 on most devices)
+      const style = getComputedStyle(document.documentElement);
+      const safeTop = parseFloat(style.paddingTop) || 0;
+      const safeBottom = parseFloat(style.paddingBottom) || 0;
+      
+      // Total available height for card
+      const cardMaxH = vh - (2 * gap) - safeTop - safeBottom;
+      
+      // Measure actual header and footer heights
+      const hdH = cardHd.offsetHeight;
+      const ftH = cardFt.offsetHeight;
+      
+      // Get main padding
       const cs = getComputedStyle(cardMain);
-      const padTB = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-      // Available space inside the card for main area:
-      const cardH = card.clientHeight;
-      const hdH   = cardHd.offsetHeight;
-      const ftH   = cardFt.offsetHeight;
-      const mainAvail = Math.max(0, cardH - hdH - ftH);
-
-      // Now subtract paddings and controls height + a small gap
+      const mainPadTop = parseFloat(cs.paddingTop);
+      const mainPadBottom = parseFloat(cs.paddingBottom);
+      
+      // Get controls height and gap between gif and controls
       const controlsH = controls.offsetHeight;
-      const gap = 12;
-      const availableForGif = Math.max(0, mainAvail - padTB - controlsH - gap);
-
-      // Natural visible height after masking:
-      const visibleH = Math.max(0, renderedH - maskTop - maskBottom);
-
-      // Final height: take the smaller, keep >= 1px
+      const innerGap = 12;
+      
+      // Calculate available space for GIF
+      const availableForGif = cardMaxH - hdH - ftH - mainPadTop - mainPadBottom - controlsH - innerGap;
+      
+      // Natural visible height after masking
+      const visibleH = renderedH - maskTop - maskBottom;
+      
+      // Return the smaller of natural size or available space
       return Math.max(1, Math.min(visibleH, availableForGif));
     }
 
@@ -269,7 +285,7 @@
       });
     }
 
-    // Recompute when the image actually loads (prevents “compressed start”)
+    // Recompute when the image actually loads (prevents "compressed start")
     gifImg.addEventListener('load', () => { if (open) render(); });
 
     // Events
@@ -292,4 +308,4 @@
     render();
   </script> 
 </body>
-</html>   
+</html>
