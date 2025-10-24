@@ -1,306 +1,193 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Lalaland Tutorial</title>
-  <link rel="preload" href="https://lalaland.mx/tutorial/QuickSearch.gif" as="image" />
-  <style>
-    :root {
-      --modal-w: min(92vw, 520px);
-      --radius: 16px;
-      --pad: 16px;
-      --gif-w-max: min(86vw, 314px);
-      --shadow: 0 10px 30px rgba(0,0,0,.25);
-      --gap: 16px;
+<script>
+  const ORIGINAL_W = 514, ORIGINAL_H = 1138;
+
+  const SLIDES = [
+    { src: "https://lalaland.mx/tutorial/QuickSearch.gif",   header: "Búsqueda rápida de fraccionamientos", cropTop: 57, cropBottom: 57 },
+    { src: "https://lalaland.mx/tutorial/ViewList.gif",      header: "Lista de disponibilidad en tiempo real", cropTop: 57, cropBottom: 57 },
+    { src: "https://lalaland.mx/tutorial/ChangeStatus.gif",  header: "Cambia a vendido con un click", cropTop: 57, cropBottom: 57 },
+    { src: "https://lalaland.mx/tutorial/LotDetails.gif",    header: "Precio x m2, dimensiones y CTA's", cropTop: 57, cropBottom: 57 },
+    { src: "https://lalaland.mx/tutorial/POI.gif",           header: "Agrega los puntos de interés del proyecto", cropTop: 57, cropBottom: 57 },
+    { src: "https://lalaland.mx/tutorial/PriceQuickEdit.gif",header: "¿Necesitas actualizar un precio rápido?", cropTop: 57, cropBottom: 57 },
+    { src: "https://lalaland.mx/tutorial/CompareLots.gif",   header: "Compara precios para decidir inteligente", cropTop: 57, cropBottom: 57 },
+    { src: "https://lalaland.mx/tutorial/Streetview.gif",    header: "¿Sin Google Streetview? Nosotros nos encargamos", cropTop: 57, cropBottom: 57 },
+  ];
+
+  const SOFT_FADE = false;
+  const REDIRECT_URL = "https://lalaland.mx/wa?link=tuto";
+
+  let open = false, index = 0;
+
+  const $ = (id)=>document.getElementById(id);
+  const openBtn=$('openBtn'), backdrop=$('backdrop'), modal=$('modal'), card=$('card');
+  const cardHd=$('cardHd'), cardMain=$('cardMain'), cardFt=$('cardFt'), title=$('slideTitle');
+  const gifContainer=$('gifContainer'), gifWrap=$('gifWrap');
+  const prevBtn=$('prevBtn'), nextBtn=$('nextBtn'), dots=$('dots'), closeLink=$('closeLink');
+
+  const raf2 = (fn)=>requestAnimationFrame(()=>requestAnimationFrame(fn));
+
+  function setOpen(v){ open=v; modal.setAttribute('aria-hidden', String(!v)); backdrop.setAttribute('aria-hidden', String(!v)); }
+  function handleClose(){ setOpen(false); setTimeout(()=>location.href=REDIRECT_URL, 200); }
+  function goNext(){ index=(index+1)%SLIDES.length; render(); }
+  function goPrev(){ index=(index-1+SLIDES.length)%SLIDES.length; render(); }
+
+  function calculateGifDimensions(cropTop, cropBottom) {
+    const maxW = Math.min(window.innerWidth * 0.86, 314);
+    const vh = window.innerHeight;
+    const gap = 16;
+    const cardMaxH = vh - (2 * gap);
+    const hdH = cardHd.offsetHeight;
+    const ftH = cardFt.offsetHeight;
+    const cs = getComputedStyle(cardMain);
+    const mainPadTop = parseFloat(cs.paddingTop);
+    const mainPadBottom = parseFloat(cs.paddingBottom);
+    const innerGap = 12;
+    const availableH = cardMaxH - hdH - ftH - mainPadTop - mainPadBottom - innerGap;
+
+    const visibleRatio = (ORIGINAL_H - cropTop - cropBottom) / ORIGINAL_H;
+
+    let finalW = maxW;
+    let scale = finalW / ORIGINAL_W;
+    let renderedH = finalW * (ORIGINAL_H / ORIGINAL_W);
+    let visibleH = renderedH * visibleRatio;
+
+    if (visibleH > availableH) {
+      visibleH = availableH;
+      renderedH = visibleH / visibleRatio;
+      finalW = (renderedH / ORIGINAL_H) * ORIGINAL_W;
+      scale = finalW / ORIGINAL_W;
     }
 
-    html, body { height: 100%; }
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans";
-      background: #1a1a1a;
-      min-height: 100dvh;
-      display: grid;
-      place-items: center;
-      padding: clamp(16px, 2vw, 24px);
-      padding-top: calc(clamp(16px, 2vw, 24px) + env(safe-area-inset-top));
-      padding-bottom: calc(clamp(16px, 2vw, 24px) + env(safe-area-inset-bottom));
-      padding-left: calc(clamp(16px, 2vw, 24px) + env(safe-area-inset-left));
-      padding-right: calc(clamp(16px, 2vw, 24px) + env(safe-area-inset-right));
+    return {
+      width: Math.max(160, finalW),
+      height: Math.max(1, visibleH),
+      renderedHeight: renderedH,
+      maskTop: Math.round(cropTop * scale),
+      maskBottom: Math.round(cropBottom * scale)
+    };
+  }
+
+  function applyLayout(imgEl, slide) {
+    const d = calculateGifDimensions(slide.cropTop, slide.cropBottom);
+    gifWrap.style.width = d.width + "px";
+    gifWrap.style.height = d.height + "px";
+    imgEl.style.transform = `translateY(-${d.maskTop}px)`;
+    if (!SOFT_FADE) {
+      imgEl.style.clipPath = ''; imgEl.style.webkitMaskImage = ''; imgEl.style.maskImage = '';
+    } else {
+      imgEl.style.clipPath = 'none';
+      imgEl.style.webkitMaskImage = `linear-gradient(0deg, transparent 0, transparent ${d.maskBottom}px, black ${d.maskBottom}px, black ${d.renderedHeight - d.maskTop}px, transparent ${d.renderedHeight - d.maskTop}px)`;
+      imgEl.style.maskImage = imgEl.style.webkitMaskImage;
     }
+  }
 
-    .btn { border: 1px solid #111; background:#111; color:#fff; padding:12px 18px; border-radius: 14px; cursor:pointer; }
-    .btn:hover { opacity:.9; }
+  // Create and mount image with better error handling
+  async function mountImage(slide) {
+    // Clear and rebuild dots
+    dots.innerHTML = '';
+    SLIDES.forEach((_, i) => {
+      const b = document.createElement('button');
+      b.className = 'dot'; b.type = 'button';
+      b.setAttribute('aria-label', `Go to slide ${i+1}`);
+      if (i === index) b.setAttribute('aria-current', 'true');
+      b.addEventListener('click', () => { index = i; render(); });
+      dots.appendChild(b);
+    });
 
-    .backdrop { 
-      position: fixed; inset: 0; background: #1a1a1a;
-      opacity: 0; pointer-events: none; transition: opacity 0.2s;
-    }
-    .backdrop[aria-hidden="false"] { opacity: 1; pointer-events: auto; }
+    // Clear any existing content first
+    gifWrap.innerHTML = '';
+    
+    const newImg = new Image();
+    newImg.className = 'gif-img';
+    newImg.alt = slide.header;
+    newImg.draggable = false;
+    newImg.decoding = 'async';
+    newImg.loading = 'eager';
+    newImg.fetchPriority = 'high';
+    newImg.style.visibility = 'hidden'; // Start hidden
 
-    .modal {
-      position: fixed; inset: 0;
-      display: grid; place-items: center; pointer-events:none;
-      padding: max(var(--gap), env(safe-area-inset-top))
-               max(var(--gap), env(safe-area-inset-right))
-               max(var(--gap), env(safe-area-inset-bottom))
-               max(var(--gap), env(safe-area-inset-left));
-      box-sizing: border-box;
-    }
+    // Add to DOM immediately for consistent layout
+    gifWrap.appendChild(newImg);
 
-    .card {
-      width: var(--modal-w);
-      background:#fcfaf3;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-      pointer-events: auto;
-      max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2*var(--gap));
-      display: flex; flex-direction: column;
-    }
-
-    header.card-hd {
-      padding: 16px 20px 8px;
-      border-bottom: 1px solid #e6e6e6;
-      text-align: center;
-      background:#fcfaf3;
-      flex: 0 0 auto;
-    }
-    .eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color:#777; }
-    .title { margin:6px 0 0; font-size: 18px; font-weight: 700; color:#111; }
-
-    main.card-main {
-      padding: var(--pad) calc(var(--pad) + 4px);
-      overflow: hidden;
-      display: flex; flex-direction: column; gap: 12px;
-      flex: 1 1 auto; background:#fcfaf3; min-height: 0;
-    }
-
-    .gif-container { 
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      align-self: center; flex: 1 1 auto; min-height: 0; width: 100%; max-width: calc(var(--gif-w-max) + 96px);
-    }
-    .gif-wrap { width: 100%; max-width: var(--gif-w-max); border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.08); position: relative; min-height: 120px; }
-    .gif-img { display:block; width: 100%; height:auto; user-select:none; -webkit-user-drag:none; transform: translateY(0); }
-
-    .nav-btn {
-      flex-shrink: 0;
-      background: rgba(255,255,255,0.95); border: 1px solid rgba(0,0,0,0.1);
-      width: 40px; height: 40px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; font-size: 18px; color: #111;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 100; transition: all 0.2s;
-    }
-    .nav-btn:hover { background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-    .nav-btn:active { transform: scale(0.95); }
-
-    footer.card-ft {
-      border-top: 1px solid #e6e6e6;
-      padding: 10px 20px;
-      display:flex; align-items:center; justify-content: space-between;
-      color:#666; font-size:12px; background:#fcfaf3; flex: 0 0 auto;
-    }
-    .dots { display:flex; gap:6px; flex: 1; justify-content: center; }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; border: 1.5px solid #999; cursor: pointer; padding: 0; transition: all 0.2s; }
-    .dot[aria-current="true"] { background: #111; border-color: #111; }
-    .link { color:#333; text-decoration: underline; cursor:pointer; }
-  </style>
-</head>
-<body>
-  <button class="btn" id="openBtn">Open Tutorial</button>
-
-  <div class="backdrop" id="backdrop" aria-hidden="true"></div>
-
-  <div class="modal" id="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Quick tutorial">
-    <div class="card" id="card" role="document">
-      <header class="card-hd" id="cardHd">
-        <div class="eyebrow">Tutorial LALALAND</div>
-        <h2 class="title" id="slideTitle">Loading…</h2>
-      </header>
-
-      <main class="card-main" id="cardMain">
-        <div class="gif-container" id="gifContainer">
-          <button class="nav-btn" id="prevBtn" aria-label="Previous slide">‹</button>
-          <div class="gif-wrap" id="gifWrap">
-            <!-- image is injected per slide -->
-          </div>
-          <button class="nav-btn" id="nextBtn" aria-label="Next slide">›</button>
-        </div>
-      </main>
-
-      <footer class="card-ft" id="cardFt">
-        <div class="dots" id="dots"></div>
-        <span class="link" id="closeLink">Close</span>
-      </footer>
-    </div>
-  </div>
-
-  <script>
-    const ORIGINAL_W = 514, ORIGINAL_H = 1138;
-
-    const SLIDES = [
-      { src: "https://lalaland.mx/tutorial/QuickSearch.gif",   header: "Búsqueda rápida de fraccionamientos", cropTop: 57, cropBottom: 57 },
-      { src: "https://lalaland.mx/tutorial/ViewList.gif",      header: "Lista de disponibilidad en tiempo real", cropTop: 57, cropBottom: 57 },
-      { src: "https://lalaland.mx/tutorial/ChangeStatus.gif",  header: "Cambia a vendido con un click", cropTop: 57, cropBottom: 57 },
-      { src: "https://lalaland.mx/tutorial/LotDetails.gif",    header: "Precio x m2, dimensiones y CTA's", cropTop: 57, cropBottom: 57 },
-      { src: "https://lalaland.mx/tutorial/POI.gif",           header: "Agrega los puntos de interés del proyecto", cropTop: 57, cropBottom: 57 },
-      { src: "https://lalaland.mx/tutorial/PriceQuickEdit.gif",header: "¿Necesitas actualizar un precio rápido?", cropTop: 57, cropBottom: 57 },
-      { src: "https://lalaland.mx/tutorial/CompareLots.gif",   header: "Compara precios para decidir inteligente", cropTop: 57, cropBottom: 57 },
-      { src: "https://lalaland.mx/tutorial/Streetview.gif",    header: "¿Sin Google Streetview? Nosotros nos encargamos", cropTop: 57, cropBottom: 57 },
-    ];
-
-    const SOFT_FADE = false;
-    const REDIRECT_URL = "https://lalaland.mx/wa?link=tuto";
-
-    let open = false, index = 0;
-
-    const $ = (id)=>document.getElementById(id);
-    const openBtn=$('openBtn'), backdrop=$('backdrop'), modal=$('modal'), card=$('card');
-    const cardHd=$('cardHd'), cardMain=$('cardMain'), cardFt=$('cardFt'), title=$('slideTitle');
-    const gifContainer=$('gifContainer'), gifWrap=$('gifWrap');
-    const prevBtn=$('prevBtn'), nextBtn=$('nextBtn'), dots=$('dots'), closeLink=$('closeLink');
-
-    const raf2 = (fn)=>requestAnimationFrame(()=>requestAnimationFrame(fn));
-
-    function setOpen(v){ open=v; modal.setAttribute('aria-hidden', String(!v)); backdrop.setAttribute('aria-hidden', String(!v)); }
-    function handleClose(){ setOpen(false); setTimeout(()=>location.href=REDIRECT_URL, 200); }
-    function goNext(){ index=(index+1)%SLIDES.length; render(); }
-    function goPrev(){ index=(index-1+SLIDES.length)%SLIDES.length; render(); }
-
-    function calculateGifDimensions(cropTop, cropBottom) {
-      const maxW = Math.min(window.innerWidth * 0.86, 314);
-      const vh = window.innerHeight;
-      const gap = 16;
-      const cardMaxH = vh - (2 * gap);
-      const hdH = cardHd.offsetHeight;
-      const ftH = cardFt.offsetHeight;
-      const cs = getComputedStyle(cardMain);
-      const mainPadTop = parseFloat(cs.paddingTop);
-      const mainPadBottom = parseFloat(cs.paddingBottom);
-      const innerGap = 12;
-      const availableH = cardMaxH - hdH - ftH - mainPadTop - mainPadBottom - innerGap;
-
-      const visibleRatio = (ORIGINAL_H - cropTop - cropBottom) / ORIGINAL_H;
-
-      let finalW = maxW;
-      let scale = finalW / ORIGINAL_W;
-      let renderedH = finalW * (ORIGINAL_H / ORIGINAL_W);
-      let visibleH = renderedH * visibleRatio;
-
-      if (visibleH > availableH) {
-        visibleH = availableH;
-        renderedH = visibleH / visibleRatio;
-        finalW = (renderedH / ORIGINAL_H) * ORIGINAL_W;
-        scale = finalW / ORIGINAL_W;
-      }
-
-      return {
-        width: Math.max(160, finalW),
-        height: Math.max(1, visibleH),
-        renderedHeight: renderedH,
-        maskTop: Math.round(cropTop * scale),
-        maskBottom: Math.round(cropBottom * scale)
-      };
-    }
-
-    function applyLayout(imgEl, slide) {
-      const d = calculateGifDimensions(slide.cropTop, slide.cropBottom);
-      gifWrap.style.width = d.width + "px";
-      gifWrap.style.height = d.height + "px";
-      imgEl.style.transform = `translateY(-${d.maskTop}px)`;
-      if (!SOFT_FADE) {
-        imgEl.style.clipPath = ''; imgEl.style.webkitMaskImage = ''; imgEl.style.maskImage = '';
-      } else {
-        imgEl.style.clipPath = 'none';
-        imgEl.style.webkitMaskImage = `linear-gradient(0deg, transparent 0, transparent ${d.maskBottom}px, black ${d.maskBottom}px, black ${d.renderedHeight - d.maskTop}px, transparent ${d.renderedHeight - d.maskTop}px)`;
-        imgEl.style.maskImage = imgEl.style.webkitMaskImage;
-      }
-    }
-
-    // Create, decode off-DOM, then swap in
-    async function mountImage(slide) {
-      // Build dots first so heights are stable
-      dots.innerHTML = '';
-      SLIDES.forEach((_, i) => {
-        const b = document.createElement('button');
-        b.className = 'dot'; b.type = 'button';
-        b.setAttribute('aria-label', `Go to slide ${i+1}`);
-        if (i === index) b.setAttribute('aria-current', 'true');
-        b.addEventListener('click', () => { index = i; render(); });
-        dots.appendChild(b);
+    try {
+      // Set src and wait for load
+      newImg.src = slide.src;
+      
+      await new Promise((resolve, reject) => {
+        if (newImg.complete && newImg.naturalHeight !== 0) {
+          resolve();
+        } else {
+          newImg.onload = resolve;
+          newImg.onerror = () => reject(new Error(`Failed to load image: ${slide.src}`));
+          // Add timeout as fallback
+          setTimeout(() => {
+            if (newImg.complete) resolve();
+          }, 3000);
+        }
       });
 
-      const newImg = new Image();
-      newImg.className = 'gif-img';
-      newImg.alt = 'tutorial step';
-      newImg.draggable = false;
-      newImg.decoding = 'async';
-      newImg.loading = 'eager';
-      newImg.fetchPriority = 'high';
-      newImg.style.visibility = 'hidden'; // avoid flash if decode resolves instantly
-
-      const src = slide.src;
-      newImg.src = src;
-
-      // Decode off-DOM; if decode rejects (some GIFs), we still insert after onload
-      try { await newImg.decode(); } catch(_) {}
-
-      // Ensure at least one paint has happened for layout to be valid
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-      // Swap: remove old img, insert new
-      const old = gifWrap.querySelector('img');
-      if (old) old.remove();
-      gifWrap.appendChild(newImg);
-
-      // If image not fully loaded yet, wait for load then layout
-      if (!newImg.complete) {
-        newImg.addEventListener('load', () => {
-          applyLayout(newImg, slide);
-          newImg.style.visibility = 'visible';
-          requestAnimationFrame(() => applyLayout(newImg, slide));
-        }, { once: true });
+      // Try to decode if supported
+      if (newImg.decode) {
+        try { await newImg.decode(); } catch(e) { console.warn('Image decode failed:', e); }
       }
 
-      // First layout pass (works when decode succeeded)
+      // Ensure layout is calculated after image is in DOM
+      await new Promise(r => requestAnimationFrame(r));
+      
+      // Apply layout and make visible
       applyLayout(newImg, slide);
       newImg.style.visibility = 'visible';
-      // Second pass next paint—fixes iOS late viewport adjustments
-      requestAnimationFrame(() => applyLayout(newImg, slide));
+      
+      // Double-check layout on next frame
+      requestAnimationFrame(() => {
+        applyLayout(newImg, slide);
+        newImg.style.visibility = 'visible';
+      });
+
+    } catch (error) {
+      console.error('Error loading image:', error);
+      // Fallback: show error state but don't break the UI
+      newImg.style.visibility = 'visible';
+      newImg.alt = 'Failed to load image';
     }
+  }
 
-    function render() {
-      const s = SLIDES[index];
-      title.textContent = s.header;
-      mountImage(s);
-    }
+  function render() {
+    const s = SLIDES[index];
+    title.textContent = s.header;
+    mountImage(s);
+  }
 
-    // Open after a paint so initial sizes exist
-    openBtn.addEventListener('click', () => { setOpen(true); requestAnimationFrame(render); });
+  // Open modal and ensure proper rendering
+  openBtn.addEventListener('click', () => { 
+    setOpen(true); 
+    // Reset to first slide when opening
+    index = 0;
+    raf2(render); 
+  });
 
-    // Nav + close
-    $('backdrop').addEventListener('click', ()=>{ setOpen(false); setTimeout(()=>location.href=REDIRECT_URL, 200); });
-    $('closeLink').addEventListener('click', ()=>{ setOpen(false); setTimeout(()=>location.href=REDIRECT_URL, 200); });
-    $('prevBtn').addEventListener('click', goPrev);
-    $('nextBtn').addEventListener('click', goNext);
+  // Event listeners
+  backdrop.addEventListener('click', handleClose);
+  closeLink.addEventListener('click', handleClose);
+  prevBtn.addEventListener('click', goPrev);
+  nextBtn.addEventListener('click', goNext);
 
-    window.addEventListener('keydown', (e) => {
-      if (!open) return;
-      if (e.key === 'Escape') { setOpen(false); setTimeout(()=>location.href=REDIRECT_URL, 200); }
-      if (e.key === 'ArrowRight') goNext();
-      if (e.key === 'ArrowLeft') goPrev();
-    });
+  window.addEventListener('keydown', (e) => {
+    if (!open) return;
+    if (e.key === 'Escape') handleClose();
+    if (e.key === 'ArrowRight') goNext();
+    if (e.key === 'ArrowLeft') goPrev();
+  });
 
-    // Keep sizing stable on rotate/resize/bfcache
-    window.addEventListener('resize', () => {
-      if (!open) return;
-      const img = gifWrap.querySelector('img'); if (img) applyLayout(img, SLIDES[index]);
-    });
-    window.addEventListener('pageshow', () => {
-      if (!open) return;
-      const img = gifWrap.querySelector('img'); if (img) applyLayout(img, SLIDES[index]);
-    });
-  </script> 
-</body>
-</html>
+  // Resize handling
+  window.addEventListener('resize', () => {
+    if (!open) return;
+    const img = gifWrap.querySelector('img'); 
+    if (img && img.complete) applyLayout(img, SLIDES[index]);
+  });
+
+  window.addEventListener('pageshow', () => {
+    if (!open) return;
+    const img = gifWrap.querySelector('img'); 
+    if (img && img.complete) applyLayout(img, SLIDES[index]);
+  });
+</script>
