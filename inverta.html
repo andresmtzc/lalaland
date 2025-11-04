@@ -95,74 +95,78 @@
             document.getElementById('buyerPreview').textContent = `Cliente: ${buyerName} | Agente: ${agentName}`;
         }
         
-        // Initialize Supabase dynamically
-        function initializeSupabase() {
-            return new Promise((resolve, reject) => {
-                // Load Supabase client library
-                const supabaseScript = document.createElement('script');
-                supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-                
-                supabaseScript.onload = () => {
-                    // Load configuration from external JSON
-                    fetch('https://la-la.land/sb_config.json')
-                        .then(response => {
-                            if (!response.ok) throw new Error('Failed to load config');
-                            return response.json();
-                        })
-                        .then(config => {
-                            // Create Supabase client
-                            supabaseClient = supabase.createClient(config.url, config.key);
-                            console.log('✅ Supabase client initialized');
-                            
-                            // Update UI
-                            document.getElementById('createButton').disabled = false;
-                            document.getElementById('createButton').textContent = 'Create Groups with Images';
-                            document.getElementById('connectionStatus').className = 'connection-status connected';
-                            document.getElementById('connectionStatus').textContent = '✅ Connected';
-                            
-                            // Load initial data
-                            loadPairs();
-                            
-                            // ✅ SET UP REALTIME SUBSCRIPTION
-                            const channel = supabaseClient
-                                .channel('groups-realtime')
-                                .on(
-                                    'postgres_changes',
-                                    {
-                                        event: '*',
-                                        schema: 'public',
-                                        table: 'group_requests'
-                                    },
-                                    (payload) => {
-                                        console.log('🔄 Real-time update:', payload);
-                                        loadPairs(); // Refresh the list
-                                        
-                                        // Show notification for new completions
-                                        if (payload.eventType === 'UPDATE' && payload.new.status === 'completed') {
-                                            showMessage(`✅ Groups created for ${payload.new.buyer_name} ↔ ${payload.new.agent_name}`, 'success');
-                                        }
-                                    }
-                                )
-                                .subscribe();
-                            
-                            resolve();
-                        })
-                        .catch(error => {
-                            console.error('❌ Failed to initialize Supabase:', error);
-                            document.getElementById('connectionStatus').className = 'connection-status disconnected';
-                            document.getElementById('connectionStatus').textContent = '❌ Connection Failed';
-                            document.getElementById('createButton').textContent = '❌ Failed to Connect';
-                            reject(error);
+// Initialize Supabase dynamically
+function initializeSupabase() {
+    return new Promise((resolve, reject) => {
+        // Load Supabase client library
+        const supabaseScript = document.createElement('script');
+        supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        
+        supabaseScript.onload = () => {
+            // Load configuration from external JSON
+            fetch('https://la-la.land/sb_config.json')
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to load config');
+                    return response.json();
+                })
+                .then(config => {
+                    // Create Supabase client
+                    window.supabaseClient = supabase.createClient(config.url, config.key);
+                    console.log('✅ Supabase client initialized');
+                    
+                    // Update UI
+                    document.getElementById('createButton').disabled = false;
+                    document.getElementById('createButton').textContent = 'Create Groups with Images';
+                    document.getElementById('connectionStatus').className = 'connection-status connected';
+                    document.getElementById('connectionStatus').textContent = '✅ Connected';
+                    
+                    // Load initial data
+                    loadPairs();
+                    
+                    // ✅ FIXED REALTIME SUBSCRIPTION (v2 syntax)
+                    const subscription = window.supabaseClient
+                        .channel('schema-db-changes')
+                        .on(
+                            'postgres_changes',
+                            {
+                                event: '*',
+                                schema: 'public',
+                                table: 'group_requests'
+                            },
+                            (payload) => {
+                                console.log('🔄 Real-time update received!', payload);
+                                loadPairs(); // Refresh the list
+                                
+                                // Show notification for new completions
+                                if (payload.eventType === 'UPDATE' && payload.new.status === 'completed') {
+                                    showMessage(`✅ Groups created for ${payload.new.buyer_name} ↔ ${payload.new.agent_name}`, 'success');
+                                }
+                            }
+                        )
+                        .subscribe((status) => {
+                            if (status === 'SUBSCRIBED') {
+                                console.log('🎯 Real-time subscription active!');
+                            }
                         });
-                };
-                
-                supabaseScript.onerror = () => {
-                    reject(new Error('Failed to load Supabase client'));
-                };
-                
-                document.head.appendChild(supabaseScript);
-            });
-        }
+                    
+                    resolve();
+                })
+                .catch(error => {
+                    console.error('❌ Failed to initialize Supabase:', error);
+                    document.getElementById('connectionStatus').className = 'connection-status disconnected';
+                    document.getElementById('connectionStatus').textContent = '❌ Connection Failed';
+                    document.getElementById('createButton').textContent = '❌ Failed to Connect';
+                    reject(error);
+                });
+        };
+        
+        supabaseScript.onerror = () => {
+            reject(new Error('Failed to load Supabase client'));
+        };
+        
+        document.head.appendChild(supabaseScript);
+    });
+}
         
         async function createPair() {
             if (!supabaseClient) {
