@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tutorial</title>
+    <title>La-La Land's Features</title>
     <style>
         * {
             margin: 0;
@@ -55,6 +55,35 @@
             height: auto;
             object-fit: contain;
             user-select: none;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+
+        .slide-image.loading {
+            opacity: 0.3;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #ff8400;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+
+        .spinner.visible {
+            opacity: 1;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .nav-btn {
@@ -81,6 +110,11 @@
 
         .nav-btn:active {
             transform: scale(0.95);
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         #prevBtn {
@@ -184,6 +218,12 @@
                 font-size: 13px;
                 padding: 6px 8px;
             }
+
+            .spinner {
+                width: 32px;
+                height: 32px;
+                border-width: 2px;
+            }
         }
 
         @media (max-width: 480px) {
@@ -207,6 +247,7 @@
         <div class="title" id="slideTitle"></div>
 
         <div class="slide-area">
+            <div class="spinner" id="spinner"></div>
             <img class="slide-image" id="slideImage" src="" alt="">
             <button class="nav-btn" id="prevBtn">‹</button>
             <button class="nav-btn" id="nextBtn">›</button>
@@ -221,26 +262,43 @@
 
     <script>
         const SLIDES = [
-            { src: "https://lalaland.mx/tutorial/QuickSearch.gif",   header: "Búsqueda rápida de fraccionamientos" },
-            { src: "https://lalaland.mx/tutorial/ViewList.gif",      header: "Lista de disponibilidad en tiempo real" },
-            { src: "https://lalaland.mx/tutorial/ChangeStatus.gif",  header: "Cambia a vendido con un click" },
-            { src: "https://lalaland.mx/tutorial/LotDetails.gif",    header: "Precio x m2, dimensiones y CTA's" },
-            { src: "https://lalaland.mx/tutorial/POI.gif",           header: "Agrega los puntos de interés del proyecto" },
-            { src: "https://lalaland.mx/tutorial/PriceQuickEdit.gif",header: "¿Necesitas actualizar un precio rápido?" },
-            { src: "https://lalaland.mx/tutorial/CompareLots.gif",   header: "Compara precios para decidir inteligente" },
-            { src: "https://lalaland.mx/tutorial/Street.gif",    header: "¿Sin Google Streetview? Nosotros nos encargamos" },
+            { src: "https://la-la.land/tutorial/QuickSearch.gif",   header: "Búsqueda rápida de fraccionamientos" },
+            { src: "https://la-la.land/tutorial/ViewList.gif",      header: "Lista de disponibilidad en tiempo real" },
+            { src: "https://la-la.land/tutorial/ChangeStatus.gif",  header: "Cambia a vendido con un click" },
+            { src: "https://la-la.land/tutorial/LotDetails.gif",    header: "Precio x m2, dimensiones y CTA's" },
+            { src: "https://la-la.land/tutorial/POI.gif",           header: "Agrega los puntos de interés del proyecto" },
+            { src: "https://la-la.land/tutorial/PriceQuickEdit.gif",header: "¿Necesitas actualizar un precio rápido?" },
+            { src: "https://la-la.land/tutorial/CompareLots.gif",   header: "Compara precios para decidir inteligente" },
+            { src: "https://la-la.land/tutorial/Street.gif",    header: "¿Sin Google Streetview? Nosotros nos encargamos" },
         ];
 
-        const REDIRECT_URL = "https://lalaland.mx/wa?link=tuto";
+        const REDIRECT_URL = "https://la-la.land/wa?link=tuto";
 
         let currentSlide = 0;
+        let isLoading = false;
+        const imageCache = {};
 
         const slideTitle = document.getElementById('slideTitle');
         const slideImage = document.getElementById('slideImage');
+        const spinner = document.getElementById('spinner');
         const dots = document.getElementById('dots');
         const prevBtn = document.getElementById('prevBtn');
         const nextBtn = document.getElementById('nextBtn');
         const closeBtn = document.getElementById('closeBtn');
+
+        // Preload all images
+        function preloadImages() {
+            SLIDES.forEach((slide, index) => {
+                const img = new Image();
+                img.src = slide.src;
+                imageCache[index] = img;
+                
+                // Preload adjacent slides first for better UX
+                if (index === 0 || index === 1 || index === SLIDES.length - 1) {
+                    img.loading = 'eager';
+                }
+            });
+        }
 
         // Create dots
         SLIDES.forEach((_, i) => {
@@ -250,7 +308,23 @@
             dots.appendChild(dot);
         });
 
+        function setLoadingState(loading) {
+            isLoading = loading;
+            prevBtn.disabled = loading;
+            nextBtn.disabled = loading;
+            
+            if (loading) {
+                slideImage.classList.add('loading');
+                spinner.classList.add('visible');
+            } else {
+                slideImage.classList.remove('loading');
+                spinner.classList.remove('visible');
+            }
+        }
+
         function goTo(i) {
+            if (isLoading || i === currentSlide) return;
+            
             currentSlide = i;
             render();
         }
@@ -258,11 +332,37 @@
         function render() {
             const slide = SLIDES[currentSlide];
             slideTitle.textContent = slide.header;
-            slideImage.src = slide.src;
 
+            // Update dots immediately for responsive feel
             document.querySelectorAll('.dot').forEach((dot, i) => {
                 dot.className = i === currentSlide ? 'dot active' : 'dot';
             });
+
+            // Check if image is cached and loaded
+            const cachedImg = imageCache[currentSlide];
+            if (cachedImg && cachedImg.complete && cachedImg.naturalHeight !== 0) {
+                // Image is ready, show it immediately
+                slideImage.src = slide.src;
+                setLoadingState(false);
+            } else {
+                // Image not ready, show loading state
+                setLoadingState(true);
+                
+                // Create a new image to load
+                const img = new Image();
+                img.onload = () => {
+                    // Only update if we're still on the same slide
+                    if (SLIDES[currentSlide].src === slide.src) {
+                        slideImage.src = slide.src;
+                        setLoadingState(false);
+                    }
+                };
+                img.onerror = () => {
+                    console.error('Failed to load image:', slide.src);
+                    setLoadingState(false);
+                };
+                img.src = slide.src;
+            }
         }
 
         prevBtn.onclick = () => goTo((currentSlide - 1 + SLIDES.length) % SLIDES.length);
@@ -272,9 +372,11 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') prevBtn.onclick();
             if (e.key === 'ArrowRight') nextBtn.onclick();
+            if (e.key === 'Escape') closeBtn.onclick();
         });
 
         // Initialize
+        preloadImages();
         render();
     </script>
 </body>
