@@ -27,6 +27,51 @@
         .connection-status { position: fixed; top: 10px; right: 10px; padding: 5px 10px; border-radius: 15px; font-size: 12px; }
         .connected { background: #28a745; color: white; }
         .disconnected { background: #dc3545; color: white; }
+        
+        /* Progress wheel and bar styles */
+        .loading-wheel {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #25D366;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #f0f0f0;
+            border-radius: 3px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #25D366;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        .status-steps {
+            font-size: 14px;
+            color: #666;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .status-steps span {
+            transition: all 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -78,6 +123,19 @@
         
         <button onclick="createPair()" id="createButton" disabled>🔄 Initializing...</button>
         
+        <!-- Progress Container -->
+        <div id="progressContainer" style="display: none;">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <div id="statusSteps" class="status-steps">
+                <span id="step1">⏳ Queued</span> → 
+                <span id="step2">📱 Creating groups</span> → 
+                <span id="step3">🖼️ Adding images</span> → 
+                <span id="step4">✅ Complete</span>
+            </div>
+        </div>
+        
         <div id="message"></div>
         
         <h2>Request History</h2>
@@ -95,81 +153,114 @@
             document.getElementById('buyerPreview').textContent = `Cliente: ${buyerName} | Agente: ${agentName}`;
         }
         
-// Initialize Supabase dynamically
-function initializeSupabase() {
-    return new Promise((resolve, reject) => {
-        const supabaseScript = document.createElement('script');
-        supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        function showProgress(step) {
+            const progressContainer = document.getElementById('progressContainer');
+            const progressFill = document.getElementById('progressFill');
+            const steps = ['step1', 'step2', 'step3', 'step4'];
+            
+            progressContainer.style.display = 'block';
+            
+            // Update progress bar
+            const progressPercent = (step / 4) * 100;
+            progressFill.style.width = progressPercent + '%';
+            
+            // Update step highlights
+            steps.forEach((stepId, index) => {
+                const element = document.getElementById(stepId);
+                if (index < step) {
+                    element.style.color = '#25D366';
+                    element.style.fontWeight = 'bold';
+                } else if (index === step) {
+                    element.innerHTML = '🔄 ' + element.textContent.replace('⏳', '').replace('📱', '').replace('🖼️', '').replace('✅', '');
+                    element.style.color = '#25D366';
+                    element.style.fontWeight = 'bold';
+                } else {
+                    element.style.color = '#666';
+                    element.style.fontWeight = 'normal';
+                }
+            });
+        }
         
-        supabaseScript.onload = () => {
-            fetch('https://la-la.land/sb_config.json')
-                .then(response => {
-                    if (!response.ok) throw new Error('Failed to load config');
-                    return response.json();
-                })
-                .then(config => {
-                    // ✅ FIX: Assign to both variables
-                    supabaseClient = window.supabaseClient = supabase.createClient(config.url, config.key);
-                    console.log('✅ Supabase client initialized');
-                    
-                    // Update UI
-                    document.getElementById('createButton').disabled = false;
-                    document.getElementById('createButton').textContent = 'Create Groups with Images';
-                    document.getElementById('connectionStatus').className = 'connection-status connected';
-                    document.getElementById('connectionStatus').textContent = '✅ Connected';
-                    
-                    loadPairs();
-                    
-                    // Real-time subscription
-                    const subscription = supabaseClient
-                        .channel('schema-db-changes')
-                        .on(
-                            'postgres_changes',
-                            {
-                                event: '*',
-                                schema: 'public',
-                                table: 'group_requests'
-                            },
-                            (payload) => {
-                                console.log('🔄 Real-time update received!', payload);
-                                loadPairs();
-                                
-                                if (payload.eventType === 'UPDATE' && payload.new.status === 'completed') {
-                                    showMessage(`✅ Groups created for ${payload.new.buyer_name} ↔ ${payload.new.agent_name}`, 'success');
-                                }
-                            }
-                        )
-                        .subscribe((status) => {
-                            if (status === 'SUBSCRIBED') {
-                                console.log('🎯 Real-time subscription active!');
-                            }
+        function hideProgress() {
+            document.getElementById('progressContainer').style.display = 'none';
+        }
+        
+        // Initialize Supabase dynamically
+        function initializeSupabase() {
+            return new Promise((resolve, reject) => {
+                const supabaseScript = document.createElement('script');
+                supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+                
+                supabaseScript.onload = () => {
+                    fetch('https://la-la.land/sb_config.json')
+                        .then(response => {
+                            if (!response.ok) throw new Error('Failed to load config');
+                            return response.json();
+                        })
+                        .then(config => {
+                            // ✅ FIX: Assign to both variables
+                            supabaseClient = window.supabaseClient = supabase.createClient(config.url, config.key);
+                            console.log('✅ Supabase client initialized');
+                            
+                            // Update UI
+                            document.getElementById('createButton').disabled = false;
+                            document.getElementById('createButton').textContent = 'Create Groups with Images';
+                            document.getElementById('connectionStatus').className = 'connection-status connected';
+                            document.getElementById('connectionStatus').textContent = '✅ Connected';
+                            
+                            loadPairs();
+                            
+                            // Real-time subscription
+                            const subscription = supabaseClient
+                                .channel('schema-db-changes')
+                                .on(
+                                    'postgres_changes',
+                                    {
+                                        event: '*',
+                                        schema: 'public',
+                                        table: 'group_requests'
+                                    },
+                                    (payload) => {
+                                        console.log('🔄 Real-time update received!', payload);
+                                        loadPairs();
+                                        
+                                        if (payload.eventType === 'UPDATE' && payload.new.status === 'completed') {
+                                            showProgress(4); // Complete!
+                                            setTimeout(hideProgress, 3000); // Hide after 3 seconds
+                                            showMessage(`✅ Groups created for ${payload.new.buyer_name} ↔ ${payload.new.agent_name}`, 'success');
+                                        }
+                                    }
+                                )
+                                .subscribe((status) => {
+                                    if (status === 'SUBSCRIBED') {
+                                        console.log('🎯 Real-time subscription active!');
+                                    }
+                                });
+                            
+                            resolve();
+                        })
+                        .catch(error => {
+                            console.error('❌ Failed to initialize Supabase:', error);
+                            document.getElementById('connectionStatus').className = 'connection-status disconnected';
+                            document.getElementById('connectionStatus').textContent = '❌ Connection Failed';
+                            document.getElementById('createButton').textContent = '❌ Failed to Connect';
+                            reject(error);
                         });
-                    
-                    resolve();
-                })
-                .catch(error => {
-                    console.error('❌ Failed to initialize Supabase:', error);
-                    document.getElementById('connectionStatus').className = 'connection-status disconnected';
-                    document.getElementById('connectionStatus').textContent = '❌ Connection Failed';
-                    document.getElementById('createButton').textContent = '❌ Failed to Connect';
-                    reject(error);
-                });
-        };
+                };
+                
+                supabaseScript.onerror = () => {
+                    reject(new Error('Failed to load Supabase client'));
+                };
+                
+                document.head.appendChild(supabaseScript);
+            });
+        }
         
-        supabaseScript.onerror = () => {
-            reject(new Error('Failed to load Supabase client'));
-        };
-        
-        document.head.appendChild(supabaseScript);
-    });
-}
-        
-async function createPair() {
-    // ✅ FIX: Check the correct variable
-    if (!supabaseClient) {
-        showMessage('❌ Supabase client not initialized', 'error');
-        return;
-    }
+        async function createPair() {
+            if (!supabaseClient) {
+                showMessage('❌ Supabase client not initialized', 'error');
+                return;
+            }
             
             const buyerName = document.getElementById('buyerName').value;
             const buyerNumber = document.getElementById('buyerNumber').value;
@@ -181,25 +272,27 @@ async function createPair() {
                 return;
             }
             
-            showMessage('Submitting group creation request...', 'loading');
+            showMessage('', 'loading'); // Clear previous messages
+            showProgress(0); // Start at step 0
             
             try {
+                showProgress(1); // Step 1: Submitting to queue
                 const { data, error } = await supabaseClient
                     .from('group_requests')
-                    .insert([
-                        {
-                            buyer_name: buyerName,
-                            buyer_number: buyerNumber,
-                            agent_name: agentName,
-                            agent_number: agentNumber,
-                            status: 'pending'
-                        }
-                    ])
+                    .insert([{
+                        buyer_name: buyerName,
+                        buyer_number: buyerNumber,
+                        agent_name: agentName,
+                        agent_number: agentNumber,
+                        status: 'pending'
+                    }])
                     .select();
                 
                 if (error) throw error;
                 
-                showMessage('✅ Group creation request submitted! La-La Land will process it shortly.', 'success');
+                showProgress(2); // Step 2: Processing
+                showMessage('<div class="loading-wheel"></div> Request submitted! La-La Land is creating your groups...', 'loading');
+                
                 document.getElementById('buyerName').value = '';
                 document.getElementById('buyerNumber').value = '';
                 document.getElementById('agentName').value = '';
@@ -207,6 +300,7 @@ async function createPair() {
                 updatePreview();
                 
             } catch (err) {
+                hideProgress();
                 showMessage('❌ Failed to submit request: ' + err.message, 'error');
             }
         }
