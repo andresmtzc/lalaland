@@ -61,17 +61,6 @@
             transition: width 0.3s ease;
             width: 0%;
         }
-        
-        .status-steps {
-            font-size: 14px;
-            color: #666;
-            margin: 10px 0;
-            text-align: center;
-        }
-        
-        .status-steps span {
-            transition: all 0.3s ease;
-        }
     </style>
 </head>
 <body>
@@ -128,11 +117,8 @@
             <div class="progress-bar">
                 <div id="progressFill" class="progress-fill"></div>
             </div>
-            <div id="statusSteps" class="status-steps">
-                <span id="step1">⏳ Queued</span> → 
-                <span id="step2">📱 Creating groups</span> → 
-                <span id="step3">🖼️ Adding images</span> → 
-                <span id="step4">✅ Complete</span>
+            <div id="progressText" style="text-align: center; font-size: 14px; color: #666; margin-top: 5px;">
+                <span id="progressPercent">0%</span> - Creating your groups...
             </div>
         </div>
         
@@ -144,6 +130,7 @@
 
     <script>
         let supabaseClient = null;
+        let progressInterval;
         
         function updatePreview() {
             const buyerName = document.getElementById('buyerName').value || '[Buyer Name]';
@@ -153,35 +140,50 @@
             document.getElementById('buyerPreview').textContent = `Cliente: ${buyerName} | Agente: ${agentName}`;
         }
         
-        function showProgress(step) {
+        function startProgressAnimation() {
             const progressContainer = document.getElementById('progressContainer');
             const progressFill = document.getElementById('progressFill');
-            const steps = ['step1', 'step2', 'step3', 'step4'];
+            const progressPercent = document.getElementById('progressPercent');
             
             progressContainer.style.display = 'block';
             
-            // Update progress bar
-            const progressPercent = (step / 4) * 100;
-            progressFill.style.width = progressPercent + '%';
+            let progress = 0;
+            const totalTime = 70000; // 70 seconds total
             
-            // Update step highlights
-            steps.forEach((stepId, index) => {
-                const element = document.getElementById(stepId);
-                if (index < step) {
-                    element.style.color = '#25D366';
-                    element.style.fontWeight = 'bold';
-                } else if (index === step) {
-                    element.innerHTML = '🔄 ' + element.textContent.replace('⏳', '').replace('📱', '').replace('🖼️', '').replace('✅', '');
-                    element.style.color = '#25D366';
-                    element.style.fontWeight = 'bold';
-                } else {
-                    element.style.color = '#666';
-                    element.style.fontWeight = 'normal';
+            clearInterval(progressInterval);
+            progressInterval = setInterval(() => {
+                progress += 100; // Update every 100ms
+                const percent = Math.min((progress / totalTime) * 100, 95); // Stop at 95%
+                
+                progressFill.style.width = percent + '%';
+                progressPercent.textContent = Math.round(percent) + '%';
+                
+                // Don't auto-complete - wait for backend
+                if (percent >= 95) {
+                    clearInterval(progressInterval);
+                    progressPercent.textContent = '95% - Almost done...';
                 }
-            });
+            }, 100);
         }
         
-        function hideProgress() {
+        function completeProgressAnimation() {
+            const progressFill = document.getElementById('progressFill');
+            const progressPercent = document.getElementById('progressPercent');
+            
+            clearInterval(progressInterval);
+            
+            // Jump to 100%
+            progressFill.style.width = '100%';
+            progressPercent.textContent = '100% - Complete!';
+            
+            // Hide after 2 seconds
+            setTimeout(() => {
+                document.getElementById('progressContainer').style.display = 'none';
+            }, 2000);
+        }
+        
+        function stopProgressAnimation() {
+            clearInterval(progressInterval);
             document.getElementById('progressContainer').style.display = 'none';
         }
         
@@ -198,7 +200,6 @@
                             return response.json();
                         })
                         .then(config => {
-                            // ✅ FIX: Assign to both variables
                             supabaseClient = window.supabaseClient = supabase.createClient(config.url, config.key);
                             console.log('✅ Supabase client initialized');
                             
@@ -225,8 +226,7 @@
                                         loadPairs();
                                         
                                         if (payload.eventType === 'UPDATE' && payload.new.status === 'completed') {
-                                            showProgress(4); // Complete!
-                                            setTimeout(hideProgress, 3000); // Hide after 3 seconds
+                                            completeProgressAnimation();
                                             showMessage(`✅ Groups created for ${payload.new.buyer_name} ↔ ${payload.new.agent_name}`, 'success');
                                         }
                                     }
@@ -272,11 +272,10 @@
                 return;
             }
             
-            showMessage('', 'loading'); // Clear previous messages
-            showProgress(0); // Start at step 0
+            showMessage('', 'loading');
+            startProgressAnimation();
             
             try {
-                showProgress(1); // Step 1: Submitting to queue
                 const { data, error } = await supabaseClient
                     .from('group_requests')
                     .insert([{
@@ -290,8 +289,7 @@
                 
                 if (error) throw error;
                 
-                showProgress(2); // Step 2: Processing
-                showMessage('<div class="loading-wheel"></div> Request submitted! La-La Land is creating your groups...', 'loading');
+                showMessage('<div class="loading-wheel"></div> Request submitted! Creating groups...', 'loading');
                 
                 document.getElementById('buyerName').value = '';
                 document.getElementById('buyerNumber').value = '';
@@ -300,7 +298,7 @@
                 updatePreview();
                 
             } catch (err) {
-                hideProgress();
+                stopProgressAnimation();
                 showMessage('❌ Failed to submit request: ' + err.message, 'error');
             }
         }
