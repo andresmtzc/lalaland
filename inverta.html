@@ -212,25 +212,31 @@
                             loadPairs();
                             
                             // Real-time subscription
-                            const subscription = supabaseClient
-                                .channel('schema-db-changes')
-                                .on(
-                                    'postgres_changes',
-                                    {
-                                        event: '*',
-                                        schema: 'public',
-                                        table: 'group_requests'
-                                    },
-                                    (payload) => {
-                                        console.log('🔄 Real-time update received!', payload);
-                                        loadPairs();
-                                        
-                                        if (payload.eventType === 'UPDATE' && payload.new.status === 'completed') {
-                                            completeProgressAnimation();
-                                            showMessage(`✅ Groups created for ${payload.new.buyer_name} ↔ ${payload.new.agent_name}`, 'success');
-                                        }
-                                    }
-                                )
+const subscription = supabaseClient
+    .channel('schema-db-changes')
+    .on(
+        'postgres_changes',
+        {
+            event: '*',
+            schema: 'public',
+            table: 'group_requests'
+        },
+        (payload) => {
+            console.log('🔄 Real-time update received!', payload);
+            loadPairs();
+            
+            if (payload.eventType === 'UPDATE' && payload.new.status === 'completed') {
+                completeProgressAnimation();
+                showMessage(`✅ Groups created for ${payload.new.buyer_name} ↔ ${payload.new.agent_name}`, 'success');
+            }
+            
+            // 👇 NEW ERROR HANDLING 👇
+            if (payload.eventType === 'UPDATE' && payload.new.status === 'error') {
+                stopProgressAnimation();
+                showMessage(`❌ Failed to create groups for ${payload.new.buyer_name}: ${payload.new.error_message}`, 'error');
+            }
+        }
+    )
                                 .subscribe((status) => {
                                     if (status === 'SUBSCRIBED') {
                                         console.log('🎯 Real-time subscription active!');
