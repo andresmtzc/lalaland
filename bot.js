@@ -4,15 +4,13 @@ const { Buffer } = require('buffer');
 const fs = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 
-// TEST UPDATE
-
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
 const DEBUG = true;
-const RESPONSE_TIMEOUT = 30 * 1000;
-const ALERT_NUMBER = '5218112881110@s.whatsapp.net';
+const RESPONSE_TIMEOUT = 60 * 1000; //60 seconds
+const ALERT_NUMBER = '5212291703721@s.whatsapp.net';
 const MESSAGE_CONTEXT_COUNT = 5;
 const SUPABASE_POLL_INTERVAL = 10000; // 10 seconds
 
