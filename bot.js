@@ -9,7 +9,7 @@ const { createClient } = require('@supabase/supabase-js');
 // ============================================================================
 
 const DEBUG = true;
-const RESPONSE_TIMEOUT = 60 * 1000; //60 seconds
+const RESPONSE_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
 const ALERT_NUMBER = '5212291703721@s.whatsapp.net';
 const MESSAGE_CONTEXT_COUNT = 5;
 const SUPABASE_POLL_INTERVAL = 10000; // 10 seconds
@@ -209,7 +209,7 @@ function getBuyerNumber(pair) {
 
 function formatAlertMessage(buyerNumber, sellerNumber, recentMessages) {
     let alert = `⚠️ *UNRESPONSIVE AGENT ALERT* ⚠️\n\n`;
-    alert += `🔴 Agent hasn't responded in ${RESPONSE_TIMEOUT/60000} minutes\n\n`;
+    alert += `🔴 Agent hasn't responded in ${RESPONSE_TIMEOUT/3600000} hours\n\n`;
     alert += `🏢 *Agent:* ${sellerNumber}\n`;
     alert += `🛒 *Buyer:* ${buyerNumber}\n\n`;
     alert += `📝 *Recent conversation context:*\n`;
