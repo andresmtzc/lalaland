@@ -12,6 +12,10 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
 <link rel="stylesheet" href="https://la-la.land/styles.css">
+<script>
+// ===== CLIENT CONFIG =====  
+const CURRENT_CLIENT = 'inverta';  
+</script>
 
   <script>
     // Font loading handler (runs before DOMContentLoaded)
@@ -406,6 +410,7 @@ ctaobserver.observe(ctaToaster, {
       event: '*',
       schema: 'public',
       table: 'lots',
+      filter: `client_id=eq.${CURRENT_CLIENT}`
     },
     (payload) => {
       console.log('📡 Change detected:', payload);
@@ -581,6 +586,7 @@ ctaobserver.observe(ctaToaster, {
       .from('editors')
       .select('id') // minimal; don't expose lot_table
       .eq('email', email.trim().toLowerCase())
+      .eq('client_id', CURRENT_CLIENT)
       .maybeSingle();
 
     if (error) {
@@ -1290,7 +1296,7 @@ function loadRoad(map, cb) {
 <script>
 // LOT PARSING: Load and parse lot data
 function loadLotsAsync(map) {
-  return fetch('https://la-la.land/lots.txt')
+  return fetch('https://la-la.land/inverta/lots.txt')
     .then(r => r.text())
     .then(txt => {
       lotData = parseLots(txt);
@@ -1353,6 +1359,7 @@ function parseLots(text) {
       .from('lots')
       .select('lot_name, availability, rSize, millones, fraccionamiento')
       .in('lot_name', names);
+          .eq('client_id', CURRENT_CLIENT);
 
     if (error) {
       console.error('Error fetching lot availability from Supabase:', error);
@@ -2114,6 +2121,7 @@ async function fetchLots() {
     const { data, error } = await window.supabaseClient
       .from('lots')
       .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image')
+      .eq('client_id', CURRENT_CLIENT)
       .order('lot_name', { ascending: true });
     
     if (error) throw error;
@@ -2409,7 +2417,8 @@ detailRow.innerHTML = `
         const { error } = await window.supabaseClient
             .from('lots')
             .update({ millones: newPrice })
-            .eq('lot_name', `lot${lotNumber}`);
+            .eq('lot_name', `lot${lotNumber}`)
+            .eq('client_id', CURRENT_CLIENT);
         
         if (error) throw error;
         
@@ -3707,7 +3716,7 @@ btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
   PS.createPinAt = async function (lngLat) {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
-      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat, heading: 0, title: 'PIN' }).select().single();
+      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat, heading: 0, title: 'PIN',client_id: CURRENT_CLIENT }).select().single();
     if (error) { console.error(error); toast('Could not create pin'); return; }
     PS.addMarker(data);
     toast('Pin added');
@@ -3951,6 +3960,7 @@ PS.openPinInModal = async function (pin) {
     .from('pin_photos')
     .select('id,url,created_at')
     .eq('pin_id', pin.id)
+    .eq('client_id', CURRENT_CLIENT)
     .order('created_at', { ascending: true });
 
   const latest = (photos && photos.length) ? photos[photos.length - 1] : null;
@@ -4052,8 +4062,12 @@ PS.openPinInModal = async function (pin) {
         const url = pub?.data?.publicUrl;
         if (!url) throw new Error('No public URL');
 
-        const { error: insErr } = await window.supabaseClient
-          .from('pin_photos').insert({ pin_id: pin.id, url });
+const { error: insErr } = await window.supabaseClient
+  .from('pin_photos').insert({ 
+    pin_id: pin.id, 
+    url,
+    client_id: CURRENT_CLIENT 
+  });
         if (insErr) throw insErr;
 
         const wrap = container.querySelector(`#ps-photo-wrap-${pin.id}`);
@@ -4104,7 +4118,7 @@ PS.openPinInModal = async function (pin) {
   PS.loadPins = async function () {
     await window.supabaseReady;
     const { data, error } = await window.supabaseClient
-      .from('pins').select('id,lng,lat,heading,title').order('created_at', { ascending: true });
+      .from('pins').select('id,lng,lat,heading,title').eq('client_id', CURRENT_CLIENT).order('created_at', { ascending: true });
     if (error) return;
 
 
@@ -4116,10 +4130,10 @@ PS.openPinInModal = async function (pin) {
   PS.subscribe = function () {
     window.supabaseClient
       .channel('pins-rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins' }, (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins', filter: `client_id=eq.${CURRENT_CLIENT}` }, (payload) => {
         PS.addMarker(payload.new); // for live inserts
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pins' }, (payload) => {
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pins', filter: `client_id=eq.${CURRENT_CLIENT}` }, (payload) => {
         const rec = PS.markers.get(payload.new.id);
         if (!rec) return;
         const { lng, lat, heading } = payload.new;
@@ -4132,7 +4146,7 @@ PS.openPinInModal = async function (pin) {
         }
 
       })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pins' }, (payload) => {
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pins', filter: `client_id=eq.${CURRENT_CLIENT}` }, (payload) => {
         const rec = PS.markers.get(payload.old.id);
         if (rec) { rec.marker.remove(); PS.markers.delete(payload.old.id); }
 
@@ -4342,6 +4356,7 @@ function refreshFeaturedLayer() {
         .from('lots')
         .update({ availability: next })
         .eq('lot_name', sel.lotName);
+        .eq('client_id', CURRENT_CLIENT);
       if (error) throw error;
 
       const LABELS = { available:'disponible', sold:'vendido', featured:'destacado' };
