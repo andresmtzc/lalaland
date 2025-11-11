@@ -2569,12 +2569,16 @@ backButton.addEventListener('click', () => {
     updateScrollbar();
   } catch {}
 
-  // 3) Normalize map hover feature-state to match current selection
-  try {
-    if (typeof hoveredId !== 'undefined' && hoveredId !== null && map?.getSource('lots-final')) {
-      map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
-      hoveredId = null;
-    }
+// 3) Normalize map hover feature-state to match current selection
+try {
+  if (typeof hoveredId !== 'undefined' && hoveredId !== null && map?.getSource('lots-final')) {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+    hoveredId = null;
+  }
+  
+  // 🔥 ONLY re-highlight if modal is still open (not fully closing)
+  const modal = document.getElementById('lotModal');
+  if (modal && modal.classList.contains('show')) {
     // Use your existing selection helpers (added later in the file)
     const sel = (typeof getSelectedLot === 'function') ? getSelectedLot() : null;
     const lotName = sel?.lotName || window.selectedLotName;
@@ -2585,23 +2589,24 @@ backButton.addEventListener('click', () => {
         hoveredId = mapIndex;
       }
     }
-  } catch {}
-
-  // Finally allow scroll handler to run
-  scrollHandlerAttached = true;
-
-  // Restore previous map view if you stored one for details
-  if (previousMapView && map) {
-    map.flyTo({
-      center: previousMapView.center,
-      zoom: previousMapView.zoom,
-      bearing: previousMapView.bearing,
-      pitch: previousMapView.pitch,
-      speed: 1.2,
-      curve: 1.5
-    });
-    previousMapView = null;
   }
+} catch {}
+
+// Finally allow scroll handler to run
+scrollHandlerAttached = true;
+
+// Restore previous map view if you stored one for details
+if (previousMapView && map) {
+  map.flyTo({
+    center: previousMapView.center,
+    zoom: previousMapView.zoom,
+    bearing: previousMapView.bearing,
+    pitch: previousMapView.pitch,
+    speed: 1.2,
+    curve: 1.5
+  });
+  previousMapView = null;
+}
 });
 
 
@@ -3279,16 +3284,15 @@ function openModal(lot = null, baseIndex = 0) {
 
 
 function closeModal() {
-
-document.getElementById('authControls').classList.remove('hide-in-detail');
+  document.getElementById('authControls').classList.remove('hide-in-detail');
   document.getElementById('communitySearchBtn')?.classList.remove('hide');
   document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
-
+  
   if (window.resetUnitButtons) window.resetUnitButtons();
-
+  
   const modal = document.getElementById('lotModal');
   if (!modal) return;
-
+  
   const wrapper = document.querySelector('.modal-content-wrapper');
   const modalInfo = document.getElementById('modalInfo');
   const customScrollbar = document.getElementById('customScrollbar');
@@ -3299,21 +3303,15 @@ document.getElementById('authControls').classList.remove('hide-in-detail');
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const plusBtn = document.querySelector('.plus-button');
   const bottomPlus = document.querySelector('.bottom-plus-button');
-
   
-
   // --- 1) Kill special modes / embeds
   modal.classList.remove('info-mode', 'pin-mode', 'expanded', 'lot-mode');
-  hideCalendlyEmbed();                       // blanks iframe + hides container
+  hideCalendlyEmbed();
   isDetailOpen = false;
-
-  // --- 2) Clear lot side labels & map hover
+  
+  // --- 2) Clear lot side labels
   removeSideLengthLabels();
-  if (typeof hoveredId !== 'undefined' && hoveredId !== null && map && map.getSource('lots-final')) {
-    try { map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false }); } catch {}
-    hoveredId = null;
-  }
-
+  
   // --- 3) Reset panes (detail vs list) & content
   if (wrapper) wrapper.classList.remove('show-details');
   if (lotDetails) {
@@ -3324,8 +3322,6 @@ document.getElementById('authControls').classList.remove('hide-in-detail');
   if (modalInfo) {
     modalInfo.style.display = '';
     modalInfo.style.opacity = '1';
-    // Optional: reset scroll position so list starts clean
-
   }
   if (customScrollbar) {
     customScrollbar.style.display = '';
@@ -3336,7 +3332,7 @@ document.getElementById('authControls').classList.remove('hide-in-detail');
     customScrollthumb.style.display = '';
     customScrollthumb.style.visibility = '';
   }
-
+  
   // --- 4) Reset controls visibility & header
   if (backButton) backButton.style.display = 'none';
   if (headerLotNumber) headerLotNumber.style.display = 'none';
@@ -3344,12 +3340,12 @@ document.getElementById('authControls').classList.remove('hide-in-detail');
   if (bottomPlus) bottomPlus.style.display = 'none';
   if (plusIcon) plusIcon.style.display = 'block';
   if (minusIcon) minusIcon.style.display = 'none';
-
-  // --- 5) Reset internal scroll/animation flags (if you use them)
+  
+  // --- 5) Reset internal scroll/animation flags
   try { scrollHandlerAttached = true; } catch {}
   try { clampCooldown = false; } catch {}
   try { animatedFeaturedLots?.clear?.(); } catch {}
-
+  
   // --- 6) Restore map view (undo panBy offset + preModalView fly)
   if (preModalView && map) {
     map.flyTo({
@@ -3360,27 +3356,63 @@ document.getElementById('authControls').classList.remove('hide-in-detail');
       speed: 1.2,
       curve: 1.5
     });
-
-    // After fly, undo the modal offset pan
+    
     map.once('moveend', () => {
       if (lastOffset) {
         map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
         lastOffset = [0, 0];
       }
     });
-
+    
     preModalView = null;
   } else if (map && lastOffset) {
-    // Fallback: just undo the offset
     map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
     lastOffset = [0, 0];
   }
+  
+// --- 7) Close modal (let CSS transition run)
+modal.classList.remove('show');
 
-  // --- 7) Close modal (let CSS transition run)
-  modal.classList.remove('show');
-  setTimeout(() => { modal.style.display = 'none'; }, 300);
+// 🔥 Clear immediately when show class is removed
+if (map && map.getSource('lots-final') && hoveredId !== null) {
+  try {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+  } catch {}
+}
 
-    disableInfiniteScrollbar();
+setTimeout(() => { 
+  modal.style.display = 'none';
+  
+  // 🔥 Clear hover states AFTER modal is fully closed
+  if (map && map.getSource('lots-final')) {
+    try {
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+      }
+      
+      lotData.forEach((lot, index) => {
+        try {
+          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
+        } catch {}
+      });
+      
+      hoveredId = null;
+    } catch {}
+  }
+  
+  // 🔥 Clear one more time after another frame
+  requestAnimationFrame(() => {
+    if (map && map.getSource('lots-final')) {
+      lotData.forEach((lot, index) => {
+        try {
+          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
+        } catch {}
+      });
+    }
+  });
+}, 300);
+  
+  disableInfiniteScrollbar();
   disableInfoScrollbar();
 }
 
@@ -5345,82 +5377,111 @@ function getCurrentFraccZoom() {
     }
 
     // 🟢 FIX: PROPER FRACC-AWARE CLOSE BEHAVIOR
-    function closeModalWithZoomReset() {
-      const modal = document.getElementById('lotModal');
-      if (!modal) return;
-      
-      
-       // 🔥 ADD THIS: Hide 360 viewer when closing modal
+function closeModalWithZoomReset() {
+  const modal = document.getElementById('lotModal');
+  if (!modal) return;
+  
+  // 🔥 Hide 360 viewer when closing modal
   const viewerContainer = document.getElementById('viewer-container');
   if (viewerContainer) {
     viewerContainer.style.display = 'none';
   }
-      // Clear URL first
-      clearLotURL();
+  
+  // Clear URL first
+  clearLotURL();
+  
+  // Remove side length labels
+  removeSideLengthLabels();
+  
+  // 🟢 GET THE CORRECT FRACC CENTER BASED ON CURRENT VIEW
+  const fraccCenter = getCurrentFraccCenter();
+  const initialZoom = getCurrentFraccZoom();
+  
+  if (map) {
+    map.flyTo({
+      center: fraccCenter,
+      zoom: initialZoom,
+      bearing: 0,
+      pitch: 0,
+      speed: 1.2,
+      curve: 1.5
+    });
+  }
+  
+  // Reset modal state
+  const wrapper = document.querySelector('.modal-content-wrapper');
+  const lotDetails = document.getElementById('lotDetails');
+  const backButton = document.getElementById('backButton');
+  const headerLotNumber = document.getElementById('headerLotNumber');
+  const plusBtn = document.querySelector('.plus-button');
+  const bottomPlus = document.querySelector('.bottom-plus-button');
+  
+  if (wrapper) wrapper.classList.remove('show-details');
+  if (lotDetails) {
+    lotDetails.classList.remove('active');
+    lotDetails.style.display = 'block';
+    lotDetails.innerHTML = '';
+  }
+  if (backButton) backButton.style.display = 'none';
+  if (headerLotNumber) headerLotNumber.style.display = 'none';
+  if (plusBtn) plusBtn.style.display = 'none';
+  if (bottomPlus) bottomPlus.style.display = 'none';
+  
+  // Hide calendly if open
+  const calendlyEl = document.getElementById('calendlyEmbed');
+  if (calendlyEl) calendlyEl.style.display = 'none';
+  
+// Close modal with animation
+modal.classList.remove('show', 'info-mode', 'pin-mode', 'expanded', 'lot-mode');
+
+// 🔥 Clear immediately when show class is removed
+if (map && map.getSource('lots-final') && hoveredId !== null) {
+  try {
+    map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+  } catch {}
+}
+
+setTimeout(() => { 
+  modal.style.display = 'none'; 
+  
+  // 🟢 SHOW FLOATING BUTTONS AGAIN
+  document.getElementById('communitySearchBtn')?.classList.remove('hide');
+  document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
+  
+  // 🔥 Clear hover states AFTER modal is fully closed
+  if (map && map.getSource('lots-final')) {
+    try {
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
+      }
       
-      // Remove side length labels
-      removeSideLengthLabels();
-      
-      // Clear map hover state
-      if (hoveredId !== null && map && map.getSource('lots-final')) {
-        try { 
-          map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false }); 
+      lotData.forEach((lot, index) => {
+        try {
+          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
         } catch {}
-        hoveredId = null;
-      }
+      });
       
-      // 🟢 GET THE CORRECT FRACC CENTER BASED ON CURRENT VIEW
-      const fraccCenter = getCurrentFraccCenter();
-      const initialZoom = getCurrentFraccZoom();
-      
-      if (map) {
-        map.flyTo({
-          center: fraccCenter, // 🟢 Uses dynamic fracc center
-          zoom: initialZoom,
-          bearing: 0,
-          pitch: 0,
-          speed: 1.2,
-          curve: 1.5
-        });
-      }
-      
-      // Reset modal state
-      const wrapper = document.querySelector('.modal-content-wrapper');
-      const lotDetails = document.getElementById('lotDetails');
-      const backButton = document.getElementById('backButton');
-      const headerLotNumber = document.getElementById('headerLotNumber');
-      const plusBtn = document.querySelector('.plus-button');
-      const bottomPlus = document.querySelector('.bottom-plus-button');
-      
-      if (wrapper) wrapper.classList.remove('show-details');
-      if (lotDetails) {
-        lotDetails.classList.remove('active');
-        lotDetails.style.display = 'block';
-        lotDetails.innerHTML = '';
-      }
-      if (backButton) backButton.style.display = 'none';
-      if (headerLotNumber) headerLotNumber.style.display = 'none';
-      if (plusBtn) plusBtn.style.display = 'none';
-      if (bottomPlus) bottomPlus.style.display = 'none';
-      
-      // Hide calendly if open
-      const calendlyEl = document.getElementById('calendlyEmbed');
-      if (calendlyEl) calendlyEl.style.display = 'none';
-      
-      // Close modal with animation
-      modal.classList.remove('show', 'info-mode', 'pin-mode', 'expanded', 'lot-mode');
-      setTimeout(() => { 
-        modal.style.display = 'none'; 
-        
-        // 🟢 SHOW FLOATING BUTTONS AGAIN
-        document.getElementById('communitySearchBtn')?.classList.remove('hide');
-        document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
-      }, 300);
-      
-      // Reset internal states
-      isDetailOpen = false;
-      scrollHandlerAttached = true;
+      hoveredId = null;
+    } catch {}
+  }
+  
+  // 🔥 Clear one more time after another frame
+  requestAnimationFrame(() => {
+    if (map && map.getSource('lots-final')) {
+      lotData.forEach((lot, index) => {
+        try {
+          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
+        } catch {}
+      });
     }
+  });
+}, 300);
+  
+  // Reset internal states
+  isDetailOpen = false;
+  scrollHandlerAttached = true;
+}
+
 
     // Handle URL changes - for browser navigation AFTER initial load
     function handleURLChange() {
