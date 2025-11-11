@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure CSV Upload - La La Land</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 40px auto; 
+            padding: 20px; 
+            background: #f5f5f5;
+        }
+        .container { 
+            background: white;
+            border: 1px solid #ddd; 
+            padding: 30px; 
+            border-radius: 12px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h2 { 
+            color: #333; 
+            margin-bottom: 10px; 
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+        label { 
+            display: block; 
+            margin-bottom: 5px; 
+            font-weight: bold;
+            color: #333;
+        }
+        input, button { 
+            margin: 8px 0; 
+            padding: 12px; 
+            width: 100%; 
+            box-sizing: border-box; 
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        input { 
+            border: 2px solid #ddd; 
+            transition: border-color 0.3s;
+        }
+        input:focus { 
+            border-color: #3cb371; 
+            outline: none;
+        }
+        button { 
+            background: #3cb371; 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        button:hover { 
+            background: #2e8b57; 
+        }
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .status { 
+            margin-top: 20px; 
+            padding: 15px; 
+            border-radius: 6px; 
+            font-size: 14px;
+        }
+        .success { 
+            background: #d4edda; 
+            color: #155724; 
+            border: 1px solid #c3e6cb; 
+        }
+        .error { 
+            background: #f8d7da; 
+            color: #721c24; 
+            border: 1px solid #f5c6cb; 
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .file-info {
+            background: #e2e3e5;
+            color: #383d41;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .client-info {
+            background: #e8f5e8;
+            color: #2d5016;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .instructions {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            border: 1px solid #ffeaa7;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+        }
+        .preview {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .preview table {
+            width: 100%;
+            font-size: 11px;
+            border-collapse: collapse;
+        }
+        .preview th, .preview td {
+            border: 1px solid #dee2e6;
+            padding: 3px 6px;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 120px;
+        }
+        .preview th {
+            background: #e9ecef;
+            font-weight: bold;
+        }
+        .columns-list {
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+        .columns-list code {
+            background: #d4edda;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin: 0 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="loading" class="loading">
+            <h3>🔄 Loading Configuration...</h3>
+            <p>Connecting to La La Land database</p>
+        </div>
+
+        <div id="mainContent" style="display: none;">
+            <h2>🔐 Lots Data Replacement - La La Land</h2>
+            <p class="subtitle">Upload your complete lots data CSV</p>
+            
+            <div class="instructions">
+                <strong>📋 Instructions:</strong><br>
+                1. Export COMPLETE data from Excel with all columns<br>
+                2. Enter your secure upload token<br>
+                3. Select your CSV file<br>
+                4. Click upload to replace ALL your lots data<br>
+            </div>
+
+            <div class="columns-list">
+                <strong>Required Columns:</strong><br>
+                <code>id</code> <code>lot_name</code> <code>size</code> <code>rSize</code> <code>price</code> 
+                <code>millones</code> <code>availability</code> <code>price_m2</code> <code>nickname</code> 
+                <code>subtitle</code> <code>image</code> <code>fraccionamiento</code> <code>client_id</code>
+            </div>
+            
+            <div>
+                <label for="uploadToken">Security Token:</label>
+                <input type="password" id="uploadToken" placeholder="Enter your secure upload token" autocomplete="off">
+                <small style="color: #666;">Contact support if you don't have a token</small>
+            </div>
+            
+            <div id="clientInfo" class="client-info" style="display: none;">
+                ✅ Authenticated as: <strong id="clientIdDisplay"></strong>
+            </div>
+            
+            <div>
+                <label for="csvFile">Complete Lots Data CSV:</label>
+                <input type="file" id="csvFile" accept=".csv">
+            </div>
+            
+            <div id="fileInfo" class="file-info" style="display: none;">
+                📁 Ready to upload: <strong id="fileName"></strong> (<span id="fileSize"></span>)
+                <div id="previewSection" class="preview" style="display: none;">
+                    <strong>First 3 rows preview:</strong>
+                    <div id="dataPreview"></div>
+                </div>
+            </div>
+            
+            <div class="warning">
+                <strong>🚨 IMPORTANT:</strong> 
+                <ul style="margin: 8px 0; padding-left: 20px;">
+                    <li>This will DELETE all your existing lots data</li>
+                    <li>And REPLACE it with the CSV contents</li>
+                    <li>Make sure your CSV contains ALL 13 columns</li>
+                    <li>Include the <code>id</code> column to preserve record IDs</li>
+                </ul>
+            </div>
+            
+            <button id="uploadBtn" onclick="uploadCSV()" disabled>🚀 Replace All My Lots Data</button>
+            
+            <div id="status"></div>
+        </div>
+    </div>
+
+    <script>
+        let supabase = null;
+        let currentClientId = null;
+        const CONFIG_URL = 'https://la-la.land/sb_config.json';
+        const TABLE_NAME = 'lots';
+
+        // Your exact column structure
+const EXPECTED_COLUMNS = [
+    'id', 'lot_name', 'size', 'rSize', 'price', 'millones', 
+    'availability', 'price_m2', 'nickname', 'subtitle', 
+    'image', 'fraccionamiento', 'client_id'
+];
+
+        async function initializeApp() {
+            try {
+                showStatus('🔗 Loading Supabase library...', 'info');
+                
+                if (typeof supabase === 'undefined' || !window.supabase) {
+                    throw new Error('Supabase library not loaded. Please refresh the page.');
+                }
+
+                showStatus('📡 Fetching configuration from La La Land...', 'info');
+                
+                const response = await fetch(CONFIG_URL);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch config: ${response.status} ${response.statusText}`);
+                }
+                
+                const config = await response.json();
+                
+                if (!config.url || !config.key) {
+                    throw new Error('Invalid configuration: missing url or key');
+                }
+
+                showStatus('🔌 Connecting to database...', 'info');
+                
+                try {
+                    supabase = window.supabase.createClient(config.url, config.key);
+                } catch (initError) {
+                    throw new Error(`Failed to initialize Supabase: ${initError.message}`);
+                }
+
+                // Test connection
+                const { data, error } = await supabase
+                    .from('lots')
+                    .select('id')
+                    .limit(1);
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('mainContent').style.display = 'block';
+                showStatus('✅ Connected to La La Land database!', 'success');
+                
+                document.getElementById('uploadToken').addEventListener('input', validateToken);
+                document.getElementById('csvFile').addEventListener('change', handleFileSelect);
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                document.getElementById('loading').innerHTML = `
+                    <h3 style="color: #dc3545;">❌ Connection Failed</h3>
+                    <p>Error: ${error.message}</p>
+                    <button onclick="location.reload()" style="margin-top: 10px;">🔄 Retry Connection</button>
+                `;
+            }
+        }
+
+        window.addEventListener('load', function() {
+            setTimeout(initializeApp, 100);
+        });
+        
+        async function validateToken() {
+            if (!supabase) {
+                showStatus('❌ Database not connected', 'error');
+                return;
+            }
+            
+            const token = document.getElementById('uploadToken').value.trim();
+            const clientInfo = document.getElementById('clientInfo');
+            const uploadBtn = document.getElementById('uploadBtn');
+            
+            if (token.length < 10) {
+                clientInfo.style.display = 'none';
+                uploadBtn.disabled = true;
+                currentClientId = null;
+                return;
+            }
+            
+            try {
+                showStatus('🔐 Verifying token...', 'info');
+                
+                const { data: tokenData, error } = await supabase
+                    .from('client_upload_tokens')
+                    .select('client_id')
+                    .eq('token', token)
+                    .eq('is_active', true)
+                    .single();
+                
+                if (error || !tokenData) {
+                    clientInfo.style.display = 'none';
+                    uploadBtn.disabled = true;
+                    currentClientId = null;
+                    showStatus('❌ Invalid or expired token', 'error');
+                    return;
+                }
+                
+                currentClientId = tokenData.client_id;
+                document.getElementById('clientIdDisplay').textContent = currentClientId;
+                clientInfo.style.display = 'block';
+                uploadBtn.disabled = !document.getElementById('csvFile').files[0];
+                showStatus('✅ Token verified! Now select your complete lots CSV.', 'success');
+                
+            } catch (error) {
+                console.error('Token validation error:', error);
+                showStatus('❌ Error verifying token', 'error');
+            }
+        }
+        
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            const fileInfo = document.getElementById('fileInfo');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const previewSection = document.getElementById('previewSection');
+            
+            if (file) {
+                if (!file.name.toLowerCase().endsWith('.csv')) {
+                    showStatus('❌ Please select a CSV file', 'error');
+                    event.target.value = '';
+                    return;
+                }
+                
+                const fileSize = (file.size / 1024).toFixed(2) + ' KB';
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileSize').textContent = fileSize;
+                fileInfo.style.display = 'block';
+                
+                // Preview and validate the CSV
+                previewAndValidateCSV(file);
+                
+                uploadBtn.disabled = !currentClientId;
+            } else {
+                fileInfo.style.display = 'none';
+                previewSection.style.display = 'none';
+                uploadBtn.disabled = true;
+            }
+        }
+        
+        function parseCSVLine(line) {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+    
+    // Push the last field
+    result.push(current.trim());
+    return result;
+}
+
+function previewAndValidateCSV(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const text = e.target.result;
+        const lines = text.split('\n').filter(line => line.trim() !== '');
+        
+        if (lines.length > 0) {
+            // Use proper CSV parsing for headers
+            const headers = parseCSVLine(lines[0]);
+            
+            // Remove ID column from headers for display
+            const displayHeaders = headers.filter(header => header !== 'id' && header !== '');
+            
+            // Validate columns (excluding id since it's optional)
+            const requiredColumns = EXPECTED_COLUMNS.filter(col => col !== 'id');
+            const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+            const extraColumns = headers.filter(col => !EXPECTED_COLUMNS.includes(col) && col !== 'id');
+            
+            let validationMessage = '';
+            if (missingColumns.length > 0) {
+                validationMessage = `❌ Missing columns: ${missingColumns.join(', ')}`;
+                showStatus(validationMessage, 'error');
+                document.getElementById('uploadBtn').disabled = true;
+            } else if (extraColumns.length > 0) {
+                validationMessage = `⚠️ Extra columns (will be ignored): ${extraColumns.join(', ')}`;
+                showStatus(validationMessage, 'warning');
+            } else {
+                validationMessage = '✅ All required columns present';
+                showStatus(validationMessage, 'success');
+            }
+            
+            // Show preview WITHOUT ID column
+            let previewHtml = `<table><tr>`;
+            
+            // Headers (without ID)
+            displayHeaders.forEach(header => {
+                const isExpected = EXPECTED_COLUMNS.includes(header);
+                const style = isExpected ? 'background: #d4edda' : 'background: #fff3cd';
+                previewHtml += `<th style="${style}">${header}</th>`;
+            });
+            previewHtml += `</tr>`;
+            
+            // First 3 data rows (without ID column)
+            let rowsShown = 0;
+            for (let i = 1; i < lines.length && rowsShown < 3; i++) {
+                const values = parseCSVLine(lines[i]);
+                
+                // Skip empty rows
+                if (values.length === 0 || (values.length === 1 && values[0] === '')) {
+                    continue;
+                }
+                
+                // Remove ID value
+                const displayValues = values.filter((value, index) => {
+                    return headers[index] !== 'id' && headers[index] !== '';
+                });
+                
+                // Only show if we have some data
+                if (displayValues.length > 0) {
+                    previewHtml += `<tr>`;
+                    displayValues.forEach(value => {
+                        // Truncate very long values for display
+                        const displayValue = value.length > 30 ? value.substring(0, 30) + '...' : value;
+                        previewHtml += `<td title="${value}">${displayValue || '&nbsp;'}</td>`;
+                    });
+                    
+                    // Fill empty cells if needed
+                    for (let j = displayValues.length; j < displayHeaders.length; j++) {
+                        previewHtml += `<td>&nbsp;</td>`;
+                    }
+                    previewHtml += `</tr>`;
+                    rowsShown++;
+                }
+            }
+            previewHtml += `</table>`;
+            previewHtml += `<small>Showing ${rowsShown} of ${lines.length - 1} rows</small>`;
+            previewHtml += `<br><small>${validationMessage}</small>`;
+            
+            document.getElementById('dataPreview').innerHTML = previewHtml;
+            document.getElementById('previewSection').style.display = 'block';
+        }
+    };
+    reader.readAsText(file);
+}
+        
+        async function uploadCSV() {
+    if (!supabase || !currentClientId) {
+        showStatus('Please enter a valid token first', 'error');
+        return;
+    }
+    
+    const fileInput = document.getElementById('csvFile');
+    const uploadBtn = document.getElementById('uploadBtn');
+    
+    if (!fileInput.files[0]) {
+        showStatus('Please select a CSV file', 'error');
+        return;
+    }
+
+    try {
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = '⏳ Secure Upload...';
+        showStatus('Reading and validating CSV...', 'info');
+        
+        const file = fileInput.files[0];
+        const text = await file.text();
+        const lines = text.split('\n').filter(line => line.trim() !== '');
+        
+        if (lines.length < 2) {
+            throw new Error('CSV file is empty or has no data rows');
+        }
+
+        // Parse CSV with proper parsing
+        const headers = parseCSVLine(lines[0]);
+        const records = [];
+        let skippedRows = 0;
+        
+        // Validate required columns (excluding id)
+        const requiredColumns = EXPECTED_COLUMNS.filter(col => col !== 'id');
+        const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+        if (missingColumns.length > 0) {
+            throw new Error(`Missing required columns: ${missingColumns.join(', ')}`);
+        }
+
+        for (let i = 1; i < lines.length; i++) {
+            const values = parseCSVLine(lines[i]);
+            if (values.length >= headers.length) {
+                const record = {};
+                
+headers.forEach((header, index) => {
+    // INCLUDE ID COLUMN NOW!
+    if (values[index] !== undefined) {
+        record[header] = convertValue(values[index], header);
+    }
+});
+                
+                // Security: We'll use the token's client_id, not the CSV value
+                // Don't set client_id here - the database function will handle it
+                
+                records.push(record);
+            } else {
+                skippedRows++;
+            }
+        }
+
+        if (records.length === 0) {
+            throw new Error('No valid records found in CSV');
+        }
+
+        showStatus(`Found ${records.length} lots. Starting secure upload...`, 'info');
+        if (skippedRows > 0) {
+            showStatus(`Skipped ${skippedRows} incomplete rows`, 'info');
+        }
+
+        // STEP: Call the SECURE DATABASE FUNCTION instead of direct operations
+        showStatus('🛡️ Secure database operation...', 'info');
+        
+        const clientToken = document.getElementById('uploadToken').value.trim();
+const recordsJson = records;  // Remove JSON.stringify()
+        
+        const { data: result, error } = await supabase
+          .rpc('replace_client_lots', {
+            client_token: clientToken,
+            new_lots_data: recordsJson
+          });
+
+        if (error) {
+            throw new Error(`Database error: ${error.message}`);
+        }
+        
+        if (!result.success) {
+            throw new Error(`Upload failed: ${result.error}`);
+        }
+
+        showStatus(
+            `✅ Success! Replaced ${result.records_deleted} old records with ${result.records_inserted} new lots for client ${result.client_id}`,
+            'success'
+        );
+
+    } catch (error) {
+        console.error('Upload error:', error);
+        showStatus(`❌ Error: ${error.message}`, 'error');
+    } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = '🚀 Replace All My Lots Data';
+    }
+}
+
+function convertValue(value, columnName) {
+    if (value === '' || value === 'NULL' || value === 'null') {
+        return null;
+    }
+    
+    // Convert ID to number
+    if (columnName === 'id' && !isNaN(value)) {
+        return Number(value);
+    }
+    
+    // Convert boolean columns if any
+    if (value.toLowerCase() === 'true') return true;
+    if (value.toLowerCase() === 'false') return false;
+    
+    // Return everything else as string
+    return value; 
+}
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status ' + (type || '');
+        }
+    </script>
+</body>
+</html> 
