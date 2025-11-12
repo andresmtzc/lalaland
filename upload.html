@@ -235,7 +235,7 @@
 const EXPECTED_COLUMNS = [
     'id', 'uuid', 'lot_name', 'size', 'rSize', 'price', 'millones', 
     'availability', 'price_m2', 'nickname', 'subtitle', 
-    'image', 'fraccionamiento', 'client_id'
+    'image', 'fraccionamiento'
 ];
 
         async function initializeApp() {
@@ -294,52 +294,53 @@ const EXPECTED_COLUMNS = [
             setTimeout(initializeApp, 100);
         });
         
-        async function validateToken() {
-            if (!supabase) {
-                showStatus('❌ Database not connected', 'error');
-                return;
-            }
-            
-            const token = document.getElementById('uploadToken').value.trim();
-            const clientInfo = document.getElementById('clientInfo');
-            const uploadBtn = document.getElementById('uploadBtn');
-            
-            if (token.length < 10) {
-                clientInfo.style.display = 'none';
-                uploadBtn.disabled = true;
-                currentClientId = null;
-                return;
-            }
-            
-            try {
-                showStatus('🔐 Verifying token...', 'info');
-                
-                const { data: tokenData, error } = await supabase
-                    .from('client_upload_tokens')
-                    .select('client_id')
-                    .eq('token', token)
-                    .eq('is_active', true)
-                    .single();
-                
-                if (error || !tokenData) {
-                    clientInfo.style.display = 'none';
-                    uploadBtn.disabled = true;
-                    currentClientId = null;
-                    showStatus('❌ Invalid or expired token', 'error');
-                    return;
-                }
-                
-                currentClientId = tokenData.client_id;
-                document.getElementById('clientIdDisplay').textContent = currentClientId;
-                clientInfo.style.display = 'block';
-                uploadBtn.disabled = !document.getElementById('csvFile').files[0];
-                showStatus('✅ Token verified! Now select your complete lots CSV.', 'success');
-                
-            } catch (error) {
-                console.error('Token validation error:', error);
-                showStatus('❌ Error verifying token', 'error');
-            }
+  
+  async function validateToken() {
+    if (!supabase) {
+        showStatus('❌ Database not connected', 'error');
+        return;
+    }
+    
+    const token = document.getElementById('uploadToken').value.trim();
+    const clientInfo = document.getElementById('clientInfo');
+    const uploadBtn = document.getElementById('uploadBtn');
+    
+    if (token.length < 10) {
+        clientInfo.style.display = 'none';
+        uploadBtn.disabled = true;
+        currentClientId = null;
+        return;
+    }
+    
+    try {
+        showStatus('🔐 Verifying token...', 'info');
+        
+        // NEW: Use the secure function instead of direct table access
+        const { data: tokenData, error } = await supabase
+            .rpc('validate_upload_token', { input_token: token });
+        
+        // NEW: Check if token is valid
+        if (error || !tokenData || !tokenData[0]?.is_valid) {
+            clientInfo.style.display = 'none';
+            uploadBtn.disabled = true;
+            currentClientId = null;
+            showStatus('❌ Invalid or expired token', 'error');
+            return;
         }
+        
+        // Token is valid - get the client_id from the response
+        currentClientId = tokenData[0].client_id;
+        document.getElementById('clientIdDisplay').textContent = currentClientId;
+        clientInfo.style.display = 'block';
+        uploadBtn.disabled = !document.getElementById('csvFile').files[0];
+        showStatus('✅ Token verified! Now select your complete lots CSV.', 'success');
+        
+    } catch (error) {
+        console.error('Token validation error:', error);
+        showStatus('❌ Error verifying token', 'error');
+    }
+}
+
         
         function handleFileSelect(event) {
             const file = event.target.files[0];
