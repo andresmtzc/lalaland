@@ -2371,7 +2371,7 @@ detailRow.innerHTML = `
 
   <div class="lot-price">
     <div class="price-wrapper">
-      ${editMode ? 
+      ${window.editMode ? 
         `<input type="text" class="price-edit" value="${lot.price}" data-lot-number="${lot.number}" data-original-price="${lot.price}">` :
         `<span class="price">$${lot.price}</span>`
       }
@@ -2385,7 +2385,7 @@ detailRow.innerHTML = `
   detailContainer.appendChild(detailRow);
 
   // 🟢 ADD SUPABASE SAVE CODE RIGHT HERE
-  if (editMode) {
+  if (window.editMode) {
     const priceInput = detailContainer.querySelector('.price-edit');
     
     priceInput.addEventListener('blur', async function() {
@@ -3352,18 +3352,23 @@ function closeModal() {
   isDetailOpen = false;
 
   // 🟢 Exit compare mode if active
-  if (typeof compareMode !== 'undefined' && compareMode) {
-    compareMode = false;
-    if (typeof selectedLots !== 'undefined') selectedLots.clear();
-    const compareBtn = document.getElementById('compareBtn');
-    if (compareBtn) compareBtn.classList.remove('active');
-    if (typeof removeEditOutlines === 'function') removeEditOutlines();
+  try {
+    if (window.compareMode) {
+      window.compareMode = false;
+      if (window.window.selectedLots) window.window.selectedLots.clear();
+      const compareBtn = document.getElementById('compareBtn');
+      if (compareBtn) compareBtn.classList.remove('active');
+      if (typeof window.removeEditOutlines === 'function') window.removeEditOutlines();
 
-    // Restore original baseLots if backed up
-    if (window.originalBaseLots) {
-      baseLots = [...window.originalBaseLots];
-      window.originalBaseLots = null;
+      // Restore original baseLots if backed up
+      if (window.originalBaseLots) {
+        window.baseLots = [...window.originalBaseLots];
+        window.originalBaseLots = null;
+      }
+      console.log('Compare mode turned off on modal close');
     }
+  } catch (e) {
+    console.error('Error exiting compare mode:', e);
   }
   
   // --- 2) Clear lot side labels
@@ -5054,13 +5059,13 @@ const setupAuthListener = setInterval(function() {
   // Function to reset to default order (when fracc changes or mode is toggled off)
   function resetToDefaultOrder() {
     // 🟢 If in compare mode, exit it and restore from backup
-    if (compareMode) {
+    if (window.compareMode) {
       const compareBtn = document.getElementById('compareBtn');
       if (compareBtn) {
         compareBtn.classList.remove('active');
       }
-      compareMode = false;
-      selectedLots.clear();
+      window.compareMode = false;
+      window.selectedLots.clear();
       if (typeof removeEditOutlines === 'function') {
         removeEditOutlines();
       }
@@ -5315,8 +5320,8 @@ function getCurrentFraccCenter() {
   }
   
   // 2. Try most recent selected lot
-  if (selectedLots.size > 0) {
-    const lastSelected = Array.from(selectedLots).pop();
+  if (window.selectedLots.size > 0) {
+    const lastSelected = Array.from(window.selectedLots).pop();
     const lot = lotData.find(l => l.name === lastSelected);
     if (lot && lot.fraccionamiento) {
       const fracc = lot.fraccionamiento.toLowerCase();
@@ -5936,15 +5941,16 @@ function initChatAvailability() {
 
 <script>
 // ===== EDIT MODE FUNCTIONALITY =====
-let editMode = false;
-let compareMode = false;
-let selectedLots = new Set();
+// Declare on window object to ensure global access
+window.window.editMode = false;
+window.compareMode = false;
+window.window.selectedLots = new Set();
 
 // Compare button event listener
 document.getElementById('compareBtn').addEventListener('click', function() {
-    compareMode = !compareMode;
+    window.compareMode = !window.compareMode;
 
-    if (compareMode) {
+    if (window.compareMode) {
         // Enter compare mode
         this.classList.add('active');
         showToaster('🔍 Compare mode ON - Click lots to compare');
@@ -5957,7 +5963,7 @@ document.getElementById('compareBtn').addEventListener('click', function() {
             if (!isNaN(baseIndex) && baseIndex >= 0 && baseLots[baseIndex]) {
                 const lot = baseLots[baseIndex];
                 const lotName = `lot${lot.number}`;
-                selectedLots.add(lotName);
+                window.window.selectedLots.add(lotName);
                 console.log('Auto-selected centered lot:', lotName);
 
                 // Apply visual overlay
@@ -5976,7 +5982,7 @@ document.getElementById('compareBtn').addEventListener('click', function() {
     } else {
         // Exit compare mode
         this.classList.remove('active');
-        selectedLots.clear();
+        window.window.selectedLots.clear();
         removeEditOutlines();
         
         // 🟢 RESTORE original baseLots
@@ -5997,9 +6003,9 @@ document.getElementById('compareBtn').addEventListener('click', function() {
 
 // Edit button event listener
 document.getElementById('editBtn').addEventListener('click', function() {
-    editMode = !editMode;
+    window.editMode = !window.editMode;
     
-    if (editMode) {
+    if (window.editMode) {
         // Enter edit mode
         this.style.boxShadow = '0 0 0 3px rgba(255,132,0,1)';
         this.style.backgroundColor = '#ff8400';
@@ -6016,7 +6022,7 @@ document.getElementById('editBtn').addEventListener('click', function() {
 
 // Compare mode click handler (renamed from handleEditClick)
 function handleEditClick(e) {
-  if (!compareMode) return false;
+  if (!window.compareMode) return false;
   
   // 🟢 CHECK IF CLICKING ON MARBLES (NOT LOTS)
   const marbleFeatures = map.queryRenderedFeatures(e.point, { 
@@ -6037,15 +6043,15 @@ function handleEditClick(e) {
     const lotNumber = extractLotNumber(lotName);
     
     // Toggle selection
-    if (selectedLots.has(lotName)) {
-      selectedLots.delete(lotName);
+    if (window.selectedLots.has(lotName)) {
+      window.selectedLots.delete(lotName);
       showToaster(`❌ Removed ${lotNumber}`);
     } else {
-      selectedLots.add(lotName);
+      window.selectedLots.add(lotName);
       showToaster(`✅ Added ${lotNumber}`);
     }
     
-    console.log('Selected lots:', Array.from(selectedLots));
+    console.log('Selected lots:', Array.from(window.selectedLots));
     
     // Update visuals
     updateEditOutlines();
@@ -6067,10 +6073,10 @@ function updateEditOutlines() {
     // Remove old outlines
     removeEditOutlines();
     
-    if (!map || selectedLots.size === 0) return;
+    if (!map || window.selectedLots.size === 0) return;
     
     // Add white fill using map layers
-    selectedLots.forEach(lotName => {
+    window.selectedLots.forEach(lotName => {
         const lot = lotData.find(l => l.name === lotName);
         if (lot) {
             // Create a simple source for this lot
@@ -6159,7 +6165,7 @@ function updateModalList() {
     const modal = document.getElementById('lotModal');
     const modalInfo = document.getElementById('modalInfo');
     
-    if (selectedLots.size === 0) {
+    if (window.selectedLots.size === 0) {
         if (modal.classList.contains('show')) {
             modalInfo.innerHTML = '<div style="padding:20px; text-align:center; color:#8a8880;">Select lots to compare</div>';
             // Restore normal baseLots if no selections
@@ -6187,7 +6193,7 @@ function updateModalList() {
     const selectedBaseLots = [];
     let uniqueFraccs = new Set(); // 🟢 NEW: Track communities
 
-    selectedLots.forEach(lotName => {
+    window.selectedLots.forEach(lotName => {
         const lotNumber = extractLotNumber(lotName);
         const baseLot = window.baseLotsAll.find(bl => bl.number === lotNumber);
         if (baseLot) {
@@ -6231,7 +6237,7 @@ function updateModalList() {
 // Update outlines on map move
 if (map) {
     map.on('move', function() {
-        if (compareMode && selectedLots.size > 0) {
+        if (window.compareMode && window.selectedLots.size > 0) {
             // For map layers, they auto-update with map movement
         }
     });
