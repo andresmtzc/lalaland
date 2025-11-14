@@ -2863,30 +2863,46 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   console.log(`Updating ${affectedLots.length} lots from ${oldValue} to ${newValue}`);
 
   try {
-    // Update all matching lots in Supabase by lot names (since price_m2 might have commas)
+    // Update each lot individually (RLS policies may block bulk .in() updates)
     const lotNames = affectedLots.map(l => l.name);
     console.log('Lot names to update:', lotNames);
-    console.log('Update query:', { price_m2: newValue, lot_names: lotNames, client_id: CURRENT_CLIENT });
 
-    const { data, error, count } = await window.supabaseClient
-      .from('lots')
-      .update({ price_m2: newValue })
-      .in('lot_name', lotNames)
-      .eq('client_id', CURRENT_CLIENT)
-      .select();
+    let successCount = 0;
+    const errors = [];
 
-    console.log('Supabase response:', { data, error, count, rowsAffected: data?.length });
+    // Update lots one by one (same pattern as availability cycling)
+    for (const lotName of lotNames) {
+      try {
+        const { error } = await window.supabaseClient
+          .from('lots')
+          .update({ price_m2: newValue })
+          .eq('lot_name', lotName)
+          .eq('client_id', CURRENT_CLIENT);
 
-    if (error) {
-      console.error('Supabase error details:', error);
-      showToaster(`DB Error: ${error.message || error.code || 'Unknown'}`);
-      throw error;
+        if (error) {
+          console.error(`Failed to update ${lotName}:`, error);
+          errors.push({ lot: lotName, error: error.message });
+        } else {
+          successCount++;
+          console.log(`✓ Updated ${lotName}`);
+        }
+      } catch (e) {
+        console.error(`Exception updating ${lotName}:`, e);
+        errors.push({ lot: lotName, error: e.message });
+      }
     }
 
-    if (!data || data.length === 0) {
-      showToaster(`⚠️ No rows updated. Check RLS policies?`);
-      console.warn('Update returned 0 rows - possible RLS issue');
+    console.log(`Update complete: ${successCount}/${lotNames.length} successful`);
+
+    if (successCount === 0) {
+      showToaster(`⚠️ No lots updated. Check RLS policies`);
+      console.error('All updates failed:', errors);
       return;
+    }
+
+    if (errors.length > 0) {
+      console.warn('Some updates failed:', errors);
+      showToaster(`⚠️ Updated ${successCount}/${lotNames.length} lots`);
     }
 
     // Update local data arrays
@@ -2918,7 +2934,7 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
     updateScrollbar();
 
     // Show success message with actual DB update count
-    showToaster(`✓ Updated ${data.length} lot${data.length > 1 ? 's' : ''} in DB`);
+    showToaster(`✓ Updated ${successCount} lot${successCount > 1 ? 's' : ''} in DB`);
   } catch (e) {
     console.error('Error updating price_m2:', e);
     showToaster(`Failed: ${e.message || 'Unknown error'}`);
