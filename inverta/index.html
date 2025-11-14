@@ -2160,6 +2160,12 @@ function setupLotClickHandlers() {
 
   allRows.forEach(row => {
     row.addEventListener('click', async (e) => {
+      // Don't open detail modal if editing price_m2
+      const editingElement = row.querySelector('[contenteditable="true"]');
+      if (editingElement) {
+        return;
+      }
+
       const index = row.dataset.index;
       const lot = lots[index];
       const status = (lot.availability ?? '').toLowerCase();
@@ -2641,6 +2647,9 @@ if (!isSold && lot.priceM2 && lot.size) {
   calculatedPrice = (roundedPrice / 1000).toString();
 }
 
+// Format calculated price with commas
+const calculatedPriceFormatted = calculatedPrice.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
 // Format price per m2 from Supabase
 const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '');
 
@@ -2662,7 +2671,7 @@ row.innerHTML = `
 
       <div class="lot-price ${isSold ? 'lot-price--hidden' : ''}">
         <div class="price-wrapper">
-          <span class="price">$${calculatedPrice}</span>
+          <span class="price">$${calculatedPriceFormatted}</span>
           <span class="mdp">MIL</span>
         </div>
       </div>
@@ -2763,8 +2772,10 @@ function setupRowActionButtons() {
 
       // Handle save on Enter or blur
       const savePriceM2 = async () => {
+        // Strip commas and parse both values
         const newText = priceM2Column.textContent.trim().replace(/[^0-9.]/g, '');
         const newPriceM2 = parseFloat(newText);
+        const oldValue = parseFloat(oldPriceM2.replace(/,/g, ''));
 
         priceM2Column.contentEditable = 'false';
         priceM2Column.classList.remove('editing');
@@ -2775,7 +2786,7 @@ function setupRowActionButtons() {
           return;
         }
 
-        if (newPriceM2 === parseFloat(oldPriceM2)) {
+        if (newPriceM2 === oldValue) {
           render(); // Reset display, no change
           return;
         }
@@ -2821,11 +2832,15 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
     return;
   }
 
-  const oldValue = parseFloat(oldPriceM2);
+  // Strip commas and parse values
+  const oldValue = parseFloat(oldPriceM2.toString().replace(/,/g, ''));
   const newValue = parseFloat(newPriceM2);
 
   // Find all affected lots in local data
-  const affectedLots = lotData.filter(lot => parseFloat(lot.priceM2) === oldValue);
+  const affectedLots = lotData.filter(lot => {
+    const lotPrice = parseFloat(lot.priceM2?.toString().replace(/,/g, '') || '0');
+    return lotPrice === oldValue;
+  });
 
   if (affectedLots.length === 0) {
     showToaster('No lots found with this price/m²');
@@ -2835,31 +2850,35 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   console.log(`Updating ${affectedLots.length} lots from ${oldValue} to ${newValue}`);
 
   try {
-    // Update all matching lots in Supabase
+    // Update all matching lots in Supabase by lot names (since price_m2 might have commas)
+    const lotNames = affectedLots.map(l => l.name);
     const { error } = await window.supabaseClient
       .from('lots')
       .update({ price_m2: newValue })
-      .eq('price_m2', oldValue)
+      .in('lot_name', lotNames)
       .eq('client_id', CURRENT_CLIENT);
 
     if (error) throw error;
 
     // Update local data arrays
     lotData.forEach(lot => {
-      if (parseFloat(lot.priceM2) === oldValue) {
+      const lotPrice = parseFloat(lot.priceM2?.toString().replace(/,/g, '') || '0');
+      if (lotPrice === oldValue) {
         lot.priceM2 = newValue.toString();
         lot.price_m2 = newValue; // Also update snake_case version
       }
     });
 
     baseLots.forEach(lot => {
-      if (parseFloat(lot.priceM2) === oldValue) {
+      const lotPrice = parseFloat(lot.priceM2?.toString().replace(/,/g, '') || '0');
+      if (lotPrice === oldValue) {
         lot.priceM2 = newValue.toString();
       }
     });
 
     lots.forEach(lot => {
-      if (parseFloat(lot.priceM2) === oldValue) {
+      const lotPrice = parseFloat(lot.priceM2?.toString().replace(/,/g, '') || '0');
+      if (lotPrice === oldValue) {
         lot.priceM2 = newValue.toString();
       }
     });
