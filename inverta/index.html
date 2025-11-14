@@ -2772,104 +2772,116 @@ row.innerHTML = `
   // Don't call updateScrollbar here - let the scroll handler do it after positioning
 }
 
-// Setup event listeners for row action buttons
+// Setup event listeners for row action buttons using event delegation to prevent duplicates
 function setupRowActionButtons() {
-  // Edit buttons - enable inline price_m2 editing
-  document.querySelectorAll('.row-action-btn.edit-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const lotName = btn.dataset.lotName;
+  // Remove any existing delegated listeners first
+  const modalInfo = document.getElementById('modalInfo');
+  if (!modalInfo) return;
 
-      // Find the price_m2 column for this row
-      const row = btn.closest('.info-row');
-      const priceM2Column = row.querySelector('.price-per-m2-column');
+  // Remove old listeners by cloning and replacing (this removes ALL listeners)
+  if (!window.__rowActionListenersSetup) {
+    // Only set up once per page load using event delegation
+    window.__rowActionListenersSetup = true;
 
-      if (!priceM2Column) return;
+    // Use event delegation on the parent container
+    modalInfo.addEventListener('click', async (e) => {
+      // Handle edit button clicks
+      const editBtn = e.target.closest('.row-action-btn.edit-btn');
+      if (editBtn) {
+        e.stopPropagation();
+        const lotName = editBtn.dataset.lotName;
 
-      // If already editing, cancel
-      if (priceM2Column.contentEditable === 'true') {
-        priceM2Column.contentEditable = 'false';
-        priceM2Column.classList.remove('editing');
-        render(); // Reset display
-        return;
-      }
+        // Find the price_m2 column for this row
+        const row = editBtn.closest('.info-row');
+        const priceM2Column = row.querySelector('.price-per-m2-column');
 
-      const oldPriceM2 = priceM2Column.dataset.priceM2;
-      if (!oldPriceM2) {
-        showToaster('No price/m² to edit');
-        return;
-      }
+        if (!priceM2Column) return;
 
-      // Make it editable and focus
-      priceM2Column.contentEditable = 'true';
-      priceM2Column.classList.add('editing');
-      priceM2Column.focus();
-
-      // Select just the number part (before /M2)
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(priceM2Column.childNodes[0]);
-      selection.removeAllRanges();
-      selection.addRange(range);
-
-      // Handle save on Enter or blur
-      const savePriceM2 = async () => {
-        // Get text and strip /M2 suffix first, then strip commas and other chars
-        let newText = priceM2Column.textContent.trim();
-        newText = newText.replace(/\/M2$/i, ''); // Remove /M2 suffix
-        newText = newText.replace(/[^0-9.]/g, ''); // Strip all non-numeric except decimal
-        const newPriceM2 = parseFloat(newText);
-        const oldValue = parseFloat(oldPriceM2.replace(/,/g, ''));
-
-        priceM2Column.contentEditable = 'false';
-        priceM2Column.classList.remove('editing');
-
-        if (isNaN(newPriceM2) || newPriceM2 <= 0) {
-          showToaster('Invalid price');
-          render(); // Reset display
-          return;
-        }
-
-        if (newPriceM2 === oldValue) {
-          render(); // Reset display, no change
-          return;
-        }
-
-        // Show immediate feedback
-        showToaster('Saving...');
-
-        // Update all lots with this price_m2
-        await updateBulkPriceM2(oldPriceM2, newPriceM2);
-      };
-
-      priceM2Column.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          savePriceM2();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
+        // If already editing, cancel
+        if (priceM2Column.contentEditable === 'true') {
           priceM2Column.contentEditable = 'false';
           priceM2Column.classList.remove('editing');
           render(); // Reset display
+          return;
         }
-      }, { once: true });
 
-      priceM2Column.addEventListener('blur', savePriceM2, { once: true });
-    });
-  });
+        const oldPriceM2 = priceM2Column.dataset.priceM2;
+        if (!oldPriceM2) {
+          showToaster('No price/m² to edit');
+          return;
+        }
 
-  // Cycle availability buttons
-  document.querySelectorAll('.row-action-btn.cycle-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const lotName = btn.dataset.lotName;
-      console.log('Cycle availability clicked for:', lotName);
-      // Call the cycle availability function directly
-      if (typeof window.cycleSelectedLotAvailability === 'function') {
-        window.cycleSelectedLotAvailability();
+        // Make it editable and focus
+        priceM2Column.contentEditable = 'true';
+        priceM2Column.classList.add('editing');
+        priceM2Column.focus();
+
+        // Select just the number part (before /M2)
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(priceM2Column.childNodes[0]);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        // Handle save on Enter or blur
+        const savePriceM2 = async () => {
+          // Get text and strip /M2 suffix first, then strip commas and other chars
+          let newText = priceM2Column.textContent.trim();
+          newText = newText.replace(/\/M2$/i, ''); // Remove /M2 suffix
+          newText = newText.replace(/[^0-9.]/g, ''); // Strip all non-numeric except decimal
+          const newPriceM2 = parseFloat(newText);
+          const oldValue = parseFloat(oldPriceM2.replace(/,/g, ''));
+
+          priceM2Column.contentEditable = 'false';
+          priceM2Column.classList.remove('editing');
+
+          if (isNaN(newPriceM2) || newPriceM2 <= 0) {
+            showToaster('Invalid price');
+            render(); // Reset display
+            return;
+          }
+
+          if (newPriceM2 === oldValue) {
+            render(); // Reset display, no change
+            return;
+          }
+
+          // Show immediate feedback
+          showToaster('Saving...');
+
+          // Update all lots with this price_m2
+          await updateBulkPriceM2(oldPriceM2, newPriceM2);
+        };
+
+        priceM2Column.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            savePriceM2();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            priceM2Column.contentEditable = 'false';
+            priceM2Column.classList.remove('editing');
+            render(); // Reset display
+          }
+        }, { once: true });
+
+        priceM2Column.addEventListener('blur', savePriceM2, { once: true });
+        return;
+      }
+
+      // Handle cycle availability button clicks
+      const cycleBtn = e.target.closest('.row-action-btn.cycle-btn');
+      if (cycleBtn) {
+        e.stopPropagation();
+        const lotName = cycleBtn.dataset.lotName;
+        console.log('Cycle availability clicked for:', lotName);
+        // Call the cycle availability function directly
+        if (typeof window.cycleSelectedLotAvailability === 'function') {
+          window.cycleSelectedLotAvailability();
+        }
       }
     });
-  });
+  }
 }
 
 // Update all lots with matching price_m2 in Supabase and locally
@@ -4770,12 +4782,19 @@ function refreshFeaturedLayer() {
 
       // Log to audit table
       try {
-        // Count available lots after this change
-        const { count: availableCount } = await window.supabaseClient
+        // Count total lots and sold lots, then calculate available lots
+        const { count: totalCount } = await window.supabaseClient
+          .from('lots')
+          .select('*', { count: 'exact', head: true })
+          .eq('client_id', CURRENT_CLIENT);
+
+        const { count: soldCount } = await window.supabaseClient
           .from('lots')
           .select('*', { count: 'exact', head: true })
           .eq('client_id', CURRENT_CLIENT)
-          .eq('availability', 'available');
+          .eq('availability', 'sold');
+
+        const availableCount = (totalCount || 0) - (soldCount || 0);
 
         await window.supabaseClient
           .from('lot_updates_audit')
@@ -4784,7 +4803,7 @@ function refreshFeaturedLayer() {
             old_availability: current,
             new_availability: next,
             updated_by: updatedBy,
-            available_lots: availableCount || 0
+            available_lots: availableCount
           });
       } catch (auditError) {
         console.warn('Failed to log audit:', auditError);
