@@ -2667,7 +2667,10 @@ row.innerHTML = `
         </div>
       </div>
 
-      <div class="price-per-m2-column ${isSold ? 'lot-price--hidden' : ''}">
+      <div class="price-per-m2-column ${isSold ? 'lot-price--hidden' : ''}"
+           contenteditable="false"
+           data-price-m2="${lot.priceM2 || ''}"
+           data-lot-name="${lot.name}">
         ${pricePerM2Formatted}<span class="sup">/M2</span>
       </div>
 
@@ -2720,19 +2723,72 @@ row.innerHTML = `
 
 // Setup event listeners for row action buttons
 function setupRowActionButtons() {
-  // Edit buttons
+  // Edit buttons - enable inline price_m2 editing
   document.querySelectorAll('.row-action-btn.edit-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const lotName = btn.dataset.lotName;
-      console.log('Edit button clicked for:', lotName);
-      // Toggle edit mode just like the floating button
-      window.editMode = !window.editMode;
-      if (window.editMode) {
-        showToaster('✏️ Edit mode ON');
-      } else {
-        showToaster('Edit mode OFF');
+
+      // Find the price_m2 column for this row
+      const row = btn.closest('.info-row');
+      const priceM2Column = row.querySelector('.price-per-m2-column');
+
+      if (!priceM2Column) return;
+
+      const oldPriceM2 = priceM2Column.dataset.priceM2;
+      if (!oldPriceM2) {
+        showToaster('No price/m² to edit');
+        return;
       }
+
+      // Make it editable and focus
+      priceM2Column.contentEditable = 'true';
+      priceM2Column.classList.add('editing');
+      priceM2Column.focus();
+
+      // Select just the number part (before /M2)
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(priceM2Column.childNodes[0]);
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // Handle save on Enter or blur
+      const savePriceM2 = async () => {
+        const newText = priceM2Column.textContent.trim().replace(/[^0-9.]/g, '');
+        const newPriceM2 = parseFloat(newText);
+
+        priceM2Column.contentEditable = 'false';
+        priceM2Column.classList.remove('editing');
+
+        if (isNaN(newPriceM2) || newPriceM2 <= 0) {
+          showToaster('Invalid price');
+          render(); // Reset display
+          return;
+        }
+
+        if (newPriceM2 === parseFloat(oldPriceM2)) {
+          render(); // Reset display, no change
+          return;
+        }
+
+        // Update all lots with this price_m2
+        await updateBulkPriceM2(oldPriceM2, newPriceM2);
+      };
+
+      priceM2Column.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          savePriceM2();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          priceM2Column.contentEditable = 'false';
+          priceM2Column.classList.remove('editing');
+          render(); // Reset display
+        }
+      }, { once: true });
+
+      priceM2Column.addEventListener('blur', savePriceM2, { once: true });
     });
   });
 
@@ -2748,6 +2804,70 @@ function setupRowActionButtons() {
       }
     });
   });
+}
+
+// Update all lots with matching price_m2 in Supabase and locally
+async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
+  if (!window.supabaseClient) {
+    showToaster('Database not ready');
+    return;
+  }
+
+  const oldValue = parseFloat(oldPriceM2);
+  const newValue = parseFloat(newPriceM2);
+
+  // Find all affected lots in local data
+  const affectedLots = lotData.filter(lot => parseFloat(lot.priceM2) === oldValue);
+
+  if (affectedLots.length === 0) {
+    showToaster('No lots found with this price/m²');
+    return;
+  }
+
+  console.log(`Updating ${affectedLots.length} lots from ${oldValue} to ${newValue}`);
+
+  try {
+    // Update all matching lots in Supabase
+    const { error } = await window.supabaseClient
+      .from('lots')
+      .update({ price_m2: newValue })
+      .eq('price_m2', oldValue)
+      .eq('client_id', CURRENT_CLIENT);
+
+    if (error) throw error;
+
+    // Update local data arrays
+    lotData.forEach(lot => {
+      if (parseFloat(lot.priceM2) === oldValue) {
+        lot.priceM2 = newValue.toString();
+        lot.price_m2 = newValue; // Also update snake_case version
+      }
+    });
+
+    baseLots.forEach(lot => {
+      if (parseFloat(lot.priceM2) === oldValue) {
+        lot.priceM2 = newValue.toString();
+      }
+    });
+
+    lots.forEach(lot => {
+      if (parseFloat(lot.priceM2) === oldValue) {
+        lot.priceM2 = newValue.toString();
+      }
+    });
+
+    // Re-render to show updated prices
+    render();
+    highlightCenter();
+    updateScrollbar();
+
+    // Show success message
+    showToaster(`✓ Updated ${affectedLots.length} lot${affectedLots.length > 1 ? 's' : ''}`);
+  } catch (e) {
+    console.error('Error updating price_m2:', e);
+    showToaster('Failed to update prices');
+    render(); // Reset display
+  }
 }
 
 // ===== SIMPLIFIED updateScrollbar =====
