@@ -2943,6 +2943,13 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
 
     // Log price changes to audit table
     try {
+      // Count available lots (query once for all audit records)
+      const { count: availableCount } = await window.supabaseClient
+        .from('lots')
+        .select('*', { count: 'exact', head: true })
+        .eq('client_id', CURRENT_CLIENT)
+        .eq('availability', 'available');
+
       // For each updated lot, calculate days since last change and insert audit record
       const auditPromises = data.map(async (lot) => {
         // Get the last price change for this lot
@@ -2970,7 +2977,8 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
             old_price: oldValue,
             new_price: newValue,
             days_since_change: daysSinceChange,
-            updated_by: updatedBy
+            updated_by: updatedBy,
+            available_lots: availableCount || 0
           });
       });
 
@@ -4770,13 +4778,21 @@ function refreshFeaturedLayer() {
 
       // Log to audit table
       try {
+        // Count available lots after this change
+        const { count: availableCount } = await window.supabaseClient
+          .from('lots')
+          .select('*', { count: 'exact', head: true })
+          .eq('client_id', CURRENT_CLIENT)
+          .eq('availability', 'available');
+
         await window.supabaseClient
           .from('lot_updates_audit')
           .insert({
             lot_name: sel.lotName,
             old_availability: current,
             new_availability: next,
-            updated_by: updatedBy
+            updated_by: updatedBy,
+            available_lots: availableCount || 0
           });
       } catch (auditError) {
         console.warn('Failed to log audit:', auditError);
