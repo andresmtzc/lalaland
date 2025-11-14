@@ -2937,6 +2937,50 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
       return;
     }
 
+    // Get authenticated user for audit
+    const { data: { user } } = await window.supabaseClient.auth.getUser();
+    const updatedBy = user?.email || user?.id || 'unknown';
+
+    // Log price changes to audit table
+    try {
+      // For each updated lot, calculate days since last change and insert audit record
+      const auditPromises = data.map(async (lot) => {
+        // Get the last price change for this lot
+        const { data: lastChange } = await window.supabaseClient
+          .from('lot_prices_audit')
+          .select('updated_at')
+          .eq('lot_name', lot.lot_name)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        // Calculate days since last change
+        let daysSinceChange = null;
+        if (lastChange?.updated_at) {
+          const lastDate = new Date(lastChange.updated_at);
+          const now = new Date();
+          daysSinceChange = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
+        }
+
+        // Insert audit record
+        return window.supabaseClient
+          .from('lot_prices_audit')
+          .insert({
+            lot_name: lot.lot_name,
+            old_price: oldValue,
+            new_price: newValue,
+            days_since_change: daysSinceChange,
+            updated_by: updatedBy
+          });
+      });
+
+      await Promise.all(auditPromises);
+      console.log(`✓ Logged ${data.length} price changes to audit table`);
+    } catch (auditError) {
+      console.warn('Failed to log price audit:', auditError);
+      // Don't fail the main operation if audit logging fails
+    }
+
     // Show success
     showToaster(`✓ Updated ${data.length} lot${data.length > 1 ? 's' : ''} in DB`);
 
@@ -4713,6 +4757,10 @@ function refreshFeaturedLayer() {
     if (next === 'featured') btn.classList.add('featured');
 
     try {
+      // Get authenticated user for audit
+      const { data: { user } } = await window.supabaseClient.auth.getUser();
+      const updatedBy = user?.email || user?.id || 'unknown';
+
       const { error } = await window.supabaseClient
         .from('lots')
         .update({ availability: next })
@@ -4720,9 +4768,32 @@ function refreshFeaturedLayer() {
         .eq('client_id', CURRENT_CLIENT);
       if (error) throw error;
 
+      // Log to audit table
+      try {
+        // Count available lots after this change
+        const { count: availableCount } = await window.supabaseClient
+          .from('lots')
+          .select('*', { count: 'exact', head: true })
+          .eq('client_id', CURRENT_CLIENT)
+          .eq('availability', 'available');
+
+        await window.supabaseClient
+          .from('lot_updates_audit')
+          .insert({
+            lot_name: sel.lotName,
+            old_availability: current,
+            new_availability: next,
+            updated_by: updatedBy,
+            available_lots: availableCount || 0
+          });
+      } catch (auditError) {
+        console.warn('Failed to log audit:', auditError);
+        // Don't fail the main operation if audit logging fails
+      }
+
       const LABELS = { available:'disponible', sold:'vendido', featured:'destacado' };
       window.showToaster?.(`Estado actualizado a "${LABELS[next] || next}".`);
- 
+
       refreshVisuals();
       // ✅ keep same lot selected after DOM/layers refresh
       setSelectedLotByName(selectedLotName, { scroll:false });
