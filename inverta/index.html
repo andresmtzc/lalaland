@@ -4773,58 +4773,62 @@ function refreshFeaturedLayer() {
     if (next === 'sold') btn.classList.add('sold');
     if (next === 'featured') btn.classList.add('featured');
 
-    try {
-      // Get authenticated user for audit
-      const { data: { user } } = await window.supabaseClient.auth.getUser();
-      const updatedBy = user?.email || user?.id || 'unknown';
+    // Show immediate feedback
+    const LABELS = { available:'disponible', sold:'vendido', featured:'destacado' };
+    window.showToaster?.(`Estado actualizado a "${LABELS[next] || next}".`);
 
-      const { error } = await window.supabaseClient
-        .from('lots')
-        .update({ availability: next })
-        .eq('lot_name', sel.lotName)
-        .eq('client_id', CURRENT_CLIENT);
-      if (error) throw error;
+    refreshVisuals();
+    // ✅ keep same lot selected after DOM/layers refresh
+    setSelectedLotByName(selectedLotName, { scroll:false });
 
-      // Log to audit table
+    // Save to database in background (don't await - fire and forget with error handling)
+    (async () => {
       try {
-        // Count total and sold lots from the in-memory lotData array
-        const totalLots = lotData.length;
-        const soldLots = lotData.filter(l => normalize(l.availability) === 'sold').length;
-        const availableCount = totalLots - soldLots;
+        // Get authenticated user for audit
+        const { data: { user } } = await window.supabaseClient.auth.getUser();
+        const updatedBy = user?.email || user?.id || 'unknown';
 
-        await window.supabaseClient
-          .from('lot_updates_audit')
-          .insert({
-            lot_name: sel.lotName,
-            old_availability: current,
-            new_availability: next,
-            updated_by: updatedBy,
-            available_lots: availableCount
-          });
-      } catch (auditError) {
-        console.warn('Failed to log audit:', auditError);
-        // Don't fail the main operation if audit logging fails
+        const { error } = await window.supabaseClient
+          .from('lots')
+          .update({ availability: next })
+          .eq('lot_name', sel.lotName)
+          .eq('client_id', CURRENT_CLIENT);
+        if (error) throw error;
+
+        // Log to audit table
+        try {
+          // Count total and sold lots from the in-memory lotData array
+          const totalLots = lotData.length;
+          const soldLots = lotData.filter(l => normalize(l.availability) === 'sold').length;
+          const availableCount = totalLots - soldLots;
+
+          await window.supabaseClient
+            .from('lot_updates_audit')
+            .insert({
+              lot_name: sel.lotName,
+              old_availability: current,
+              new_availability: next,
+              updated_by: updatedBy,
+              available_lots: availableCount
+            });
+        } catch (auditError) {
+          console.warn('Failed to log audit:', auditError);
+          // Don't fail the main operation if audit logging fails
+        }
+      } catch (e) {
+        console.error('Background save failed:', e);
+        window.showToaster?.('No se pudo guardar. Revirtiendo…');
+
+        // revert
+        applyAvailabilityLocal(sel.lotName, current);
+        btn.classList.remove('sold','featured');
+        if (current === 'sold') btn.classList.add('sold');
+        if (current === 'featured') btn.classList.add('featured');
+
+        refreshVisuals();
+        setSelectedLotByName(selectedLotName, { scroll:false });
       }
-
-      const LABELS = { available:'disponible', sold:'vendido', featured:'destacado' };
-      window.showToaster?.(`Estado actualizado a "${LABELS[next] || next}".`);
-
-      refreshVisuals();
-      // ✅ keep same lot selected after DOM/layers refresh
-      setSelectedLotByName(selectedLotName, { scroll:false });
-    } catch (e) {
-      console.error(e);
-      window.showToaster?.('No se pudo guardar. Revirtiendo…');
-  
-      // revert
-      applyAvailabilityLocal(sel.lotName, current);
-      btn.classList.remove('sold','featured');
-      if (current === 'sold') btn.classList.add('sold');
-      if (current === 'featured') btn.classList.add('featured');
-
-      refreshVisuals();
-      setSelectedLotByName(selectedLotName, { scroll:false });
-    }
+    })();
   }
 
   // --- wiring ---
