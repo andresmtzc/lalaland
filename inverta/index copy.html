@@ -77,7 +77,7 @@ const CURRENT_CLIENT = 'inverta';
   <img src="https://la-la.land/lalaland_bw.svg" alt="Logo"></a>
 </div>
 
-<div class="logoinv-wrapper">
+<div class="logo-wrapper">
    <a href="#" onclick="event.preventDefault(); window.location.reload(true);" title="Reload Site">
   <img src="https://la-la.land/inverta/inverta.svg" alt="Logo"></a>
 </div>
@@ -93,8 +93,9 @@ const CURRENT_CLIENT = 'inverta';
 
 <!-- Unit controls (left) -->
 <div class="unit-controls" id="unitControls">
-  <button class="unit-btn unit-btn-sort" data-mode="price" title="Sort by Price">SORT</button>
-  <button class="unit-btn unit-btn-compare" id="compareBtn" title="Compare Lots">COMPARE</button>
+  <button class="unit-btn" data-mode="num" title="Lote #">#</button>
+ <!-- <button class="unit-btn" data-mode="area" title="m²">m<sup>2</sup></button> -->
+  <button class="unit-btn" data-mode="price" title="Precio">$</button>
 </div>
 
 
@@ -299,14 +300,14 @@ const CURRENT_CLIENT = 'inverta';
   </svg>
 </button>
 
-<!-- Compare BUTTON - HIDDEN (moved to modal header) -->
-<button id="compareBtnOld" class="gps-button" title="Compare Lots" style="bottom: 440px; display: none;">
+<!-- Compare BUTTON -->
+<button id="compareBtn" class="gps-button" title="Compare Lots" style="bottom: 440px;">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="black" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
   <!-- Left cover -->
   <path d="M2.5 5c3.2-1.6 6.5-1.6 9.5 0v14c-3.2-1.6-6.5-1.6-9.5 0z"/>
   <!-- Right cover -->
   <path d="M21.5 5c-3.2-1.6-6.5-1.6-9.5 0v14c3.2-1.6 6.5-1.6 9.5 0z"/>
-</svg>
+</svg> 
 </button>
 
 <!-- Edit BUTTON -->
@@ -1930,7 +1931,7 @@ function adjustMapForModal() {
   lastOffset = offset;
 
   console.log('🔄 map.panBy:', offset);
-  map.panBy(offset, { duration: 400 });
+  map.panBy(offset, { duration: 800 });
 }
  
 const modal = document.getElementById('lotModal');
@@ -2633,17 +2634,6 @@ const isFeatured  = state === 'featured';
 const isAvailable = state === 'available';
 const isSold      = state === 'sold';
 
-// Calculate price: (price_m2 × size), round to nearest 1000, divide by 1000
-let calculatedPrice = lot.price;
-if (!isSold && lot.priceM2 && lot.size) {
-  const totalPrice = parseFloat(lot.priceM2) * parseFloat(lot.size);
-  const roundedPrice = Math.round(totalPrice / 1000) * 1000;
-  calculatedPrice = (roundedPrice / 1000).toString();
-}
-
-// Format price per m2 from Supabase
-const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '');
-
     if (isFeatured) row.classList.add('info-row--featured');
 
 row.innerHTML = `
@@ -2662,13 +2652,9 @@ row.innerHTML = `
 
       <div class="lot-price ${isSold ? 'lot-price--hidden' : ''}">
         <div class="price-wrapper">
-          <span class="price">$${calculatedPrice}</span>
+          <span class="price">$${lot.price}</span>
           <span class="mdp">MIL</span>
         </div>
-      </div>
-
-      <div class="price-per-m2-column ${isSold ? 'lot-price--hidden' : ''}">
-        ${pricePerM2Formatted}<span class="sup">/M2</span>
       </div>
 
 <div class="arrow ${isSold ? 'arrow-hidden' : ''}">
@@ -2845,16 +2831,11 @@ function clampScroll() {
   if (clampCooldown) {
     modalInfo.removeEventListener('scroll', handleScroll);
     modalInfo.scrollTop = virtualScroll;
-
+    
     requestAnimationFrame(() => {
       highlightCenter(true);
       updateScrollbar();
-
-      // 🟢 Call highlightCenter again after a brief delay to catch settled position
-      setTimeout(() => {
-        highlightCenter(true);
-      }, 10);
-
+      
       setTimeout(() => {
         modalInfo.addEventListener('scroll', handleScroll);
         clampCooldown = false;
@@ -3268,16 +3249,9 @@ function openModal(lot = null, baseIndex = 0) {
       // 🔥 Apply filter when data is first loaded
       applyFraccFilter(false); // Don't render yet, we'll call render() below
       render();
-      // ⚡ Scroll immediately to prevent flash of wrong lot
-      doScrollAndHighlight();
-
-      // ⚡ Wait for modal animation to complete before populating list
-      setTimeout(() => {
-        render();
-        requestAnimationFrame(() => {
-          requestAnimationFrame(doScrollAndHighlight);
-        });
-      }, 400); // Match modal transition duration
+      requestAnimationFrame(() => {
+        requestAnimationFrame(doScrollAndHighlight);
+      });
     });
   } else {
     // Only re-render if content was cleared (modal was hidden)
@@ -3285,16 +3259,9 @@ function openModal(lot = null, baseIndex = 0) {
       // 🔥 Apply filter when opening modal fresh or with new lot
       applyFraccFilter(false); // Don't render yet, we'll call render() below
       render();
-      // ⚡ Scroll immediately to prevent flash of wrong lot
-      doScrollAndHighlight();
-
-      // ⚡ Wait for modal animation to complete before populating list
-      setTimeout(() => {
-        render();
-        requestAnimationFrame(() => {
-          requestAnimationFrame(doScrollAndHighlight);
-        });
-      }, 400); // Match modal transition duration
+      requestAnimationFrame(() => {
+        requestAnimationFrame(doScrollAndHighlight);
+      });
     } else {
       // Modal is already open with content - just scroll to the lot
       // 🔥 Apply filter but don't re-render (content is already there)
@@ -4982,16 +4949,7 @@ const setupAuthListener = setInterval(function() {
       set.sort((a, b) => (parseFloat(b.size)  || 0) - (parseFloat(a.size)  || 0));
       break;
     case 'price':
-      set.sort((a, b) => {
-        // Calculate price same as render: (price_m2 × size), round to nearest 1000, ÷ 1000
-        const calcPrice = (lot) => {
-          if (!lot.priceM2 || !lot.size) return parseFloat(lot.price) || 0;
-          const totalPrice = parseFloat(lot.priceM2) * parseFloat(lot.size);
-          const roundedPrice = Math.round(totalPrice / 1000) * 1000;
-          return roundedPrice / 1000;
-        };
-        return calcPrice(b) - calcPrice(a); // Highest to lowest
-      });
+      set.sort((a, b) => (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0));
       break;
     default:
       return;
@@ -5040,36 +4998,9 @@ const setupAuthListener = setInterval(function() {
 
   // Function to reset to default order (when fracc changes or mode is toggled off)
   function resetToDefaultOrder() {
-    // 🟢 If in compare mode, exit it and restore from backup
-    if (compareMode) {
-      const compareBtn = document.getElementById('compareBtn');
-      if (compareBtn) {
-        compareBtn.classList.remove('active');
-      }
-      compareMode = false;
-      selectedLots.clear();
-      if (typeof removeEditOutlines === 'function') {
-        removeEditOutlines();
-      }
-      showToaster('Compare mode OFF');
-      console.log('Compare mode OFF (auto-exited from unsort)');
-
-      // 🟢 RESTORE from backup BEFORE clearing it
-      if (window.originalBaseLots) {
-        baseLots = [...window.originalBaseLots];
-        window.originalBaseLots = null;
-        updateLotsArray();
-        if (typeof render === 'function') render();
-        if (typeof highlightCenter === 'function') highlightCenter();
-        if (typeof updateScrollbar === 'function') updateScrollbar();
-        return; // Exit early - don't run normal reset
-      }
-    }
-
-    // Normal reset behavior - restore full list
     const fracc = (modal.dataset.fracc || '').toString().trim();
     if (Array.isArray(window.baseLotsAll)) {
-      baseLots = window.baseLotsAll.filter(l =>
+      baseLots = window.baseLotsAll.filter(l => 
         !fracc || (l.fraccionamiento || '').toString().trim() === fracc
       );
       updateLotsArray();
@@ -5930,30 +5861,14 @@ let selectedLots = new Set();
 // Compare button event listener
 document.getElementById('compareBtn').addEventListener('click', function() {
     compareMode = !compareMode;
-
+    
     if (compareMode) {
         // Enter compare mode
-        this.classList.add('active');
+        this.style.boxShadow = '0 0 0 3px rgba(255,132,0,1)';
+        this.style.backgroundColor = '#ff8400';
         showToaster('🔍 Compare mode ON - Click lots to compare');
         console.log('Compare mode ON');
-
-        // 🟢 AUTO-SELECT currently centered lot as first comparison
-        const centeredRow = document.querySelector('.info-row.center, .info-row.active');
-        if (centeredRow) {
-            const baseIndex = parseInt(centeredRow.dataset.baseIndex, 10);
-            if (!isNaN(baseIndex) && baseIndex >= 0 && baseLots[baseIndex]) {
-                const lot = baseLots[baseIndex];
-                const lotName = `lot${lot.number}`;
-                selectedLots.add(lotName);
-                console.log('Auto-selected centered lot:', lotName);
-
-                // Apply visual overlay
-                if (typeof updateEditOutlines === 'function') {
-                    updateEditOutlines();
-                }
-            }
-        }
-
+        
         // 🟢 FIX: Ensure data is loaded before compare mode
         if (!isDataLoaded) {
             fetchLots().then(() => {
@@ -5962,7 +5877,8 @@ document.getElementById('compareBtn').addEventListener('click', function() {
         }
     } else {
         // Exit compare mode
-        this.classList.remove('active');
+        this.style.boxShadow = '';
+        this.style.backgroundColor = '#fcfaf3';
         selectedLots.clear();
         removeEditOutlines();
         
