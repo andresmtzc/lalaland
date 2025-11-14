@@ -72,6 +72,15 @@ const CURRENT_CLIENT = 'inverta';
   ¿Tienes dudas? ¡Chatea con nosotros por WhatsApp!
 </a>
 
+<!-- Login button above lalaland logo -->
+<button id="globe-login-btn" class="globe-login-button" title="Login">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="2" y1="12" x2="22" y2="12"></line>
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+  </svg>
+</button>
+
 <div class="lala-wrapper">
    <a href="#" onclick="event.preventDefault(); window.location.reload(true);" title="Reload Site">
   <img src="https://la-la.land/lalaland_bw.svg" alt="Logo"></a>
@@ -103,8 +112,8 @@ const CURRENT_CLIENT = 'inverta';
       <span id="headerFracc">INVERTA</span><span class="header-lot-number" id="headerLotNumber"></span>
     </div>
 
-<!-- AUTH controls -->
-<div class="auth-controls" id="authControls">
+<!-- AUTH controls (hidden - using globe button instead) -->
+<div class="auth-controls" id="authControls" style="display: none;">
   <button id="modal-login-btn" class="header-control auth-btn" title="Login">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="#888" aria-hidden="true">
       <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V9h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
@@ -541,10 +550,26 @@ ctaobserver.observe(ctaToaster, {
   function updateButtons(loggedIn) {
     if (btnLogin)  btnLogin.style.display  = loggedIn ? 'none' : 'flex';
     if (btnLogout) btnLogout.style.display = loggedIn ? 'flex' : 'none';
+
+    // Update globe button visual state
+    const globeBtn = $('#globe-login-btn');
+    if (globeBtn) {
+      if (loggedIn) {
+        globeBtn.classList.add('logged-in');
+        globeBtn.title = 'Logged in';
+      } else {
+        globeBtn.classList.remove('logged-in');
+        globeBtn.title = 'Login';
+      }
+    }
   }
 
   // --- UI bindings ---
   btnLogin && btnLogin.addEventListener('click', showAuthModal);
+
+  // Globe login button
+  const globeLoginBtn = $('#globe-login-btn');
+  globeLoginBtn && globeLoginBtn.addEventListener('click', showAuthModal);
 
   btnLogout && btnLogout.addEventListener('click', async () => {
     try {
@@ -2840,6 +2865,15 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
     return;
   }
 
+  // Authentication check - trigger login if not authenticated
+  const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
+  const isLoggedIn = !!(session && session.user);
+  if (!isLoggedIn) {
+    showToaster('Please login to edit prices');
+    document.getElementById('globe-login-btn')?.click();
+    return;
+  }
+
   // Strip commas and parse values
   const oldValue = parseFloat(oldPriceM2.toString().replace(/,/g, ''));
   const newValue = parseFloat(newPriceM2);
@@ -4660,8 +4694,8 @@ function refreshFeaturedLayer() {
   // --- main action ---
   async function cycleSelectedLotAvailability() {
     if (!window.supabaseClient) { window.showToaster?.('Supabase no está listo.'); return; }
-    // COMMENTED OUT FOR YC DEMO - Skip authentication check
-    // if (!(await ensureLoggedIn())) { document.getElementById('modal-login-btn')?.click(); return; }
+    // Authentication check - trigger login if not authenticated
+    if (!(await ensureLoggedIn())) { document.getElementById('globe-login-btn')?.click(); return; }
 
     const sel = getSelectedLot();
     if (!sel) { window.showToaster?.('Selecciona un lote primero.'); return; }
