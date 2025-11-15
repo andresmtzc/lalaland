@@ -2382,20 +2382,11 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   `;
   detailContainer.appendChild(headerSection);
 
-  // Price/size row
+  // Lot name/ID row
   const detailRow = document.createElement('div');
   detailRow.className = 'detail-data-row';
 
-  const price = parseFloat(lot.price);
-  const size  = parseFloat(lot.size);
-  let pricePerM2Formatted = 'N/A';
-  if (price > 0 && size > 0) {
-    console.log('Lot object:', lot, 'priceM2:', lot.priceM2);
-const pricePerM2 = lot.priceM2 || ((price * 1_000) / size).toFixed(0);
-pricePerM2Formatted = `$${pricePerM2.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<sup class="sup">/M2</sup>`;
-  }
-
-detailRow.innerHTML = `
+  detailRow.innerHTML = `
   <div class="lot-left">
     <div class="lote-label">MZ-L</div>
     <div class="lote-number">${lot.number.replace(/^[a-z]+/i, '')}</div>
@@ -2403,68 +2394,9 @@ detailRow.innerHTML = `
       ID: ${lot.number}
     </div>
   </div>
-
-  <div class="lot-middle">
-    ${lot.size}<span class="sup">M2</span>
-  </div>
-
-  <div class="lot-price">
-    <div class="price-wrapper">
-      ${window.editMode ? 
-        `<input type="text" class="price-edit" value="${lot.price}" data-lot-number="${lot.number}" data-original-price="${lot.price}">` :
-        `<span class="price">$${lot.price}</span>`
-      }
-      <span class="mdp">MIL</span>
-    </div>
-  </div>
-
-  <div class="price-per-m2-column">${pricePerM2Formatted}</div>
 `;
 
   detailContainer.appendChild(detailRow);
-
-  // 🟢 ADD SUPABASE SAVE CODE RIGHT HERE
-  if (window.editMode) {
-    const priceInput = detailContainer.querySelector('.price-edit');
-    
-    priceInput.addEventListener('blur', async function() {
-    const newPrice = this.value.replace('$', '').trim();
-    const lotNumber = this.dataset.lotNumber;
-    const originalPrice = this.dataset.originalPrice;
-    
-    if (!newPrice || newPrice === originalPrice) return;
-    
-    try {
-        await window.supabaseReady;
-        const { error } = await window.supabaseClient
-            .from('lots')
-            .update({ millones: newPrice })
-            .eq('lot_name', `lot${lotNumber}`)
-            .eq('client_id', CURRENT_CLIENT);
-        
-        if (error) throw error;
-        
-        showToaster(`✅ Price updated to $${newPrice} MIL`);
-        this.dataset.originalPrice = newPrice;
-        
-        // 🟢 UPDATE IMMEDIATELY while waiting for real-time
-        const baseLot = window.baseLotsAll.find(bl => bl.number === lotNumber);
-        if (baseLot) baseLot.price = newPrice;
-        
-        const currentBaseLot = baseLots.find(bl => bl.number === lotNumber);
-        if (currentBaseLot) currentBaseLot.price = newPrice;
-        
-    } catch (error) {
-        console.error('Failed to update price:', error);
-        showToaster('❌ Failed to update price');
-        this.value = originalPrice;
-    }
-});
-
-    priceInput.addEventListener('keypress', function(e) {
-      if (e.key === 'Enter') this.blur();
-    });
-  }
 
   // CTA Buttons Section
   const ctaSection = document.createElement('div');
@@ -5937,7 +5869,11 @@ function closeModalWithZoomReset() {
   // Hide calendly if open
   const calendlyEl = document.getElementById('calendlyEmbed');
   if (calendlyEl) calendlyEl.style.display = 'none';
-  
+
+  // Hide share button when closing modal
+  const shareBtn = document.getElementById('shareButton');
+  if (shareBtn) shareBtn.style.display = 'none';
+
 // Close modal with animation
 modal.classList.remove('show', 'info-mode', 'pin-mode', 'expanded', 'lot-mode');
 
