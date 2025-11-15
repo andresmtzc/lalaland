@@ -3890,48 +3890,74 @@ function loadCalendlyWidget({ lot, detailData }) {
 
 // POI Button Management
 (() => {
-  const poiButton = document.getElementById('poiButton');
-  if (!poiButton) return;
-
-  // POI button click handler
-  poiButton.addEventListener('click', () => {
-    if (typeof PS !== 'undefined' && typeof PS.toggleAddMode === 'function') {
-      PS.toggleAddMode();
+  // Wait for DOM and PS to be ready
+  const initPOIButton = () => {
+    const poiButton = document.getElementById('poiButton');
+    if (!poiButton) {
+      console.warn('POI button not found');
+      return;
     }
-  });
 
-  // Show POI button when modal opens in list mode (and user is authenticated)
-  // Hide POI button when in detail mode
-  const updatePOIVisibility = () => {
-    const modal = document.getElementById('lotModal');
-    if (!modal) return;
-
-    const isModalVisible = modal.classList.contains('show');
-    const isDetailMode = window.isDetailOpen === true;
-    const isAuthenticated = window.isUserAuthenticated === true;
-
-    if (isModalVisible && !isDetailMode && isAuthenticated) {
-      // List mode + authenticated - show POI button
-      poiButton.style.display = 'block';
-    } else {
-      // Detail mode or modal closed or not authenticated - hide POI button
-      poiButton.style.display = 'none';
-
-      // If POI mode was active, deactivate it
-      if (window.poiModeActive && typeof PS !== 'undefined' && typeof PS.toggleAddMode === 'function') {
+    // POI button click handler
+    poiButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('POI button clicked, PS:', window.__LL_PINS__);
+      const PS = window.__LL_PINS__;
+      if (PS && typeof PS.toggleAddMode === 'function') {
         PS.toggleAddMode();
+      } else {
+        console.error('PS.toggleAddMode not available');
       }
+    });
+
+    // Show POI button when modal opens in list mode (and user is authenticated)
+    // Hide POI button when in detail mode
+    const updatePOIVisibility = () => {
+      const modal = document.getElementById('lotModal');
+      if (!modal) return;
+
+      const isModalVisible = modal.classList.contains('show');
+      const isDetailMode = window.isDetailOpen === true;
+      const isAuthenticated = window.isUserAuthenticated === true;
+
+      console.log('POI visibility check:', { isModalVisible, isDetailMode, isAuthenticated });
+
+      if (isModalVisible && !isDetailMode && isAuthenticated) {
+        // List mode + authenticated - show POI button
+        poiButton.style.display = 'block';
+        console.log('POI button shown');
+      } else {
+        // Detail mode or modal closed or not authenticated - hide POI button
+        poiButton.style.display = 'none';
+        console.log('POI button hidden');
+
+        // If POI mode was active, deactivate it
+        const PS = window.__LL_PINS__;
+        if (window.poiModeActive && PS && typeof PS.toggleAddMode === 'function') {
+          PS.toggleAddMode();
+        }
+      }
+    };
+
+    const observer = new MutationObserver(updatePOIVisibility);
+    const modal = document.getElementById('lotModal');
+    if (modal) {
+      observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
     }
+
+    // Call on page load to set initial state
+    updatePOIVisibility();
   };
 
-  const observer = new MutationObserver(updatePOIVisibility);
-  const modal = document.getElementById('lotModal');
-  if (modal) {
-    observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
-  }
-
-  // Call on page load to set initial state
-  updatePOIVisibility();
+  // Wait for PS to be available or timeout after 5 seconds
+  let attempts = 0;
+  const waitForPS = setInterval(() => {
+    if (window.__LL_PINS__ || attempts++ > 50) {
+      clearInterval(waitForPS);
+      initPOIButton();
+    }
+  }, 100);
 })();
 
 </script>
