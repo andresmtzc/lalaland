@@ -127,7 +127,10 @@ const CURRENT_CLIENT = 'inverta';
 <!-- 🟢 SHARE BUTTON (only visible in detail mode, positioned near X) -->
 <button class="unit-btn" id="shareButton" title="Share this lot" style="display: none; position: absolute; right: 50px; top: 50%; transform: translateY(-50%); width: auto; height: auto; padding: 4px 8px; font-size: 12px; font-weight: 600; border-radius: 3px; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif;">SHARE</button>
 
-    <div class="header-control close-x" onclick="closeModal()">
+<!-- 🟢 POI BUTTON (only visible in list mode, positioned near X) -->
+<button class="unit-btn" id="poiButton" title="Add Point of Interest" style="display: none; position: absolute; right: 50px; top: 50%; transform: translateY(-50%); width: auto; height: auto; padding: 4px 8px; font-size: 12px; font-weight: 600; border-radius: 3px; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif;">POI</button>
+
+    <div class="header-control close-x" onclick="closeModal()" id="closeModalBtn">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
         <path d="M4 4 L12 12 M12 4 L4 12" fill="none"/>
       </svg>
@@ -3676,12 +3679,15 @@ function openModal(lot = null, baseIndex = 0) {
 
 
 function closeModal() {
+  // Don't close modal if POI mode is active
+  if (window.poiModeActive) return;
+
   document.getElementById('authControls').classList.remove('hide-in-detail');
   document.getElementById('communitySearchBtn')?.classList.remove('hide');
   document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
-  
+
   if (window.resetUnitButtons) window.resetUnitButtons();
-  
+
   const modal = document.getElementById('lotModal');
   if (!modal) return;
   
@@ -3868,9 +3874,66 @@ function loadCalendlyWidget({ lot, detailData }) {
   
 }
 
+// POI Button Management
+(() => {
+  const poiButton = document.getElementById('poiButton');
+  if (!poiButton) return;
 
+  // POI button click handler
+  poiButton.addEventListener('click', () => {
+    if (typeof PS !== 'undefined' && typeof PS.toggleAddMode === 'function') {
+      PS.toggleAddMode();
+    }
+  });
 
+  // Show POI button when modal opens in list mode (and user is authenticated)
+  // Hide POI button when in detail mode
+  const updatePOIVisibility = () => {
+    const modal = document.getElementById('lotModal');
+    if (!modal) return;
 
+    const isModalVisible = modal.classList.contains('show');
+    const isDetailMode = window.isDetailOpen === true;
+    const isAuthenticated = window.isUserAuthenticated === true;
+
+    if (isModalVisible && !isDetailMode && isAuthenticated) {
+      // List mode + authenticated - show POI button
+      poiButton.style.display = 'block';
+    } else {
+      // Detail mode or modal closed or not authenticated - hide POI button
+      poiButton.style.display = 'none';
+
+      // If POI mode was active, deactivate it
+      if (window.poiModeActive && typeof PS !== 'undefined' && typeof PS.toggleAddMode === 'function') {
+        PS.toggleAddMode();
+      }
+    }
+  };
+
+  const observer = new MutationObserver(updatePOIVisibility);
+  const modal = document.getElementById('lotModal');
+  if (modal) {
+    observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  // Also watch for isDetailOpen changes
+  const originalShowDetailViewForLot = window.showDetailViewForLot;
+  if (typeof originalShowDetailViewForLot === 'function') {
+    window.showDetailViewForLot = function(...args) {
+      poiButton.style.display = 'none';
+
+      // If POI mode was active, deactivate it
+      if (window.poiModeActive && typeof PS !== 'undefined' && typeof PS.toggleAddMode === 'function') {
+        PS.toggleAddMode();
+      }
+
+      return originalShowDetailViewForLot.apply(this, args);
+    };
+  }
+
+  // Call on page load to set initial state
+  updatePOIVisibility();
+})();
 
 </script>
  
@@ -4094,29 +4157,24 @@ function hideCalendlyEmbed() {
 
 
 
-  // ---- Add Pin button (ALWAYS visible now)
+  // ---- Add Pin button (REMOVED - using POI button in modal header instead)
   PS.addAddPinButton = function () {
-    if (document.getElementById('addPinBtn')) return;
-    const btn = document.createElement('button');
-    btn.id = 'addPinBtn';
-    btn.className = 'gps-button';
-    btn.title = 'Add point';
-    btn.style.bottom = '260px';
-    btn.innerHTML = `
-      <svg viewBox="0 0 24 24" width="24" height="24" stroke="#333" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>`;
-    btn.addEventListener('click', () => PS.toggleAddMode());
-    document.body.appendChild(btn);
+    // No longer creating floating button - POI button is in modal header
+    return;
   };
 
   // ---- Toggle add mode (no gating on _isVisible)
   PS.toggleAddMode = function () {
     if (!window.map) { toast('Map is still loading…'); return; }
     PS.addMode = !PS.addMode;
-    const btn = document.getElementById('addPinBtn');
-btn.style.backgroundColor = PS.addMode ? '#ff8400' : '#fcfaf3';
+    const btn = document.getElementById('poiButton');
+    if (btn) {
+      btn.style.textDecoration = PS.addMode ? 'underline' : 'none';
+    }
+
+    // Disable/enable modal close when POI mode is active
+    window.poiModeActive = PS.addMode;
+
     map.getCanvas().style.cursor = PS.addMode ? 'crosshair' : '';
     if (PS.addMode && !PS._mapClickHandler) {
       PS._mapClickHandler = (e) => {
@@ -5862,6 +5920,9 @@ function getCurrentFraccZoom() {
 
     // 🟢 FIX: PROPER FRACC-AWARE CLOSE BEHAVIOR
 function closeModalWithZoomReset() {
+  // Don't close modal if POI mode is active
+  if (window.poiModeActive) return;
+
   const modal = document.getElementById('lotModal');
   if (!modal) return;
 
