@@ -117,12 +117,15 @@
             font-size: 20px;
         }
 
-        .interest-note {
+        .interest-display {
             text-align: center;
-            color: #666;
-            font-size: 14px;
+            color: #667eea;
+            font-weight: 600;
+            font-size: 16px;
             margin-top: 10px;
-            font-style: italic;
+            padding: 8px;
+            background: #f0f4ff;
+            border-radius: 6px;
         }
 
         @media (max-width: 600px) {
@@ -159,6 +162,10 @@
             </select>
         </div>
 
+        <div class="interest-display" id="interestDisplay">
+            Interest Rate: 17%
+        </div>
+
         <div class="results">
             <div class="result-item">
                 <span class="result-label">Down Payment Amount:</span>
@@ -173,28 +180,31 @@
                 <span class="result-value highlight" id="monthlyPayment">$10,315.50</span>
             </div>
         </div>
-
-        <div class="interest-note">
-            * Based on 17% annual interest rate
-        </div>
     </div>
 
     <script>
-        // Constants
-        const INTEREST_RATE = 0.17; // 17% annual
+        // Interest rates based on loan term (years -> interest rate)
+        const INTEREST_RATES = {
+            2: 0.13,  // 2 years: 13%
+            3: 0.14,  // 3 years: 14%
+            4: 0.15,  // 4 years: 15%
+            5: 0.16,  // 5 years: 16%
+            6: 0.17   // 6 years: 17%
+        };
 
         // DOM Elements
         const priceInput = document.getElementById('price');
         const downPaymentSelect = document.getElementById('downPayment');
         const installmentsSelect = document.getElementById('installments');
+        const interestDisplay = document.getElementById('interestDisplay');
         const downPaymentAmountEl = document.getElementById('downPaymentAmount');
         const amountFinancedEl = document.getElementById('amountFinanced');
         const monthlyPaymentEl = document.getElementById('monthlyPayment');
 
         // Initialize dropdowns
         function initializeDropdowns() {
-            // Down payment options: 20% to 95% in 5% increments
-            for (let percent = 20; percent <= 95; percent += 5) {
+            // Down payment options: 20% to 90% in 10% increments
+            for (let percent = 20; percent <= 90; percent += 10) {
                 const option = document.createElement('option');
                 option.value = percent;
                 option.textContent = `${percent}%`;
@@ -213,13 +223,23 @@
             installmentsSelect.value = 72; // Default 6 years (72 months)
         }
 
+        // Get interest rate based on loan term
+        function getInterestRate(months) {
+            const years = months / 12;
+            return INTEREST_RATES[years] || INTEREST_RATES[6]; // Default to 6 years if not found
+        }
+
         // Calculate monthly payment using amortization formula
         function calculateMonthlyPayment(principal, annualRate, months) {
             const monthlyRate = annualRate / 12;
+            
+            // Handle case where interest rate is 0
+            if (monthlyRate === 0) {
+                return principal / months;
+            }
+            
             const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
             const denominator = Math.pow(1 + monthlyRate, months) - 1;
-            
-            if (denominator === 0) return principal; // Handle edge case
             
             return numerator / denominator;
         }
@@ -232,20 +252,30 @@
             });
         }
 
+        // Format percentage
+        function formatPercentage(decimal) {
+            return (decimal * 100).toFixed(0) + '%';
+        }
+
         // Update calculations
         function updateCalculations() {
             const price = parseFloat(priceInput.value) || 0;
             const downPaymentPercent = parseFloat(downPaymentSelect.value) / 100;
             const months = parseInt(installmentsSelect.value);
+            const years = months / 12;
+            
+            // Get interest rate based on term
+            const interestRate = getInterestRate(months);
 
             // Calculate amounts
             const downPaymentAmount = price * downPaymentPercent;
             const amountFinanced = price - downPaymentAmount;
 
             // Calculate monthly payment
-            const monthlyPayment = calculateMonthlyPayment(amountFinanced, INTEREST_RATE, months);
+            const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
 
             // Update display
+            interestDisplay.textContent = `Interest Rate: ${formatPercentage(interestRate)} (${years} year${years > 1 ? 's' : ''})`;
             downPaymentAmountEl.textContent = formatCurrency(downPaymentAmount);
             amountFinancedEl.textContent = formatCurrency(amountFinanced);
             monthlyPaymentEl.textContent = formatCurrency(monthlyPayment);
