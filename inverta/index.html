@@ -225,6 +225,16 @@ const CURRENT_CLIENT = 'inverta';
   </div>
 </div>
 
+<!-- LOGOUT CONFIRMATION MODAL -->
+<div id="logout-modal" style="display: none; position: fixed; inset: 0; z-index: 10005;">
+  <div class="auth-box">
+    <h2 style="font-size: 18px; font-weight: 600; margin-bottom: 16px; text-align: center; color: #ff8400;">Cerrar sesión</h2>
+    <p style="margin: 20px 0; color: #ddd; text-align: center;">¿Estás seguro de que quieres cerrar sesión?</p>
+    <button class="primary" id="confirm-logout" style="width: 100%; padding: 10px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; background: #ff8400; color: #fcfaf3;">Cerrar sesión</button>
+    <button class="secondary" id="cancel-logout" style="width: 100%; padding: 10px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; background: #333; color: #fcfaf3; margin-top: 8px;">Cancelar</button>
+  </div>
+</div>
+
 
 
 
@@ -554,12 +564,67 @@ ctaobserver.observe(ctaToaster, {
     }
   }
 
+  // --- Logout modal ---
+  const logoutModal = $('#logout-modal');
+  const confirmLogoutBtn = $('#confirm-logout');
+  const cancelLogoutBtn = $('#cancel-logout');
+
+  function showLogoutModal() {
+    if (!logoutModal) return;
+    logoutModal.style.display = 'block';
+  }
+
+  function hideLogoutModal() {
+    if (!logoutModal) return;
+    logoutModal.style.display = 'none';
+  }
+
+  confirmLogoutBtn && confirmLogoutBtn.addEventListener('click', async () => {
+    try {
+      await window.supabaseClient?.auth.signOut();
+      updateButtons(false);
+      hideLogoutModal();
+      toast('Sesión cerrada.');
+    } catch (e) {
+      console.error(e);
+      toast('Error al cerrar sesión.');
+    }
+  });
+
+  cancelLogoutBtn && cancelLogoutBtn.addEventListener('click', () => {
+    hideLogoutModal();
+  });
+
+  // Click backdrop to close logout modal
+  logoutModal && logoutModal.addEventListener('click', (e) => {
+    if (e.target === logoutModal) {
+      hideLogoutModal();
+    }
+  });
+
+  // Close on ESC for logout modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && logoutModal?.style.display === 'block') {
+      hideLogoutModal();
+    }
+  });
+
   // --- UI bindings ---
   btnLogin && btnLogin.addEventListener('click', showAuthModal);
 
-  // Globe login button
+  // Globe login button - check auth state and show appropriate modal
   const globeLoginBtn = $('#globe-login-btn');
-  globeLoginBtn && globeLoginBtn.addEventListener('click', showAuthModal);
+  globeLoginBtn && globeLoginBtn.addEventListener('click', async () => {
+    // Check if user is logged in
+    const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
+    const isLoggedIn = !!(session && session.user);
+
+    if (isLoggedIn) {
+      showLogoutModal();
+    } else {
+      showAuthModal();
+    }
+  });
 
   btnLogout && btnLogout.addEventListener('click', async () => {
     try {
