@@ -749,45 +749,54 @@
 
     // Generate card as JPG
     async function generateCardImage(lot, stagingId = 'staging-area') {
-      // Create card element
-      const card = createCardElement(lot);
-      const staging = document.getElementById(stagingId);
-      staging.innerHTML = '';
-      staging.appendChild(card);
+      let mapInstance = null;
 
-      // Render map
-      const mapId = `map-${lot.lotName}-${stagingId}`;
-      await renderMap(lot, mapId);
+      try {
+        // Create card element
+        const card = createCardElement(lot);
+        const staging = document.getElementById(stagingId);
+        staging.innerHTML = '';
+        staging.appendChild(card);
 
-      // Wait a bit more for everything to settle
-      await new Promise(resolve => setTimeout(resolve, 1000));
+        // Render map
+        const mapId = `map-${lot.lotName}-${stagingId}`;
+        mapInstance = await renderMap(lot, mapId);
 
-      // Capture card as image using dom-to-image at full size (1080x1350)
-      const blob = await domtoimage.toBlob(card, {
-        width: 1080,
-        height: 1350,
-        quality: 0.95,
-        style: {
-          transform: 'scale(1)',
-          transformOrigin: 'top left'
-        },
-        filter: (node) => {
-          // Filter out problematic nodes that cause fetch errors
-          if (node.tagName === 'STYLE') return true;
-          if (node.getAttribute && node.getAttribute('clip-path')) {
-            node.removeAttribute('clip-path');
+        // Wait a bit more for everything to settle
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Capture card as image using dom-to-image at full size (1080x1350)
+        const blob = await domtoimage.toBlob(card, {
+          width: 1080,
+          height: 1350,
+          quality: 0.95,
+          style: {
+            transform: 'scale(1)',
+            transformOrigin: 'top left'
+          },
+          filter: (node) => {
+            // Filter out problematic nodes that cause fetch errors
+            if (node.tagName === 'STYLE') return true;
+            if (node.getAttribute && node.getAttribute('clip-path')) {
+              node.removeAttribute('clip-path');
+            }
+            return true;
           }
-          return true;
+        });
+
+        // Resize to 600x750 for WhatsApp optimization
+        const resizedBlob = await resizeBlob(blob, 600, 750);
+
+        return {
+          blob: resizedBlob,
+          filename: `${lot.lotName}.jpg`
+        };
+      } finally {
+        // CRITICAL: Clean up map instance to free WebGL context
+        if (mapInstance) {
+          mapInstance.remove();
         }
-      });
-
-      // Resize to 600x750 for WhatsApp optimization
-      const resizedBlob = await resizeBlob(blob, 600, 750);
-
-      return {
-        blob: resizedBlob,
-        filename: `${lot.lotName}.jpg`
-      };
+      }
     }
 
     // Resize blob to target dimensions
