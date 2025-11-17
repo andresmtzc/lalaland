@@ -767,6 +767,14 @@
         style: {
           transform: 'scale(1)',
           transformOrigin: 'top left'
+        },
+        filter: (node) => {
+          // Filter out problematic nodes that cause fetch errors
+          if (node.tagName === 'STYLE') return true;
+          if (node.getAttribute && node.getAttribute('clip-path')) {
+            node.removeAttribute('clip-path');
+          }
+          return true;
         }
       });
 
@@ -837,13 +845,22 @@
 
       updateStatus(`Generating ${allAvailableLots.length} cards...`);
       const zip = new JSZip();
+      let successCount = 0;
+      let errorCount = 0;
 
       for (let i = 0; i < allAvailableLots.length; i++) {
         const lot = allAvailableLots[i];
         updateStatus(`Generating ${i + 1}/${allAvailableLots.length}: ${lot.lotName}`);
 
-        const { blob, filename } = await generateCardImage(lot);
-        zip.file(filename, blob);
+        try {
+          const { blob, filename } = await generateCardImage(lot);
+          zip.file(filename, blob);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to generate card for ${lot.lotName}:`, error);
+          updateStatus(`⚠️ Error on ${lot.lotName}, continuing... (${i + 1}/${allAvailableLots.length})`);
+          errorCount++;
+        }
 
         // Small delay to prevent browser freezing
         if (i % 10 === 0) {
@@ -854,7 +871,7 @@
       updateStatus('Creating ZIP file...');
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       saveAs(zipBlob, 'inverta-share-cards.zip');
-      updateStatus(`✅ Generated ${allAvailableLots.length} cards! Download started.`);
+      updateStatus(`✅ Generated ${successCount} cards! ${errorCount > 0 ? `(${errorCount} errors)` : ''} Download started.`);
     }
 
     function updateStatus(message) {
