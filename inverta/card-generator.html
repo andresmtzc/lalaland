@@ -309,7 +309,8 @@
 
     <div class="button-group">
       <button id="generateSingleBtn">Generate Single Card (Test)</button>
-      <button id="generateAllBtn">Generate All Cards (~700)</button>
+      <button id="generateBatchBtn">Generate 5 Cards (Test Batch)</button>
+      <button id="generateAllBtn">Generate All Cards (~264)</button>
     </div>
     <div class="status" id="status">Ready. Click a button to start.</div>
   </div>
@@ -836,6 +837,46 @@
       updateStatus(`✅ Generated: ${filename}`);
     }
 
+    // Generate batch of cards
+    async function generateBatch(count) {
+      if (allAvailableLots.length === 0) {
+        updateStatus('Loading lot data...');
+        await mergeData();
+      }
+
+      const lotsToGenerate = allAvailableLots.slice(0, Math.min(count, allAvailableLots.length));
+
+      updateStatus(`Generating ${lotsToGenerate.length} cards...`);
+      const zip = new JSZip();
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (let i = 0; i < lotsToGenerate.length; i++) {
+        const lot = lotsToGenerate[i];
+        updateStatus(`Generating ${i + 1}/${lotsToGenerate.length}: ${lot.lotName}`);
+
+        try {
+          const { blob, filename } = await generateCardImage(lot);
+          zip.file(filename, blob);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to generate card for ${lot.lotName}:`, error);
+          updateStatus(`⚠️ Error on ${lot.lotName}, continuing... (${i + 1}/${lotsToGenerate.length})`);
+          errorCount++;
+        }
+
+        // Small delay to prevent browser freezing
+        if (i % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      updateStatus('Creating ZIP file...');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, `inverta-cards-batch-${lotsToGenerate.length}.zip`);
+      updateStatus(`✅ Generated ${successCount} cards! ${errorCount > 0 ? `(${errorCount} errors)` : ''} Download started.`);
+    }
+
     // Generate all cards
     async function generateAll() {
       if (allAvailableLots.length === 0) {
@@ -892,12 +933,30 @@
       }
     });
 
+    document.getElementById('generateBatchBtn').addEventListener('click', async () => {
+      document.getElementById('generateBatchBtn').disabled = true;
+      document.getElementById('generateSingleBtn').disabled = true;
+      document.getElementById('generateAllBtn').disabled = true;
+
+      try {
+        await generateBatch(5);
+      } catch (error) {
+        console.error('Error generating batch:', error);
+        updateStatus('❌ Error: ' + error.message);
+      } finally {
+        document.getElementById('generateBatchBtn').disabled = false;
+        document.getElementById('generateSingleBtn').disabled = false;
+        document.getElementById('generateAllBtn').disabled = false;
+      }
+    });
+
     document.getElementById('generateAllBtn').addEventListener('click', async () => {
-      const confirm = window.confirm(`This will generate ~700 cards and may take 10-20 minutes. Continue?`);
+      const confirm = window.confirm(`This will generate all ${allAvailableLots.length || '~264'} cards and may take 10-20 minutes. Continue?`);
       if (!confirm) return;
 
       document.getElementById('generateAllBtn').disabled = true;
       document.getElementById('generateSingleBtn').disabled = true;
+      document.getElementById('generateBatchBtn').disabled = true;
 
       try {
         await generateAll();
@@ -907,6 +966,7 @@
       } finally {
         document.getElementById('generateAllBtn').disabled = false;
         document.getElementById('generateSingleBtn').disabled = false;
+        document.getElementById('generateBatchBtn').disabled = false;
       }
     });
 
