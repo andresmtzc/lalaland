@@ -8687,7 +8687,7 @@ window.gptLotSearch = {
     }
 
     // Limit results
-    const limit = params.limit || 20;
+    const limit = params.limit || 100; // Increased default from 20 to 100
     return filtered.slice(0, limit);
   }
 };
@@ -9002,69 +9002,90 @@ window.gptChat = {
 
   // Highlight all search results on map
   highlightAllResultsOnMap(results) {
-    if (!window.map || !results || results.length === 0) return;
+    console.log('🗺️ highlightAllResultsOnMap called with', results?.length, 'results');
 
-    // Remove existing results layer
-    if (map.getLayer('gpt-results-fill')) {
-      map.removeLayer('gpt-results-fill');
+    if (!window.map) {
+      console.error('Map not available');
+      return;
     }
-    if (map.getLayer('gpt-results-outline')) {
-      map.removeLayer('gpt-results-outline');
-    }
-    if (map.getSource('gpt-results')) {
-      map.removeSource('gpt-results');
+    if (!results || results.length === 0) {
+      console.warn('No results to highlight');
+      return;
     }
 
-    // Build GeoJSON features from results
-    const features = results.map(result => {
-      const lot = lotData.find(l => l.name === result.id);
-      if (!lot) return null;
+    try {
+      // Remove existing results layer
+      if (map.getLayer('gpt-results-fill')) {
+        map.removeLayer('gpt-results-fill');
+      }
+      if (map.getLayer('gpt-results-outline')) {
+        map.removeLayer('gpt-results-outline');
+      }
+      if (map.getSource('gpt-results')) {
+        map.removeSource('gpt-results');
+      }
 
-      return {
-        type: 'Feature',
-        properties: { id: result.id },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [[...lot.coords, lot.coords[0]]]
+      // Build GeoJSON features from results
+      const features = results.map(result => {
+        const lot = lotData.find(l => l.name === result.id);
+        if (!lot) {
+          console.warn('Lot not found:', result.id);
+          return null;
         }
-      };
-    }).filter(f => f !== null);
 
-    if (features.length === 0) return;
+        return {
+          type: 'Feature',
+          properties: { id: result.id },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[...lot.coords, lot.coords[0]]]
+          }
+        };
+      }).filter(f => f !== null);
 
-    // Add source with all result polygons
-    map.addSource('gpt-results', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: features
+      if (features.length === 0) {
+        console.warn('No valid features to display');
+        return;
       }
-    });
 
-    // Add fill layer (white with transparency, like compare mode)
-    map.addLayer({
-      id: 'gpt-results-fill',
-      type: 'fill',
-      source: 'gpt-results',
-      paint: {
-        'fill-color': '#ffffff',
-        'fill-opacity': 0.4
-      }
-    });
+      console.log('Adding', features.length, 'features to map');
 
-    // Add outline layer
-    map.addLayer({
-      id: 'gpt-results-outline',
-      type: 'line',
-      source: 'gpt-results',
-      paint: {
-        'line-color': '#ff8400',
-        'line-width': 2,
-        'line-opacity': 0.8
-      }
-    });
+      // Add source with all result polygons
+      map.addSource('gpt-results', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: features
+        }
+      });
 
-    console.log(`Highlighted ${features.length} lots on map`);
+      // Add fill layer (white with transparency, like compare mode)
+      map.addLayer({
+        id: 'gpt-results-fill',
+        type: 'fill',
+        source: 'gpt-results',
+        paint: {
+          'fill-color': '#ffffff',
+          'fill-opacity': 0.4
+        }
+      });
+
+      // Add outline layer
+      map.addLayer({
+        id: 'gpt-results-outline',
+        type: 'line',
+        source: 'gpt-results',
+        paint: {
+          'line-color': '#ff8400',
+          'line-width': 2,
+          'line-opacity': 0.8
+        }
+      });
+
+      console.log(`✅ Highlighted ${features.length} lots on map`);
+    } catch (error) {
+      console.error('Error highlighting results on map:', error);
+    }
   },
 
   // Clear all search result highlights
@@ -9144,7 +9165,7 @@ Available search parameters:
 - fraccionamiento: development/subdivision name
 - sortBy: "price", "area", or "pricePerM2"
 - sortOrder: "asc" or "desc"
-- limit: max number of results (default 20)
+- limit: max number of results (default 100)
 
 Interpret natural language queries intelligently. For example:
 - "cheap lots" → sort by price ascending
@@ -9216,7 +9237,7 @@ Interpret natural language queries intelligently. For example:
                   limit: {
                     type: 'number',
                     description: 'Maximum number of results to return',
-                    default: 20
+                    default: 100
                   }
                 }
               }
