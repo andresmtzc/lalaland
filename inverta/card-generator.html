@@ -275,7 +275,35 @@
   <div class="card-container" id="cardContainer"></div>
   <div id="staging-area"></div>
 
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script>
+    // LOAD SUPABASE - Same approach as index.html
+    window.supabaseReady = new Promise((resolve, reject) => {
+      const supabaseScript = document.createElement('script');
+      supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+
+      supabaseScript.onload = () => {
+        fetch('https://la-la.land/sb_config.json')
+          .then(r => r.json())
+          .then(cfg => {
+            window.supabaseClient = supabase.createClient(cfg.url, cfg.key);
+            console.log('✅ Supabase client initialized with config.json');
+            resolve();
+          })
+          .catch(e => {
+            console.error('Failed to load Supabase config:', e);
+            reject(new Error("❌ Failed to load Supabase config"));
+          });
+      };
+
+      supabaseScript.onerror = () => {
+        console.error("❌ Failed to load Supabase script");
+        reject(new Error("❌ Failed to load Supabase script"));
+      };
+
+      document.head.appendChild(supabaseScript);
+    });
+  </script>
+
   <script>
     const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbHU5Z2MxNmcwaDdqMmpwbzc0cjhrbnRqIn0.AkXl7Gm1GqSvHYu8LCXd0w';
     mapboxgl.accessToken = MAPBOX_TOKEN;
@@ -284,11 +312,6 @@
     const INTEREST_RATES = {
       24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17
     };
-
-    // Supabase setup
-    const supabaseUrl = 'https://wblbojszwcevgrsoqgxd.supabase.co';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndibGJvanN6d2Nldmdyc29xZ3hkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzM0NDUyNDcsImV4cCI6MjA0OTAyMTI0N30.DQkWcQLIAjAW5dFZHZ4zKkMcexJWFLEjcNPnkHzOE1w';
-    const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
     let lotData = [];
     let lotsWithPolygons = [];
@@ -341,7 +364,9 @@
 
     // Fetch available lots from Supabase
     async function fetchAvailableLots() {
-      const { data, error } = await supabaseClient
+      await window.supabaseReady;
+
+      const { data, error } = await window.supabaseClient
         .from('lots')
         .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, price_m2')
         .eq('client_id', CURRENT_CLIENT)
