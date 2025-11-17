@@ -2749,6 +2749,12 @@ backButton.addEventListener('click', () => {
   modal.classList.add('lot-mode');
   modal.classList.remove('info-mode');
 
+  // ⚡ Render list if it hasn't been rendered yet (fast path skipped it)
+  const modalInfoEl = document.getElementById('modalInfo');
+  if (!modalInfoEl.innerHTML || modalInfoEl.innerHTML.trim() === '') {
+    render();
+  }
+
   // Recenter the list on the last opened lot (your current behavior)
   if (typeof lastOpenedBaseIndex === 'number') {
     requestAnimationFrame(() => {
@@ -3772,9 +3778,26 @@ function openModal(lot = null, baseIndex = 0) {
   if (!isDataLoaded) {
     fetchLots().then(() => {
       // 🔥 Apply filter when data is first loaded
-      applyFraccFilter(false); // Don't render yet, we'll call render() below
+      applyFraccFilter(false); // Don't render yet
+
+      // ⚡ FAST PATH: If opening with a specific lot, go straight to detail view
+      if (lot && wasHidden) {
+        const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+        if (baseIndex !== -1) {
+          // Skip list rendering - go directly to detail view
+          spinnerEl.style.display = 'none';
+          modalInfoEl.style.opacity = '1';
+
+          // Open detail view immediately (smooth modal experience)
+          requestAnimationFrame(() => {
+            showDetailViewForLot(baseIndex + cloneCount, false);
+          });
+          return; // Skip list rendering entirely
+        }
+      }
+
+      // Normal path: render list
       render();
-      // ⚡ Scroll immediately to prevent flash of wrong lot
       doScrollAndHighlight();
 
       // ⚡ Wait for modal animation to complete before populating list
@@ -3788,10 +3811,29 @@ function openModal(lot = null, baseIndex = 0) {
   } else {
     // Only re-render if content was cleared (modal was hidden)
     if (wasHidden || !lot) {
+      // ⚡ FAST PATH: If opening with a specific lot, go straight to detail view
+      if (lot && wasHidden) {
+        // 🔥 Apply filter when opening modal fresh or with new lot
+        applyFraccFilter(false);
+
+        const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+        if (baseIndex !== -1) {
+          // Skip list rendering - go directly to detail view
+          spinnerEl.style.display = 'none';
+          modalInfoEl.style.opacity = '1';
+
+          // Open detail view immediately (smooth modal experience)
+          requestAnimationFrame(() => {
+            showDetailViewForLot(baseIndex + cloneCount, false);
+          });
+          return; // Skip list rendering entirely
+        }
+      }
+
+      // Normal path: render list
       // 🔥 Apply filter when opening modal fresh or with new lot
       applyFraccFilter(false); // Don't render yet, we'll call render() below
       render();
-      // ⚡ Scroll immediately to prevent flash of wrong lot
       doScrollAndHighlight();
 
       // ⚡ Wait for modal animation to complete before populating list
