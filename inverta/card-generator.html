@@ -296,8 +296,8 @@
       </div>
       <div id="debugPanel" style="display: none; background: #fffacd; padding: 15px; border-radius: 6px; margin-bottom: 15px; font-family: monospace; font-size: 12px;">
         <strong>Debug Info:</strong><br>
-        Padding: <input type="number" id="debugPadding" step="0.00001" value="0.00008" style="width: 100px;">
-        Lat Shift: <input type="number" id="debugLatShift" step="0.00005" value="0.00045" style="width: 100px;">
+        Zoom: <input type="number" id="debugZoom" step="0.1" value="19.82" style="width: 100px;">
+        Lat Shift: <input type="number" id="debugLatShift" step="0.00005" value="0.00025" style="width: 100px;">
         <button id="applyDebug" style="margin-left: 10px; padding: 4px 8px; font-size: 12px;">Apply</button>
         <br>
         <div id="debugInfo" style="margin-top: 10px;"></div>
@@ -358,8 +358,8 @@
     let previewMapInstance = null;
     let mapboxTokenReady = null;
     let debugMode = false;
-    let currentDebugPadding = 0.00008;
-    let currentDebugLatShift = 0.00045;
+    let currentDebugZoom = 19.82;
+    let currentDebugLatShift = 0.00025;
 
     // Load Mapbox token
     mapboxTokenReady = fetch('https://la-la.land/mapbox.txt')
@@ -553,28 +553,20 @@
       await mapboxTokenReady;
 
       return new Promise((resolve) => {
-        // Calculate bounds - reduce padding since map is now 2x taller
-        // Original map was 675px, now it's 1350px, so we need tighter bounds
-        const bounds = lot.bounds;
-        const padding = isPreview && debugMode ? currentDebugPadding : 0.00008;
-
         // Calculate lot center
+        const bounds = lot.bounds;
         const centerLng = (bounds[0] + bounds[2]) / 2;
         const centerLat = (bounds[1] + bounds[3]) / 2;
 
         // Shift center UP in lat (north) to compensate for floating card covering top half
         // This makes the lot appear centered in the visible bottom portion
-        const latShift = isPreview && debugMode ? currentDebugLatShift : 0.00045;
-
-        const paddedBounds = [
-          [bounds[0] - padding, bounds[1] - padding + latShift],
-          [bounds[2] + padding, bounds[3] + padding + latShift]
-        ];
+        const latShift = currentDebugLatShift; // Always use current values
 
         const map = new mapboxgl.Map({
           container: containerId,
           style: 'mapbox://styles/mapbox/satellite-streets-v12',
-          bounds: paddedBounds,
+          center: [centerLng, centerLat + latShift],
+          zoom: currentDebugZoom, // Use current debug zoom value
           interactive: isPreview && debugMode, // Make interactive in debug mode
           attributionControl: false,
           preserveDrawingBuffer: true // Important for html2canvas
@@ -706,7 +698,7 @@
               label.style.cssText = `
                 position: absolute;
                 background-color: rgba(255, 255, 255, 0.95);
-                padding: 8px 16px;
+                padding: 8px 8px;
                 border-radius: 8px;
                 font-size: 36px;
                 font-weight: 700;
@@ -730,16 +722,13 @@
             if (isPreview && debugMode) {
               map.on('moveend', () => {
                 const center = map.getCenter();
-                const bounds = map.getBounds();
                 const zoom = map.getZoom();
 
                 const debugInfo = `
-                  Center: [${center.lng.toFixed(6)}, ${center.lat.toFixed(6)}]<br>
+                  Map Center: [${center.lng.toFixed(6)}, ${center.lat.toFixed(6)}]<br>
                   Zoom: ${zoom.toFixed(2)}<br>
-                  Bounds: SW[${bounds.getSouthWest().lng.toFixed(6)}, ${bounds.getSouthWest().lat.toFixed(6)}]
-                  NE[${bounds.getNorthEast().lng.toFixed(6)}, ${bounds.getNorthEast().lat.toFixed(6)}]<br>
                   Lot Center: [${centerLng.toFixed(6)}, ${centerLat.toFixed(6)}]<br>
-                  Current latShift from lot: ${(center.lat - centerLat).toFixed(6)}
+                  Lat Shift from lot center: ${(center.lat - centerLat).toFixed(6)}
                 `;
                 document.getElementById('debugInfo').innerHTML = debugInfo;
               });
@@ -976,7 +965,7 @@
 
     // Apply debug values
     document.getElementById('applyDebug').addEventListener('click', () => {
-      currentDebugPadding = parseFloat(document.getElementById('debugPadding').value);
+      currentDebugZoom = parseFloat(document.getElementById('debugZoom').value);
       currentDebugLatShift = parseFloat(document.getElementById('debugLatShift').value);
 
       // Refresh preview with new values
