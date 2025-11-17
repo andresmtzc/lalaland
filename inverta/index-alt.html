@@ -8803,6 +8803,7 @@ window.gptChat = {
 
     close.onclick = () => {
       container.style.display = 'none';
+      this.clearAllResults(); // Clear map highlights when closing chat
     };
 
     saveKey.onclick = () => {
@@ -8856,8 +8857,26 @@ window.gptChat = {
     `;
 
     if (results && results.length > 0) {
-      // Show results with clickable lots
-      let html = `<div>${text}</div><div style="margin-top: 12px;">`;
+      // Show results with clickable lots and map button
+      let html = `
+        <div>${text}</div>
+        <div style="margin-top: 8px;">
+          <button class="gpt-show-on-map-btn" style="
+            background: #ff8400;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            margin-bottom: 8px;
+            font-family: 'Barlow Condensed', Arial, sans-serif;
+          ">🗺️ Show All on Map</button>
+        </div>
+        <div style="margin-top: 8px;">
+      `;
+
       results.forEach(lot => {
         const priceStr = lot.price_total ? `$${(lot.price_total / 1000000).toFixed(2)}M` : 'N/A';
         const areaStr = lot.area_m2 ? `${Math.round(lot.area_m2)} m²` : 'N/A';
@@ -8885,8 +8904,33 @@ window.gptChat = {
       html += '</div>';
       messageDiv.innerHTML = html;
 
+      // Automatically highlight all results on map
+      this.highlightAllResultsOnMap(results);
+
       // Add click handlers after adding to DOM
       setTimeout(() => {
+        // Show/Hide on map button
+        const mapBtn = messageDiv.querySelector('.gpt-show-on-map-btn');
+        let isShowing = true;
+        if (mapBtn) {
+          mapBtn.onclick = () => {
+            if (isShowing) {
+              this.clearAllResults();
+              mapBtn.textContent = '🗺️ Show All on Map';
+              mapBtn.style.background = '#888';
+              isShowing = false;
+            } else {
+              this.highlightAllResultsOnMap(results);
+              mapBtn.textContent = '✓ Shown on Map';
+              mapBtn.style.background = '#ff8400';
+              isShowing = true;
+            }
+          };
+          // Set initial state
+          mapBtn.textContent = '✓ Shown on Map';
+        }
+
+        // Individual lot hover/click handlers
         messageDiv.querySelectorAll('.gpt-lot-result').forEach(elem => {
           elem.onmouseenter = () => {
             elem.style.borderColor = '#ff8400';
@@ -8953,6 +8997,88 @@ window.gptChat = {
     if (map.getLayer('gpt-highlight')) {
       map.removeLayer('gpt-highlight');
       map.removeSource('gpt-highlight');
+    }
+  },
+
+  // Highlight all search results on map
+  highlightAllResultsOnMap(results) {
+    if (!window.map || !results || results.length === 0) return;
+
+    // Remove existing results layer
+    if (map.getLayer('gpt-results-fill')) {
+      map.removeLayer('gpt-results-fill');
+    }
+    if (map.getLayer('gpt-results-outline')) {
+      map.removeLayer('gpt-results-outline');
+    }
+    if (map.getSource('gpt-results')) {
+      map.removeSource('gpt-results');
+    }
+
+    // Build GeoJSON features from results
+    const features = results.map(result => {
+      const lot = lotData.find(l => l.name === result.id);
+      if (!lot) return null;
+
+      return {
+        type: 'Feature',
+        properties: { id: result.id },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[...lot.coords, lot.coords[0]]]
+        }
+      };
+    }).filter(f => f !== null);
+
+    if (features.length === 0) return;
+
+    // Add source with all result polygons
+    map.addSource('gpt-results', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: features
+      }
+    });
+
+    // Add fill layer (white with transparency, like compare mode)
+    map.addLayer({
+      id: 'gpt-results-fill',
+      type: 'fill',
+      source: 'gpt-results',
+      paint: {
+        'fill-color': '#ffffff',
+        'fill-opacity': 0.4
+      }
+    });
+
+    // Add outline layer
+    map.addLayer({
+      id: 'gpt-results-outline',
+      type: 'line',
+      source: 'gpt-results',
+      paint: {
+        'line-color': '#ff8400',
+        'line-width': 2,
+        'line-opacity': 0.8
+      }
+    });
+
+    console.log(`Highlighted ${features.length} lots on map`);
+  },
+
+  // Clear all search result highlights
+  clearAllResults() {
+    if (!window.map) return;
+
+    if (map.getLayer('gpt-results-fill')) {
+      map.removeLayer('gpt-results-fill');
+    }
+    if (map.getLayer('gpt-results-outline')) {
+      map.removeLayer('gpt-results-outline');
+    }
+    if (map.getSource('gpt-results')) {
+      map.removeSource('gpt-results');
     }
   },
 
