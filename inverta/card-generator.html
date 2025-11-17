@@ -317,6 +317,10 @@
 
   <div class="card-container" id="cardContainer"></div>
   <div id="staging-area"></div>
+  <div id="staging-area-1" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-2" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-3" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-4" style="position: fixed; left: -9999px; top: 0;"></div>
 
   <script>
     // LOAD SUPABASE - Same approach as index.html
@@ -744,17 +748,15 @@
     }
 
     // Generate card as JPG
-    async function generateCardImage(lot) {
-      updateStatus(`Generating card for ${lot.lotName}...`);
-
+    async function generateCardImage(lot, stagingId = 'staging-area') {
       // Create card element
       const card = createCardElement(lot);
-      const staging = document.getElementById('staging-area');
+      const staging = document.getElementById(stagingId);
       staging.innerHTML = '';
       staging.appendChild(card);
 
       // Render map
-      const mapId = `map-${lot.lotName}`;
+      const mapId = `map-${lot.lotName}-${stagingId}`;
       await renderMap(lot, mapId);
 
       // Wait a bit more for everything to settle
@@ -837,7 +839,7 @@
       updateStatus(`✅ Generated: ${filename}`);
     }
 
-    // Generate batch of cards
+    // Generate batch of cards with parallel processing
     async function generateBatch(count) {
       if (allAvailableLots.length === 0) {
         updateStatus('Loading lot data...');
@@ -851,24 +853,37 @@
       let successCount = 0;
       let errorCount = 0;
 
-      for (let i = 0; i < lotsToGenerate.length; i++) {
-        const lot = lotsToGenerate[i];
-        updateStatus(`Generating ${i + 1}/${lotsToGenerate.length}: ${lot.lotName}`);
+      // Process in parallel batches of 5
+      const PARALLEL_BATCH_SIZE = 5;
+      const stagingAreas = ['staging-area', 'staging-area-1', 'staging-area-2', 'staging-area-3', 'staging-area-4'];
 
-        try {
-          const { blob, filename } = await generateCardImage(lot);
-          zip.file(filename, blob);
-          successCount++;
-        } catch (error) {
-          console.error(`Failed to generate card for ${lot.lotName}:`, error);
-          updateStatus(`⚠️ Error on ${lot.lotName}, continuing... (${i + 1}/${lotsToGenerate.length})`);
-          errorCount++;
-        }
+      for (let i = 0; i < lotsToGenerate.length; i += PARALLEL_BATCH_SIZE) {
+        const batchLots = lotsToGenerate.slice(i, i + PARALLEL_BATCH_SIZE);
+        updateStatus(`Generating ${i + 1}-${Math.min(i + PARALLEL_BATCH_SIZE, lotsToGenerate.length)}/${lotsToGenerate.length}...`);
 
-        // Small delay to prevent browser freezing
-        if (i % 10 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        // Generate all cards in this batch in parallel
+        const promises = batchLots.map((lot, index) =>
+          generateCardImage(lot, stagingAreas[index])
+            .then(result => ({ success: true, ...result }))
+            .catch(error => {
+              console.error(`Failed to generate card for ${lot.lotName}:`, error);
+              return { success: false, lotName: lot.lotName };
+            })
+        );
+
+        const results = await Promise.all(promises);
+
+        // Add successful results to ZIP
+        results.forEach(result => {
+          if (result.success) {
+            zip.file(result.filename, result.blob);
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       updateStatus('Creating ZIP file...');
@@ -877,7 +892,7 @@
       updateStatus(`✅ Generated ${successCount} cards! ${errorCount > 0 ? `(${errorCount} errors)` : ''} Download started.`);
     }
 
-    // Generate all cards
+    // Generate all cards with parallel processing
     async function generateAll() {
       if (allAvailableLots.length === 0) {
         updateStatus('Loading lot data...');
@@ -889,24 +904,37 @@
       let successCount = 0;
       let errorCount = 0;
 
-      for (let i = 0; i < allAvailableLots.length; i++) {
-        const lot = allAvailableLots[i];
-        updateStatus(`Generating ${i + 1}/${allAvailableLots.length}: ${lot.lotName}`);
+      // Process in parallel batches of 5
+      const PARALLEL_BATCH_SIZE = 5;
+      const stagingAreas = ['staging-area', 'staging-area-1', 'staging-area-2', 'staging-area-3', 'staging-area-4'];
 
-        try {
-          const { blob, filename } = await generateCardImage(lot);
-          zip.file(filename, blob);
-          successCount++;
-        } catch (error) {
-          console.error(`Failed to generate card for ${lot.lotName}:`, error);
-          updateStatus(`⚠️ Error on ${lot.lotName}, continuing... (${i + 1}/${allAvailableLots.length})`);
-          errorCount++;
-        }
+      for (let i = 0; i < allAvailableLots.length; i += PARALLEL_BATCH_SIZE) {
+        const batchLots = allAvailableLots.slice(i, i + PARALLEL_BATCH_SIZE);
+        updateStatus(`Generating ${i + 1}-${Math.min(i + PARALLEL_BATCH_SIZE, allAvailableLots.length)}/${allAvailableLots.length}...`);
 
-        // Small delay to prevent browser freezing
-        if (i % 10 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        // Generate all cards in this batch in parallel
+        const promises = batchLots.map((lot, index) =>
+          generateCardImage(lot, stagingAreas[index])
+            .then(result => ({ success: true, ...result }))
+            .catch(error => {
+              console.error(`Failed to generate card for ${lot.lotName}:`, error);
+              return { success: false, lotName: lot.lotName };
+            })
+        );
+
+        const results = await Promise.all(promises);
+
+        // Add successful results to ZIP
+        results.forEach(result => {
+          if (result.success) {
+            zip.file(result.filename, result.blob);
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       updateStatus('Creating ZIP file...');
