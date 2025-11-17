@@ -523,7 +523,59 @@
         });
 
         map.on('load', () => {
-          // Add lot polygon with orange outline
+          // Add drone image overlay first
+          map.addSource('drone-satellite', {
+            type: 'image',
+            url: 'https://la-la.land/inverta/invertaearth.png',
+            coordinates: [
+              [-96.041238, 19.0556],
+              [-96.031988, 19.055425],
+              [-96.032264, 19.042404],
+              [-96.041515, 19.04258]
+            ]
+          });
+
+          map.addLayer({
+            id: 'drone-satellite-layer',
+            type: 'raster',
+            source: 'drone-satellite',
+            paint: {
+              'raster-opacity': 1
+            }
+          });
+
+          // Add ALL lots as white outlines for context
+          const allLotsGeoJSON = {
+            type: 'FeatureCollection',
+            features: lotData.map((lotItem) => ({
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[...lotItem.coords, lotItem.coords[0]]]
+              },
+              properties: {
+                name: lotItem.name
+              }
+            }))
+          };
+
+          map.addSource('all-lots', {
+            type: 'geojson',
+            data: allLotsGeoJSON
+          });
+
+          map.addLayer({
+            id: 'all-lots-outline',
+            type: 'line',
+            source: 'all-lots',
+            paint: {
+              'line-color': '#ffffff',
+              'line-width': 1,
+              'line-opacity': 0.5
+            }
+          });
+
+          // Add selected lot polygon with orange outline
           map.addSource('lot-polygon', {
             type: 'geojson',
             data: {
@@ -535,7 +587,7 @@
             }
           });
 
-          // Orange outline
+          // Orange outline for selected lot
           map.addLayer({
             id: 'lot-outline',
             type: 'line',
@@ -546,43 +598,41 @@
             }
           });
 
-          // Add dimension lines (simplified - showing two main dimensions)
+          // Add dimension labels on ALL sides
           const coords = lot.coords;
-          if (coords.length >= 4) {
-            // Calculate distances for all sides
-            const distances = [];
-            for (let i = 0; i < coords.length; i++) {
-              const p1 = turf.point(coords[i]);
-              const p2 = turf.point(coords[(i + 1) % coords.length]);
-              const dist = turf.distance(p1, p2, { units: 'meters' });
-              distances.push({
-                dist: dist,
-                coords: [coords[i], coords[(i + 1) % coords.length]],
-                index: i
-              });
+          if (coords.length >= 3) {
+            // Close the polygon if not already closed
+            const closedCoords = [...coords];
+            if (closedCoords[0][0] !== closedCoords[closedCoords.length - 1][0] ||
+                closedCoords[0][1] !== closedCoords[closedCoords.length - 1][1]) {
+              closedCoords.push(closedCoords[0]);
             }
 
-            // Sort by distance and take the two longest
-            distances.sort((a, b) => b.dist - a.dist);
-            const longestTwo = distances.slice(0, 2);
+            // Add dimension line and label for each side
+            for (let i = 0; i < closedCoords.length - 1; i++) {
+              const p1 = turf.point(closedCoords[i]);
+              const p2 = turf.point(closedCoords[i + 1]);
+              const distance = turf.distance(p1, p2, { units: 'meters' });
 
-            // Add dimension lines and labels
-            longestTwo.forEach((dim, idx) => {
-              map.addSource(`dimension-${idx}`, {
+              // Round to nearest 0.5m like index.html
+              const roundedDistance = Math.round(distance * 2) / 2;
+
+              // Add dashed dimension line
+              map.addSource(`dimension-${i}`, {
                 type: 'geojson',
                 data: {
                   type: 'Feature',
                   geometry: {
                     type: 'LineString',
-                    coordinates: dim.coords
+                    coordinates: [closedCoords[i], closedCoords[i + 1]]
                   }
                 }
               });
 
               map.addLayer({
-                id: `dimension-line-${idx}`,
+                id: `dimension-line-${i}`,
                 type: 'line',
-                source: `dimension-${idx}`,
+                source: `dimension-${i}`,
                 paint: {
                   'line-color': '#ff8400',
                   'line-width': 2,
@@ -591,10 +641,7 @@
               });
 
               // Add label at midpoint
-              const midpoint = turf.midpoint(
-                turf.point(dim.coords[0]),
-                turf.point(dim.coords[1])
-              );
+              const midpoint = turf.midpoint(p1, p2);
 
               const label = document.createElement('div');
               label.style.cssText = `
@@ -607,12 +654,12 @@
                 font-family: 'Barlow Condensed', Arial, sans-serif;
                 white-space: nowrap;
               `;
-              label.textContent = `${dim.dist.toFixed(1)}m`;
+              label.textContent = `${roundedDistance}m`;
 
               new mapboxgl.Marker({ element: label })
                 .setLngLat(midpoint.geometry.coordinates)
                 .addTo(map);
-            });
+            }
           }
 
           // Wait for map to fully render
