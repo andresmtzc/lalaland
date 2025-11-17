@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generate Share Pages</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 15px 30px;
+      font-size: 16px;
+      background: #ff8400;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 10px 0;
+    }
+    button:hover {
+      background: #e67600;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f0f0f0;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Generate Share Pages for All Lots</h1>
+  <p>This will generate individual HTML pages for each lot with proper Open Graph meta tags for WhatsApp/social media sharing.</p>
+
+  <button id="generateBtn">Generate All Share Pages (264 HTML files)</button>
+  <div class="status" id="status">Ready. Click the button to generate.</div>
+
+  <script>
+    // LOAD SUPABASE
+    window.supabaseReady = new Promise((resolve, reject) => {
+      const supabaseScript = document.createElement('script');
+      supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+
+      supabaseScript.onload = () => {
+        fetch('https://la-la.land/sb_config.json')
+          .then(r => r.json())
+          .then(cfg => {
+            window.supabaseClient = supabase.createClient(cfg.url, cfg.key);
+            console.log('✅ Supabase client initialized');
+            resolve();
+          })
+          .catch(e => {
+            console.error('Failed to load Supabase config:', e);
+            reject(e);
+          });
+      };
+
+      document.head.appendChild(supabaseScript);
+    });
+
+    const CURRENT_CLIENT = 'inverta';
+
+    async function fetchAvailableLots() {
+      await window.supabaseReady;
+
+      const { data, error } = await window.supabaseClient
+        .from('lots')
+        .select('lot_name, rSize, price_m2, fraccionamiento')
+        .eq('client_id', CURRENT_CLIENT)
+        .order('lot_name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching lots:', error);
+        return [];
+      }
+
+      // Filter for available lots
+      const availableLots = (data || []).filter(lot => {
+        const availability = (lot.availability || '').toString().toLowerCase();
+        return availability === 'available' || availability === 'featured';
+      });
+
+      return availableLots;
+    }
+
+    function extractLotNumber(lotName) {
+      return lotName.replace(/^lot/i, '');
+    }
+
+    function createSharePageHTML(lot) {
+      const lotNumber = extractLotNumber(lot.lot_name);
+      const community = lot.fraccionamiento || 'Marsella';
+      const size = parseFloat(lot.rSize);
+      const priceM2 = parseFloat(lot.price_m2);
+      const totalPrice = size * priceM2;
+
+      const cardImageUrl = `https://la-la.land/inverta/cards/${lot.lot_name}.jpg`;
+      const pageUrl = `https://la-la.land/inverta/lot/${lot.lot_name}.html`;
+
+      const sizeFormatted = size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      const totalPriceFormatted = totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lote MZ-L ${lotNumber} - ${community} | Inverta</title>
+
+  <!-- Open Graph Meta Tags for WhatsApp/Social Media -->
+  <meta property="og:title" content="Lote MZ-L ${lotNumber} - ${community}">
+  <meta property="og:description" content="${sizeFormatted}m² • $${totalPriceFormatted} MXN">
+  <meta property="og:image" content="${cardImageUrl}">
+  <meta property="og:image:width" content="600">
+  <meta property="og:image:height" content="750">
+  <meta property="og:url" content="${pageUrl}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Inverta">
+
+  <!-- Twitter Card Meta Tags -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Lote MZ-L ${lotNumber} - ${community}">
+  <meta name="twitter:description" content="${sizeFormatted}m² • $${totalPriceFormatted} MXN">
+  <meta name="twitter:image" content="${cardImageUrl}">
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .card-container {
+      max-width: 600px;
+      width: 100%;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+
+    .card-image {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .card-info {
+      padding: 30px;
+      text-align: center;
+    }
+
+    .card-info h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+      color: #1a1a1a;
+    }
+
+    .card-info p {
+      font-size: 18px;
+      color: #666;
+      margin-bottom: 20px;
+    }
+
+    .cta-button {
+      display: inline-block;
+      padding: 15px 40px;
+      background: #ff8400;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 18px;
+      font-weight: 600;
+      transition: background 0.3s;
+    }
+
+    .cta-button:hover {
+      background: #e67600;
+    }
+  </style>
+</head>
+<body>
+  <div class="card-container">
+    <img src="${cardImageUrl}" alt="Lote MZ-L ${lotNumber} - ${community}" class="card-image">
+    <div class="card-info">
+      <h1>Lote MZ-L ${lotNumber}</h1>
+      <p>${community} • ${sizeFormatted}m²</p>
+      <a href="https://la-la.land/inverta" class="cta-button">Ver todos los lotes</a>
+    </div>
+  </div>
+</body>
+</html>`;
+    }
+
+    async function generateAllPages() {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = 'Loading lots from Supabase...';
+
+      const lots = await fetchAvailableLots();
+
+      if (lots.length === 0) {
+        statusEl.textContent = '❌ No lots found';
+        return;
+      }
+
+      statusEl.textContent = `Generating ${lots.length} HTML pages...`;
+
+      const zip = new JSZip();
+      const lotFolder = zip.folder('lot');
+
+      lots.forEach((lot, index) => {
+        const html = createSharePageHTML(lot);
+        lotFolder.file(`${lot.lot_name}.html`, html);
+
+        if ((index + 1) % 50 === 0) {
+          statusEl.textContent = `Generated ${index + 1}/${lots.length} pages...`;
+        }
+      });
+
+      statusEl.textContent = 'Creating ZIP file...';
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, 'inverta-share-pages.zip');
+      statusEl.textContent = `✅ Generated ${lots.length} share pages! Download started.`;
+    }
+
+    document.getElementById('generateBtn').addEventListener('click', async () => {
+      document.getElementById('generateBtn').disabled = true;
+      try {
+        await generateAllPages();
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('status').textContent = '❌ Error: ' + error.message;
+      } finally {
+        document.getElementById('generateBtn').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
