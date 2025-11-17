@@ -290,6 +290,17 @@
         <select id="lotSelect">
           <option value="">Loading lots...</option>
         </select>
+        <label style="margin-left: 20px;">
+          <input type="checkbox" id="debugMode"> Debug Mode
+        </label>
+      </div>
+      <div id="debugPanel" style="display: none; background: #fffacd; padding: 15px; border-radius: 6px; margin-bottom: 15px; font-family: monospace; font-size: 12px;">
+        <strong>Debug Info:</strong><br>
+        Padding: <input type="number" id="debugPadding" step="0.00001" value="0.00008" style="width: 100px;">
+        Lat Shift: <input type="number" id="debugLatShift" step="0.00005" value="0.00045" style="width: 100px;">
+        <button id="applyDebug" style="margin-left: 10px; padding: 4px 8px; font-size: 12px;">Apply</button>
+        <br>
+        <div id="debugInfo" style="margin-top: 10px;"></div>
       </div>
       <div class="preview-container" id="previewContainer">
         <div class="preview-card" id="previewCard"></div>
@@ -346,6 +357,9 @@
     let allAvailableLots = [];
     let previewMapInstance = null;
     let mapboxTokenReady = null;
+    let debugMode = false;
+    let currentDebugPadding = 0.00008;
+    let currentDebugLatShift = 0.00045;
 
     // Load Mapbox token
     mapboxTokenReady = fetch('https://la-la.land/mapbox.txt')
@@ -534,7 +548,7 @@
     }
 
     // Render map for a lot
-    async function renderMap(lot, containerId) {
+    async function renderMap(lot, containerId, isPreview = false) {
       // Wait for Mapbox token to be ready
       await mapboxTokenReady;
 
@@ -542,7 +556,7 @@
         // Calculate bounds - reduce padding since map is now 2x taller
         // Original map was 675px, now it's 1350px, so we need tighter bounds
         const bounds = lot.bounds;
-        const padding = 0.00008; // Reduced from 0.00015 to maintain same apparent zoom
+        const padding = isPreview && debugMode ? currentDebugPadding : 0.00008;
 
         // Calculate lot center
         const centerLng = (bounds[0] + bounds[2]) / 2;
@@ -550,7 +564,7 @@
 
         // Shift center UP in lat (north) to compensate for floating card covering top half
         // This makes the lot appear centered in the visible bottom portion
-        const latShift = 0.00045; // Shift map view up so lot is centered in visible area
+        const latShift = isPreview && debugMode ? currentDebugLatShift : 0.00045;
 
         const paddedBounds = [
           [bounds[0] - padding, bounds[1] - padding + latShift],
@@ -561,7 +575,7 @@
           container: containerId,
           style: 'mapbox://styles/mapbox/satellite-streets-v12',
           bounds: paddedBounds,
-          interactive: false,
+          interactive: isPreview && debugMode, // Make interactive in debug mode
           attributionControl: false,
           preserveDrawingBuffer: true // Important for html2canvas
         });
@@ -712,6 +726,27 @@
 
           // Wait for map to fully render
           setTimeout(() => {
+            // Add debug info listener if in debug mode
+            if (isPreview && debugMode) {
+              map.on('moveend', () => {
+                const center = map.getCenter();
+                const bounds = map.getBounds();
+                const zoom = map.getZoom();
+
+                const debugInfo = `
+                  Center: [${center.lng.toFixed(6)}, ${center.lat.toFixed(6)}]<br>
+                  Zoom: ${zoom.toFixed(2)}<br>
+                  Bounds: SW[${bounds.getSouthWest().lng.toFixed(6)}, ${bounds.getSouthWest().lat.toFixed(6)}]
+                  NE[${bounds.getNorthEast().lng.toFixed(6)}, ${bounds.getNorthEast().lat.toFixed(6)}]<br>
+                  Lot Center: [${centerLng.toFixed(6)}, ${centerLat.toFixed(6)}]<br>
+                  Current latShift from lot: ${(center.lat - centerLat).toFixed(6)}
+                `;
+                document.getElementById('debugInfo').innerHTML = debugInfo;
+              });
+              // Trigger initial update
+              map.fire('moveend');
+            }
+
             resolve(map);
           }, 1000);
         });
@@ -919,12 +954,36 @@
       `;
 
       // Render map and save instance
-      previewMapInstance = await renderMap(lot, 'preview-map');
+      previewMapInstance = await renderMap(lot, 'preview-map', true); // true = isPreview
     }
 
     // Lot selector change event
     document.getElementById('lotSelect').addEventListener('change', (e) => {
       updatePreview(e.target.value);
+    });
+
+    // Debug mode toggle
+    document.getElementById('debugMode').addEventListener('change', (e) => {
+      debugMode = e.target.checked;
+      document.getElementById('debugPanel').style.display = debugMode ? 'block' : 'none';
+
+      // Refresh preview with new debug mode
+      const lotSelect = document.getElementById('lotSelect');
+      if (lotSelect.value) {
+        updatePreview(lotSelect.value);
+      }
+    });
+
+    // Apply debug values
+    document.getElementById('applyDebug').addEventListener('click', () => {
+      currentDebugPadding = parseFloat(document.getElementById('debugPadding').value);
+      currentDebugLatShift = parseFloat(document.getElementById('debugLatShift').value);
+
+      // Refresh preview with new values
+      const lotSelect = document.getElementById('lotSelect');
+      if (lotSelect.value) {
+        updatePreview(lotSelect.value);
+      }
     });
 
     // Initialize
