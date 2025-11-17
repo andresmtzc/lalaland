@@ -8,7 +8,7 @@
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.14.0/dist/dom-to-image-more.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
@@ -167,10 +167,8 @@
       position: absolute;
       top: 40px;
       right: 40px;
-      width: 150px;
       height: 50px;
-      object-fit: contain;
-      object-position: right center;
+      width: auto;
     }
 
     /* Lot number - top left, same row as logo */
@@ -544,9 +542,15 @@
         // Calculate bounds with MORE zoom (less padding)
         const bounds = lot.bounds;
         const padding = 0.00015; // Reduced padding for more zoom
+
+        // Calculate center and shift it down to account for floating card
+        const centerLng = (bounds[0] + bounds[2]) / 2;
+        const centerLat = (bounds[1] + bounds[3]) / 2;
+        const latShift = 0.0003; // Shift down to show lot below the floating card
+
         const paddedBounds = [
-          [bounds[0] - padding, bounds[1] - padding],
-          [bounds[2] + padding, bounds[3] + padding]
+          [bounds[0] - padding, bounds[1] - padding - latShift],
+          [bounds[2] + padding, bounds[3] + padding - latShift]
         ];
 
         const map = new mapboxgl.Map({
@@ -727,28 +731,21 @@
       // Wait a bit more for everything to settle
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Capture card as image
-      const canvas = await html2canvas(card, {
+      // Capture card as image using dom-to-image (better SVG support)
+      const blob = await domtoimage.toBlob(card, {
         width: 1080,
         height: 1350,
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        foreignObjectRendering: false,
-        imageTimeout: 0
+        quality: 0.95,
+        style: {
+          transform: 'scale(1)',
+          transformOrigin: 'top left'
+        }
       });
 
-      // Convert to blob
-      return new Promise(resolve => {
-        canvas.toBlob(blob => {
-          resolve({
-            blob: blob,
-            filename: `${lot.lotName}.jpg`
-          });
-        }, 'image/jpeg', 0.95);
-      });
+      return {
+        blob: blob,
+        filename: `${lot.lotName}.jpg`
+      };
     }
 
     // Generate single card (test)
