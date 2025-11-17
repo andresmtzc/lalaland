@@ -2495,10 +2495,84 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     <div style="margin-top: 20px; font-size: 48px; font-weight: 700; color: #333;">
       $${totalPriceFormatted}<span style="font-size: 20px; vertical-align: super; font-weight: 600;">MXN</span>
     </div>
+
+    <!-- Financing Calculator -->
+    <div style="margin-top: 30px; width: 100%; max-width: 400px;">
+      <!-- Input row: Down payment and Months -->
+      <div style="display: flex; gap: 20px; justify-content: center; margin-bottom: 20px;">
+        <!-- Down payment -->
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <select id="downPaymentCalc" style="padding: 8px 12px; border: 2px solid #ff8400; border-radius: 6px; font-size: 16px; font-weight: 600; color: #333; background: white; cursor: pointer; outline: none;">
+            <option value="20">20%</option>
+            <option value="25">25%</option>
+            <option value="30">30%</option>
+            <option value="35">35%</option>
+            <option value="40">40%</option>
+            <option value="45">45%</option>
+            <option value="50">50%</option>
+          </select>
+          <div style="margin-top: 8px; font-size: 14px; color: #666; font-weight: 600;">
+            Enganche: <span id="downPaymentAmount" style="color: #333;">$${(totalPrice * 0.20).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+        </div>
+
+        <!-- Months -->
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <select id="installmentsCalc" style="padding: 8px 12px; border: 2px solid #ff8400; border-radius: 6px; font-size: 16px; font-weight: 600; color: #333; background: white; cursor: pointer; outline: none;">
+            <option value="24">24</option>
+            <option value="36">36</option>
+            <option value="48">48</option>
+            <option value="60">60</option>
+            <option value="72" selected>72</option>
+          </select>
+          <div style="margin-top: 8px; font-size: 12px; color: #666;">Tasa <span id="interestRate">17</span>%</div>
+        </div>
+      </div>
+
+      <!-- Monthly payment display -->
+      <div style="text-align: center; font-size: 24px; font-weight: 700; color: #333;">
+        Mensualidades: <span id="monthlyPayment">$10,315.50</span><span style="font-size: 14px; vertical-align: super; font-weight: 600;">/MES</span>
+      </div>
+    </div>
   </div>
 `;
 
   detailContainer.appendChild(detailRow);
+
+  // Initialize calculator
+  const totalPriceNum = totalPrice;
+  const INTEREST_RATES = {
+    24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17
+  };
+
+  function calculateMonthlyPayment(principal, annualRate, months) {
+    const monthlyRate = annualRate / 12;
+    if (monthlyRate === 0) return principal / months;
+    const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
+    const denominator = Math.pow(1 + monthlyRate, months) - 1;
+    return numerator / denominator;
+  }
+
+  function updateCalculations() {
+    const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
+    const months = parseInt(document.getElementById('installmentsCalc').value);
+    const interestRate = INTEREST_RATES[months] || 0.17;
+
+    const downPaymentAmount = totalPriceNum * downPaymentPercent;
+    const amountFinanced = totalPriceNum - downPaymentAmount;
+    const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
+
+    document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('interestRate').textContent = (interestRate * 100).toFixed(0);
+    document.getElementById('monthlyPayment').textContent = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // Add event listeners
+  setTimeout(() => {
+    document.getElementById('downPaymentCalc')?.addEventListener('change', updateCalculations);
+    document.getElementById('installmentsCalc')?.addEventListener('change', updateCalculations);
+    updateCalculations(); // Initial calculation
+  }, 100);
 
   // CTA Buttons Section
   const ctaSection = document.createElement('div');
