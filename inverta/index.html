@@ -5237,46 +5237,86 @@ function refreshFeaturedLayer() {
         type: 'circle',
         source: 'll-user-location',
         paint: {
-          'circle-radius': 8,
+          'circle-radius': 6,
           'circle-color': '#ff8400',
-          'circle-stroke-color': '#FFFFFF',
-          'circle-stroke-width': 2
+          'circle-stroke-width': 0
         },
         filter: ['==', ['get', 'role'], 'point']
       });
     }
 
-    ensureHeadingMarker();
+    ensureGPSConeLayer();
   }
 
-  // Orange cone with rounded tip (matching 360 viewer style)
-  function ensureHeadingMarker() {
-    if (!window.map || NS.headingMarker) return;
+  // GPS heading cone as Mapbox polygon layer (matching 360 viewer)
+  function ensureGPSConeLayer() {
+    if (map.getSource('gps-heading-cone')) return;
 
-    const el = document.createElement('div');
-    el.style.width = '70px';
-    el.style.height = '50px';
-    el.style.pointerEvents = 'none';
-    el.style.zIndex = '1000';
-    el.innerHTML = `
-      <svg viewBox="0 0 70 50" width="70" height="50">
-        <!-- Orange cone with rounded tip -->
-        <path d="M35 45 Q30 40 20 20 L20 5 L50 5 L50 20 Q40 40 35 45 Z"
-              fill="#ff8400"
-              opacity="0.5"
-              stroke="none"/>
-      </svg>
-    `;
+    map.addSource('gps-heading-cone', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[0,0],[0,0],[0,0]]] } }
+    });
 
-    NS.headingMarker = new mapboxgl.Marker({
-      element: el,
-      offset: [0, -25],
-      anchor: 'center'
-    })
-      .setRotationAlignment('map')
-      .setPitchAlignment('map')
-      .setLngLat(NS.lotCenter)
-      .addTo(map);
+    map.addLayer({
+      id: 'gps-heading-cone-fill',
+      type: 'fill',
+      source: 'gps-heading-cone',
+      paint: { 'fill-color': '#ff8400', 'fill-opacity': 0.5 }
+    });
+  }
+
+  function updateGPSCone(lng, lat, heading) {
+    if (!map || !map.getSource('gps-heading-cone')) return;
+    if (!heading && heading !== 0) {
+      // Hide cone if no heading
+      map.getSource('gps-heading-cone').setData({
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [[[0,0],[0,0],[0,0]]] }
+      });
+      return;
+    }
+
+    // Create fan-shaped cone (90° FOV, 15m radius)
+    const fovDeg = 90;
+    const radiusMeters = 15;
+    const steps = 24;
+
+    const half = fovDeg / 2;
+    const start = heading - half;
+    const end = heading + half;
+    const ring = [[lng, lat]];
+
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const brg = start + (end - start) * t;
+      ring.push(destFromBearingDistance(lat, lng, brg, radiusMeters));
+    }
+    ring.push([lng, lat]);
+
+    map.getSource('gps-heading-cone').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [ring] }
+    });
+  }
+
+  function destFromBearingDistance(lat, lng, bearing, distanceMeters) {
+    const R = 6371000;
+    const brng = bearing * Math.PI / 180;
+    const lat1 = lat * Math.PI / 180;
+    const lng1 = lng * Math.PI / 180;
+    const d = distanceMeters / R;
+
+    const lat2 = Math.asin(
+      Math.sin(lat1) * Math.cos(d) +
+      Math.cos(lat1) * Math.sin(d) * Math.cos(brng)
+    );
+
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(brng) * Math.sin(d) * Math.cos(lat1),
+      Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
+    );
+
+    return [lng2 * 180 / Math.PI, lat2 * 180 / Math.PI];
   }
 
   // Handle compass data (with iOS permission)
@@ -5334,7 +5374,7 @@ function refreshFeaturedLayer() {
     NS.headingListenerAttached = false;
   }
 
-  // Update cone direction
+  // Update user location and heading cone
   function updateUserLocation(lng, lat, accuracyMeters = 10) {
     const src = map?.getSource('ll-user-location');
     if (!src) return;
@@ -5355,9 +5395,9 @@ function refreshFeaturedLayer() {
       ]
     });
 
-    if (NS.headingMarker) {
-      NS.headingMarker.setLngLat([lng, lat]);
-      NS.headingMarker.setRotation(NS.userHeading || 0);
+    // Update heading cone (polygon-based, like 360 viewer)
+    if (NS.userHeading !== null && NS.userHeading !== undefined) {
+      updateGPSCone(lng, lat, NS.userHeading);
     }
   }
 
@@ -5462,9 +5502,12 @@ function refreshFeaturedLayer() {
       map.getSource('ll-user-location').setData({ type:'FeatureCollection', features:[] });
     }
 
-    if (NS.headingMarker) {
-      NS.headingMarker.remove();
-      NS.headingMarker = null;
+    // Hide GPS heading cone
+    if (map?.getSource('gps-heading-cone')) {
+      map.getSource('gps-heading-cone').setData({
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [[[0,0],[0,0],[0,0]]] }
+      });
     }
 
     document.getElementById('cameraButton')?.style && (document.getElementById('cameraButton').style.display = 'none');
