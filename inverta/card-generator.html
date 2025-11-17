@@ -8,7 +8,7 @@
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.14.0/dist/dom-to-image-more.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
@@ -714,24 +714,6 @@
       });
     }
 
-    // Convert SVG to PNG data URL
-    async function convertSvgToPng(svgUrl, width, height) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/png'));
-        };
-        img.onerror = reject;
-        img.src = svgUrl;
-      });
-    }
-
     // Generate card as JPG
     async function generateCardImage(lot) {
       updateStatus(`Generating card for ${lot.lotName}...`);
@@ -746,40 +728,24 @@
       const mapId = `map-${lot.lotName}`;
       await renderMap(lot, mapId);
 
-      // Convert SVG logo to PNG for better html2canvas compatibility
-      const logoImg = card.querySelector('.card-logo');
-      try {
-        const pngDataUrl = await convertSvgToPng('https://la-la.land/inverta/inverta.svg', 200, 66);
-        logoImg.src = pngDataUrl;
-      } catch (e) {
-        console.warn('Failed to convert SVG to PNG:', e);
-      }
-
       // Wait a bit more for everything to settle
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Capture card as image
-      const canvas = await html2canvas(card, {
+      // Capture card as image using dom-to-image (better SVG support)
+      const blob = await domtoimage.toBlob(card, {
         width: 1080,
         height: 1350,
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        foreignObjectRendering: false,
-        imageTimeout: 0
+        quality: 0.95,
+        style: {
+          transform: 'scale(1)',
+          transformOrigin: 'top left'
+        }
       });
 
-      // Convert to blob
-      return new Promise(resolve => {
-        canvas.toBlob(blob => {
-          resolve({
-            blob: blob,
-            filename: `${lot.lotName}.jpg`
-          });
-        }, 'image/jpeg', 0.95);
-      });
+      return {
+        blob: blob,
+        filename: `${lot.lotName}.jpg`
+      };
     }
 
     // Generate single card (test)
