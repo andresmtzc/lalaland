@@ -39,6 +39,55 @@
       color: #1a1a1a;
     }
 
+    .preview-section {
+      margin-bottom: 20px;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 6px;
+    }
+
+    .preview-section h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+      color: #1a1a1a;
+    }
+
+    .preview-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    select {
+      padding: 8px 12px;
+      font-size: 14px;
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      border: 2px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      min-width: 200px;
+    }
+
+    .preview-container {
+      width: 540px;
+      height: 675px;
+      margin: 0 auto;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      background: white;
+      position: relative;
+    }
+
+    .preview-card {
+      width: 1080px;
+      height: 1350px;
+      transform: scale(0.5);
+      transform-origin: top left;
+    }
+
     .button-group {
       display: flex;
       gap: 15px;
@@ -202,6 +251,20 @@
 <body>
   <div class="controls">
     <h1>Inverta Share Card Generator</h1>
+
+    <div class="preview-section">
+      <h2>Preview</h2>
+      <div class="preview-controls">
+        <label for="lotSelect">Select Lot:</label>
+        <select id="lotSelect">
+          <option value="">Loading lots...</option>
+        </select>
+      </div>
+      <div class="preview-container" id="previewContainer">
+        <div class="preview-card" id="previewCard"></div>
+      </div>
+    </div>
+
     <div class="button-group">
       <button id="generateSingleBtn">Generate Single Card (Test)</button>
       <button id="generateAllBtn">Generate All Cards (~700)</button>
@@ -230,6 +293,7 @@
     let lotData = [];
     let lotsWithPolygons = [];
     let allAvailableLots = [];
+    let previewMapInstance = null;
 
     // Parse lots.txt format
     function parseLots(txt) {
@@ -631,9 +695,87 @@
       }
     });
 
+    // Populate lot selector
+    async function populateLotSelector() {
+      if (allAvailableLots.length === 0) {
+        await mergeData();
+      }
+
+      const select = document.getElementById('lotSelect');
+      select.innerHTML = '<option value="">-- Select a lot --</option>';
+
+      allAvailableLots.forEach(lot => {
+        const option = document.createElement('option');
+        option.value = lot.lotName;
+        option.textContent = `${lot.lotName} - ${lot.community}`;
+        select.appendChild(option);
+      });
+
+      // Select first lot by default
+      if (allAvailableLots.length > 0) {
+        select.value = allAvailableLots[0].lotName;
+        updatePreview(allAvailableLots[0].lotName);
+      }
+    }
+
+    // Update preview card
+    async function updatePreview(lotName) {
+      if (!lotName) return;
+
+      const lot = allAvailableLots.find(l => l.lotName === lotName);
+      if (!lot) return;
+
+      // Destroy previous map instance
+      if (previewMapInstance) {
+        previewMapInstance.remove();
+        previewMapInstance = null;
+      }
+
+      const previewCard = document.getElementById('previewCard');
+
+      // Create card HTML
+      const sizeFormatted = lot.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      const priceM2Formatted = lot.priceM2.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      const totalPriceFormatted = lot.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const monthlyFormatted = lot.monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      previewCard.innerHTML = `
+        <div class="card-content">
+          <img src="https://la-la.land/inverta/inverta.svg" alt="Inverta" class="card-logo">
+          <div class="card-community">${lot.community}</div>
+          <div class="card-lot-info">
+            <div class="lot-name">MZ-L ${lot.lotNumber.replace(/^[a-z]+/i, '')}</div>
+            <div class="lot-calculation">
+              ${sizeFormatted}<span class="superscript">M2</span>
+              × $${priceM2Formatted}<span class="superscript">/M2</span>
+            </div>
+            <div class="lot-total-price">
+              $${totalPriceFormatted}<span class="superscript">MXN</span>
+            </div>
+            <div class="lot-monthly">
+              Desde: <span class="lot-monthly-price">$${monthlyFormatted}</span><span class="superscript">/MES</span>
+            </div>
+          </div>
+        </div>
+        <div class="card-map">
+          <div class="card-map-canvas" id="preview-map"></div>
+        </div>
+      `;
+
+      // Render map and save instance
+      previewMapInstance = await renderMap(lot, 'preview-map');
+    }
+
+    // Lot selector change event
+    document.getElementById('lotSelect').addEventListener('change', (e) => {
+      updatePreview(e.target.value);
+    });
+
     // Initialize
-    window.addEventListener('load', () => {
-      updateStatus('Ready. Click "Generate Single Card" to test.');
+    window.addEventListener('load', async () => {
+      updateStatus('Loading lot data for preview...');
+      await populateLotSelector();
+      updateStatus('Ready. Select a lot to preview, or click "Generate Single Card" to test.');
     });
   </script>
 </body>
