@@ -1398,6 +1398,7 @@ function loadLotsAsync(map) {
     .then(r => r.text())
     .then(txt => {
       lotData = parseLots(txt);
+      window.lotData = lotData; // Make accessible to GPT search
     });
 }
 
@@ -1479,6 +1480,8 @@ function parseLots(text) {
         }
       });
       console.log('Lot data enriched with availability and fraccionamiento:', lotData);
+      window.lotData = lotData; // Update window reference after enrichment
+      window.lotDataEnriched = true; // Signal that enrichment is complete
     } else {
       console.warn('No availability data returned for lots');
     }
@@ -8487,6 +8490,7 @@ function resetViewerState() {
 }
 
 // ===== GPT LOT SEARCH - SPATIAL ANALYSIS FUNCTIONS =====
+console.log('🔍 GPT LOT SEARCH CODE LOADING...');
 window.gptLotSearch = {
   // Convert bearing to cardinal direction
   bearingToCardinal(bearing) {
@@ -8573,7 +8577,7 @@ window.gptLotSearch = {
       center: lot.center,
       coordinates: lot.coords,
       area_m2: lot.rSize || 0,
-      price_total: (lot.millones || 0) * 1000000,
+      price_total: (lot.rSize && lot.price_m2) ? lot.rSize * lot.price_m2 : 0, // Calculate from area × price/m2
       price_per_m2: lot.price_m2 || 0,
       availability: lot.availability || 'Unknown',
       fraccionamiento: lot.fraccionamiento || 'Unknown',
@@ -8628,10 +8632,10 @@ window.gptLotSearch = {
 
     // Filter by price
     if (params.minPrice !== undefined) {
-      filtered = filtered.filter(l => l.price_total >= params.minPrice * 1000000);
+      filtered = filtered.filter(l => l.price_total >= params.minPrice);
     }
     if (params.maxPrice !== undefined) {
-      filtered = filtered.filter(l => l.price_total <= params.maxPrice * 1000000);
+      filtered = filtered.filter(l => l.price_total <= params.maxPrice);
     }
 
     // Filter by price per m2
@@ -8683,7 +8687,7 @@ window.gptLotSearch = {
     }
 
     // Limit results
-    const limit = params.limit || 20;
+    const limit = params.limit || 100; // Increased default from 20 to 100
     return filtered.slice(0, limit);
   }
 };
@@ -8799,6 +8803,7 @@ window.gptChat = {
 
     close.onclick = () => {
       container.style.display = 'none';
+      this.clearAllResults(); // Clear map highlights when closing chat
     };
 
     saveKey.onclick = () => {
@@ -8852,8 +8857,26 @@ window.gptChat = {
     `;
 
     if (results && results.length > 0) {
-      // Show results with clickable lots
-      let html = `<div>${text}</div><div style="margin-top: 12px;">`;
+      // Show results with clickable lots and map button
+      let html = `
+        <div>${text}</div>
+        <div style="margin-top: 8px;">
+          <button class="gpt-show-on-map-btn" style="
+            background: #ff8400;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            margin-bottom: 8px;
+            font-family: 'Barlow Condensed', Arial, sans-serif;
+          ">🗺️ Show All on Map</button>
+        </div>
+        <div style="margin-top: 8px;">
+      `;
+
       results.forEach(lot => {
         const priceStr = lot.price_total ? `$${(lot.price_total / 1000000).toFixed(2)}M` : 'N/A';
         const areaStr = lot.area_m2 ? `${Math.round(lot.area_m2)} m²` : 'N/A';
@@ -8881,8 +8904,33 @@ window.gptChat = {
       html += '</div>';
       messageDiv.innerHTML = html;
 
+      // Automatically highlight all results on map
+      this.highlightAllResultsOnMap(results);
+
       // Add click handlers after adding to DOM
       setTimeout(() => {
+        // Show/Hide on map button
+        const mapBtn = messageDiv.querySelector('.gpt-show-on-map-btn');
+        let isShowing = true;
+        if (mapBtn) {
+          mapBtn.onclick = () => {
+            if (isShowing) {
+              this.clearAllResults();
+              mapBtn.textContent = '🗺️ Show All on Map';
+              mapBtn.style.background = '#888';
+              isShowing = false;
+            } else {
+              this.highlightAllResultsOnMap(results);
+              mapBtn.textContent = '✓ Shown on Map';
+              mapBtn.style.background = '#ff8400';
+              isShowing = true;
+            }
+          };
+          // Set initial state
+          mapBtn.textContent = '✓ Shown on Map';
+        }
+
+        // Individual lot hover/click handlers
         messageDiv.querySelectorAll('.gpt-lot-result').forEach(elem => {
           elem.onmouseenter = () => {
             elem.style.borderColor = '#ff8400';
@@ -8952,6 +9000,109 @@ window.gptChat = {
     }
   },
 
+  // Highlight all search results on map
+  highlightAllResultsOnMap(results) {
+    console.log('🗺️ highlightAllResultsOnMap called with', results?.length, 'results');
+
+    if (!window.map) {
+      console.error('Map not available');
+      return;
+    }
+    if (!results || results.length === 0) {
+      console.warn('No results to highlight');
+      return;
+    }
+
+    try {
+      // Remove existing results layer
+      if (map.getLayer('gpt-results-fill')) {
+        map.removeLayer('gpt-results-fill');
+      }
+      if (map.getLayer('gpt-results-outline')) {
+        map.removeLayer('gpt-results-outline');
+      }
+      if (map.getSource('gpt-results')) {
+        map.removeSource('gpt-results');
+      }
+
+      // Build GeoJSON features from results
+      const features = results.map(result => {
+        const lot = lotData.find(l => l.name === result.id);
+        if (!lot) {
+          console.warn('Lot not found:', result.id);
+          return null;
+        }
+
+        return {
+          type: 'Feature',
+          properties: { id: result.id },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[...lot.coords, lot.coords[0]]]
+          }
+        };
+      }).filter(f => f !== null);
+
+      if (features.length === 0) {
+        console.warn('No valid features to display');
+        return;
+      }
+
+      console.log('Adding', features.length, 'features to map');
+
+      // Add source with all result polygons
+      map.addSource('gpt-results', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: features
+        }
+      });
+
+      // Add fill layer (white with transparency, like compare mode)
+      map.addLayer({
+        id: 'gpt-results-fill',
+        type: 'fill',
+        source: 'gpt-results',
+        paint: {
+          'fill-color': '#ffffff',
+          'fill-opacity': 0.4
+        }
+      });
+
+      // Add outline layer
+      map.addLayer({
+        id: 'gpt-results-outline',
+        type: 'line',
+        source: 'gpt-results',
+        paint: {
+          'line-color': '#ff8400',
+          'line-width': 2,
+          'line-opacity': 0.8
+        }
+      });
+
+      console.log(`✅ Highlighted ${features.length} lots on map`);
+    } catch (error) {
+      console.error('Error highlighting results on map:', error);
+    }
+  },
+
+  // Clear all search result highlights
+  clearAllResults() {
+    if (!window.map) return;
+
+    if (map.getLayer('gpt-results-fill')) {
+      map.removeLayer('gpt-results-fill');
+    }
+    if (map.getLayer('gpt-results-outline')) {
+      map.removeLayer('gpt-results-outline');
+    }
+    if (map.getSource('gpt-results')) {
+      map.removeSource('gpt-results');
+    }
+  },
+
   // Zoom to lot
   zoomToLot(lotName) {
     const lot = lotData.find(l => l.name === lotName);
@@ -9007,20 +9158,21 @@ window.gptChat = {
 Available search parameters:
 - availability: "Available", "Sold", or "Featured"
 - minArea, maxArea: area in square meters
-- minPrice, maxPrice: price in millions (e.g., 2.5 for $2.5M)
-- minPricePerM2, maxPricePerM2: price per square meter
+- minPrice, maxPrice: total price in pesos (e.g., 1000000 for 1 million pesos)
+- minPricePerM2, maxPricePerM2: price per square meter in pesos
 - cornerOnly: true to filter only corner lots
 - facadeDirection: "N", "S", "E", or "W" for facade orientation
 - fraccionamiento: development/subdivision name
 - sortBy: "price", "area", or "pricePerM2"
 - sortOrder: "asc" or "desc"
-- limit: max number of results (default 20)
+- limit: max number of results (default 100)
 
 Interpret natural language queries intelligently. For example:
 - "cheap lots" → sort by price ascending
 - "large lots" → sort by area descending
 - "corner lots facing south" → cornerOnly=true, facadeDirection="S"
-- "available lots under 400 m²" → availability="Available", maxArea=400`
+- "available lots under 400 m²" → availability="Available", maxArea=400
+- "lots under 1 million pesos" → maxPrice=1000000`
             },
             ...this.messages
           ],
@@ -9046,11 +9198,11 @@ Interpret natural language queries intelligently. For example:
                   },
                   minPrice: {
                     type: 'number',
-                    description: 'Minimum price in millions (e.g., 2.5 for $2.5M)'
+                    description: 'Minimum total price in pesos (e.g., 1000000 for 1 million pesos)'
                   },
                   maxPrice: {
                     type: 'number',
-                    description: 'Maximum price in millions'
+                    description: 'Maximum total price in pesos (e.g., 1000000 for 1 million pesos)'
                   },
                   minPricePerM2: {
                     type: 'number',
@@ -9086,7 +9238,7 @@ Interpret natural language queries intelligently. For example:
                   limit: {
                     type: 'number',
                     description: 'Maximum number of results to return',
-                    default: 20
+                    default: 100
                   }
                 }
               }
@@ -9162,20 +9314,28 @@ Interpret natural language queries intelligently. For example:
 
 // Initialize GPT chat when page loads
 window.addEventListener('load', () => {
-  // Wait for both the search button and lots to be loaded
-  const checkReady = setInterval(() => {
+  // Initialize chat UI immediately when button is ready
+  const checkButton = setInterval(() => {
     const searchBtn = document.getElementById('communitySearchBtn');
-    if (searchBtn && window.lotData && lotData.length > 0) {
-      clearInterval(checkReady);
+    if (searchBtn) {
+      clearInterval(checkButton);
 
-      // Compute lot characteristics
-      window.gptLotSearch.computeAllCharacteristics();
-
-      // Initialize chat UI
+      // Initialize chat UI right away
       window.gptChat.init();
-
-      console.log('GPT Lot Search initialized with', lotData.length, 'lots');
+      console.log('✅ GPT Chat UI initialized');
       console.log('Magnifying glass button:', searchBtn ? 'FOUND' : 'NOT FOUND');
+    }
+  }, 100);
+
+  // Separately wait for lotData to be ENRICHED before computing characteristics
+  const checkLots = setInterval(() => {
+    if (window.lotDataEnriched && window.lotData && lotData.length > 0) {
+      clearInterval(checkLots);
+
+      // Compute lot characteristics (now with prices, availability, etc.)
+      window.gptLotSearch.computeAllCharacteristics();
+      console.log('✅ GPT Lot characteristics computed for', lotData.length, 'lots');
+      console.log('Sample lot data:', lotData[0]); // Debug: show first lot
     }
   }, 500);
 });
