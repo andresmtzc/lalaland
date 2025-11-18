@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Lot Characteristics JSON</title>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>Lot Characteristics Generator</h1>
+  <p>This will generate a JSON file with all precomputed lot characteristics.</p>
+  <button id="generate" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">Generate JSON</button>
+  <pre id="output" style="margin-top: 20px; padding: 10px; background: #f5f5f5; max-height: 400px; overflow: auto;"></pre>
+  <button id="download" style="padding: 10px 20px; font-size: 16px; cursor: pointer; display: none;">Download JSON</button>
+
+<script>
+const CURRENT_CLIENT = 'inverta';
+let generatedJSON = null;
+
+// Spatial analysis functions (same as in index-alt.html)
+const gptLotSearch = {
+  bearingToCardinal(bearing) {
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const index = Math.round(((bearing + 360) % 360) / 45) % 8;
+    return directions[index];
+  },
+
+  getFacadeOrientations(lotCoords) {
+    const facades = [];
+    for (let i = 0; i < lotCoords.length - 1; i++) {
+      const bearing = turf.bearing(
+        turf.point(lotCoords[i]),
+        turf.point(lotCoords[i + 1])
+      );
+      facades.push(this.bearingToCardinal(bearing));
+    }
+    return facades;
+  },
+
+  isCornerLot(lotCoords, allLots) {
+    const polygon = turf.polygon([[...lotCoords, lotCoords[0]]]);
+    const lotBuffered = turf.buffer(polygon, 0.5, { units: 'meters' });
+
+    let adjacentCount = 0;
+    for (const otherLot of allLots) {
+      if (otherLot.coords === lotCoords) continue;
+
+      try {
+        const otherPolygon = turf.polygon([[...otherLot.coords, otherLot.coords[0]]]);
+        const otherBuffered = turf.buffer(otherPolygon, 0.5, { units: 'meters' });
+
+        const intersection = turf.intersect(lotBuffered, otherBuffered);
+        if (intersection) {
+          adjacentCount++;
+        }
+      } catch (e) {
+        // Skip invalid polygons
+      }
+    }
+
+    return adjacentCount <= 2;
+  },
+
+  getLotDimensions(lotCoords) {
+    const bbox = turf.bbox(turf.polygon([[...lotCoords, lotCoords[0]]]));
+    const width = turf.distance(
+      turf.point([bbox[0], bbox[1]]),
+      turf.point([bbox[2], bbox[1]]),
+      { units: 'meters' }
+    );
+    const height = turf.distance(
+      turf.point([bbox[0], bbox[1]]),
+      turf.point([bbox[0], bbox[3]]),
+      { units: 'meters' }
+    );
+    return {
+      width: Math.round(width * 100) / 100,
+      height: Math.round(height * 100) / 100,
+      aspectRatio: Math.round((width / height) * 100) / 100
+    };
+  },
+
+  getPerimeter(lotCoords) {
+    const polygon = turf.polygon([[...lotCoords, lotCoords[0]]]);
+    const perimeter = turf.length(polygon, { units: 'meters' });
+    return Math.round(perimeter * 100) / 100;
+  },
+
+  computeLotCharacteristics(lot, allLots) {
+    const facades = this.getFacadeOrientations(lot.coords);
+    const dimensions = this.getLotDimensions(lot.coords);
+    const isCorner = this.isCornerLot(lot.coords, allLots);
+    const perimeter = this.getPerimeter(lot.coords);
+
+    return {
+      id: lot.name,
+      center: lot.center,
+      coordinates: lot.coords,
+      area_m2: lot.rSize || 0,
+      price_total: (lot.rSize && lot.price_m2) ? lot.rSize * lot.price_m2 : 0,
+      price_per_m2: lot.price_m2 || 0,
+      availability: lot.availability || 'Unknown',
+      fraccionamiento: lot.fraccionamiento || 'Unknown',
+      facades: facades,
+      dimensions: dimensions,
+      perimeter: perimeter,
+      isCorner: isCorner,
+      hasNorthFacade: facades.some(f => f === 'N' || f === 'NE' || f === 'NW'),
+      hasSouthFacade: facades.some(f => f === 'S' || f === 'SE' || f === 'SW'),
+      hasEastFacade: facades.some(f => f === 'E' || f === 'NE' || f === 'SE'),
+      hasWestFacade: facades.some(f => f === 'W' || f === 'NW' || f === 'SW')
+    };
+  }
+};
+
+// Load lots from lots.txt
+function parseLots(text) {
+  const lines = text.trim().split('\n');
+  const lots = [];
+  let currentLot = null;
+
+  lines.forEach(line => {
+    line = line.trim();
+    if (!line) return;
+
+    if (!line.startsWith('{')) {
+      if (currentLot) lots.push(currentLot);
+      currentLot = { name: line, coords: [] };
+    } else {
+      const m = line.match(/lat:\s*([0-9.\-]+),\s*lng:\s*([0-9.\-]+)/);
+      if (m && currentLot) currentLot.coords.push([+m[2], +m[1]]);
+    }
+  });
+
+  if (currentLot) lots.push(currentLot);
+
+  // Calculate centers
+  lots.forEach(lot => {
+    try {
+      const poly = turf.polygon([[...lot.coords, lot.coords[0]]]);
+      const center = turf.centroid(poly).geometry.coordinates;
+      lot.center = center;
+    } catch (err) {
+      console.warn('Failed to calculate center for', lot.name, err);
+      lot.center = [0, 0];
+    }
+  });
+
+  return lots;
+}
+
+// Main generation function
+document.getElementById('generate').addEventListener('click', async () => {
+  const output = document.getElementById('output');
+  output.textContent = 'Loading lots.txt...';
+
+  try {
+    // Load lots.txt
+    const lotsResponse = await fetch('https://la-la.land/inverta/lots.txt');
+    const lotsText = await lotsResponse.text();
+    const lotData = parseLots(lotsText);
+
+    output.textContent = `Loaded ${lotData.length} lots. Loading Supabase config...`;
+
+    // Load Supabase config
+    const configResponse = await fetch('https://la-la.land/sb_config.json');
+    const config = await configResponse.json();
+
+    output.textContent = `Supabase config loaded. Connecting to database...`;
+
+    // Initialize Supabase
+    const supabaseClient = supabase.createClient(config.url, config.key);
+
+    // Fetch enrichment data
+    const names = lotData.map(lot => lot.name);
+    const { data, error } = await supabaseClient
+      .from('lots')
+      .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2')
+      .in('lot_name', names)
+      .eq('client_id', CURRENT_CLIENT);
+
+    if (error) {
+      throw error;
+    }
+
+    output.textContent = `Fetched ${data.length} lot details from Supabase. Enriching data...`;
+
+    // Enrich lots
+    if (data && data.length > 0) {
+      data.forEach(row => {
+        const lot = lotData.find(l => l.name === row.lot_name);
+        if (lot) {
+          lot.availability = row.availability ?? 'Available';
+          lot.featured = (row.availability || '').toLowerCase() === 'featured';
+          lot.rSize = row.rSize;
+          lot.millones = row.millones;
+          lot.fraccionamiento = row.fraccionamiento;
+          lot.price_m2 = row.price_m2;
+          lot.priceM2 = row.price_m2;
+        }
+      });
+    }
+
+    output.textContent = `Data enriched. Computing characteristics for ${lotData.length} lots...\nThis may take 30-60 seconds...`;
+
+    // Compute characteristics (this is the slow part)
+    await new Promise(resolve => setTimeout(resolve, 100)); // Let UI update
+
+    const startTime = Date.now();
+    const characteristics = lotData.map((lot, index) => {
+      if (index % 10 === 0) {
+        output.textContent = `Computing... ${index}/${lotData.length} (${Math.round(index/lotData.length*100)}%)`;
+      }
+      return gptLotSearch.computeLotCharacteristics(lot, lotData);
+    });
+    const endTime = Date.now();
+
+    const jsonData = {
+      generatedAt: new Date().toISOString(),
+      computationTimeMs: endTime - startTime,
+      lotCount: characteristics.length,
+      characteristics: characteristics
+    };
+
+    generatedJSON = JSON.stringify(jsonData, null, 2);
+
+    output.textContent = `✅ SUCCESS!\n\nGenerated ${characteristics.length} lot characteristics in ${endTime - startTime}ms\n\n${generatedJSON.substring(0, 500)}...`;
+
+    document.getElementById('download').style.display = 'block';
+
+  } catch (error) {
+    output.textContent = `❌ ERROR: ${error.message}\n\n${error.stack}`;
+  }
+});
+
+document.getElementById('download').addEventListener('click', () => {
+  if (!generatedJSON) return;
+
+  const blob = new Blob([generatedJSON], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'lot-characteristics.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
