@@ -609,19 +609,43 @@ ctaobserver.observe(ctaToaster, {
       const lotNumber = extractLotNumber(updatedLotName);
 
       // 🟢 UPDATE ALL DATA SOURCES, not just lotData
-      
+
       // 1. Update lotData (map data)
       const updatedIndex = lotData.findIndex(l => l.name === updatedLotName);
       if (updatedIndex !== -1) {
         const lot = lotData[updatedIndex];
         const raw = payload.new?.availability ?? lot.availability ?? 'Available';
+        const wasAvailable = (lot.availability ?? '').toLowerCase() !== 'sold';
+        const nowSold = raw.toLowerCase() === 'sold';
+
         lot.availability = raw;
         lot.featured = raw.toLowerCase() === 'featured';
         lot.rSize = payload.new?.rSize ?? lot.rSize;
         lot.millones = payload.new?.millones ?? lot.millones;
 
-        // Refresh visual on map
-        refreshLotVisuals(map, lot);
+        // Update map source data so filters work properly
+        if (map && map.getSource('lots-final')) {
+          const source = map.getSource('lots-final');
+          const updatedGeojson = {
+            type: "FeatureCollection",
+            features: lotData.map((l, i) => ({
+              type: "Feature",
+              properties: {
+                name: l.name,
+                availability: l.availability,
+                featured: l.featured,
+                index: i
+              },
+              geometry: { type: "Polygon", coordinates: [l.coords] }
+            }))
+          };
+          source.setData(updatedGeojson);
+        }
+
+        // If lot just became sold, add X mark
+        if (wasAvailable && nowSold && typeof addSoldXs === 'function') {
+          addSoldXs(map, [lot], 300);
+        }
       }
 
       // 🟢 NEW: Update baseLotsAll (modal data source)
