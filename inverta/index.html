@@ -194,6 +194,31 @@ const CURRENT_CLIENT = 'inverta';
 .detail-data-row div[style*="font-size: 18px"] {
   white-space: nowrap;
 }
+
+/* Custom scrollbar for payment container */
+.payment-container {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.payment-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.payment-container::-webkit-scrollbar-track {
+  background: rgba(138, 136, 128, 0.2);
+  border-radius: 4px;
+}
+
+.payment-container::-webkit-scrollbar-thumb {
+  background: #ff8400;
+  border-radius: 4px;
+}
+
+.payment-container::-webkit-scrollbar-thumb:hover {
+  background: #e67300;
+}
 </style>
 </head>
  
@@ -2774,7 +2799,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       // Show payment view in the same modal
       e.stopPropagation();
       if (window.showPaymentViewInModal && lot) {
-        window.showPaymentViewInModal(lot);
+        window.showPaymentViewInModal(lot, index);
       } else {
         console.error('Payment view not available or lot data missing');
       }
@@ -2850,7 +2875,13 @@ backButton.addEventListener('click', () => {
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const calendly = document.getElementById('calendlyEmbed');
 
-  // 🟢 FIX: Handle 360 viewer back navigation FIRST
+  // 🟢 Handle payment view back navigation FIRST
+  if (window.currentLotForPayment !== null && typeof window.goBackToDetails === 'function') {
+    window.goBackToDetails();
+    return;
+  }
+
+  // 🟢 FIX: Handle 360 viewer back navigation
   if (modal.classList.contains('viewer-mode')) {
     close360ViewerInModal();
     return;
@@ -8628,7 +8659,7 @@ function resetViewerState() {
 let stripe;
 let elements;
 let currentLotForPayment = null;
-let previousDetailView = null; // Store the previous view to go back
+let currentLotIndex = null; // Store lot index to restore detail view
 
 // Initialize Stripe (replace with your publishable key from Stripe Dashboard)
 // Get from: https://dashboard.stripe.com/apikeys
@@ -8638,12 +8669,10 @@ const STRIPE_PUBLISHABLE_KEY = 'pk_test_51SUyrUAQALfcnICXujwh3b1nXGhHCoiAR5OfQPu
 const RESERVATION_AMOUNT = 5000; // 5,000 MXN
 
 // Show payment view in the existing modal
-async function showPaymentViewInModal(lot) {
+async function showPaymentViewInModal(lot, lotIndex) {
   currentLotForPayment = lot;
+  currentLotIndex = lotIndex; // Store index to restore detail view
   const lotDetails = document.getElementById('lotDetails');
-
-  // Store previous content to allow going back
-  previousDetailView = lotDetails.innerHTML;
 
   // Clear and create payment container
   lotDetails.innerHTML = '';
@@ -8661,19 +8690,19 @@ async function showPaymentViewInModal(lot) {
     <!-- Reservation Process Steps -->
     <div style="background: rgba(255, 132, 0, 0.1); border-left: 4px solid #ff8400; padding: 16px; margin-bottom: 24px; border-radius: 4px;">
       <h3 style="color: #ff8400; font-size: 18px; font-weight: 700; margin-bottom: 12px;">📍 Separa con $5,000 (Reembolsables):</h3>
-      <p style="color: #ddd; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+      <p style="color: #1a1a1a; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
         Elige tu lote y realiza tu primera separación de $5,000 MXN. Esta cantidad es <strong>100% reembolsable</strong> si cambias de opinión.
         <br><span style="color: #ff8400; font-weight: 600;">¡Aseguras el lote y tu inversión está protegida!</span>
       </p>
 
       <h3 style="color: #ff8400; font-size: 18px; font-weight: 700; margin-bottom: 12px;">✅ Confirma en 24 Horas:</h3>
-      <p style="color: #ddd; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+      <p style="color: #1a1a1a; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
         Tienes 24 horas para completar tu separación con un segundo depósito de $5,000 MXN (este pago ya no es reembolsable y se abona a tu enganche total).
         <br><span style="color: #ff8400; font-weight: 600;">¡Fácil, rápido y sin complicaciones!</span>
       </p>
 
       <h3 style="color: #ff8400; font-size: 18px; font-weight: 700; margin-bottom: 12px;">📝 Firma tu Contrato en 7 Días:</h3>
-      <p style="color: #ddd; font-size: 14px; line-height: 1.6;">
+      <p style="color: #1a1a1a; font-size: 14px; line-height: 1.6;">
         Durante la semana siguiente, nuestro equipo te ayudará con toda la papelería y la firma formal de tu contrato de compraventa.
         <br><span style="color: #ff8400; font-weight: 600;">Tiempo más que suficiente para tomar la mejor decisión con tranquilidad.</span>
       </p>
@@ -8749,8 +8778,6 @@ async function showPaymentViewInModal(lot) {
 
 // Go back to lot details
 function goBackToDetails() {
-  const lotDetails = document.getElementById('lotDetails');
-
   // Unmount payment element if exists
   if (elements) {
     const paymentElement = elements.getElement('payment');
@@ -8759,13 +8786,13 @@ function goBackToDetails() {
     }
   }
 
-  // Restore previous view
-  if (previousDetailView) {
-    lotDetails.innerHTML = previousDetailView;
+  // Re-show the lot detail view properly
+  if (currentLotIndex !== null && typeof showDetailViewForLot === 'function') {
+    showDetailViewForLot(currentLotIndex, false);
   }
 
   currentLotForPayment = null;
-  previousDetailView = null;
+  currentLotIndex = null;
 }
 
 // Show payment error
@@ -8851,8 +8878,15 @@ async function markLotAsReserved(lot) {
   }
 }
 
-// Export function to global scope
+// Export functions and variables to global scope
 window.showPaymentViewInModal = showPaymentViewInModal;
+window.goBackToDetails = goBackToDetails;
+
+// Make currentLotForPayment accessible
+Object.defineProperty(window, 'currentLotForPayment', {
+  get: () => currentLotForPayment,
+  set: (value) => { currentLotForPayment = value; }
+});
 </script>
 
 </body> 
