@@ -18,12 +18,29 @@ serve(async (req) => {
   }
 
   try {
+    console.log('Webhook received:', req.method, req.url)
+
     // Get Stripe secret key and webhook secret from environment
     const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
     const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')
 
+    console.log('Environment check:', {
+      hasStripeKey: !!stripeSecretKey,
+      hasWebhookSecret: !!webhookSecret
+    })
+
     if (!stripeSecretKey || !webhookSecret) {
-      throw new Error('Stripe keys not configured')
+      console.error('Missing configuration:', {
+        stripeKey: !!stripeSecretKey,
+        webhookSecret: !!webhookSecret
+      })
+      return new Response(
+        JSON.stringify({ error: 'Stripe keys not configured' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
     }
 
     const stripe = new Stripe(stripeSecretKey, {
