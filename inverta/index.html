@@ -2799,7 +2799,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       // Show payment view in the same modal
       e.stopPropagation();
       if (window.showPaymentViewInModal && lot) {
-        window.showPaymentViewInModal(lot);
+        window.showPaymentViewInModal(lot, index);
       } else {
         console.error('Payment view not available or lot data missing');
       }
@@ -2875,7 +2875,13 @@ backButton.addEventListener('click', () => {
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const calendly = document.getElementById('calendlyEmbed');
 
-  // 🟢 FIX: Handle 360 viewer back navigation FIRST
+  // 🟢 Handle payment view back navigation FIRST
+  if (window.currentLotForPayment !== null && typeof window.goBackToDetails === 'function') {
+    window.goBackToDetails();
+    return;
+  }
+
+  // 🟢 FIX: Handle 360 viewer back navigation
   if (modal.classList.contains('viewer-mode')) {
     close360ViewerInModal();
     return;
@@ -8653,7 +8659,7 @@ function resetViewerState() {
 let stripe;
 let elements;
 let currentLotForPayment = null;
-let previousDetailView = null; // Store the previous view to go back
+let currentLotIndex = null; // Store lot index to restore detail view
 
 // Initialize Stripe (replace with your publishable key from Stripe Dashboard)
 // Get from: https://dashboard.stripe.com/apikeys
@@ -8663,12 +8669,10 @@ const STRIPE_PUBLISHABLE_KEY = 'pk_test_YOUR_PUBLISHABLE_KEY_HERE'; // TODO: Rep
 const RESERVATION_AMOUNT = 5000; // 5,000 MXN
 
 // Show payment view in the existing modal
-async function showPaymentViewInModal(lot) {
+async function showPaymentViewInModal(lot, lotIndex) {
   currentLotForPayment = lot;
+  currentLotIndex = lotIndex; // Store index to restore detail view
   const lotDetails = document.getElementById('lotDetails');
-
-  // Store previous content to allow going back
-  previousDetailView = lotDetails.innerHTML;
 
   // Clear and create payment container
   lotDetails.innerHTML = '';
@@ -8774,8 +8778,6 @@ async function showPaymentViewInModal(lot) {
 
 // Go back to lot details
 function goBackToDetails() {
-  const lotDetails = document.getElementById('lotDetails');
-
   // Unmount payment element if exists
   if (elements) {
     const paymentElement = elements.getElement('payment');
@@ -8784,13 +8786,13 @@ function goBackToDetails() {
     }
   }
 
-  // Restore previous view
-  if (previousDetailView) {
-    lotDetails.innerHTML = previousDetailView;
+  // Re-show the lot detail view properly
+  if (currentLotIndex !== null && typeof showDetailViewForLot === 'function') {
+    showDetailViewForLot(currentLotIndex, false);
   }
 
   currentLotForPayment = null;
-  previousDetailView = null;
+  currentLotIndex = null;
 }
 
 // Show payment error
@@ -8876,8 +8878,15 @@ async function markLotAsReserved(lot) {
   }
 }
 
-// Export function to global scope
+// Export functions and variables to global scope
 window.showPaymentViewInModal = showPaymentViewInModal;
+window.goBackToDetails = goBackToDetails;
+
+// Make currentLotForPayment accessible
+Object.defineProperty(window, 'currentLotForPayment', {
+  get: () => currentLotForPayment,
+  set: (value) => { currentLotForPayment = value; }
+});
 </script>
 
 </body> 
