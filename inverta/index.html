@@ -8733,6 +8733,11 @@ async function showPaymentViewInModal(lot) {
 
   // Initialize Stripe and create payment
   try {
+    // Check if Stripe key is configured
+    if (STRIPE_PUBLISHABLE_KEY === 'pk_test_YOUR_PUBLISHABLE_KEY_HERE') {
+      throw new Error('Stripe publishable key not configured. Get key from https://dashboard.stripe.com/apikeys');
+    }
+
     // Initialize Stripe if not already done
     if (!stripe) {
       stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
@@ -8743,7 +8748,7 @@ async function showPaymentViewInModal(lot) {
     const supabaseUrl = window.supabaseClient?.supabaseUrl;
 
     if (!supabaseUrl) {
-      throw new Error('Supabase not initialized');
+      throw new Error('Supabase not initialized. Check Supabase configuration.');
     }
 
     // Call Supabase Edge Function
@@ -8761,7 +8766,16 @@ async function showPaymentViewInModal(lot) {
       })
     });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Edge function error: ${response.status} - ${errorText}`);
+    }
+
     const { clientSecret } = await response.json();
+
+    if (!clientSecret) {
+      throw new Error('No client secret returned from payment intent');
+    }
 
     // Create Elements instance
     elements = stripe.elements({ clientSecret });
@@ -8787,7 +8801,7 @@ async function showPaymentViewInModal(lot) {
 
   } catch (error) {
     console.error('Error initializing payment:', error);
-    showPaymentError('Error al inicializar el pago. Por favor intenta de nuevo.');
+    showPaymentError(error.message || 'Error al inicializar el pago. Por favor intenta de nuevo.');
   }
 
   // Add event listeners
