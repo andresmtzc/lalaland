@@ -627,30 +627,27 @@ ctaobserver.observe(ctaToaster, {
         if (map && map.getSource('lots-final')) {
           const source = map.getSource('lots-final');
 
-          // Preserve current hover state before updating
-          const currentHoveredId = window.hoveredId;
-
+          // Create features matching the lotFeature format exactly
           const updatedGeojson = {
             type: "FeatureCollection",
-            features: lotData.map((l, i) => ({
-              type: "Feature",
-              properties: {
-                name: l.name,
-                availability: l.availability,
-                featured: l.featured,
-                index: i
-              },
-              geometry: { type: "Polygon", coordinates: [l.coords] }
-            }))
+            features: lotData.map((l, i) => {
+              const c = [...l.coords];
+              // Ensure polygon is closed
+              if (c[0][0] !== c[c.length - 1][0] || c[0][1] !== c[c.length - 1][1]) {
+                c.push(c[0]);
+              }
+              return {
+                type: "Feature",
+                geometry: { type: "Polygon", coordinates: [c] },
+                properties: {
+                  name: l.name,
+                  availability: l.availability || 'Available'
+                },
+                id: i
+              };
+            })
           };
           source.setData(updatedGeojson);
-
-          // Restore hover state after updating
-          if (currentHoveredId !== null && currentHoveredId !== undefined) {
-            setTimeout(() => {
-              map.setFeatureState({ source: 'lots-final', id: currentHoveredId }, { hover: true });
-            }, 50);
-          }
         }
 
         // If lot just became sold, add X mark
