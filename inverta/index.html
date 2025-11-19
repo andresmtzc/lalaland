@@ -8667,7 +8667,7 @@ let currentLotForPayment = null;
 
 // Initialize Stripe (replace with your publishable key from Stripe Dashboard)
 // Get from: https://dashboard.stripe.com/apikeys
-const STRIPE_PUBLISHABLE_KEY = 'pk_test_YOUR_PUBLISHABLE_KEY_HERE'; // TODO: Replace with actual key
+const STRIPE_PUBLISHABLE_KEY = 'pk_test_51SUyrUAQALfcnICXujwh3b1nXGhHCoiAR5OfQPuhtAtbY4NIGCv3wF7sV7bVvNw7Y8AN1zPpdu0CnY6A4TOfTDlc00XQ7qFApi';
 
 // Fixed reservation amount
 const RESERVATION_AMOUNT = 5000; // 5,000 MXN
@@ -8675,6 +8675,12 @@ const RESERVATION_AMOUNT = 5000; // 5,000 MXN
 // Show payment view in the existing modal (like a second page)
 async function showPaymentViewInModal(lot) {
   currentLotForPayment = lot;
+
+  // Store the lot index for going back
+  const baseIndex = baseLots.findIndex(l => l.number === lot.number);
+  if (baseIndex !== -1) {
+    lastOpenedBaseIndex = baseIndex;
+  }
   const lotDetails = document.getElementById('lotDetails');
 
   // Clear and create payment content
@@ -8733,6 +8739,11 @@ async function showPaymentViewInModal(lot) {
 
   // Initialize Stripe and create payment
   try {
+    // Check if Stripe key is configured
+    if (STRIPE_PUBLISHABLE_KEY === 'pk_test_YOUR_PUBLISHABLE_KEY_HERE') {
+      throw new Error('Stripe publishable key not configured. Get key from https://dashboard.stripe.com/apikeys');
+    }
+
     // Initialize Stripe if not already done
     if (!stripe) {
       stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
@@ -8743,7 +8754,7 @@ async function showPaymentViewInModal(lot) {
     const supabaseUrl = window.supabaseClient?.supabaseUrl;
 
     if (!supabaseUrl) {
-      throw new Error('Supabase not initialized');
+      throw new Error('Supabase not initialized. Check Supabase configuration.');
     }
 
     // Call Supabase Edge Function
@@ -8761,7 +8772,16 @@ async function showPaymentViewInModal(lot) {
       })
     });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Edge function error: ${response.status} - ${errorText}`);
+    }
+
     const { clientSecret } = await response.json();
+
+    if (!clientSecret) {
+      throw new Error('No client secret returned from payment intent');
+    }
 
     // Create Elements instance
     elements = stripe.elements({ clientSecret });
@@ -8787,7 +8807,7 @@ async function showPaymentViewInModal(lot) {
 
   } catch (error) {
     console.error('Error initializing payment:', error);
-    showPaymentError('Error al inicializar el pago. Por favor intenta de nuevo.');
+    showPaymentError(error.message || 'Error al inicializar el pago. Por favor intenta de nuevo.');
   }
 
   // Add event listeners
@@ -8809,11 +8829,15 @@ async function goBackToDetails() {
 
   // Remove payment mode styling
   lotDetails.classList.remove('payment-mode');
-  lotDetails.innerHTML = '';
 
   // Re-render the detail view properly with event listeners
-  if (typeof lastOpenedBaseIndex === 'number') {
-    await showDetailViewForLot(lastOpenedBaseIndex, false);
+  if (typeof lastOpenedBaseIndex === 'number' && lastOpenedBaseIndex >= 0) {
+    // Clear content first
+    lotDetails.innerHTML = '';
+
+    // Re-render using the same function that created it originally
+    // Pass isSwitchingLots=true to avoid modal opening animations
+    await showDetailViewForLot(lastOpenedBaseIndex, true);
   }
 
   currentLotForPayment = null;
