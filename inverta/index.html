@@ -195,23 +195,32 @@ const CURRENT_CLIENT = 'inverta';
   white-space: nowrap;
 }
 
-/* Scrollbar for payment modal - matches your existing scrollbar design */
-#paymentContent::-webkit-scrollbar {
+/* Payment view styling - override external CSS to enable scrolling */
+#lotDetails.payment-mode {
+  position: relative !important;
+  transform: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: 100% !important;
+}
+
+/* Scrollbar for payment view - matches your existing scrollbar design */
+#lotDetails.payment-mode::-webkit-scrollbar {
   width: 6px;
 }
 
-#paymentContent::-webkit-scrollbar-track {
+#lotDetails.payment-mode::-webkit-scrollbar-track {
   background: rgba(200, 200, 200, 0.2);
   border-radius: 3px;
 }
 
-#paymentContent::-webkit-scrollbar-thumb {
+#lotDetails.payment-mode::-webkit-scrollbar-thumb {
   background: #c0c0c0;
   border-radius: 3px;
   transition: background-color 0.2s;
 }
 
-#paymentContent::-webkit-scrollbar-thumb:hover {
+#lotDetails.payment-mode::-webkit-scrollbar-thumb:hover {
   background: #a0a0a0;
 }
 </style>
@@ -377,22 +386,6 @@ const CURRENT_CLIENT = 'inverta';
           fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" />
   </svg>
   </div>
-</div>
-
-<!-- PAYMENT MODAL -->
-<div id="paymentModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(26, 26, 26, 0.95); z-index: 10003; font-family: 'Barlow Condensed', Arial, sans-serif;">
-  <div class="modal-header">
-    <div class="header-title">
-      <span id="paymentHeaderTitle">APARTAR LOTE</span>
-    </div>
-    <div class="header-control close-x" onclick="closePaymentModal()" id="closePaymentBtn">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
-        <path d="M4 4 L12 12 M12 4 L4 12" fill="none"/>
-      </svg>
-    </div>
-  </div>
-  <div class="modal-divider"></div>
-  <div id="paymentContent" style="padding: 20px; overflow-y: auto; overflow-x: hidden; max-height: calc(100vh - 120px);"></div>
 </div>
 
 <!-- AUTH MODAL -->
@@ -8664,6 +8657,7 @@ function resetViewerState() {
 let stripe;
 let elements;
 let currentLotForPayment = null;
+let previousDetailView = null;
 
 // Initialize Stripe (replace with your publishable key from Stripe Dashboard)
 // Get from: https://dashboard.stripe.com/apikeys
@@ -8672,18 +8666,21 @@ const STRIPE_PUBLISHABLE_KEY = 'pk_test_YOUR_PUBLISHABLE_KEY_HERE'; // TODO: Rep
 // Fixed reservation amount
 const RESERVATION_AMOUNT = 5000; // 5,000 MXN
 
-// Show payment modal
+// Show payment view in the existing modal (like a second page)
 async function showPaymentViewInModal(lot) {
   currentLotForPayment = lot;
-  const paymentModal = document.getElementById('paymentModal');
-  const paymentContent = document.getElementById('paymentContent');
-  const paymentHeaderTitle = document.getElementById('paymentHeaderTitle');
+  const lotDetails = document.getElementById('lotDetails');
 
-  // Update header
-  paymentHeaderTitle.textContent = `APARTAR LOTE ${lot.number}`;
+  // Store previous content to allow going back
+  previousDetailView = lotDetails.innerHTML;
 
   // Clear and create payment content
-  paymentContent.innerHTML = `
+  lotDetails.innerHTML = '';
+
+  // Enable payment mode styling for scrolling
+  lotDetails.classList.add('payment-mode');
+
+  lotDetails.innerHTML = `
     <div style="margin-bottom: 24px;">
       <h2 style="font-size: 28px; font-weight: 700; color: #ff8400; text-align: center; margin-bottom: 8px;">APARTAR LOTE ${lot.number}</h2>
       <p style="font-size: 16px; color: #8a8880; text-align: center; margin-bottom: 24px;">Monto de separación: <span style="color: #ff8400; font-weight: 700; font-size: 20px;">$${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN</span></p>
@@ -8716,16 +8713,16 @@ async function showPaymentViewInModal(lot) {
     <!-- Error message -->
     <div id="payment-error" style="color: #f44336; margin-bottom: 16px; text-align: center; display: none; font-size: 14px;"></div>
 
-    <!-- Action Button -->
-    <div style="text-align: center;">
-      <button id="submit-payment" style="width: 100%; max-width: 400px; padding: 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 18px;">
+    <!-- Action Buttons -->
+    <div style="display: flex; gap: 12px; margin-bottom: 20px;">
+      <button id="back-to-details" style="flex: 1; padding: 12px; border-radius: 6px; border: 2px solid #8a8880; background: transparent; color: #8a8880; cursor: pointer; font-weight: 700; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 16px;">
+        VOLVER
+      </button>
+      <button id="submit-payment" style="flex: 2; padding: 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 16px;">
         PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN
       </button>
     </div>
   `;
-
-  // Show the payment modal
-  paymentModal.style.display = 'block';
 
   // Initialize Stripe and create payment
   try {
@@ -8771,13 +8768,14 @@ async function showPaymentViewInModal(lot) {
     showPaymentError('Error al inicializar el pago. Por favor intenta de nuevo.');
   }
 
-  // Add event listener for payment submission
+  // Add event listeners
+  document.getElementById('back-to-details')?.addEventListener('click', goBackToDetails);
   document.getElementById('submit-payment')?.addEventListener('click', handlePaymentSubmit);
 }
 
-// Close payment modal
-function closePaymentModal() {
-  const paymentModal = document.getElementById('paymentModal');
+// Go back to lot details
+function goBackToDetails() {
+  const lotDetails = document.getElementById('lotDetails');
 
   // Unmount payment element if exists
   if (elements) {
@@ -8787,10 +8785,16 @@ function closePaymentModal() {
     }
   }
 
-  // Hide modal
-  paymentModal.style.display = 'none';
+  // Restore previous view
+  if (previousDetailView) {
+    lotDetails.innerHTML = previousDetailView;
+  }
+
+  // Remove payment mode styling
+  lotDetails.classList.remove('payment-mode');
 
   currentLotForPayment = null;
+  previousDetailView = null;
 }
 
 // Show payment error
