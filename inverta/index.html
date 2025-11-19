@@ -8717,6 +8717,21 @@ async function showPaymentViewInModal(lot) {
         </p>
       </div>
 
+      <!-- Contact Information -->
+      <div style="background: white; padding: 20px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 16px;">
+        <h3 style="color: #ff8400; font-size: 16px; font-weight: 700; margin-bottom: 16px;">Información de Contacto</h3>
+
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; color: #1a1a1a; font-size: 14px; font-weight: 600; margin-bottom: 6px;">Email *</label>
+          <input type="email" id="customer-email" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: 'Barlow Condensed', Arial, sans-serif;" placeholder="tu@email.com">
+        </div>
+
+        <div style="margin-bottom: 0;">
+          <label style="display: block; color: #1a1a1a; font-size: 14px; font-weight: 600; margin-bottom: 6px;">Teléfono *</label>
+          <input type="tel" id="customer-phone" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: 'Barlow Condensed', Arial, sans-serif;" placeholder="55 1234 5678">
+        </div>
+      </div>
+
       <!-- Stripe Payment Element -->
       <div id="stripe-payment-element" style="margin-bottom: 20px; min-height: 250px; width: 100%; padding: 20px; background: white; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
         <div style="text-align: center; color: #8a8880; padding: 40px;">Cargando formulario de pago...</div>
@@ -8725,12 +8740,9 @@ async function showPaymentViewInModal(lot) {
       <!-- Error message -->
       <div id="payment-error" style="color: #f44336; margin-bottom: 16px; text-align: center; display: none; font-size: 14px;"></div>
 
-      <!-- Action Buttons -->
-      <div style="display: flex; gap: 12px; margin-bottom: 20px;">
-        <button id="back-to-details" style="flex: 1; padding: 12px; border-radius: 6px; border: 2px solid #8a8880; background: transparent; color: #8a8880; cursor: pointer; font-weight: 700; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 16px;">
-          VOLVER
-        </button>
-        <button id="submit-payment" style="flex: 2; padding: 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 16px;">
+      <!-- Action Button -->
+      <div style="text-align: center; margin-bottom: 20px;">
+        <button id="submit-payment" style="width: 100%; max-width: 400px; padding: 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 18px;">
           PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN
         </button>
       </div>
@@ -8786,18 +8798,10 @@ async function showPaymentViewInModal(lot) {
     // Create Elements instance
     elements = stripe.elements({ clientSecret });
 
-    // Create and mount Payment Element with required fields
+    // Create and mount Payment Element with billing details collection
     const paymentElement = elements.create('payment', {
       fields: {
-        billingDetails: {
-          email: 'always',
-          phone: 'always',
-          name: 'auto',
-          address: {
-            country: 'never',
-            postalCode: 'auto'
-          }
-        }
+        billingDetails: 'auto'
       },
       terms: {
         card: 'never'
@@ -8810,37 +8814,8 @@ async function showPaymentViewInModal(lot) {
     showPaymentError(error.message || 'Error al inicializar el pago. Por favor intenta de nuevo.');
   }
 
-  // Add event listeners
-  document.getElementById('back-to-details')?.addEventListener('click', goBackToDetails);
+  // Add event listener
   document.getElementById('submit-payment')?.addEventListener('click', handlePaymentSubmit);
-}
-
-// Go back to lot details
-async function goBackToDetails() {
-  const lotDetails = document.getElementById('lotDetails');
-
-  // Unmount payment element if exists
-  if (elements) {
-    const paymentElement = elements.getElement('payment');
-    if (paymentElement) {
-      paymentElement.unmount();
-    }
-  }
-
-  // Remove payment mode styling
-  lotDetails.classList.remove('payment-mode');
-
-  // Re-render the detail view properly with event listeners
-  if (typeof lastOpenedBaseIndex === 'number' && lastOpenedBaseIndex >= 0) {
-    // Clear content first
-    lotDetails.innerHTML = '';
-
-    // Re-render using the same function that created it originally
-    // Pass isSwitchingLots=true to avoid modal opening animations
-    await showDetailViewForLot(lastOpenedBaseIndex, true);
-  }
-
-  currentLotForPayment = null;
 }
 
 // Show payment error
@@ -8861,6 +8836,20 @@ async function handlePaymentSubmit(e) {
     return;
   }
 
+  // Validate email and phone
+  const emailInput = document.getElementById('customer-email');
+  const phoneInput = document.getElementById('customer-phone');
+
+  if (!emailInput?.value || !emailInput.value.includes('@')) {
+    showPaymentError('Por favor ingresa un email válido');
+    return;
+  }
+
+  if (!phoneInput?.value || phoneInput.value.length < 10) {
+    showPaymentError('Por favor ingresa un teléfono válido');
+    return;
+  }
+
   const submitBtn = document.getElementById('submit-payment');
   if (!submitBtn) return;
 
@@ -8869,11 +8858,17 @@ async function handlePaymentSubmit(e) {
   submitBtn.textContent = 'PROCESANDO...';
 
   try {
-    // Confirm payment
+    // Confirm payment with billing details
     const { error } = await stripe.confirmPayment({
       elements,
       confirmParams: {
         return_url: window.location.href,
+        payment_method_data: {
+          billing_details: {
+            email: emailInput.value,
+            phone: phoneInput.value,
+          }
+        }
       },
       redirect: 'if_required',
     });
