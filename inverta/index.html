@@ -390,30 +390,6 @@ const CURRENT_CLIENT = 'inverta';
   </div>
 </div>
 
-<!-- PAYMENT MODAL -->
-<div id="payment-modal" style="display: none; position: fixed; inset: 0; z-index: 10006; background: rgba(0, 0, 0, 0.8);">
-  <div style="position: relative; max-width: 500px; margin: 50px auto; background: #1a1a1a; border-radius: 12px; padding: 24px; border: 2px solid #ff8400;">
-    <!-- Close button -->
-    <button id="close-payment-modal" style="position: absolute; top: 12px; right: 12px; background: transparent; border: none; color: #fff; font-size: 24px; cursor: pointer; padding: 4px 8px;">&times;</button>
-
-    <!-- Header -->
-    <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 8px; text-align: center; color: #ff8400; font-family: 'Barlow Condensed', Arial, sans-serif;">APARTAR LOTE</h2>
-    <p id="payment-lot-info" style="margin: 12px 0 24px; color: #ddd; text-align: center; font-family: 'Barlow Condensed', Arial, sans-serif;"></p>
-
-    <!-- Stripe Payment Element Container -->
-    <div id="stripe-payment-element"></div>
-
-    <!-- Submit button -->
-    <button id="submit-payment" style="width: 100%; padding: 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; margin-top: 20px; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 16px;">
-      PAGAR AHORA
-    </button>
-
-    <!-- Error message -->
-    <div id="payment-error" style="color: #f44336; margin-top: 12px; text-align: center; display: none;"></div>
-  </div>
-</div>
-
-
 
 <!-- Whatsapp button 
 <a href="https://wa.me/5218185261819" target="_blank" class="whatsapp-button"
@@ -2795,12 +2771,12 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   // Use event delegation instead of direct event listeners
   detailContainer.addEventListener('click', function(e) {
     if (e.target.id === 'separarBtn') {
-      // Open payment modal for this lot
+      // Show payment view in the same modal
       e.stopPropagation();
-      if (window.openPaymentModal && lot) {
-        window.openPaymentModal(lot);
+      if (window.showPaymentViewInModal && lot) {
+        window.showPaymentViewInModal(lot);
       } else {
-        console.error('Payment modal not available or lot data missing');
+        console.error('Payment view not available or lot data missing');
       }
     } else if (e.target.id === 'visitarBtn') {
       // Open driving directions to this lot
@@ -8652,31 +8628,77 @@ function resetViewerState() {
 let stripe;
 let elements;
 let currentLotForPayment = null;
+let previousDetailView = null; // Store the previous view to go back
 
 // Initialize Stripe (replace with your publishable key from Stripe Dashboard)
 // Get from: https://dashboard.stripe.com/apikeys
 const STRIPE_PUBLISHABLE_KEY = 'pk_test_51SUyrUAQALfcnICXujwh3b1nXGhHCoiAR5OfQPuhtAtbY4NIGCv3wF7sV7bVvNw7Y8AN1zPpdu0CnY6A4TOfTDlc00XQ7qFApi'; // TODO: Replace with actual key
 
-// Payment modal elements
-const paymentModal = document.getElementById('payment-modal');
-const closePaymentModalBtn = document.getElementById('close-payment-modal');
-const submitPaymentBtn = document.getElementById('submit-payment');
-const paymentError = document.getElementById('payment-error');
-const paymentLotInfo = document.getElementById('payment-lot-info');
+// Fixed reservation amount
+const RESERVATION_AMOUNT = 5000; // 5,000 MXN
 
-// Open payment modal
-async function openPaymentModal(lot) {
+// Show payment view in the existing modal
+async function showPaymentViewInModal(lot) {
   currentLotForPayment = lot;
+  const lotDetails = document.getElementById('lotDetails');
 
-  // Update lot info in modal
-  const size = parseFloat(lot.size);
-  const priceM2 = parseFloat(lot.priceM2);
-  const totalPrice = size * priceM2;
-  paymentLotInfo.textContent = `Lote ${lot.number} - $${totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`;
+  // Store previous content to allow going back
+  previousDetailView = lotDetails.innerHTML;
 
-  // Show modal
-  paymentModal.style.display = 'block';
+  // Clear and create payment container
+  lotDetails.innerHTML = '';
 
+  const paymentContainer = document.createElement('div');
+  paymentContainer.className = 'payment-container';
+  paymentContainer.style.cssText = 'padding: 20px; font-family: "Barlow Condensed", Arial, sans-serif;';
+
+  paymentContainer.innerHTML = `
+    <div style="margin-bottom: 24px;">
+      <h2 style="font-size: 28px; font-weight: 700; color: #ff8400; text-align: center; margin-bottom: 8px;">APARTAR LOTE ${lot.number}</h2>
+      <p style="font-size: 16px; color: #8a8880; text-align: center; margin-bottom: 24px;">Monto de separación: <span style="color: #ff8400; font-weight: 700; font-size: 20px;">$${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN</span></p>
+    </div>
+
+    <!-- Reservation Process Steps -->
+    <div style="background: rgba(255, 132, 0, 0.1); border-left: 4px solid #ff8400; padding: 16px; margin-bottom: 24px; border-radius: 4px;">
+      <h3 style="color: #ff8400; font-size: 18px; font-weight: 700; margin-bottom: 12px;">📍 Separa con $5,000 (Reembolsables):</h3>
+      <p style="color: #ddd; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+        Elige tu lote y realiza tu primera separación de $5,000 MXN. Esta cantidad es <strong>100% reembolsable</strong> si cambias de opinión.
+        <br><span style="color: #ff8400; font-weight: 600;">¡Aseguras el lote y tu inversión está protegida!</span>
+      </p>
+
+      <h3 style="color: #ff8400; font-size: 18px; font-weight: 700; margin-bottom: 12px;">✅ Confirma en 24 Horas:</h3>
+      <p style="color: #ddd; font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+        Tienes 24 horas para completar tu separación con un segundo depósito de $5,000 MXN (este pago ya no es reembolsable y se abona a tu enganche total).
+        <br><span style="color: #ff8400; font-weight: 600;">¡Fácil, rápido y sin complicaciones!</span>
+      </p>
+
+      <h3 style="color: #ff8400; font-size: 18px; font-weight: 700; margin-bottom: 12px;">📝 Firma tu Contrato en 7 Días:</h3>
+      <p style="color: #ddd; font-size: 14px; line-height: 1.6;">
+        Durante la semana siguiente, nuestro equipo te ayudará con toda la papelería y la firma formal de tu contrato de compraventa.
+        <br><span style="color: #ff8400; font-weight: 600;">Tiempo más que suficiente para tomar la mejor decisión con tranquilidad.</span>
+      </p>
+    </div>
+
+    <!-- Stripe Payment Element -->
+    <div id="stripe-payment-element" style="margin-bottom: 20px;"></div>
+
+    <!-- Error message -->
+    <div id="payment-error" style="color: #f44336; margin-bottom: 16px; text-align: center; display: none; font-size: 14px;"></div>
+
+    <!-- Action Buttons -->
+    <div style="display: flex; gap: 12px;">
+      <button id="back-to-details" style="flex: 1; padding: 12px; border-radius: 6px; border: 2px solid #8a8880; background: transparent; color: #8a8880; cursor: pointer; font-weight: 700; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 16px;">
+        VOLVER
+      </button>
+      <button id="submit-payment" style="flex: 2; padding: 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 16px;">
+        PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN
+      </button>
+    </div>
+  `;
+
+  lotDetails.appendChild(paymentContainer);
+
+  // Initialize Stripe and create payment
   try {
     // Initialize Stripe if not already done
     if (!stripe) {
@@ -8700,7 +8722,7 @@ async function openPaymentModal(lot) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        amount: Math.round(totalPrice * 100), // Stripe expects cents
+        amount: RESERVATION_AMOUNT * 100, // Stripe expects cents
         lotNumber: lot.number,
         lotId: lot.id
       })
@@ -8719,14 +8741,17 @@ async function openPaymentModal(lot) {
     console.error('Error initializing payment:', error);
     showPaymentError('Error al inicializar el pago. Por favor intenta de nuevo.');
   }
+
+  // Add event listeners
+  document.getElementById('back-to-details')?.addEventListener('click', goBackToDetails);
+  document.getElementById('submit-payment')?.addEventListener('click', handlePaymentSubmit);
 }
 
-// Close payment modal
-function closePaymentModal() {
-  paymentModal.style.display = 'none';
-  currentLotForPayment = null;
+// Go back to lot details
+function goBackToDetails() {
+  const lotDetails = document.getElementById('lotDetails');
 
-  // Unmount payment element
+  // Unmount payment element if exists
   if (elements) {
     const paymentElement = elements.getElement('payment');
     if (paymentElement) {
@@ -8734,29 +8759,39 @@ function closePaymentModal() {
     }
   }
 
-  // Clear error
-  paymentError.style.display = 'none';
-  paymentError.textContent = '';
+  // Restore previous view
+  if (previousDetailView) {
+    lotDetails.innerHTML = previousDetailView;
+  }
+
+  currentLotForPayment = null;
+  previousDetailView = null;
 }
 
 // Show payment error
 function showPaymentError(message) {
-  paymentError.textContent = message;
-  paymentError.style.display = 'block';
+  const errorDiv = document.getElementById('payment-error');
+  if (errorDiv) {
+    errorDiv.textContent = message;
+    errorDiv.style.display = 'block';
+  }
 }
 
 // Handle payment submission
 async function handlePaymentSubmit(e) {
-  e.preventDefault();
+  e?.preventDefault();
 
   if (!stripe || !elements) {
     showPaymentError('Error al procesar el pago');
     return;
   }
 
+  const submitBtn = document.getElementById('submit-payment');
+  if (!submitBtn) return;
+
   // Disable submit button
-  submitPaymentBtn.disabled = true;
-  submitPaymentBtn.textContent = 'PROCESANDO...';
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'PROCESANDO...';
 
   try {
     // Confirm payment
@@ -8770,15 +8805,18 @@ async function handlePaymentSubmit(e) {
 
     if (error) {
       showPaymentError(error.message);
-      submitPaymentBtn.disabled = false;
-      submitPaymentBtn.textContent = 'PAGAR AHORA';
+      submitBtn.disabled = false;
+      submitBtn.textContent = `PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN`;
     } else {
       // Payment successful!
-      await markLotAsSold(currentLotForPayment);
-      closePaymentModal();
+      await markLotAsReserved(currentLotForPayment);
+
+      // Close modal
+      closeModal();
+
       window.showToaster?.('¡Pago exitoso! El lote ha sido apartado.');
 
-      // Refresh the lot data to show sold status
+      // Refresh the lot data to show reserved status
       if (typeof loadBaseLots === 'function') {
         await loadBaseLots();
       }
@@ -8786,19 +8824,19 @@ async function handlePaymentSubmit(e) {
   } catch (error) {
     console.error('Payment error:', error);
     showPaymentError('Error al procesar el pago');
-    submitPaymentBtn.disabled = false;
-    submitPaymentBtn.textContent = 'PAGAR AHORA';
+    submitBtn.disabled = false;
+    submitBtn.textContent = `PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN`;
   }
 }
 
-// Mark lot as sold in database
-async function markLotAsSold(lot) {
+// Mark lot as reserved in database
+async function markLotAsReserved(lot) {
   try {
     await window.supabaseReady;
 
     const { error } = await window.supabaseClient
       .from('lots')
-      .update({ status: 'sold' })
+      .update({ status: 'reserved' })
       .eq('id', lot.id);
 
     if (error) {
@@ -8806,26 +8844,15 @@ async function markLotAsSold(lot) {
       throw error;
     }
 
-    console.log(`Lot ${lot.number} marked as sold`);
+    console.log(`Lot ${lot.number} marked as reserved`);
   } catch (error) {
-    console.error('Error marking lot as sold:', error);
+    console.error('Error marking lot as reserved:', error);
     throw error;
   }
 }
 
-// Event listeners
-closePaymentModalBtn?.addEventListener('click', closePaymentModal);
-submitPaymentBtn?.addEventListener('click', handlePaymentSubmit);
-
-// Close modal when clicking outside
-paymentModal?.addEventListener('click', (e) => {
-  if (e.target === paymentModal) {
-    closePaymentModal();
-  }
-});
-
 // Export function to global scope
-window.openPaymentModal = openPaymentModal;
+window.showPaymentViewInModal = showPaymentViewInModal;
 </script>
 
 </body> 
