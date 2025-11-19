@@ -11,6 +11,7 @@
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
+<script src="https://js.stripe.com/v3/"></script>
 <link rel="stylesheet" href="https://la-la.land/styles.css">
 <script>
 // ===== CLIENT CONFIG =====  
@@ -375,6 +376,28 @@ const CURRENT_CLIENT = 'inverta';
   </div>
 </div>
 
+<!-- PAYMENT MODAL -->
+<div id="payment-modal" style="display: none; position: fixed; inset: 0; z-index: 10006; background: rgba(0, 0, 0, 0.8);">
+  <div style="position: relative; max-width: 500px; margin: 50px auto; background: #1a1a1a; border-radius: 12px; padding: 24px; border: 2px solid #ff8400;">
+    <!-- Close button -->
+    <button id="close-payment-modal" style="position: absolute; top: 12px; right: 12px; background: transparent; border: none; color: #fff; font-size: 24px; cursor: pointer; padding: 4px 8px;">&times;</button>
+
+    <!-- Header -->
+    <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 8px; text-align: center; color: #ff8400; font-family: 'Barlow Condensed', Arial, sans-serif;">APARTAR LOTE</h2>
+    <p id="payment-lot-info" style="margin: 12px 0 24px; color: #ddd; text-align: center; font-family: 'Barlow Condensed', Arial, sans-serif;"></p>
+
+    <!-- Stripe Payment Element Container -->
+    <div id="stripe-payment-element"></div>
+
+    <!-- Submit button -->
+    <button id="submit-payment" style="width: 100%; padding: 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; margin-top: 20px; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 16px;">
+      PAGAR AHORA
+    </button>
+
+    <!-- Error message -->
+    <div id="payment-error" style="color: #f44336; margin-top: 12px; text-align: center; display: none;"></div>
+  </div>
+</div>
 
 
 
@@ -2758,9 +2781,13 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   // Use event delegation instead of direct event listeners
   detailContainer.addEventListener('click', function(e) {
     if (e.target.id === 'separarBtn') {
-      // Add your "Separar" functionality here
-      console.log('Separar button clicked');
+      // Open payment modal for this lot
       e.stopPropagation();
+      if (window.openPaymentModal && lot) {
+        window.openPaymentModal(lot);
+      } else {
+        console.error('Payment modal not available or lot data missing');
+      }
     } else if (e.target.id === 'visitarBtn') {
       // Open driving directions to this lot
       e.stopPropagation();
@@ -8600,12 +8627,191 @@ function resetViewerState() {
   currentImages = [];
   currentImageIndex = -1;
   isSwitchingTrack = false;
-  
+
   // Reset any Three.js scene if needed
   if (renderer) {
     // Clean up Three.js resources if necessary
   }
 }
+
+// ===== STRIPE PAYMENT INTEGRATION =====
+let stripe;
+let elements;
+let currentLotForPayment = null;
+
+// Initialize Stripe (replace with your publishable key from Stripe Dashboard)
+// Get from: https://dashboard.stripe.com/apikeys
+const STRIPE_PUBLISHABLE_KEY = 'pk_test_YOUR_PUBLISHABLE_KEY_HERE'; // TODO: Replace with actual key
+
+// Payment modal elements
+const paymentModal = document.getElementById('payment-modal');
+const closePaymentModalBtn = document.getElementById('close-payment-modal');
+const submitPaymentBtn = document.getElementById('submit-payment');
+const paymentError = document.getElementById('payment-error');
+const paymentLotInfo = document.getElementById('payment-lot-info');
+
+// Open payment modal
+async function openPaymentModal(lot) {
+  currentLotForPayment = lot;
+
+  // Update lot info in modal
+  const size = parseFloat(lot.size);
+  const priceM2 = parseFloat(lot.priceM2);
+  const totalPrice = size * priceM2;
+  paymentLotInfo.textContent = `Lote ${lot.number} - $${totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`;
+
+  // Show modal
+  paymentModal.style.display = 'block';
+
+  try {
+    // Initialize Stripe if not already done
+    if (!stripe) {
+      stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
+    }
+
+    // Create payment intent using Supabase Edge Function
+    await window.supabaseReady;
+    const supabaseUrl = window.supabaseClient?.supabaseUrl;
+
+    if (!supabaseUrl) {
+      throw new Error('Supabase not initialized');
+    }
+
+    // Call Supabase Edge Function
+    const edgeFunctionUrl = `${supabaseUrl}/functions/v1/create-payment-intent`;
+
+    const response = await fetch(edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: Math.round(totalPrice * 100), // Stripe expects cents
+        lotNumber: lot.number,
+        lotId: lot.id
+      })
+    });
+
+    const { clientSecret } = await response.json();
+
+    // Create Elements instance
+    elements = stripe.elements({ clientSecret });
+
+    // Create and mount Payment Element
+    const paymentElement = elements.create('payment');
+    paymentElement.mount('#stripe-payment-element');
+
+  } catch (error) {
+    console.error('Error initializing payment:', error);
+    showPaymentError('Error al inicializar el pago. Por favor intenta de nuevo.');
+  }
+}
+
+// Close payment modal
+function closePaymentModal() {
+  paymentModal.style.display = 'none';
+  currentLotForPayment = null;
+
+  // Unmount payment element
+  if (elements) {
+    const paymentElement = elements.getElement('payment');
+    if (paymentElement) {
+      paymentElement.unmount();
+    }
+  }
+
+  // Clear error
+  paymentError.style.display = 'none';
+  paymentError.textContent = '';
+}
+
+// Show payment error
+function showPaymentError(message) {
+  paymentError.textContent = message;
+  paymentError.style.display = 'block';
+}
+
+// Handle payment submission
+async function handlePaymentSubmit(e) {
+  e.preventDefault();
+
+  if (!stripe || !elements) {
+    showPaymentError('Error al procesar el pago');
+    return;
+  }
+
+  // Disable submit button
+  submitPaymentBtn.disabled = true;
+  submitPaymentBtn.textContent = 'PROCESANDO...';
+
+  try {
+    // Confirm payment
+    const { error } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: window.location.href,
+      },
+      redirect: 'if_required',
+    });
+
+    if (error) {
+      showPaymentError(error.message);
+      submitPaymentBtn.disabled = false;
+      submitPaymentBtn.textContent = 'PAGAR AHORA';
+    } else {
+      // Payment successful!
+      await markLotAsSold(currentLotForPayment);
+      closePaymentModal();
+      window.showToaster?.('¡Pago exitoso! El lote ha sido apartado.');
+
+      // Refresh the lot data to show sold status
+      if (typeof loadBaseLots === 'function') {
+        await loadBaseLots();
+      }
+    }
+  } catch (error) {
+    console.error('Payment error:', error);
+    showPaymentError('Error al procesar el pago');
+    submitPaymentBtn.disabled = false;
+    submitPaymentBtn.textContent = 'PAGAR AHORA';
+  }
+}
+
+// Mark lot as sold in database
+async function markLotAsSold(lot) {
+  try {
+    await window.supabaseReady;
+
+    const { error } = await window.supabaseClient
+      .from('lots')
+      .update({ status: 'sold' })
+      .eq('id', lot.id);
+
+    if (error) {
+      console.error('Error updating lot status:', error);
+      throw error;
+    }
+
+    console.log(`Lot ${lot.number} marked as sold`);
+  } catch (error) {
+    console.error('Error marking lot as sold:', error);
+    throw error;
+  }
+}
+
+// Event listeners
+closePaymentModalBtn?.addEventListener('click', closePaymentModal);
+submitPaymentBtn?.addEventListener('click', handlePaymentSubmit);
+
+// Close modal when clicking outside
+paymentModal?.addEventListener('click', (e) => {
+  if (e.target === paymentModal) {
+    closePaymentModal();
+  }
+});
+
+// Export function to global scope
+window.openPaymentModal = openPaymentModal;
 </script>
 
 </body> 
