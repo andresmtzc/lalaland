@@ -592,8 +592,8 @@ ctaobserver.observe(ctaToaster, {
           resolve();
 
           // ✅ ✅ ✅ ADD REALTIME SUBSCRIPTION HERE
-         // Track recent manual updates to prevent double-rendering
-         window.recentManualUpdates = window.recentManualUpdates || new Map();
+         // Track manually cycled lots to skip next realtime render
+         window.skipNextRealtimeRender = window.skipNextRealtimeRender || new Set();
 
          const channel = window.supabaseClient
   .channel('lots-realtime')
@@ -611,12 +611,11 @@ ctaobserver.observe(ctaToaster, {
       const updatedLotName = payload.new?.lot_name || payload.old?.lot_name;
       const lotNumber = extractLotNumber(updatedLotName);
 
-      // Skip re-render if this lot was just manually updated (within 500ms)
-      const lastManualUpdate = window.recentManualUpdates.get(updatedLotName);
-      const isRecentManualUpdate = lastManualUpdate && (Date.now() - lastManualUpdate < 500);
-      if (isRecentManualUpdate) {
-        console.log('⏭️ Skipping realtime re-render for recent manual update');
-        // Still update data arrays, just skip render to avoid animation restart
+      // Check if we should skip re-render (manual cycle in list mode)
+      const skipRender = window.skipNextRealtimeRender.has(updatedLotName);
+      if (skipRender) {
+        console.log('⏭️ Skipping realtime re-render for manually cycled lot');
+        // Keep skipping until modal closes or detail view opens
       }
 
       // 🟢 UPDATE ALL DATA SOURCES, not just lotData
@@ -687,8 +686,8 @@ ctaobserver.observe(ctaToaster, {
         }
       }
 
-      // 🟢 NEW: Re-render modal if it's open (skip if recent manual update)
-      if (!isRecentManualUpdate && document.getElementById('lotModal').classList.contains('show')) {
+      // 🟢 NEW: Re-render modal if it's open (skip if manually cycled)
+      if (!skipRender && document.getElementById('lotModal').classList.contains('show')) {
         // Clear animated featured lots set so animation can play again
         if (typeof animatedFeaturedLots !== 'undefined') {
           animatedFeaturedLots.clear();
@@ -2605,6 +2604,9 @@ function setupLotClickHandlers() {
 
 
 async function showDetailViewForLot(index, isSwitchingLots = false) {
+  // Clear skip set when entering detail view
+  if (window.skipNextRealtimeRender) window.skipNextRealtimeRender.clear();
+
   const modalEl        = document.getElementById('lotModal');
   const lotDetails     = document.getElementById('lotDetails');
   const calendlyEl     = document.getElementById('calendlyEmbed');
@@ -4053,6 +4055,9 @@ function closeModal() {
   // Don't close modal if POI mode is active
   if (window.poiModeActive) return;
 
+  // Clear skip set when closing modal
+  if (window.skipNextRealtimeRender) window.skipNextRealtimeRender.clear();
+
   document.getElementById('authControls').classList.remove('hide-in-detail');
   document.getElementById('communitySearchBtn')?.classList.remove('hide');
   document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
@@ -5236,9 +5241,9 @@ function refreshFeaturedLayer() {
     // Save to database in background (don't await - fire and forget with error handling)
     (async () => {
       try {
-        // Track this as a recent manual update to prevent realtime double-render
-        if (!window.recentManualUpdates) window.recentManualUpdates = new Map();
-        window.recentManualUpdates.set(sel.lotName, Date.now());
+        // Mark this lot to skip next realtime re-render
+        if (!window.skipNextRealtimeRender) window.skipNextRealtimeRender = new Set();
+        window.skipNextRealtimeRender.add(sel.lotName);
 
         // Get authenticated user for audit
         const { data: { user } } = await window.supabaseClient.auth.getUser();
