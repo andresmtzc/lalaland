@@ -8915,57 +8915,57 @@ async function handlePaymentSubmit(e) {
       // Payment successful! Webhook will update database automatically
       console.log('Payment succeeded - webhook will update lot status');
 
-      // Close modal first
-      closeModal();
+      // Change button to VENDIDO state (don't close modal)
+      submitBtn.textContent = 'VENDIDO';
+      submitBtn.disabled = true;
+      submitBtn.style.opacity = '0.5';
+      submitBtn.style.cursor = 'not-allowed';
+      submitBtn.style.background = '#8a8880'; // Grayed out
+
+      // Show success message
       window.showToaster?.('¡Pago exitoso! El lote ha sido apartado.');
 
-      // Wait for modal close animation, then trigger confetti above the lot
-      setTimeout(() => {
-        if (typeof confetti !== 'undefined' && currentLotForPayment) {
-          // Find the lot's position in the list
-          const lotNumber = currentLotForPayment.number;
-          let confettiOrigin = { x: 0.5, y: 0.5 }; // default center
+      // Trigger confetti in bottom 50% of screen with high z-index
+      if (typeof confetti !== 'undefined') {
+        const confettiCanvas = document.createElement('canvas');
+        confettiCanvas.style.position = 'fixed';
+        confettiCanvas.style.top = '0';
+        confettiCanvas.style.left = '0';
+        confettiCanvas.style.width = '100%';
+        confettiCanvas.style.height = '100%';
+        confettiCanvas.style.pointerEvents = 'none';
+        confettiCanvas.style.zIndex = '999999'; // Higher than modal
+        document.body.appendChild(confettiCanvas);
 
-          // Try to find lot row in the list
-          const baseIndex = baseLots.findIndex(l => l.number === lotNumber);
-          if (baseIndex !== -1) {
-            const allRows = document.querySelectorAll('.info-row');
-            const targetRow = Array.from(allRows).find(row => {
-              return parseInt(row.dataset.baseIndex) === baseIndex;
-            });
+        const myConfetti = confetti.create(confettiCanvas, { resize: true });
 
-            if (targetRow) {
-              const rect = targetRow.getBoundingClientRect();
-              confettiOrigin = {
-                x: (rect.left + rect.width / 2) / window.innerWidth,
-                y: (rect.top + rect.height / 2) / window.innerHeight
-              };
-            }
-          }
+        // Confetti in bottom 50% of screen
+        myConfetti({
+          particleCount: 150,
+          spread: 90,
+          origin: { x: 0.5, y: 0.75 }, // Bottom 50% (75% from top)
+          colors: ['#ff8400', '#fcfaf3', '#b18d69'],
+          ticks: 200
+        });
 
-          // Trigger confetti from lot position! 🎉
-          confetti({
-            particleCount: 150,
-            spread: 90,
-            origin: confettiOrigin,
+        // Additional burst
+        setTimeout(() => {
+          myConfetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { x: 0.5, y: 0.75 },
             colors: ['#ff8400', '#fcfaf3', '#b18d69'],
-            ticks: 200
+            ticks: 150
           });
+        }, 250);
 
-          // Additional burst
-          setTimeout(() => {
-            confetti({
-              particleCount: 100,
-              spread: 70,
-              origin: confettiOrigin,
-              colors: ['#ff8400', '#fcfaf3', '#b18d69'],
-              ticks: 150
-            });
-          }, 250);
-        }
-      }, 300);
+        // Clean up canvas after animation
+        setTimeout(() => {
+          document.body.removeChild(confettiCanvas);
+        }, 5000);
+      }
 
-      // Refresh the lot data to show updated status after a delay (give webhook time to process)
+      // Refresh lot data after webhook processes
       setTimeout(async () => {
         if (typeof loadBaseLots === 'function') {
           await loadBaseLots();
