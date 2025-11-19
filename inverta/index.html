@@ -8915,39 +8915,55 @@ async function handlePaymentSubmit(e) {
       // Payment successful! Webhook will update database automatically
       console.log('Payment succeeded - webhook will update lot status');
 
-      // Trigger confetti celebration! 🎉
-      if (typeof confetti !== 'undefined') {
-        confetti({
-          particleCount: 150,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#ff8400', '#fcfaf3', '#b18d69']
-        });
+      // Close modal first
+      closeModal();
+      window.showToaster?.('¡Pago exitoso! El lote ha sido apartado.');
 
-        // More confetti from sides
-        setTimeout(() => {
-          confetti({
-            particleCount: 100,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0 },
-            colors: ['#ff8400', '#fcfaf3', '#b18d69']
-          });
-          confetti({
-            particleCount: 100,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1 },
-            colors: ['#ff8400', '#fcfaf3', '#b18d69']
-          });
-        }, 250);
-      }
-
-      // Wait a moment for confetti, then close modal
+      // Wait for modal close animation, then trigger confetti above the lot
       setTimeout(() => {
-        closeModal();
-        window.showToaster?.('¡Pago exitoso! El lote ha sido apartado.');
-      }, 1500);
+        if (typeof confetti !== 'undefined' && currentLotForPayment) {
+          // Find the lot's position in the list
+          const lotNumber = currentLotForPayment.number;
+          let confettiOrigin = { x: 0.5, y: 0.5 }; // default center
+
+          // Try to find lot row in the list
+          const baseIndex = baseLots.findIndex(l => l.number === lotNumber);
+          if (baseIndex !== -1) {
+            const allRows = document.querySelectorAll('.info-row');
+            const targetRow = Array.from(allRows).find(row => {
+              return parseInt(row.dataset.baseIndex) === baseIndex;
+            });
+
+            if (targetRow) {
+              const rect = targetRow.getBoundingClientRect();
+              confettiOrigin = {
+                x: (rect.left + rect.width / 2) / window.innerWidth,
+                y: (rect.top + rect.height / 2) / window.innerHeight
+              };
+            }
+          }
+
+          // Trigger confetti from lot position! 🎉
+          confetti({
+            particleCount: 150,
+            spread: 90,
+            origin: confettiOrigin,
+            colors: ['#ff8400', '#fcfaf3', '#b18d69'],
+            ticks: 200
+          });
+
+          // Additional burst
+          setTimeout(() => {
+            confetti({
+              particleCount: 100,
+              spread: 70,
+              origin: confettiOrigin,
+              colors: ['#ff8400', '#fcfaf3', '#b18d69'],
+              ticks: 150
+            });
+          }, 250);
+        }
+      }, 300);
 
       // Refresh the lot data to show updated status after a delay (give webhook time to process)
       setTimeout(async () => {
