@@ -45,10 +45,7 @@ serve(async (req) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount), // Amount in cents
       currency: 'mxn', // Mexican Peso
-      automatic_payment_methods: {
-        enabled: true,
-        allow_redirects: 'never', // Disable Stripe Link
-      },
+      payment_method_types: ['card'], // Only allow card payments, excludes Link
       metadata: {
         lotNumber: lotNumber,
         lotId: lotId || '',
