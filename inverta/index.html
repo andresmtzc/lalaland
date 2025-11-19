@@ -592,6 +592,9 @@ ctaobserver.observe(ctaToaster, {
           resolve();
 
           // ✅ ✅ ✅ ADD REALTIME SUBSCRIPTION HERE
+         // Track recent manual updates to prevent double-rendering
+         window.recentManualUpdates = window.recentManualUpdates || new Map();
+
          const channel = window.supabaseClient
   .channel('lots-realtime')
   .on(
@@ -607,6 +610,14 @@ ctaobserver.observe(ctaToaster, {
 
       const updatedLotName = payload.new?.lot_name || payload.old?.lot_name;
       const lotNumber = extractLotNumber(updatedLotName);
+
+      // Skip re-render if this lot was just manually updated (within 500ms)
+      const lastManualUpdate = window.recentManualUpdates.get(updatedLotName);
+      const isRecentManualUpdate = lastManualUpdate && (Date.now() - lastManualUpdate < 500);
+      if (isRecentManualUpdate) {
+        console.log('⏭️ Skipping realtime re-render for recent manual update');
+        // Still update data arrays, just skip render to avoid animation restart
+      }
 
       // 🟢 UPDATE ALL DATA SOURCES, not just lotData
 
@@ -676,8 +687,12 @@ ctaobserver.observe(ctaToaster, {
         }
       }
 
-      // 🟢 NEW: Re-render modal if it's open
-      if (document.getElementById('lotModal').classList.contains('show')) {
+      // 🟢 NEW: Re-render modal if it's open (skip if recent manual update)
+      if (!isRecentManualUpdate && document.getElementById('lotModal').classList.contains('show')) {
+        // Clear animated featured lots set so animation can play again
+        if (typeof animatedFeaturedLots !== 'undefined') {
+          animatedFeaturedLots.clear();
+        }
         render();
       }
     }
@@ -5221,6 +5236,10 @@ function refreshFeaturedLayer() {
     // Save to database in background (don't await - fire and forget with error handling)
     (async () => {
       try {
+        // Track this as a recent manual update to prevent realtime double-render
+        if (!window.recentManualUpdates) window.recentManualUpdates = new Map();
+        window.recentManualUpdates.set(sel.lotName, Date.now());
+
         // Get authenticated user for audit
         const { data: { user } } = await window.supabaseClient.auth.getUser();
         const updatedBy = user?.email || user?.id || 'unknown';
