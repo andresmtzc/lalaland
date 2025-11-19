@@ -28,7 +28,7 @@ serve(async (req) => {
     })
 
     // Parse request body
-    const { amount, lotNumber, lotId } = await req.json()
+    const { amount, lotNumber, lotName, lotId } = await req.json()
 
     // Validate input
     if (!amount || !lotNumber) {
@@ -48,6 +48,7 @@ serve(async (req) => {
       payment_method_types: ['card'], // Only allow card payments, excludes Link
       metadata: {
         lotNumber: lotNumber,
+        lotName: lotName || '', // lot_name for database update (e.g., "lotinverta17-17")
         lotId: lotId || '',
       },
       description: `Apartado de Lote ${lotNumber} - INVERTA`,
