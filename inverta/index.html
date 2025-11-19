@@ -200,6 +200,17 @@ const CURRENT_CLIENT = 'inverta';
   padding: 0 !important;
 }
 
+/* Ensure Stripe element displays properly */
+#stripe-payment-element iframe {
+  min-height: 200px !important;
+  height: auto !important;
+}
+
+#stripe-payment-element {
+  display: block !important;
+  visibility: visible !important;
+}
+
 /* Scrollbar for payment scroll wrapper - matches your existing scrollbar design */
 .payment-scroll-wrapper::-webkit-scrollbar {
   width: 6px;
@@ -8653,7 +8664,6 @@ function resetViewerState() {
 let stripe;
 let elements;
 let currentLotForPayment = null;
-let previousDetailView = null;
 
 // Initialize Stripe (replace with your publishable key from Stripe Dashboard)
 // Get from: https://dashboard.stripe.com/apikeys
@@ -8666,9 +8676,6 @@ const RESERVATION_AMOUNT = 5000; // 5,000 MXN
 async function showPaymentViewInModal(lot) {
   currentLotForPayment = lot;
   const lotDetails = document.getElementById('lotDetails');
-
-  // Store previous content to allow going back
-  previousDetailView = lotDetails.innerHTML;
 
   // Clear and create payment content
   lotDetails.innerHTML = '';
@@ -8705,7 +8712,9 @@ async function showPaymentViewInModal(lot) {
       </div>
 
       <!-- Stripe Payment Element -->
-      <div id="stripe-payment-element" style="margin-bottom: 20px;"></div>
+      <div id="stripe-payment-element" style="margin-bottom: 20px; min-height: 250px; width: 100%; padding: 20px; background: white; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <div style="text-align: center; color: #8a8880; padding: 40px;">Cargando formulario de pago...</div>
+      </div>
 
       <!-- Error message -->
       <div id="payment-error" style="color: #f44336; margin-bottom: 16px; text-align: center; display: none; font-size: 14px;"></div>
@@ -8757,8 +8766,23 @@ async function showPaymentViewInModal(lot) {
     // Create Elements instance
     elements = stripe.elements({ clientSecret });
 
-    // Create and mount Payment Element
-    const paymentElement = elements.create('payment');
+    // Create and mount Payment Element with required fields
+    const paymentElement = elements.create('payment', {
+      fields: {
+        billingDetails: {
+          email: 'always',
+          phone: 'always',
+          name: 'auto',
+          address: {
+            country: 'never',
+            postalCode: 'auto'
+          }
+        }
+      },
+      terms: {
+        card: 'never'
+      }
+    });
     paymentElement.mount('#stripe-payment-element');
 
   } catch (error) {
@@ -8772,7 +8796,7 @@ async function showPaymentViewInModal(lot) {
 }
 
 // Go back to lot details
-function goBackToDetails() {
+async function goBackToDetails() {
   const lotDetails = document.getElementById('lotDetails');
 
   // Unmount payment element if exists
@@ -8783,16 +8807,16 @@ function goBackToDetails() {
     }
   }
 
-  // Restore previous view
-  if (previousDetailView) {
-    lotDetails.innerHTML = previousDetailView;
-  }
-
   // Remove payment mode styling
   lotDetails.classList.remove('payment-mode');
+  lotDetails.innerHTML = '';
+
+  // Re-render the detail view properly with event listeners
+  if (typeof lastOpenedBaseIndex === 'number') {
+    await showDetailViewForLot(lastOpenedBaseIndex, false);
+  }
 
   currentLotForPayment = null;
-  previousDetailView = null;
 }
 
 // Show payment error
