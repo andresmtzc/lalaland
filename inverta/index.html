@@ -8717,6 +8717,21 @@ async function showPaymentViewInModal(lot) {
         </p>
       </div>
 
+      <!-- Contact Information -->
+      <div style="background: white; padding: 20px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 16px;">
+        <h3 style="color: #ff8400; font-size: 16px; font-weight: 700; margin-bottom: 16px;">Información de Contacto</h3>
+
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; color: #1a1a1a; font-size: 14px; font-weight: 600; margin-bottom: 6px;">Email *</label>
+          <input type="email" id="customer-email" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: 'Barlow Condensed', Arial, sans-serif;" placeholder="tu@email.com">
+        </div>
+
+        <div style="margin-bottom: 0;">
+          <label style="display: block; color: #1a1a1a; font-size: 14px; font-weight: 600; margin-bottom: 6px;">Teléfono *</label>
+          <input type="tel" id="customer-phone" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: 'Barlow Condensed', Arial, sans-serif;" placeholder="55 1234 5678">
+        </div>
+      </div>
+
       <!-- Stripe Payment Element -->
       <div id="stripe-payment-element" style="margin-bottom: 20px; min-height: 250px; width: 100%; padding: 20px; background: white; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
         <div style="text-align: center; color: #8a8880; padding: 40px;">Cargando formulario de pago...</div>
@@ -8786,18 +8801,10 @@ async function showPaymentViewInModal(lot) {
     // Create Elements instance
     elements = stripe.elements({ clientSecret });
 
-    // Create and mount Payment Element with required fields
+    // Create and mount Payment Element with billing details collection
     const paymentElement = elements.create('payment', {
       fields: {
-        billingDetails: {
-          email: 'always',
-          phone: 'always',
-          name: 'auto',
-          address: {
-            country: 'never',
-            postalCode: 'auto'
-          }
-        }
+        billingDetails: 'auto'
       },
       terms: {
         card: 'never'
@@ -8861,6 +8868,20 @@ async function handlePaymentSubmit(e) {
     return;
   }
 
+  // Validate email and phone
+  const emailInput = document.getElementById('customer-email');
+  const phoneInput = document.getElementById('customer-phone');
+
+  if (!emailInput?.value || !emailInput.value.includes('@')) {
+    showPaymentError('Por favor ingresa un email válido');
+    return;
+  }
+
+  if (!phoneInput?.value || phoneInput.value.length < 10) {
+    showPaymentError('Por favor ingresa un teléfono válido');
+    return;
+  }
+
   const submitBtn = document.getElementById('submit-payment');
   if (!submitBtn) return;
 
@@ -8869,11 +8890,17 @@ async function handlePaymentSubmit(e) {
   submitBtn.textContent = 'PROCESANDO...';
 
   try {
-    // Confirm payment
+    // Confirm payment with billing details
     const { error } = await stripe.confirmPayment({
       elements,
       confirmParams: {
         return_url: window.location.href,
+        payment_method_data: {
+          billing_details: {
+            email: emailInput.value,
+            phone: phoneInput.value,
+          }
+        }
       },
       redirect: 'if_required',
     });
