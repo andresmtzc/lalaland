@@ -47,6 +47,7 @@ serve(async (req) => {
       currency: 'mxn', // Mexican Peso
       automatic_payment_methods: {
         enabled: true,
+        allow_redirects: 'never', // Disable Stripe Link
       },
       metadata: {
         lotNumber: lotNumber,
