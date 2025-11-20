@@ -595,6 +595,9 @@ ctaobserver.observe(ctaToaster, {
          // Track manually cycled lots to skip next realtime render
          window.skipNextRealtimeRender = window.skipNextRealtimeRender || new Set();
 
+         // Debounce render for rapid updates (e.g., bulk price edits)
+         let realtimeRenderTimeout = null;
+
          const channel = window.supabaseClient
   .channel('lots-realtime')
   .on(
@@ -686,13 +689,19 @@ ctaobserver.observe(ctaToaster, {
         }
       }
 
-      // 🟢 NEW: Re-render modal if it's open (skip if manually cycled)
+      // 🟢 NEW: Re-render modal if it's open (debounced for bulk edits)
       if (!skipRender && document.getElementById('lotModal').classList.contains('show')) {
-        // Clear animated featured lots set so animation can play again
-        if (typeof animatedFeaturedLots !== 'undefined') {
-          animatedFeaturedLots.clear();
-        }
-        render();
+        // Clear any pending render
+        if (realtimeRenderTimeout) clearTimeout(realtimeRenderTimeout);
+
+        // Debounce render - wait 150ms after last update
+        realtimeRenderTimeout = setTimeout(() => {
+          // Clear animated featured lots set so animation can play again
+          if (typeof animatedFeaturedLots !== 'undefined') {
+            animatedFeaturedLots.clear();
+          }
+          render();
+        }, 150);
       }
     }
   )
