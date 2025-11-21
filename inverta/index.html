@@ -1269,11 +1269,14 @@ ctaobserver.observe(ctaToaster, {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
     const { data: auditData, error: auditError } = await window.supabaseClient
       .from('lots_updates_audit')
       .select('*')
       .eq('client_id', CURRENT_CLIENT)
-      .gte('updated_at', thirtyDaysAgo.toISOString())
+      .gte('updated_at', sixtyDaysAgo.toISOString())
       .order('updated_at', { ascending: false });
 
     if (auditError) {
@@ -1283,14 +1286,32 @@ ctaobserver.observe(ctaToaster, {
     // Count lots that changed to 'sold' in the last 30 days
     const soldLast30Days = auditData?.filter(record =>
       record.new_value?.toLowerCase() === 'sold' &&
-      record.old_value?.toLowerCase() !== 'sold'
+      record.old_value?.toLowerCase() !== 'sold' &&
+      new Date(record.updated_at) >= thirtyDaysAgo
     ).length || 0;
+
+    // Count lots sold between 30-60 days ago
+    const soldLast60Days = auditData?.filter(record =>
+      record.new_value?.toLowerCase() === 'sold' &&
+      record.old_value?.toLowerCase() !== 'sold' &&
+      new Date(record.updated_at) >= sixtyDaysAgo &&
+      new Date(record.updated_at) < thirtyDaysAgo
+    ).length || 0;
+
+    // Calculate percentage change (comparing last 30 days to previous 30 days)
+    let percentageChange = 0;
+    if (soldLast60Days > 0) {
+      percentageChange = ((soldLast30Days - soldLast60Days) / soldLast60Days * 100);
+    } else if (soldLast30Days > 0) {
+      percentageChange = 100; // If no sales in previous period but sales now = 100% increase
+    }
 
     return {
       availableLots,
       totalLots,
       projectedIncome,
-      soldLast30Days
+      soldLast30Days,
+      percentageChange
     };
   }
 
@@ -1331,11 +1352,14 @@ ctaobserver.observe(ctaToaster, {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
     const { data: auditData, error: auditError } = await window.supabaseClient
       .from('lots_updates_audit')
       .select('*')
       .eq('client_id', CURRENT_CLIENT)
-      .gte('updated_at', thirtyDaysAgo.toISOString())
+      .gte('updated_at', sixtyDaysAgo.toISOString())
       .order('updated_at', { ascending: false });
 
     if (auditError) {
@@ -1345,14 +1369,32 @@ ctaobserver.observe(ctaToaster, {
     // Count lots that changed to 'sold' in the last 30 days
     const soldLast30Days = auditData?.filter(record =>
       record.new_value?.toLowerCase() === 'sold' &&
-      record.old_value?.toLowerCase() !== 'sold'
+      record.old_value?.toLowerCase() !== 'sold' &&
+      new Date(record.updated_at) >= thirtyDaysAgo
     ).length || 0;
+
+    // Count lots sold between 30-60 days ago
+    const soldLast60Days = auditData?.filter(record =>
+      record.new_value?.toLowerCase() === 'sold' &&
+      record.old_value?.toLowerCase() !== 'sold' &&
+      new Date(record.updated_at) >= sixtyDaysAgo &&
+      new Date(record.updated_at) < thirtyDaysAgo
+    ).length || 0;
+
+    // Calculate percentage change (comparing last 30 days to previous 30 days)
+    let percentageChange = 0;
+    if (soldLast60Days > 0) {
+      percentageChange = ((soldLast30Days - soldLast60Days) / soldLast60Days * 100);
+    } else if (soldLast30Days > 0) {
+      percentageChange = 100; // If no sales in previous period but sales now = 100% increase
+    }
 
     return {
       availableLots,
       totalLots,
       projectedIncome,
-      soldLast30Days
+      soldLast30Days,
+      percentageChange
     };
   }
 
@@ -1390,6 +1432,19 @@ ctaobserver.observe(ctaToaster, {
       ? ((data.availableLots / data.totalLots) * 100).toFixed(1)
       : 0;
 
+    // Calculate 1% commission (what sellers get)
+    const commission = data.projectedIncome * 0.01;
+
+    // Format percentage change with arrow
+    const percentageChange = data.percentageChange || 0;
+    const isPositive = percentageChange > 0;
+    const isNegative = percentageChange < 0;
+    const arrow = isPositive ? '↑' : isNegative ? '↓' : '';
+    const changeColor = isPositive ? '#4caf50' : isNegative ? '#f44336' : '#8a8880';
+    const changeText = percentageChange !== 0
+      ? `${arrow} ${Math.abs(percentageChange).toFixed(1)}%`
+      : '';
+
     const dashboardHTML = `
       <div style="padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100%; box-sizing: border-box;">
         <!-- Lotes Disponibles -->
@@ -1410,6 +1465,7 @@ ctaobserver.observe(ctaToaster, {
           </div>
           <div style="font-size: clamp(24px, 5vw, 32px); font-weight: 700; color: #4caf50; line-height: 1.2;">
             ${data.soldLast30Days}
+            ${changeText ? `<span style="font-size: clamp(14px, 3vw, 16px); color: ${changeColor}; margin-left: 8px;">${changeText}</span>` : ''}
           </div>
         </div>
 
@@ -1423,7 +1479,7 @@ ctaobserver.observe(ctaToaster, {
             <span style="font-size: clamp(12px, 2.5vw, 16px); vertical-align: super; font-weight: 600; color: #8a8880;">MXN</span>
           </div>
           <div style="font-size: 10px; color: #8a8880; margin-top: 4px;">
-            Basado en ${data.availableLots} lotes disponibles
+            Comisión 1%: <span style="color: #2196f3; font-weight: 600;">$${commission.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN</span>
           </div>
         </div>
       </div>
@@ -4542,8 +4598,13 @@ function openModal(lot = null, baseIndex = 0) {
 
 
 function closeModal() {
+  console.log('🚀 closeModal CALLED - isDashboardOpen:', window.isDashboardOpen);
+
   // Don't close modal if POI mode is active
-  if (window.poiModeActive) return;
+  if (window.poiModeActive) {
+    console.log('❌ closeModal BLOCKED - POI mode is active');
+    return;
+  }
 
   // Clear skip set when closing modal
   if (window.skipNextRealtimeRender) window.skipNextRealtimeRender.clear();
