@@ -1238,17 +1238,29 @@ ctaobserver.observe(ctaToaster, {
 
     // Calculate projected income (sum all available lot prices)
     let projectedIncome = 0;
-    allLots?.forEach(lot => {
+    let countedLots = 0;
+    console.log('=== INGRESOS CALCULATION DEBUG ===');
+    console.log('Checking', allLots?.length, 'total lots for', fracc);
+
+    allLots?.forEach((lot, index) => {
       if (lot.availability?.toLowerCase() !== 'sold') {
         const price = parseFloat(lot.price) || 0;
-        projectedIncome += price;
         if (price > 0) {
-          console.log('Lot', lot.name, ': $', price.toLocaleString());
+          projectedIncome += price;
+          countedLots++;
+          if (countedLots <= 5) { // Show first 5 for debugging
+            console.log(`Lot ${lot.name || index}: $${price.toLocaleString()} (raw value: "${lot.price}", type: ${typeof lot.price})`);
+          }
+        } else {
+          if (index < 3) { // Show first 3 zero-price lots
+            console.log(`⚠️ Lot ${lot.name || index}: price is 0 or invalid (raw: "${lot.price}", type: ${typeof lot.price})`);
+          }
         }
       }
     });
 
-    console.log('Total projected income:', projectedIncome);
+    console.log(`Total: ${countedLots} lots counted, Income: $${projectedIncome.toLocaleString()}`);
+    console.log('=== END DEBUG ===');
 
     // Fetch lots sold in last 30 days from audit table
     const thirtyDaysAgo = new Date();
@@ -3035,9 +3047,7 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
     if (eyeOpen) eyeOpen.style.display = 'inline-block';
     if (eyeClosed) eyeClosed.style.display = 'none';
   }
-  if (window.isDashboardOpen !== undefined) {
-    window.isDashboardOpen = false;
-  }
+  window.isDashboardOpen = false;
 
   const modalEl        = document.getElementById('lotModal');
   const lotDetails     = document.getElementById('lotDetails');
@@ -3073,7 +3083,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   window.isDetailOpen = true;
   if (calendlyEl) calendlyEl.style.display = 'none';
 
-  // Show share button in detail mode, hide POI button
+  // Show share button in detail mode, hide POI and GLOBAL buttons
   const shareBtn = document.getElementById('shareButton');
   if (shareBtn) shareBtn.style.display = 'block';
 
@@ -3085,6 +3095,10 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       PS.toggleAddMode();
     }
   }
+
+  // Hide GLOBAL dashboard button in detail mode
+  const globalBtn = document.getElementById('globalDashboardButton');
+  if (globalBtn) globalBtn.style.display = 'none';
 
   // Clear only lotDetails content (but not other UI like back button)
   lotDetails.classList.remove('active');
@@ -4268,9 +4282,12 @@ function openModal(lot = null, baseIndex = 0) {
     if (bottomPlusButton) bottomPlusButton.style.display = 'none';
     if (headerLotNumber) headerLotNumber.style.display = 'none';
 
-    // Hide lock button when opening modal (it should only show in pin mode)
+    // Hide lock and global buttons when opening modal (lock for pin mode only, global for dashboard only)
     const lockButton = document.getElementById('pinLockButton');
     if (lockButton) lockButton.style.display = 'none';
+
+    const globalButton = document.getElementById('globalDashboardButton');
+    if (globalButton) globalButton.style.display = 'none';
 
     // Reset content wrapper
     const contentWrapper = document.querySelector('.modal-content-wrapper');
@@ -4572,9 +4589,7 @@ function closeModal() {
     if (eyeOpen) eyeOpen.style.display = 'inline-block';
     if (eyeClosed) eyeClosed.style.display = 'none';
   }
-  if (window.isDashboardOpen !== undefined) {
-    window.isDashboardOpen = false;
-  }
+  window.isDashboardOpen = false;
 
   // 🟢 Exit compare mode if active - SAME LOGIC AS UNSORT
   if (window.compareMode) {
