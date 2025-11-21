@@ -56,6 +56,23 @@ const CURRENT_CLIENT = 'inverta';
   color: #fff !important;
 }
 
+/* Dashboard button states */
+.dashboard-button:hover {
+  color: #ff8400 !important;
+}
+
+.dashboard-button:hover svg path {
+  fill: #ff8400 !important;
+}
+
+.dashboard-button.active {
+  color: #ff8400 !important;
+}
+
+.dashboard-button.active svg path {
+  fill: #ff8400 !important;
+}
+
 /* GPS button active state */
 .gps-button.active svg {
   stroke: #ff8400 !important;
@@ -302,6 +319,19 @@ select option {
 <!-- Login button in top right -->
 <button id="globe-login-btn" class="globe-login-button" title="Login" style="position: fixed; top: 24px; right: 24px; bottom: auto; width: auto; height: auto; padding: 0; font-size: 14px; font-weight: 600; color: #fff; background: none; border: none; opacity: 1; font-family: 'Barlow Condensed', Arial, sans-serif; cursor: pointer;">
   Login
+</button>
+
+<!-- Dashboard button - below login button, only visible when authenticated -->
+<button id="dashboard-btn" class="dashboard-button" title="Dashboard" style="display: none; position: fixed; top: 52px; right: 24px; width: auto; height: auto; padding: 0; font-size: 14px; font-weight: 600; color: #fff; background: none; border: none; opacity: 1; font-family: 'Barlow Condensed', Arial, sans-serif; cursor: pointer; align-items: center; gap: 6px;">
+  <!-- Eye Open Icon (default) -->
+  <svg id="eye-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: inline-block;">
+    <path d="M12 5C7 5 2.73 8.11 1 12.5C2.73 16.89 7 20 12 20C17 20 21.27 16.89 23 12.5C21.27 8.11 17 5 12 5ZM12 17C9.24 17 7 14.76 7 12C7 9.24 9.24 7 12 7C14.76 7 17 9.24 17 12C17 14.76 14.76 17 12 17ZM12 9C10.34 9 9 10.34 9 12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12C15 10.34 13.66 9 12 9Z" fill="#fff"/>
+  </svg>
+  <!-- Eye Closed Icon (hidden by default) -->
+  <svg id="eye-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: none;">
+    <path d="M12 7C14.76 7 17 9.24 17 12C17 12.65 16.87 13.26 16.64 13.83L19.56 16.75C21.07 15.49 22.26 13.86 22.99 12C21.26 7.61 16.99 4.5 11.99 4.5C10.59 4.5 9.25 4.75 8.01 5.2L10.17 7.36C10.74 7.13 11.35 7 12 7ZM2 4.27L4.28 6.55L4.74 7.01C3.08 8.3 1.78 10.02 1 12C2.73 16.39 7 19.5 12 19.5C13.55 19.5 15.03 19.2 16.38 18.66L16.8 19.08L19.73 22L21 20.73L3.27 3L2 4.27ZM7.53 9.8L9.08 11.35C9.03 11.56 9 11.78 9 12C9 13.66 10.34 15 12 15C12.22 15 12.44 14.97 12.65 14.92L14.2 16.47C13.53 16.8 12.79 17 12 17C9.24 17 7 14.76 7 12C7 11.21 7.2 10.47 7.53 9.8ZM11.84 9.02L14.99 12.17L15.01 12.01C15.01 10.35 13.67 9.01 12.01 9.01L11.84 9.02Z" fill="#fff"/>
+  </svg>
+  <span>Dashboard</span>
 </button>
 
 <div class="lala-wrapper">
@@ -854,6 +884,12 @@ ctaobserver.observe(ctaToaster, {
       }
     }
 
+    // Update dashboard button visibility
+    const dashboardBtn = $('#dashboard-btn');
+    if (dashboardBtn) {
+      dashboardBtn.style.display = loggedIn ? 'flex' : 'none';
+    }
+
     // Update global auth state and re-render list to show/hide action buttons
     window.isUserAuthenticated = loggedIn;
     if (typeof render === 'function') {
@@ -922,6 +958,35 @@ ctaobserver.observe(ctaToaster, {
       showLogoutModal();
     } else {
       showAuthModal();
+    }
+  });
+
+  // Dashboard button - toggle dashboard modal
+  window.isDashboardOpen = false;
+  const dashboardBtn = $('#dashboard-btn');
+  dashboardBtn && dashboardBtn.addEventListener('click', async () => {
+    window.isDashboardOpen = !window.isDashboardOpen;
+
+    // Toggle eye icons
+    const eyeOpen = $('#eye-open-icon');
+    const eyeClosed = $('#eye-closed-icon');
+    if (eyeOpen && eyeClosed) {
+      if (window.isDashboardOpen) {
+        eyeOpen.style.display = 'none';
+        eyeClosed.style.display = 'inline-block';
+        dashboardBtn.classList.add('active');
+      } else {
+        eyeOpen.style.display = 'inline-block';
+        eyeClosed.style.display = 'none';
+        dashboardBtn.classList.remove('active');
+      }
+    }
+
+    // Open or close dashboard modal
+    if (window.isDashboardOpen) {
+      await openDashboardModal();
+    } else {
+      closeModal();
     }
   });
 
@@ -1063,6 +1128,162 @@ ctaobserver.observe(ctaToaster, {
       }
     }, 200);
   }
+
+  // ===== DASHBOARD MODAL FUNCTIONALITY =====
+  window.openDashboardModal = async function() {
+    await window.supabaseReady;
+    const modal = document.getElementById('lotModal');
+    const lotDetails = document.getElementById('lotDetails');
+    const headerFracc = document.getElementById('headerFracc');
+    const headerLotNumber = document.getElementById('headerLotNumber');
+    const wrapper = document.querySelector('.modal-content-wrapper');
+    const backButton = document.getElementById('backButton');
+
+    // Get current community based on map center or fraccionamiento
+    const currentFracc = modal?.dataset?.fracc || CURRENT_CLIENT;
+    const communityName = (currentFracc || 'inverta').toUpperCase();
+
+    // Show modal
+    if (!modal.classList.contains('show')) {
+      modal.classList.add('show');
+      modal.style.display = 'block';
+      if (typeof adjustMapForModal === 'function') adjustMapForModal();
+    }
+
+    // Set modal to dashboard mode
+    modal.classList.add('info-mode');
+    modal.classList.remove('lot-mode', 'pin-mode');
+
+    // Set header
+    if (headerFracc) {
+      headerFracc.textContent = `DASHBOARD - ${communityName}`;
+      headerFracc.contentEditable = 'false';
+    }
+    if (headerLotNumber) headerLotNumber.style.display = 'none';
+    if (backButton) backButton.style.display = 'none';
+
+    // Clear and prepare content area
+    if (lotDetails) {
+      lotDetails.classList.remove('active');
+      lotDetails.innerHTML = '';
+    }
+    if (wrapper) wrapper.classList.add('show-details');
+
+    // Show loading state
+    lotDetails.innerHTML = '<div style="padding: 40px; text-align: center; color: #8a8880;">Cargando datos...</div>';
+
+    try {
+      // Fetch dashboard data
+      const dashboardData = await fetchDashboardData(currentFracc);
+
+      // Render dashboard
+      renderDashboard(lotDetails, dashboardData);
+    } catch (error) {
+      console.error('Error loading dashboard:', error);
+      lotDetails.innerHTML = '<div style="padding: 40px; text-align: center; color: #f44336;">Error al cargar el dashboard</div>';
+    }
+  };
+
+  async function fetchDashboardData(fracc) {
+    await window.supabaseReady;
+
+    // Fetch all lots for this community
+    const { data: allLots, error: lotsError } = await window.supabaseClient
+      .from('lots')
+      .select('*')
+      .eq('client_id', CURRENT_CLIENT)
+      .eq('fraccionamiento', fracc);
+
+    if (lotsError) throw lotsError;
+
+    // Count available lots
+    const availableLots = allLots?.filter(lot =>
+      lot.availability?.toLowerCase() !== 'sold'
+    ).length || 0;
+    const totalLots = allLots?.length || 0;
+
+    // Calculate projected income (available lots × total price)
+    const projectedIncome = allLots?.reduce((sum, lot) => {
+      if (lot.availability?.toLowerCase() !== 'sold') {
+        const size = parseFloat(lot.size) || 0;
+        const priceM2 = parseFloat(lot.priceM2) || 0;
+        return sum + (size * priceM2);
+      }
+      return sum;
+    }, 0) || 0;
+
+    // Fetch lots sold in last 30 days from audit table
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { data: auditData, error: auditError } = await window.supabaseClient
+      .from('lots_updates_audit')
+      .select('*')
+      .eq('client_id', CURRENT_CLIENT)
+      .gte('updated_at', thirtyDaysAgo.toISOString())
+      .order('updated_at', { ascending: false });
+
+    if (auditError) {
+      console.warn('Error fetching audit data:', auditError);
+    }
+
+    // Count lots that changed to 'sold' in the last 30 days
+    const soldLast30Days = auditData?.filter(record =>
+      record.new_value?.toLowerCase() === 'sold' &&
+      record.old_value?.toLowerCase() !== 'sold'
+    ).length || 0;
+
+    return {
+      availableLots,
+      totalLots,
+      projectedIncome,
+      soldLast30Days
+    };
+  }
+
+  function renderDashboard(container, data) {
+    const dashboardHTML = `
+      <div style="padding: 24px; display: flex; flex-direction: column; gap: 24px;">
+        <!-- Lotes Disponibles -->
+        <div style="background: rgba(255, 132, 0, 0.05); border-left: 4px solid #ff8400; padding: 20px; border-radius: 6px;">
+          <div style="font-size: 14px; color: #8a8880; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+            Lotes Disponibles
+          </div>
+          <div style="font-size: 36px; font-weight: 700; color: #1a1a1a;">
+            ${data.availableLots} <span style="font-size: 24px; color: #8a8880;">/ ${data.totalLots}</span>
+          </div>
+        </div>
+
+        <!-- Vendidos en los últimos 30 días -->
+        <div style="background: rgba(76, 175, 80, 0.05); border-left: 4px solid #4caf50; padding: 20px; border-radius: 6px;">
+          <div style="font-size: 14px; color: #8a8880; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+            Vendidos en los últimos 30 días
+          </div>
+          <div style="font-size: 36px; font-weight: 700; color: #4caf50;">
+            ${data.soldLast30Days}
+          </div>
+        </div>
+
+        <!-- Ingresos Proyectados -->
+        <div style="background: rgba(33, 150, 243, 0.05); border-left: 4px solid #2196f3; padding: 20px; border-radius: 6px;">
+          <div style="font-size: 14px; color: #8a8880; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+            Ingresos Proyectados
+          </div>
+          <div style="font-size: 36px; font-weight: 700; color: #2196f3;">
+            $${data.projectedIncome.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span style="font-size: 18px; vertical-align: super; font-weight: 600; color: #8a8880;">MXN</span>
+          </div>
+          <div style="font-size: 11px; color: #8a8880; margin-top: 4px;">
+            Basado en ${data.availableLots} lotes disponibles
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = dashboardHTML;
+    container.classList.add('active');
+  }
+
 })();
 </script>
 
@@ -4192,6 +4413,19 @@ function closeModal() {
   // Hide lock button when exiting pin mode
   const lockBtn = document.getElementById('pinLockButton');
   if (lockBtn) lockBtn.style.display = 'none';
+
+  // Reset dashboard button state when closing modal
+  const dashboardBtn = document.getElementById('dashboard-btn');
+  const eyeOpen = document.getElementById('eye-open-icon');
+  const eyeClosed = document.getElementById('eye-closed-icon');
+  if (dashboardBtn) {
+    dashboardBtn.classList.remove('active');
+    if (eyeOpen) eyeOpen.style.display = 'inline-block';
+    if (eyeClosed) eyeClosed.style.display = 'none';
+  }
+  if (window.isDashboardOpen !== undefined) {
+    window.isDashboardOpen = false;
+  }
 
   // 🟢 Exit compare mode if active - SAME LOGIC AS UNSORT
   if (window.compareMode) {
