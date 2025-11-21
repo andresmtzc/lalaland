@@ -56,21 +56,21 @@ const CURRENT_CLIENT = 'inverta';
   color: #fff !important;
 }
 
-/* Dashboard button states */
+/* Dashboard button states - always white, only eye icon changes */
 .dashboard-button:hover {
-  color: #ff8400 !important;
+  color: #fff !important;
 }
 
 .dashboard-button:hover svg path {
-  fill: #ff8400 !important;
+  fill: #fff !important;
 }
 
 .dashboard-button.active {
-  color: #ff8400 !important;
+  color: #fff !important;
 }
 
 .dashboard-button.active svg path {
-  fill: #ff8400 !important;
+  fill: #fff !important;
 }
 
 /* GPS button active state */
@@ -397,9 +397,12 @@ select option {
   </svg>
   <!-- Locked icon -->
   <svg id="lockIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: none;">
-    <path d="M18 8H17V6C17 3.24 14.76 1 12 1C9.24 1 7 3.24 7 6V8H6C4.9 8 4 8.9 4 10V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V10C20 8.9 19.1 8 18 8ZM12 17C10.9 17 10 16.1 10 15C10 13.9 10.9 13 12 13C13.1 13 14 13.9 14 15C14 16.1 13.1 17 12 17ZM15.1 8H8.9V6C8.9 4.29 10.29 2.9 12 2.9C13.71 2.9 15.1 4.29 15.1 6V8Z" fill="#fcfaf3"/>
+    <path d="M18 8H17V6C17 3.24 14.76 1 12 1C9.24 1 7 3.24 7 6V8H6C4.9 8 4 8.9 4 10V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V10C20 8.9 19.1 8 18 8ZM12 17C10.9 17 10 16.1 10 15C14 13.9 10.9 13 12 13C13.1 13 14 13.9 14 15C14 16.1 13.1 17 12 17ZM15.1 8H8.9V6C8.9 4.29 10.29 2.9 12 2.9C13.71 2.9 15.1 4.29 15.1 6V8Z" fill="#fcfaf3"/>
   </svg>
 </button>
+
+<!-- 🌐 GLOBAL DASHBOARD BUTTON (only visible in dashboard mode, positioned on right side) -->
+<button class="unit-btn" id="globalDashboardButton" title="View All Communities" translate="no" style="display: none; position: absolute; right: 38px; top: 50%; transform: translateY(-50%); width: auto; height: auto; padding: 4px 8px; font-size: 12px; font-weight: 600; border-radius: 3px; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; border: none; cursor: pointer;">GLOBAL</button>
 
     <div class="header-control close-x" onclick="closeModal()" id="closeModalBtn">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
@@ -990,6 +993,12 @@ ctaobserver.observe(ctaToaster, {
     }
   });
 
+  // Global dashboard button - show all communities combined
+  const globalDashboardBtn = $('#globalDashboardButton');
+  globalDashboardBtn && globalDashboardBtn.addEventListener('click', async () => {
+    await openGlobalDashboard();
+  });
+
   btnLogout && btnLogout.addEventListener('click', async () => {
     try {
       await window.supabaseClient?.auth.signOut();
@@ -1173,9 +1182,12 @@ ctaobserver.observe(ctaToaster, {
     if (headerLotNumber) headerLotNumber.style.display = 'none';
     if (backButton) backButton.style.display = 'none';
 
-    // Hide PIN button in dashboard mode
+    // Hide PIN button in dashboard mode, show GLOBAL button
     const poiBtn = document.getElementById('poiButton');
     if (poiBtn) poiBtn.style.display = 'none';
+
+    const globalBtn = document.getElementById('globalDashboardButton');
+    if (globalBtn) globalBtn.style.display = 'block';
 
     // Clear and prepare content area
     if (lotDetails) {
@@ -1224,16 +1236,14 @@ ctaobserver.observe(ctaToaster, {
     ).length || 0;
     const totalLots = allLots?.length || 0;
 
-    // Calculate projected income (available lots × total price)
+    // Calculate projected income (sum all available lot prices)
     let projectedIncome = 0;
     allLots?.forEach(lot => {
       if (lot.availability?.toLowerCase() !== 'sold') {
-        const size = parseFloat(lot.size) || 0;
-        const priceM2 = parseFloat(lot.priceM2) || 0;
-        const lotTotal = size * priceM2;
-        projectedIncome += lotTotal;
-        if (lotTotal > 0) {
-          console.log('Lot', lot.name, ':', size, 'x', priceM2, '=', lotTotal);
+        const price = parseFloat(lot.price) || 0;
+        projectedIncome += price;
+        if (price > 0) {
+          console.log('Lot', lot.name, ': $', price.toLocaleString());
         }
       }
     });
@@ -1268,6 +1278,94 @@ ctaobserver.observe(ctaToaster, {
       soldLast30Days
     };
   }
+
+  // Fetch global dashboard data for ALL communities
+  async function fetchGlobalDashboardData() {
+    await window.supabaseReady;
+
+    // Fetch ALL lots (no fraccionamiento filter)
+    const { data: allLots, error: lotsError } = await window.supabaseClient
+      .from('lots')
+      .select('*')
+      .eq('client_id', CURRENT_CLIENT);
+
+    if (lotsError) throw lotsError;
+
+    console.log('Fetched ALL lots:', allLots?.length, 'lots');
+
+    // Count available lots
+    const availableLots = allLots?.filter(lot =>
+      lot.availability?.toLowerCase() !== 'sold'
+    ).length || 0;
+    const totalLots = allLots?.length || 0;
+
+    // Calculate projected income (sum all available lot prices)
+    let projectedIncome = 0;
+    allLots?.forEach(lot => {
+      if (lot.availability?.toLowerCase() !== 'sold') {
+        const price = parseFloat(lot.price) || 0;
+        projectedIncome += price;
+      }
+    });
+
+    console.log('Global projected income:', projectedIncome);
+
+    // Fetch lots sold in last 30 days from audit table
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { data: auditData, error: auditError } = await window.supabaseClient
+      .from('lots_updates_audit')
+      .select('*')
+      .eq('client_id', CURRENT_CLIENT)
+      .gte('updated_at', thirtyDaysAgo.toISOString())
+      .order('updated_at', { ascending: false });
+
+    if (auditError) {
+      console.warn('Error fetching audit data:', auditError);
+    }
+
+    // Count lots that changed to 'sold' in the last 30 days
+    const soldLast30Days = auditData?.filter(record =>
+      record.new_value?.toLowerCase() === 'sold' &&
+      record.old_value?.toLowerCase() !== 'sold'
+    ).length || 0;
+
+    return {
+      availableLots,
+      totalLots,
+      projectedIncome,
+      soldLast30Days
+    };
+  }
+
+  // Open global dashboard showing all communities
+  window.openGlobalDashboard = async function() {
+    const headerFracc = document.getElementById('headerFracc');
+    const lotDetails = document.getElementById('lotDetails');
+
+    // Update header to show GLOBAL
+    if (headerFracc) {
+      headerFracc.textContent = 'DASHBOARD - GLOBAL';
+    }
+
+    // Show loading state
+    if (lotDetails) {
+      lotDetails.innerHTML = '<div style="padding: 40px; text-align: center; color: #8a8880;">Cargando datos globales...</div>';
+    }
+
+    try {
+      // Fetch global dashboard data
+      const dashboardData = await fetchGlobalDashboardData();
+      console.log('Global dashboard data:', dashboardData);
+
+      // Render dashboard
+      renderDashboard(lotDetails, dashboardData);
+    } catch (error) {
+      console.error('Error loading global dashboard:', error);
+      lotDetails.innerHTML = '<div style="padding: 40px; text-align: center; color: #f44336;">Error al cargar el dashboard global</div>';
+    }
+  };
 
   function renderDashboard(container, data) {
     // Calculate percentage of available lots
@@ -2928,6 +3026,19 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
   // Clear skip set when entering detail view
   if (window.skipNextRealtimeRender) window.skipNextRealtimeRender.clear();
 
+  // Reset dashboard button state when opening a lot
+  const dashboardBtn = document.getElementById('dashboard-btn');
+  const eyeOpen = document.getElementById('eye-open-icon');
+  const eyeClosed = document.getElementById('eye-closed-icon');
+  if (dashboardBtn) {
+    dashboardBtn.classList.remove('active');
+    if (eyeOpen) eyeOpen.style.display = 'inline-block';
+    if (eyeClosed) eyeClosed.style.display = 'none';
+  }
+  if (window.isDashboardOpen !== undefined) {
+    window.isDashboardOpen = false;
+  }
+
   const modalEl        = document.getElementById('lotModal');
   const lotDetails     = document.getElementById('lotDetails');
   const calendlyEl     = document.getElementById('calendlyEmbed');
@@ -4447,6 +4558,10 @@ function closeModal() {
   // Hide lock button when exiting pin mode
   const lockBtn = document.getElementById('pinLockButton');
   if (lockBtn) lockBtn.style.display = 'none';
+
+  // Hide global dashboard button when closing modal
+  const globalBtn = document.getElementById('globalDashboardButton');
+  if (globalBtn) globalBtn.style.display = 'none';
 
   // Reset dashboard button state when closing modal
   const dashboardBtn = document.getElementById('dashboard-btn');
