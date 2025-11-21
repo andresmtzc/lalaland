@@ -1309,9 +1309,14 @@ ctaobserver.observe(ctaToaster, {
     const sixtyDaysAgo = new Date();
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
+    console.log('=== AUDIT DATA DEBUG FOR', fracc, '===');
+    console.log('Date range: Last 60 days from', sixtyDaysAgo.toISOString());
+    console.log('30 days ago:', thirtyDaysAgo.toISOString());
+
     const { data: auditData, error: auditError } = await window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
+      .eq('fraccionamiento', fracc)  // FILTER BY COMMUNITY
       .gte('updated_at', sixtyDaysAgo.toISOString())
       .order('updated_at', { ascending: false });
 
@@ -1319,20 +1324,41 @@ ctaobserver.observe(ctaToaster, {
       console.warn('Error fetching audit data:', auditError);
     }
 
+    console.log('Total audit records fetched for', fracc, ':', auditData?.length || 0);
+    console.log('Sample audit records:', auditData?.slice(0, 3));
+
     // Count lots that changed to 'sold' in the last 30 days
-    const soldLast30Days = auditData?.filter(record =>
+    const last30DaysRecords = auditData?.filter(record =>
       record.new_value?.toLowerCase() === 'sold' &&
       record.old_value?.toLowerCase() !== 'sold' &&
       new Date(record.updated_at) >= thirtyDaysAgo
-    ).length || 0;
+    ) || [];
+
+    const soldLast30Days = last30DaysRecords.length;
+    console.log('Lots sold in LAST 30 days:', soldLast30Days);
+    console.log('Sample sold records (last 30):', last30DaysRecords.slice(0, 3).map(r => ({
+      lot: r.lot_name,
+      updated: r.updated_at,
+      old: r.old_value,
+      new: r.new_value
+    })));
 
     // Count lots sold between 30-60 days ago
-    const soldLast60Days = auditData?.filter(record =>
+    const prev30DaysRecords = auditData?.filter(record =>
       record.new_value?.toLowerCase() === 'sold' &&
       record.old_value?.toLowerCase() !== 'sold' &&
       new Date(record.updated_at) >= sixtyDaysAgo &&
       new Date(record.updated_at) < thirtyDaysAgo
-    ).length || 0;
+    ) || [];
+
+    const soldLast60Days = prev30DaysRecords.length;
+    console.log('Lots sold in PREVIOUS 30 days (30-60 days ago):', soldLast60Days);
+    console.log('Sample sold records (previous 30):', prev30DaysRecords.slice(0, 3).map(r => ({
+      lot: r.lot_name,
+      updated: r.updated_at,
+      old: r.old_value,
+      new: r.new_value
+    })));
 
     // Calculate percentage change (comparing last 30 days to previous 30 days)
     let percentageChange = 0;
@@ -1341,6 +1367,12 @@ ctaobserver.observe(ctaToaster, {
     } else if (soldLast30Days > 0) {
       percentageChange = 100; // If no sales in previous period but sales now = 100% increase
     }
+
+    console.log('Percentage change calculation:');
+    console.log(`  Last 30 days: ${soldLast30Days} lots`);
+    console.log(`  Previous 30 days: ${soldLast60Days} lots`);
+    console.log(`  Change: ${percentageChange.toFixed(1)}%`);
+    console.log('=== END AUDIT DEBUG ===');
 
     return {
       availableLots,
@@ -1391,9 +1423,14 @@ ctaobserver.observe(ctaToaster, {
     const sixtyDaysAgo = new Date();
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
+    console.log('=== GLOBAL AUDIT DATA DEBUG ===');
+    console.log('Date range: Last 60 days from', sixtyDaysAgo.toISOString());
+    console.log('30 days ago:', thirtyDaysAgo.toISOString());
+
     const { data: auditData, error: auditError } = await window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
+      .eq('client_id', CURRENT_CLIENT)  // FILTER BY CLIENT (all communities for this client)
       .gte('updated_at', sixtyDaysAgo.toISOString())
       .order('updated_at', { ascending: false });
 
@@ -1401,20 +1438,43 @@ ctaobserver.observe(ctaToaster, {
       console.warn('Error fetching audit data:', auditError);
     }
 
+    console.log('Total GLOBAL audit records fetched:', auditData?.length || 0);
+    console.log('Sample audit records:', auditData?.slice(0, 3));
+
     // Count lots that changed to 'sold' in the last 30 days
-    const soldLast30Days = auditData?.filter(record =>
+    const last30DaysRecords = auditData?.filter(record =>
       record.new_value?.toLowerCase() === 'sold' &&
       record.old_value?.toLowerCase() !== 'sold' &&
       new Date(record.updated_at) >= thirtyDaysAgo
-    ).length || 0;
+    ) || [];
+
+    const soldLast30Days = last30DaysRecords.length;
+    console.log('GLOBAL lots sold in LAST 30 days:', soldLast30Days);
+    console.log('Sample sold records (last 30):', last30DaysRecords.slice(0, 3).map(r => ({
+      lot: r.lot_name,
+      fracc: r.fraccionamiento,
+      updated: r.updated_at,
+      old: r.old_value,
+      new: r.new_value
+    })));
 
     // Count lots sold between 30-60 days ago
-    const soldLast60Days = auditData?.filter(record =>
+    const prev30DaysRecords = auditData?.filter(record =>
       record.new_value?.toLowerCase() === 'sold' &&
       record.old_value?.toLowerCase() !== 'sold' &&
       new Date(record.updated_at) >= sixtyDaysAgo &&
       new Date(record.updated_at) < thirtyDaysAgo
-    ).length || 0;
+    ) || [];
+
+    const soldLast60Days = prev30DaysRecords.length;
+    console.log('GLOBAL lots sold in PREVIOUS 30 days (30-60 days ago):', soldLast60Days);
+    console.log('Sample sold records (previous 30):', prev30DaysRecords.slice(0, 3).map(r => ({
+      lot: r.lot_name,
+      fracc: r.fraccionamiento,
+      updated: r.updated_at,
+      old: r.old_value,
+      new: r.new_value
+    })));
 
     // Calculate percentage change (comparing last 30 days to previous 30 days)
     let percentageChange = 0;
@@ -1423,6 +1483,12 @@ ctaobserver.observe(ctaToaster, {
     } else if (soldLast30Days > 0) {
       percentageChange = 100; // If no sales in previous period but sales now = 100% increase
     }
+
+    console.log('GLOBAL percentage change calculation:');
+    console.log(`  Last 30 days: ${soldLast30Days} lots`);
+    console.log(`  Previous 30 days: ${soldLast60Days} lots`);
+    console.log(`  Change: ${percentageChange.toFixed(1)}%`);
+    console.log('=== END GLOBAL AUDIT DEBUG ===');
 
     return {
       availableLots,
@@ -1509,14 +1575,18 @@ ctaobserver.observe(ctaToaster, {
           <div style="font-size: 12px; color: #8a8880; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
             Ingresos Proyectados
           </div>
-          <div style="font-size: clamp(24px, 5vw, 32px); font-weight: 700; color: #525252; line-height: 1.2;">
-            $${data.projectedIncome.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            <span style="font-size: clamp(12px, 2.5vw, 16px); vertical-align: super; font-weight: 600; color: #8a8880;">MXN</span>
-            <span style="font-size: clamp(14px, 3vw, 16px); color: #525252; margin-left: 8px;">$${commission.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          <div style="font-size: clamp(24px, 5vw, 32px); font-weight: 700; color: #525252; line-height: 1.2; display: flex; align-items: baseline; gap: 8px;">
+            <div>
+              $${data.projectedIncome.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <span style="font-size: clamp(12px, 2.5vw, 16px); vertical-align: super; font-weight: 600; color: #8a8880;">MXN</span>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+              <span style="font-size: clamp(14px, 3vw, 16px); color: #525252;">$${commission.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span style="font-size: 10px; color: #8a8880; white-space: nowrap;">Comisiones disponibles</span>
+            </div>
           </div>
-          <div style="font-size: 10px; color: #8a8880; margin-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-            <span>Basado en ${data.availableLots} lotes disponibles</span>
-            <span>Comisiones disponibles</span>
+          <div style="font-size: 10px; color: #8a8880; margin-top: 4px;">
+            Basado en ${data.availableLots} lotes disponibles
           </div>
         </div>
       </div>
