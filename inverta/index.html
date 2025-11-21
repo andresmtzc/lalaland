@@ -1134,14 +1134,16 @@ ctaobserver.observe(ctaToaster, {
     await window.supabaseReady;
     const modal = document.getElementById('lotModal');
     const lotDetails = document.getElementById('lotDetails');
+    const modalInfo = document.getElementById('modalInfo');
     const headerFracc = document.getElementById('headerFracc');
     const headerLotNumber = document.getElementById('headerLotNumber');
     const wrapper = document.querySelector('.modal-content-wrapper');
     const backButton = document.getElementById('backButton');
+    const customScrollbar = document.getElementById('customScrollbar');
 
-    // Get current community based on map center or fraccionamiento
-    const currentFracc = modal?.dataset?.fracc || CURRENT_CLIENT;
-    const communityName = (currentFracc || 'inverta').toUpperCase();
+    // Get current community based on modal dataset, default to 'marsella'
+    const currentFracc = modal?.dataset?.fracc || 'marsella';
+    const communityName = (currentFracc || 'marsella').toUpperCase();
 
     // Show modal
     if (!modal.classList.contains('show')) {
@@ -1153,6 +1155,15 @@ ctaobserver.observe(ctaToaster, {
     // Set modal to dashboard mode
     modal.classList.add('info-mode');
     modal.classList.remove('lot-mode', 'pin-mode');
+
+    // Hide list/modal info area, show only lotDetails for dashboard
+    if (modalInfo) {
+      modalInfo.style.display = 'none';
+      modalInfo.innerHTML = '';
+    }
+    if (customScrollbar) {
+      customScrollbar.style.display = 'none';
+    }
 
     // Set header
     if (headerFracc) {
@@ -1166,6 +1177,7 @@ ctaobserver.observe(ctaToaster, {
     if (lotDetails) {
       lotDetails.classList.remove('active');
       lotDetails.innerHTML = '';
+      lotDetails.style.display = 'block';
     }
     if (wrapper) wrapper.classList.add('show-details');
 
@@ -1175,6 +1187,9 @@ ctaobserver.observe(ctaToaster, {
     try {
       // Fetch dashboard data
       const dashboardData = await fetchDashboardData(currentFracc);
+
+      // Debug log
+      console.log('Dashboard data for', currentFracc, ':', dashboardData);
 
       // Render dashboard
       renderDashboard(lotDetails, dashboardData);
@@ -1196,6 +1211,9 @@ ctaobserver.observe(ctaToaster, {
 
     if (lotsError) throw lotsError;
 
+    console.log('Fetched lots for', fracc, ':', allLots?.length, 'lots');
+    console.log('Sample lot:', allLots?.[0]);
+
     // Count available lots
     const availableLots = allLots?.filter(lot =>
       lot.availability?.toLowerCase() !== 'sold'
@@ -1203,14 +1221,20 @@ ctaobserver.observe(ctaToaster, {
     const totalLots = allLots?.length || 0;
 
     // Calculate projected income (available lots × total price)
-    const projectedIncome = allLots?.reduce((sum, lot) => {
+    let projectedIncome = 0;
+    allLots?.forEach(lot => {
       if (lot.availability?.toLowerCase() !== 'sold') {
         const size = parseFloat(lot.size) || 0;
         const priceM2 = parseFloat(lot.priceM2) || 0;
-        return sum + (size * priceM2);
+        const lotTotal = size * priceM2;
+        projectedIncome += lotTotal;
+        if (lotTotal > 0) {
+          console.log('Lot', lot.name, ':', size, 'x', priceM2, '=', lotTotal);
+        }
       }
-      return sum;
-    }, 0) || 0;
+    });
+
+    console.log('Total projected income:', projectedIncome);
 
     // Fetch lots sold in last 30 days from audit table
     const thirtyDaysAgo = new Date();
