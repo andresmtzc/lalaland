@@ -2167,17 +2167,15 @@ map.on('click', 'lots-final-click', (e) => {
   // 🟢 FIX: Check if we're already in detail view
   const isInDetailView = modal.classList.contains('info-mode') && window.isDetailOpen;
 
-  // Clear ALL hover states on all lots before setting new one
-  if (window.hoveredId !== null) {
-    console.log('🔴 MAP CLICK: Clearing previous hover state for index:', window.hoveredId);
-    map.removeFeatureState({ source: 'lots-final', id: window.hoveredId }, 'hover');
-  }
+  console.log('🔍 MAP CLICK DEBUG: isInDetailView =', isInDetailView);
+  console.log('🔍 MAP CLICK DEBUG: currentLotIndex =', currentLotIndex, 'window.hoveredId =', window.hoveredId);
 
-  // When in detail view, ensure we clear the previous lot's outline completely
-  if (isInDetailView && currentLotIndex !== null && currentLotIndex !== undefined && currentLotIndex !== window.hoveredId) {
-    console.log('🔴 MAP CLICK: Clearing currentLotIndex hover state for index:', currentLotIndex);
-    map.removeFeatureState({ source: 'lots-final', id: currentLotIndex }, 'hover');
-  }
+  // 🔥 FIX: Clear hover state for ALL lots to ensure no orphaned hover states
+  // This is more aggressive but guarantees clean state
+  console.log('🔴 MAP CLICK: Clearing ALL hover states');
+  lotData.forEach((_, lotIndex) => {
+    map.removeFeatureState({ source: 'lots-final', id: lotIndex }, 'hover');
+  });
 
   console.log('🔴 MAP CLICK: Setting window.hoveredId to null temporarily');
   window.hoveredId = null;
@@ -2201,14 +2199,37 @@ map.on('click', 'lots-final-click', (e) => {
 
   if (isInDetailView) {
     // We're in detail view - update the current detail view with new lot
+    console.log('🔵 MAP CLICK: In detail view, switching to new lot');
+    console.log('🔵 MAP CLICK: About to call showDetailViewForLot, current window.hoveredId =', window.hoveredId);
     const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
     if (baseIndex !== -1) {
       // Update the detail view with the new lot
       showDetailViewForLot(baseIndex + cloneCount, true); // true = isSwitchingLots
+      console.log('🔵 MAP CLICK: After showDetailViewForLot, window.hoveredId =', window.hoveredId);
+
+      // 🔥 VERIFY: Check if hover state is still set correctly
+      setTimeout(() => {
+        console.log('🔍 MAP CLICK VERIFY: After 100ms, window.hoveredId =', window.hoveredId);
+        if (window.hoveredId !== idx) {
+          console.error('❌ MAP CLICK: Hover state was changed! Expected', idx, 'but got', window.hoveredId);
+        }
+      }, 100);
     }
   } else {
-    // Normal case - open modal
-    openModal(lot);
+    // 🔥 FIX: If modal is already open in lot-list mode, open detail view for clicked lot
+    // Otherwise, just open the modal (which shows lot-list by default)
+    const modalAlreadyOpen = modal.classList.contains('show');
+
+    if (modalAlreadyOpen) {
+      // Modal is open in lot-list mode - open detail view for clicked lot
+      const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
+      if (baseIndex !== -1) {
+        showDetailViewForLot(baseIndex + cloneCount, false); // false = not switching lots
+      }
+    } else {
+      // Normal case - open modal (shows lot-list by default)
+      openModal(lot);
+    }
   }
 
   // Add side length labels if zoom is high enough
