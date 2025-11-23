@@ -6397,19 +6397,39 @@ function refreshFeaturedLayer() {
   if (typeof origShowDetail === 'function') {
     window.showDetailViewForLot = async function(index, ...rest) {
       const isSwitchingLots = rest[0]; // First parameter after index
+
+      // 🔥 FIX: Save the correct hoveredId BEFORE calling origShowDetail
+      // During the async execution, MutationObserver/scroll listeners may change it
+      const savedHoveredId = isSwitchingLots ? window.hoveredId : null;
+      console.log('🔵 WRAPPER START: isSwitchingLots =', isSwitchingLots, ', savedHoveredId =', savedHoveredId);
+
       const res = await origShowDetail.apply(this, [index, ...rest]);
+
       try {
         const lot = lots[index];
         const mapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
         if (mapData?.name) selectedLotName = mapData.name;
 
-        // 🔥 FIX: Don't sync when switching lots - the map click handler already set the correct hover state
-        // Calling syncButtonToCurrentSelection() would override window.hoveredId
+        // 🔥 FIX: When switching lots, restore the hover state that was set by map click handler
         if (!isSwitchingLots) {
           syncButtonToCurrentSelection();
         } else {
           console.log('🟢 WRAPPER: Skipping syncButtonToCurrentSelection because isSwitchingLots = true');
-          console.log('🟢 WRAPPER: window.hoveredId preserved as', window.hoveredId);
+          console.log('🟢 WRAPPER: Restoring window.hoveredId from', window.hoveredId, 'to', savedHoveredId);
+
+          // Restore the correct hover state
+          if (savedHoveredId !== null && savedHoveredId !== window.hoveredId) {
+            // Clear the wrong hover state
+            if (window.hoveredId !== null && map?.getSource('lots-final')) {
+              map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
+            }
+            // Set the correct hover state
+            if (map?.getSource('lots-final')) {
+              map.setFeatureState({ source: 'lots-final', id: savedHoveredId }, { hover: true });
+            }
+            window.hoveredId = savedHoveredId;
+          }
+
           // Just update button color without touching hover state
           const state = normalize(mapData?.availability || 'available');
           btn.classList.remove('sold','featured');
