@@ -1748,23 +1748,7 @@ ctaobserver.observe(ctaToaster, {
 // MAP INITIALIZE
 let lotData = [];
 let map;  // global map variable
-
-// 🔍 DEBUG: Track all changes to window.hoveredId with stack traces
-let _hoveredId = null;
-Object.defineProperty(window, 'hoveredId', {
-  get() { return _hoveredId; },
-  set(value) {
-    if (_hoveredId !== value) {
-      const stack = new Error().stack;
-      const caller = stack.split('\n')[2]?.trim() || 'unknown';
-      console.log(`🔍 HOVER STATE CHANGE: ${_hoveredId} → ${value}`);
-      console.log(`   Called from: ${caller}`);
-    }
-    _hoveredId = value;
-  },
-  configurable: true
-});
-
+window.hoveredId = null;  // Use window.hoveredId globally for map hover state
 let currentLotIndex = -1;
 let sideLengthLabels = []; // Array to store side length label elements
 let currentLabeledLot = null; // Track which lot has labels
@@ -2029,30 +2013,20 @@ map.on('click', 'lots-final-click', (e) => {
       // If clicking on a lot while dashboard is open
       const modal = document.getElementById('lotModal');
 
-      // Debug logging
-      console.log('🔍 LOT CLICK DEBUG:');
-      console.log('  lotFeatures.length:', lotFeatures.length);
-      console.log('  modal.classList:', modal?.classList.toString());
-      console.log('  window.isDashboardOpen:', window.isDashboardOpen);
-
       if (lotFeatures.length > 0 && modal.classList.contains('info-mode') && window.isDashboardOpen) {
-        console.log('✅ Lot clicked while dashboard open - switching to lot list');
         const feature = lotFeatures[0];
         const lotName = feature.properties.name;
         const lot = lotData.find(l => l.name === lotName);
-        console.log('  Lot found:', lot?.name, lot?.fraccionamiento);
 
         if (lot) {
           // Set flag FIRST to prevent ANY panning during this transition
           window.skipNextMapPan = true;
-          console.log('  Set skipNextMapPan flag to prevent panning');
 
           // Reset dashboard button state
           const dashboardBtn = document.getElementById('dashboard-btn');
           const eyeOpen = document.getElementById('eye-open-icon');
           const eyeClosed = document.getElementById('eye-closed-icon');
           if (dashboardBtn) {
-            console.log('  Resetting dashboard button');
             dashboardBtn.classList.remove('active');
             if (eyeOpen) eyeOpen.style.display = 'none';  // Hide open eye
             if (eyeClosed) eyeClosed.style.display = 'inline-block';  // Show closed eye (dashboard hidden)
@@ -2183,31 +2157,23 @@ map.on('click', 'lots-final-click', (e) => {
   // 🟢 FIX: Check if we're already in detail view
   const isInDetailView = modal.classList.contains('info-mode') && window.isDetailOpen;
 
-  console.log('🔍 MAP CLICK DEBUG: isInDetailView =', isInDetailView);
-  console.log('🔍 MAP CLICK DEBUG: currentLotIndex =', currentLotIndex, 'window.hoveredId =', window.hoveredId);
-
   // 🔥 FIX: Clear hover state for ALL lots to ensure no orphaned hover states
   // This is more aggressive but guarantees clean state
-  console.log('🔴 MAP CLICK: Clearing ALL hover states');
   lotData.forEach((_, lotIndex) => {
     map.removeFeatureState({ source: 'lots-final', id: lotIndex }, 'hover');
   });
 
-  console.log('🔴 MAP CLICK: Setting window.hoveredId to null temporarily');
   window.hoveredId = null;
 
   // Find index and set new hover state
   const idx = lotData.findIndex(l => l.name === lot.name);
   if (idx !== -1) {
-    console.log('🔵 MAP CLICK: Setting hover state for lot', lot.name, 'index:', idx);
     map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
     window.hoveredId = idx;
     currentLotIndex = idx;
-    console.log('🔵 MAP CLICK: window.hoveredId now =', window.hoveredId);
 
     // Force map to repaint to update lot outlines
     map.triggerRepaint();
-    console.log('🔵 MAP CLICK: Triggered map repaint');
   }
 
   // Remove any existing labels
@@ -2215,21 +2181,10 @@ map.on('click', 'lots-final-click', (e) => {
 
   if (isInDetailView) {
     // We're in detail view - update the current detail view with new lot
-    console.log('🔵 MAP CLICK: In detail view, switching to new lot');
-    console.log('🔵 MAP CLICK: About to call showDetailViewForLot, current window.hoveredId =', window.hoveredId);
     const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
     if (baseIndex !== -1) {
       // Update the detail view with the new lot
       showDetailViewForLot(baseIndex + cloneCount, true); // true = isSwitchingLots
-      console.log('🔵 MAP CLICK: After showDetailViewForLot, window.hoveredId =', window.hoveredId);
-
-      // 🔥 VERIFY: Check if hover state is still set correctly
-      setTimeout(() => {
-        console.log('🔍 MAP CLICK VERIFY: After 100ms, window.hoveredId =', window.hoveredId);
-        if (window.hoveredId !== idx) {
-          console.error('❌ MAP CLICK: Hover state was changed! Expected', idx, 'but got', window.hoveredId);
-        }
-      }, 100);
     }
   } else {
     // 🔥 FIX: If modal is already open in lot-list mode, open detail view for clicked lot
@@ -4377,24 +4332,14 @@ function highlightCenter(isClamping = false) {
   // This prevents it from overriding the manual selection when clicking a lot
   const modal = document.getElementById('lotModal');
 
-  // Debug logging to understand when highlightCenter is called
-  const stack = new Error().stack;
-  const caller = stack.split('\n')[2]?.trim() || 'unknown';
-  console.log('🔍 highlightCenter: CALLED FROM:', caller);
-  console.log('🔍 highlightCenter: CHECK - modal classes:', modal.classList.toString(), 'isDetailOpen:', window.isDetailOpen);
-
   if (modal.classList.contains('info-mode')) {
-    console.log('🟡 highlightCenter: SKIPPED because in info-mode');
     return;
   }
 
   // ALSO check window.isDetailOpen flag as a fallback
   if (window.isDetailOpen) {
-    console.log('🟡 highlightCenter: SKIPPED because isDetailOpen is true');
     return;
   }
-
-  console.log('🟢 highlightCenter: RUNNING in lot-list mode');
 
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   
@@ -4435,14 +4380,12 @@ function highlightCenter(isClamping = false) {
         if (lot && window.map && lotData) {
           newLotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
           if (newLotMapIndex !== -1) {
-            console.log('🟢 highlightCenter: Setting hover to lot index', newLotMapIndex, '(was', window.hoveredId, ')');
             if (window.hoveredId !== null && window.hoveredId !== newLotMapIndex) {
               map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
               changingLot = true; // We're changing to a different lot
             }
             map.setFeatureState({ source: 'lots-final', id: newLotMapIndex }, { hover: true });
             window.hoveredId = newLotMapIndex;
-            console.log('🟢 highlightCenter: window.hoveredId now =', window.hoveredId);
              
             // Always remove labels when changing to a different lot, regardless of detail view
             if (changingLot && currentLabeledLot) {
@@ -6401,7 +6344,6 @@ function refreshFeaturedLayer() {
       // 🔥 FIX: Save the correct hoveredId BEFORE calling origShowDetail
       // During the async execution, MutationObserver/scroll listeners may change it
       const savedHoveredId = isSwitchingLots ? window.hoveredId : null;
-      console.log('🔵 WRAPPER START: isSwitchingLots =', isSwitchingLots, ', savedHoveredId =', savedHoveredId);
 
       const res = await origShowDetail.apply(this, [index, ...rest]);
 
@@ -6414,9 +6356,6 @@ function refreshFeaturedLayer() {
         if (!isSwitchingLots) {
           syncButtonToCurrentSelection();
         } else {
-          console.log('🟢 WRAPPER: Skipping syncButtonToCurrentSelection because isSwitchingLots = true');
-          console.log('🟢 WRAPPER: Restoring window.hoveredId from', window.hoveredId, 'to', savedHoveredId);
-
           // Restore the correct hover state
           if (savedHoveredId !== null && savedHoveredId !== window.hoveredId) {
             // Clear the wrong hover state
