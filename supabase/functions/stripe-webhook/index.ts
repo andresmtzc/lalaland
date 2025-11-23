@@ -98,6 +98,22 @@ serve(async (req) => {
 
       const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
+      // First, get the current lot data to know the old status and fraccionamiento
+      const { data: lotData, error: fetchError } = await supabase
+        .from('lots')
+        .select('availability, fraccionamiento')
+        .eq('lot_name', lotName)
+        .eq('client_id', 'inverta')
+        .single()
+
+      if (fetchError) {
+        console.error('Error fetching lot data:', fetchError)
+        throw fetchError
+      }
+
+      const oldAvailability = lotData?.availability || 'Available'
+      const fraccionamiento = lotData?.fraccionamiento
+
       // Update lot status to Sold
       const { error: updateError } = await supabase
         .from('lots')
@@ -111,6 +127,37 @@ serve(async (req) => {
       }
 
       console.log(`Successfully marked lot ${lotNumber} (${lotName}) as Sold`)
+
+      // Get current available lots count for audit
+      const { count: availableCount, error: countError } = await supabase
+        .from('lots')
+        .select('*', { count: 'exact', head: true })
+        .eq('client_id', 'inverta')
+        .neq('availability', 'Sold')
+
+      if (countError) {
+        console.warn('Error getting available count for audit:', countError)
+      }
+
+      // Create audit record for the online purchase
+      const { error: auditError } = await supabase
+        .from('lot_updates_audit')
+        .insert({
+          lot_name: lotName,
+          fraccionamiento: fraccionamiento,
+          old_availability: oldAvailability,
+          new_availability: 'Sold',
+          updated_by: 'Online Purchase (Stripe)',
+          available_lots: availableCount || 0,
+          client_id: 'inverta'
+        })
+
+      if (auditError) {
+        console.error('Error creating audit record:', auditError)
+        // Don't throw - we don't want to fail the webhook if audit logging fails
+      } else {
+        console.log(`Audit record created for lot ${lotName}`)
+      }
     }
 
     // Return success response
