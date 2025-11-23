@@ -6380,12 +6380,26 @@ function refreshFeaturedLayer() {
   const origShowDetail = window.showDetailViewForLot;
   if (typeof origShowDetail === 'function') {
     window.showDetailViewForLot = async function(index, ...rest) {
+      const isSwitchingLots = rest[0]; // First parameter after index
       const res = await origShowDetail.apply(this, [index, ...rest]);
       try {
         const lot = lots[index];
         const mapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
         if (mapData?.name) selectedLotName = mapData.name;
-        syncButtonToCurrentSelection();
+
+        // 🔥 FIX: Don't sync when switching lots - the map click handler already set the correct hover state
+        // Calling syncButtonToCurrentSelection() would override window.hoveredId
+        if (!isSwitchingLots) {
+          syncButtonToCurrentSelection();
+        } else {
+          console.log('🟢 WRAPPER: Skipping syncButtonToCurrentSelection because isSwitchingLots = true');
+          console.log('🟢 WRAPPER: window.hoveredId preserved as', window.hoveredId);
+          // Just update button color without touching hover state
+          const state = normalize(mapData?.availability || 'available');
+          btn.classList.remove('sold','featured');
+          if (state === 'sold') btn.classList.add('sold');
+          if (state === 'featured') btn.classList.add('featured');
+        }
       } catch {}
       return res;
     };
