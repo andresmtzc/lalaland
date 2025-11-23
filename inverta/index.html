@@ -2167,17 +2167,22 @@ map.on('click', 'lots-final-click', (e) => {
   // 🟢 FIX: Check if we're already in detail view
   const isInDetailView = modal.classList.contains('info-mode') && window.isDetailOpen;
 
-  // Clear ALL hover states on all lots before setting new one
-  if (hoveredId !== null) {
+  // Clear previous hover states
+  if (hoveredId !== null && hoveredId !== undefined) {
     map.setFeatureState({ source: 'lots-final', id: hoveredId }, { hover: false });
   }
-
-  // When in detail view, ensure we clear the previous lot's outline completely
-  if (isInDetailView && currentLotIndex !== null && currentLotIndex !== undefined) {
+  if (currentLotIndex !== null && currentLotIndex !== undefined) {
     map.setFeatureState({ source: 'lots-final', id: currentLotIndex }, { hover: false });
   }
 
+  // When in detail view, also clear the tracked detail lot outline
+  if (isInDetailView && window.currentDetailLotIndex !== null && window.currentDetailLotIndex !== undefined) {
+    map.setFeatureState({ source: 'lots-final', id: window.currentDetailLotIndex }, { hover: false });
+    console.log('Cleared currentDetailLotIndex outline:', window.currentDetailLotIndex);
+  }
+
   hoveredId = null;
+  currentLotIndex = null;
 
   // Find index and set new hover state
   const idx = lotData.findIndex(l => l.name === lot.name);
@@ -3447,6 +3452,16 @@ async function showDetailViewForLot(index, isSwitchingLots = false) {
   }
   window.isDashboardOpen = false;
 
+  // Clear previous detail lot's outline when switching
+  if (isSwitchingLots && window.currentDetailLotIndex !== null && window.currentDetailLotIndex !== undefined) {
+    try {
+      map.setFeatureState({ source: 'lots-final', id: window.currentDetailLotIndex }, { hover: false });
+      console.log('Cleared previous detail lot outline:', window.currentDetailLotIndex);
+    } catch (e) {
+      console.warn('Failed to clear previous detail lot:', e);
+    }
+  }
+
   const modalEl        = document.getElementById('lotModal');
   const lotDetails     = document.getElementById('lotDetails');
   const calendlyEl     = document.getElementById('calendlyEmbed');
@@ -3471,9 +3486,12 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     ? lotData.find(l => extractLotNumber(l.name) === lot.number)
     : null;
 
-
-
-    
+  // Track the current detail lot's map index for outline management
+  if (lotMapData) {
+    const mapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
+    window.currentDetailLotIndex = mapIndex;
+    console.log('Set currentDetailLotIndex to:', mapIndex, 'for lot', lot.number);
+  }
 
   const detailData = lot.detailData || {};
 
