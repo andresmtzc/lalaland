@@ -148,8 +148,7 @@ serve(async (req) => {
           old_availability: oldAvailability,
           new_availability: 'Sold',
           updated_by: 'Online Purchase (Stripe)',
-          available_lots: availableCount || 0,
-          client_id: 'inverta'
+          available_lots: availableCount || 0
         })
 
       if (auditError) {
