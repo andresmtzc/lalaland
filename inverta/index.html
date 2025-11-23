@@ -2167,26 +2167,32 @@ map.on('click', 'lots-final-click', (e) => {
   // 🟢 FIX: Check if we're already in detail view
   const isInDetailView = modal.classList.contains('info-mode') && window.isDetailOpen;
 
-  // Clear ALL previous hover states - need to clear every possible tracked index
-  const indicesToClear = new Set();
-
-  if (hoveredId !== null && hoveredId !== undefined) {
-    indicesToClear.add(hoveredId);
+  // When in detail view, BRUTE FORCE clear ALL lot outlines to ensure clean state
+  if (isInDetailView && lotData && lotData.length > 0) {
+    console.log('🧹 BRUTE FORCE: Clearing ALL lot outlines (' + lotData.length + ' lots)');
+    for (let i = 0; i < lotData.length; i++) {
+      try {
+        map.setFeatureState({ source: 'lots-final', id: i }, { hover: false });
+      } catch (e) {
+        // Ignore errors for lots that don't exist
+      }
+    }
+  } else {
+    // Not in detail view - just clear tracked indices
+    const indicesToClear = new Set();
+    if (hoveredId !== null && hoveredId !== undefined) {
+      indicesToClear.add(hoveredId);
+    }
+    if (window.hoveredId !== null && window.hoveredId !== undefined) {
+      indicesToClear.add(window.hoveredId);
+    }
+    if (currentLotIndex !== null && currentLotIndex !== undefined) {
+      indicesToClear.add(currentLotIndex);
+    }
+    indicesToClear.forEach(index => {
+      map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
+    });
   }
-  if (window.hoveredId !== null && window.hoveredId !== undefined) {
-    indicesToClear.add(window.hoveredId);
-  }
-  if (currentLotIndex !== null && currentLotIndex !== undefined) {
-    indicesToClear.add(currentLotIndex);
-  }
-  if (isInDetailView && window.currentDetailLotIndex !== null && window.currentDetailLotIndex !== undefined) {
-    indicesToClear.add(window.currentDetailLotIndex);
-  }
-
-  // Clear all tracked indices
-  indicesToClear.forEach(index => {
-    map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
-  });
 
   hoveredId = null;
   window.hoveredId = null;
@@ -2195,6 +2201,7 @@ map.on('click', 'lots-final-click', (e) => {
   // Find index and set new hover state
   const idx = lotData.findIndex(l => l.name === lot.name);
   if (idx !== -1) {
+    console.log('✅ Setting outline for lot:', lot.name, 'at index:', idx);
     map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
     hoveredId = idx;
     window.hoveredId = idx;
