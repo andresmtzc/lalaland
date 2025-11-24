@@ -1123,10 +1123,13 @@ ctaobserver.observe(ctaToaster, {
   // ======================
   // CLIENT ACCESS VALIDATION (DATABASE-LEVEL SECURITY)
   // ======================
-  async function validateClientAccess(session) {
+  async function validateClientAccess(session, retryCount = 0) {
     if (!session || !session.user) {
       return false;
     }
+
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 500; // Wait 500ms between retries
 
     try {
       // Check if the authenticated user has access to the CURRENT_CLIENT
@@ -1142,8 +1145,16 @@ ctaobserver.observe(ctaToaster, {
         return false;
       }
 
-      // If no matching record, user doesn't have access to this client
+      // If no matching record, might be a race condition with the trigger
       if (!data) {
+        // Retry logic: The database trigger might not have completed yet
+        if (retryCount < MAX_RETRIES) {
+          console.log(`No user_id match found (attempt ${retryCount + 1}/${MAX_RETRIES}). Retrying in ${RETRY_DELAY_MS}ms to allow trigger to complete...`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+          return validateClientAccess(session, retryCount + 1);
+        }
+
+        // After all retries, user truly doesn't have access
         console.warn(`User ${session.user.email} attempted to access unauthorized client: ${CURRENT_CLIENT}`);
         // Sign them out immediately - they're logged in but not authorized for this client
         await window.supabaseClient.auth.signOut();
