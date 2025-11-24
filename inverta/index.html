@@ -9928,23 +9928,16 @@ async function showPaymentViewInModal(lot) {
         </div>
       </div>
 
-      <!-- Continue Button (Step 1) -->
-      <div id="continue-button-wrapper" style="text-align: center; margin-bottom: 60px;">
-        <button id="continue-to-payment" style="width: 100%; max-width: 400px; padding: 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 18px;">
-          CONTINUAR AL PAGO
-        </button>
-      </div>
-
-      <!-- Stripe Payment Element (Step 2 - hidden initially) -->
-      <div id="stripe-payment-element" style="margin-bottom: 16px; width: 100%; padding: 0; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); box-sizing: border-box; display: none;">
+      <!-- Stripe Payment Element -->
+      <div id="stripe-payment-element" style="margin-bottom: 16px; width: 100%; padding: 0; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); box-sizing: border-box;">
         <div style="text-align: center; color: #8a8880; padding: 20px 10px;">Cargando formulario de pago...</div>
       </div>
 
       <!-- Error message -->
       <div id="payment-error" style="color: #f44336; margin-bottom: 16px; text-align: center; display: none; font-size: 14px;"></div>
 
-      <!-- Payment Button (Step 2 - hidden initially) -->
-      <div id="payment-button-wrapper" style="text-align: center; margin-bottom: 60px; display: none;">
+      <!-- Payment Button (Single Step) -->
+      <div id="payment-button-wrapper" style="text-align: center; margin-bottom: 60px;">
         <button id="submit-payment" style="width: 100%; max-width: 400px; padding: 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 18px;">
           PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN
         </button>
@@ -9952,37 +9945,17 @@ async function showPaymentViewInModal(lot) {
     </div>
   `;
 
-  // Add event listener for continue button
-  document.getElementById('continue-to-payment')?.addEventListener('click', initializePaymentWithCustomerInfo);
+  // Initialize payment immediately (single-step flow)
+  initializePayment();
 }
 
-// Initialize payment after collecting customer info
-async function initializePaymentWithCustomerInfo() {
-  const nameInput = document.getElementById('customer-name');
-  const emailInput = document.getElementById('customer-email');
-  const phoneInput = document.getElementById('customer-phone');
-
-  // Validate customer info
-  if (!nameInput?.value || nameInput.value.trim().length < 3) {
-    showPaymentError('Por favor ingresa tu nombre completo');
-    return;
-  }
-
-  if (!emailInput?.value || !emailInput.value.includes('@')) {
-    showPaymentError('Por favor ingresa un email válido');
-    return;
-  }
-
-  if (!phoneInput?.value || phoneInput.value.length < 10) {
-    showPaymentError('Por favor ingresa un teléfono válido');
-    return;
-  }
-
-  // Hide continue button, show loading
-  const continueBtn = document.getElementById('continue-to-payment');
-  if (continueBtn) {
-    continueBtn.disabled = true;
-    continueBtn.textContent = 'PROCESANDO...';
+// Initialize payment immediately (single-step flow)
+async function initializePayment() {
+  // Show loading in payment button
+  const submitBtn = document.getElementById('submit-payment');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'CARGANDO...';
   }
 
   // Initialize Stripe and create payment
@@ -10015,6 +9988,10 @@ async function initializePaymentWithCustomerInfo() {
     const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
     const lotName = lotMapData?.name || '';
 
+    // Get customer info from form (will be validated on submission)
+    const emailInput = document.getElementById('customer-email');
+    const phoneInput = document.getElementById('customer-phone');
+
     // Call Supabase Edge Function with customer info
     const edgeFunctionUrl = `${supabaseUrl}/functions/v1/create-payment-intent`;
 
@@ -10030,8 +10007,8 @@ async function initializePaymentWithCustomerInfo() {
         lotName: lotName, // For webhook to update database (e.g., "lotinverta17-17")
         lotId: lot.id,
         client_id: CURRENT_CLIENT, // Add client_id for non-authenticated purchases
-        customer_email: emailInput.value, // Pass customer email
-        customer_phone: phoneInput.value  // Pass customer phone
+        customer_email: emailInput?.value || 'guest', // Use form value or guest
+        customer_phone: phoneInput?.value || ''  // Use form value or empty
       })
     });
 
@@ -10056,8 +10033,7 @@ async function initializePaymentWithCustomerInfo() {
       locale: 'es' // Use Spanish locale
     });
 
-    // Create and mount Payment Element
-    // Note: Stripe automatically collects required billing details based on payment method
+    // Create and mount Payment Element (billing info collected in our form)
     const paymentElement = elements.create('payment', {
       layout: {
         type: 'tabs',
@@ -10073,10 +10049,12 @@ async function initializePaymentWithCustomerInfo() {
     });
     paymentElement.mount('#stripe-payment-element');
 
-    // Hide continue button, show payment elements and button
-    document.getElementById('continue-button-wrapper').style.display = 'none';
-    document.getElementById('stripe-payment-element').style.display = 'block';
-    document.getElementById('payment-button-wrapper').style.display = 'block';
+    // Re-enable submit button now that form is ready
+    const submitBtn = document.getElementById('submit-payment');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = `PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN`;
+    }
 
     // Add event listener for payment submission
     document.getElementById('submit-payment')?.addEventListener('click', handlePaymentSubmit);
@@ -10085,11 +10063,11 @@ async function initializePaymentWithCustomerInfo() {
     console.error('Error initializing payment:', error);
     showPaymentError(error.message || 'Error al inicializar el pago. Por favor intenta de nuevo.');
 
-    // Re-enable continue button on error
-    const continueBtn = document.getElementById('continue-to-payment');
-    if (continueBtn) {
-      continueBtn.disabled = false;
-      continueBtn.textContent = 'CONTINUAR AL PAGO';
+    // Re-enable submit button on error
+    const submitBtn = document.getElementById('submit-payment');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = `PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN`;
     }
   }
 }
@@ -10112,10 +10090,26 @@ async function handlePaymentSubmit(e) {
     return;
   }
 
-  // Get customer info for billing details
+  // Get customer info for validation and billing details
   const nameInput = document.getElementById('customer-name');
   const emailInput = document.getElementById('customer-email');
   const phoneInput = document.getElementById('customer-phone');
+
+  // Validate customer info first
+  if (!nameInput?.value || nameInput.value.trim().length < 3) {
+    showPaymentError('Por favor ingresa tu nombre completo');
+    return;
+  }
+
+  if (!emailInput?.value || !emailInput.value.includes('@')) {
+    showPaymentError('Por favor ingresa un email válido');
+    return;
+  }
+
+  if (!phoneInput?.value || phoneInput.value.length < 10) {
+    showPaymentError('Por favor ingresa un teléfono válido');
+    return;
+  }
 
   const submitBtn = document.getElementById('submit-payment');
   if (!submitBtn) return;
@@ -10125,7 +10119,7 @@ async function handlePaymentSubmit(e) {
   submitBtn.textContent = 'PROCESANDO...';
 
   try {
-    // Validate Stripe elements first
+    // Validate Stripe elements
     const { error: submitError } = await elements.submit();
     if (submitError) {
       showPaymentError(submitError.message);
