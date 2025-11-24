@@ -2615,8 +2615,10 @@ function parseLots(text) {
       console.error('Supabase client not initialized yet.');
       return;
     }
-  
+
     const names = lotData.map(lot => lot.name);
+
+    console.log('🔄 Fetching lot availability from Supabase for', names.length, 'lots');
 
     const { data, error } = await window.supabaseClient
       .from('lots')
@@ -2625,9 +2627,28 @@ function parseLots(text) {
           .eq('client_id', CURRENT_CLIENT);
 
     if (error) {
-      console.error('Error fetching lot availability from Supabase:', error);
+      console.error('❌ ERROR fetching lot availability from Supabase:', error);
+      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+
+      // Check if user is authenticated
+      const { data: { session } } = await window.supabaseClient.auth.getSession();
+      if (!session || !session.user) {
+        console.error('❌ User is NOT authenticated - this may be why the query failed');
+        console.error('❌ If lots table has RLS enabled, you need to be logged in to view data');
+      } else {
+        console.log('✅ User IS authenticated:', session.user.email);
+        console.error('❌ Query failed despite authentication - check RLS policies on lots table');
+      }
       return;
     }
+
+    console.log('✅ Successfully fetched', data?.length || 0, 'lots from Supabase');
 
     if (data && data.length > 0) {
       data.forEach(row => {
@@ -3371,17 +3392,42 @@ async function fetchLots() {
   try {
     loadingSpinner.style.display = 'block';
     modalInfo.style.opacity = '0.5';
-    
+
     await window.supabaseReady;
-    
+
+    console.log('🔄 Fetching lots data for modal from Supabase...');
+
     // Fetch ALL data (including images) upfront
     const { data, error } = await window.supabaseClient
       .from('lots')
       .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image, price_m2')
       .eq('client_id', CURRENT_CLIENT)
       .order('lot_name', { ascending: true });
-    
-    if (error) throw error;
+
+    if (error) {
+      console.error('❌ ERROR fetching lots for modal:', error);
+      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+
+      // Check if user is authenticated
+      const { data: { session } } = await window.supabaseClient.auth.getSession();
+      if (!session || !session.user) {
+        console.error('❌ User is NOT authenticated - this may be why the query failed');
+        console.error('❌ If lots table has RLS enabled, you need to be logged in to view data');
+      } else {
+        console.log('✅ User IS authenticated:', session.user.email);
+        console.error('❌ Query failed despite authentication - check RLS policies on lots table');
+      }
+
+      throw error;
+    }
+
+    console.log('✅ Successfully fetched', data?.length || 0, 'lots for modal');
     
     baseLots = data.map(lot => ({
       number: extractLotNumber(lot.lot_name),
@@ -6007,12 +6053,36 @@ PS.openPinInModal = async function (pin) {
   try { window.isDetailOpen = true; } catch {}
 
   // fetch photos (latest shown)
-  const { data: photos } = await window.supabaseClient
+  console.log('🔄 Fetching photos for pin', pin.id);
+
+  const { data: photos, error: photosError } = await window.supabaseClient
     .from('pin_photos')
     .select('id,url,created_at')
     .eq('pin_id', pin.id)
     .eq('client_id', CURRENT_CLIENT)
     .order('created_at', { ascending: true });
+
+  if (photosError) {
+    console.error('❌ ERROR fetching pin photos:', photosError);
+    console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+    console.error('❌ Error details:', {
+      message: photosError.message,
+      code: photosError.code,
+      details: photosError.details,
+      hint: photosError.hint
+    });
+
+    // Check if user is authenticated
+    const { data: { session } } = await window.supabaseClient.auth.getSession();
+    if (!session || !session.user) {
+      console.error('❌ User is NOT authenticated - this may be why the query failed');
+    } else {
+      console.log('✅ User IS authenticated:', session.user.email);
+      console.error('❌ Query failed despite authentication - check RLS policies on pin_photos table');
+    }
+  } else {
+    console.log('✅ Successfully fetched', photos?.length || 0, 'photos for pin', pin.id);
+  }
 
   const latest = (photos && photos.length) ? photos[photos.length - 1] : null;
   const currentHeading = (typeof pin.heading === 'number') ? pin.heading : 0;
@@ -6173,10 +6243,35 @@ PS.openPinInModal = async function (pin) {
   // ---- Load + realtime
   PS.loadPins = async function () {
     await window.supabaseReady;
+
+    console.log('🔄 Loading pins from Supabase...');
+
     const { data, error } = await window.supabaseClient
       .from('pins').select('id,lng,lat,heading,title').eq('client_id', CURRENT_CLIENT).order('created_at', { ascending: true });
-    if (error) return;
 
+    if (error) {
+      console.error('❌ ERROR loading pins:', error);
+      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+
+      // Check if user is authenticated
+      const { data: { session } } = await window.supabaseClient.auth.getSession();
+      if (!session || !session.user) {
+        console.error('❌ User is NOT authenticated - this may be why the query failed');
+        console.error('❌ If pins table has RLS enabled, you need to be logged in to view pins');
+      } else {
+        console.log('✅ User IS authenticated:', session.user.email);
+        console.error('❌ Query failed despite authentication - check RLS policies on pins table');
+      }
+      return;
+    }
+
+    console.log('✅ Successfully loaded', data?.length || 0, 'pins');
 
     (data || []).forEach(p => {
       PS.addMarker(p); // reveal animation deferred
