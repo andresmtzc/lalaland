@@ -1454,6 +1454,8 @@ ctaobserver.observe(ctaToaster, {
   async function fetchDashboardData(fracc) {
     await window.supabaseReady;
 
+    console.log('🔄 Fetching dashboard data for', fracc);
+
     // Fetch all lots for this community
     const { data: allLots, error: lotsError } = await window.supabaseClient
       .from('lots')
@@ -1461,7 +1463,29 @@ ctaobserver.observe(ctaToaster, {
       .eq('client_id', CURRENT_CLIENT)
       .eq('fraccionamiento', fracc);
 
-    if (lotsError) throw lotsError;
+    if (lotsError) {
+      console.error('❌ ERROR fetching lots for dashboard:', lotsError);
+      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+      console.error('❌ Error details:', {
+        message: lotsError.message,
+        code: lotsError.code,
+        details: lotsError.details,
+        hint: lotsError.hint
+      });
+
+      // Check if user is authenticated
+      const { data: { session } } = await window.supabaseClient.auth.getSession();
+      if (!session || !session.user) {
+        console.error('❌ User is NOT authenticated - this may be why the query failed');
+      } else {
+        console.log('✅ User IS authenticated:', session.user.email);
+        console.error('❌ Query failed despite authentication - check RLS policies on lots table');
+      }
+
+      throw lotsError;
+    }
+
+    console.log('✅ Successfully fetched', allLots?.length || 0, 'lots for dashboard');
 
     console.log('Fetched lots for', fracc, ':', allLots?.length, 'lots');
     console.log('Sample lot:', allLots?.[0]);
@@ -1512,6 +1536,8 @@ ctaobserver.observe(ctaToaster, {
     console.log('Date range: Last 60 days from', sixtyDaysAgo.toISOString());
     console.log('30 days ago:', thirtyDaysAgo.toISOString());
 
+    console.log('🔄 Fetching lot_updates_audit for', fracc);
+
     const { data: auditData, error: auditError } = await window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
@@ -1520,7 +1546,26 @@ ctaobserver.observe(ctaToaster, {
       .order('updated_at', { ascending: false });
 
     if (auditError) {
-      console.warn('Error fetching audit data:', auditError);
+      console.error('❌ ERROR fetching lot_updates_audit:', auditError);
+      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+      console.error('❌ Error details:', {
+        message: auditError.message,
+        code: auditError.code,
+        details: auditError.details,
+        hint: auditError.hint
+      });
+
+      // Check if user is authenticated
+      const { data: { session } } = await window.supabaseClient.auth.getSession();
+      if (!session || !session.user) {
+        console.error('❌ User is NOT authenticated - this may be why the query failed');
+        console.error('❌ If lot_updates_audit table has RLS enabled, you need to be logged in');
+      } else {
+        console.log('✅ User IS authenticated:', session.user.email);
+        console.error('❌ Query failed despite authentication - check RLS policies on lot_updates_audit table');
+      }
+    } else {
+      console.log('✅ Successfully fetched', auditData?.length || 0, 'audit records for', fracc);
     }
 
     console.log('Total audit records fetched for', fracc, ':', auditData?.length || 0);
@@ -1626,14 +1671,37 @@ ctaobserver.observe(ctaToaster, {
   async function fetchGlobalDashboardData() {
     await window.supabaseReady;
 
+    console.log('🔄 Fetching GLOBAL dashboard data');
+
     // Fetch ALL lots (no fraccionamiento filter)
     const { data: allLots, error: lotsError } = await window.supabaseClient
       .from('lots')
       .select('*')
       .eq('client_id', CURRENT_CLIENT);
 
-    if (lotsError) throw lotsError;
+    if (lotsError) {
+      console.error('❌ ERROR fetching lots for GLOBAL dashboard:', lotsError);
+      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+      console.error('❌ Error details:', {
+        message: lotsError.message,
+        code: lotsError.code,
+        details: lotsError.details,
+        hint: lotsError.hint
+      });
 
+      // Check if user is authenticated
+      const { data: { session } } = await window.supabaseClient.auth.getSession();
+      if (!session || !session.user) {
+        console.error('❌ User is NOT authenticated - this may be why the query failed');
+      } else {
+        console.log('✅ User IS authenticated:', session.user.email);
+        console.error('❌ Query failed despite authentication - check RLS policies on lots table');
+      }
+
+      throw lotsError;
+    }
+
+    console.log('✅ Successfully fetched', allLots?.length || 0, 'lots for GLOBAL dashboard');
     console.log('Fetched ALL lots:', allLots?.length, 'lots');
 
     // Count available lots
@@ -1666,6 +1734,8 @@ ctaobserver.observe(ctaToaster, {
     console.log('Date range: Last 60 days from', sixtyDaysAgo.toISOString());
     console.log('30 days ago:', thirtyDaysAgo.toISOString());
 
+    console.log('🔄 Fetching GLOBAL lot_updates_audit');
+
     const { data: auditData, error: auditError } = await window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
@@ -1674,7 +1744,26 @@ ctaobserver.observe(ctaToaster, {
       .order('updated_at', { ascending: false });
 
     if (auditError) {
-      console.warn('Error fetching audit data:', auditError);
+      console.error('❌ ERROR fetching GLOBAL lot_updates_audit:', auditError);
+      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+      console.error('❌ Error details:', {
+        message: auditError.message,
+        code: auditError.code,
+        details: auditError.details,
+        hint: auditError.hint
+      });
+
+      // Check if user is authenticated
+      const { data: { session } } = await window.supabaseClient.auth.getSession();
+      if (!session || !session.user) {
+        console.error('❌ User is NOT authenticated - this may be why the query failed');
+        console.error('❌ If lot_updates_audit table has RLS enabled, you need to be logged in');
+      } else {
+        console.log('✅ User IS authenticated:', session.user.email);
+        console.error('❌ Query failed despite authentication - check RLS policies on lot_updates_audit table');
+      }
+    } else {
+      console.log('✅ Successfully fetched', auditData?.length || 0, 'GLOBAL audit records');
     }
 
     console.log('Total GLOBAL audit records fetched:', auditData?.length || 0);
@@ -4383,13 +4472,18 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
       // For each updated lot, calculate days since last change and insert audit record
       const auditPromises = data.map(async (lot) => {
         // Get the last price change for this lot
-        const { data: lastChange } = await window.supabaseClient
+        const { data: lastChange, error: lastChangeError } = await window.supabaseClient
           .from('lot_prices_audit')
           .select('updated_at')
           .eq('lot_name', lot.lot_name)
           .order('updated_at', { ascending: false })
           .limit(1)
           .single();
+
+        if (lastChangeError && lastChangeError.code !== 'PGRST116') { // PGRST116 = no rows returned (expected)
+          console.error('❌ ERROR fetching lot_prices_audit for', lot.lot_name, ':', lastChangeError);
+          console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+        }
 
         // Calculate days since last change
         let daysSinceChange = null;
