@@ -48,7 +48,7 @@ serve(async (req) => {
     })
 
     // Parse request body
-    const { amount, lotNumber, lotName, lotId, client_id } = await req.json()
+    const { amount, lotNumber, lotName, lotId, client_id, customer_email, customer_phone } = await req.json()
 
     // Validate input
     if (!amount || !lotNumber || !client_id) {
@@ -92,7 +92,8 @@ serve(async (req) => {
         lotName: lotName || '', // lot_name for database update (e.g., "lotinverta17-17")
         lotId: lotId || '',
         client_id: client_id, // Store client_id for webhook processing
-        user_email: user?.email || 'guest', // Store user email or 'guest' for non-authenticated purchases
+        user_email: customer_email || user?.email || 'guest', // Use customer email from form, or authenticated user email, or 'guest'
+        user_phone: customer_phone || '', // Store customer phone from form
       },
       description: `Apartado de Lote ${lotNumber} - ${client_id.toUpperCase()}`,
     })

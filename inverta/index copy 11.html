@@ -9199,22 +9199,62 @@ async function showPaymentViewInModal(lot) {
         </div>
       </div>
 
-      <!-- Stripe Payment Element -->
-      <div id="stripe-payment-element" style="margin-bottom: 16px; width: 100%; padding: 0; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); box-sizing: border-box;">
+      <!-- Continue Button (Step 1) -->
+      <div id="continue-button-wrapper" style="text-align: center; margin-bottom: 60px;">
+        <button id="continue-to-payment" style="width: 100%; max-width: 400px; padding: 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 18px;">
+          CONTINUAR AL PAGO
+        </button>
+      </div>
+
+      <!-- Stripe Payment Element (Step 2 - hidden initially) -->
+      <div id="stripe-payment-element" style="margin-bottom: 16px; width: 100%; padding: 0; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); box-sizing: border-box; display: none;">
         <div style="text-align: center; color: #8a8880; padding: 20px 10px;">Cargando formulario de pago...</div>
       </div>
 
       <!-- Error message -->
       <div id="payment-error" style="color: #f44336; margin-bottom: 16px; text-align: center; display: none; font-size: 14px;"></div>
 
-      <!-- Action Button -->
-      <div style="text-align: center; margin-bottom: 60px;">
+      <!-- Payment Button (Step 2 - hidden initially) -->
+      <div id="payment-button-wrapper" style="text-align: center; margin-bottom: 60px; display: none;">
         <button id="submit-payment" style="width: 100%; max-width: 400px; padding: 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 18px;">
           PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN
         </button>
       </div>
     </div>
   `;
+
+  // Add event listener for continue button
+  document.getElementById('continue-to-payment')?.addEventListener('click', initializePaymentWithCustomerInfo);
+}
+
+// Initialize payment after collecting customer info
+async function initializePaymentWithCustomerInfo() {
+  const nameInput = document.getElementById('customer-name');
+  const emailInput = document.getElementById('customer-email');
+  const phoneInput = document.getElementById('customer-phone');
+
+  // Validate customer info
+  if (!nameInput?.value || nameInput.value.trim().length < 3) {
+    showPaymentError('Por favor ingresa tu nombre completo');
+    return;
+  }
+
+  if (!emailInput?.value || !emailInput.value.includes('@')) {
+    showPaymentError('Por favor ingresa un email válido');
+    return;
+  }
+
+  if (!phoneInput?.value || phoneInput.value.length < 10) {
+    showPaymentError('Por favor ingresa un teléfono válido');
+    return;
+  }
+
+  // Hide continue button, show loading
+  const continueBtn = document.getElementById('continue-to-payment');
+  if (continueBtn) {
+    continueBtn.disabled = true;
+    continueBtn.textContent = 'PROCESANDO...';
+  }
 
   // Initialize Stripe and create payment
   try {
@@ -9236,11 +9276,16 @@ async function showPaymentViewInModal(lot) {
       throw new Error('Supabase not initialized. Check Supabase configuration.');
     }
 
+    const lot = currentLotForPayment;
+    if (!lot) {
+      throw new Error('No lot selected for payment');
+    }
+
     // Find the lot_name from lotData for database update via webhook
     const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
     const lotName = lotMapData?.name || '';
 
-    // Call Supabase Edge Function
+    // Call Supabase Edge Function with customer info
     const edgeFunctionUrl = `${supabaseUrl}/functions/v1/create-payment-intent`;
 
     const response = await fetch(edgeFunctionUrl, {
@@ -9252,7 +9297,10 @@ async function showPaymentViewInModal(lot) {
         amount: RESERVATION_AMOUNT * 100, // Stripe expects cents
         lotNumber: lot.number,
         lotName: lotName, // For webhook to update database (e.g., "lotinverta17-17")
-        lotId: lot.id
+        lotId: lot.id,
+        client_id: CURRENT_CLIENT, // Add client_id for non-authenticated purchases
+        customer_email: emailInput.value, // Pass customer email
+        customer_phone: phoneInput.value  // Pass customer phone
       })
     });
 
@@ -9294,14 +9342,25 @@ async function showPaymentViewInModal(lot) {
     });
     paymentElement.mount('#stripe-payment-element');
 
+    // Hide continue button, show payment elements and button
+    document.getElementById('continue-button-wrapper').style.display = 'none';
+    document.getElementById('stripe-payment-element').style.display = 'block';
+    document.getElementById('payment-button-wrapper').style.display = 'block';
+
+    // Add event listener for payment submission
+    document.getElementById('submit-payment')?.addEventListener('click', handlePaymentSubmit);
 
   } catch (error) {
     console.error('Error initializing payment:', error);
     showPaymentError(error.message || 'Error al inicializar el pago. Por favor intenta de nuevo.');
-  }
 
-  // Add event listener
-  document.getElementById('submit-payment')?.addEventListener('click', handlePaymentSubmit);
+    // Re-enable continue button on error
+    const continueBtn = document.getElementById('continue-to-payment');
+    if (continueBtn) {
+      continueBtn.disabled = false;
+      continueBtn.textContent = 'CONTINUAR AL PAGO';
+    }
+  }
 }
 
 // Show payment error
@@ -9322,25 +9381,10 @@ async function handlePaymentSubmit(e) {
     return;
   }
 
-  // Validate name, email, and phone
+  // Get customer info for billing details
   const nameInput = document.getElementById('customer-name');
   const emailInput = document.getElementById('customer-email');
   const phoneInput = document.getElementById('customer-phone');
-
-  if (!nameInput?.value || nameInput.value.trim().length < 3) {
-    showPaymentError('Por favor ingresa tu nombre completo');
-    return;
-  }
-
-  if (!emailInput?.value || !emailInput.value.includes('@')) {
-    showPaymentError('Por favor ingresa un email válido');
-    return;
-  }
-
-  if (!phoneInput?.value || phoneInput.value.length < 10) {
-    showPaymentError('Por favor ingresa un teléfono válido');
-    return;
-  }
 
   const submitBtn = document.getElementById('submit-payment');
   if (!submitBtn) return;
