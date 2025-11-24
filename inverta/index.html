@@ -1159,71 +1159,134 @@ ctaobserver.observe(ctaToaster, {
   }
 
   // --- Send OTP (guarded by allowlist) ---
-  reqBtn && reqBtn.addEventListener('click', async () => {
-    const email = (emailInp?.value || '').trim().toLowerCase();
-    if (!email) { toast('Escribe tu email.'); return; }
+  // Security: Prevent duplicate event listeners and rate limit OTP requests
+  if (reqBtn && !window.__otpListenerSetup) {
+    window.__otpListenerSetup = true;
 
-    // Basic email format guard
-    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    if (!looksLikeEmail) { toast('Ingresa un correo válido.'); return; }
+    // Rate limiting: Track last OTP request time
+    let lastOtpRequestTime = 0;
+    const OTP_COOLDOWN_MS = 60000; // 60 seconds cooldown between requests
 
-    // Allowlist guard against public.editors(email)
-    const allowed = await isEmailAllowed(email);
-    if (!allowed) {
-      toast('Este correo no está autorizado.');
-      return;
-    }
+    // Set button type to prevent form submission
+    reqBtn.type = 'button';
 
-    try {
-      const { error } = await window.supabaseClient.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: window.location.origin }
-      });
-      if (error) throw error;
+    reqBtn.addEventListener('click', async () => {
+      const email = (emailInp?.value || '').trim().toLowerCase();
+      if (!email) { toast('Escribe tu email.'); return; }
 
-      pendingEmail = email;
-      if (otpEmail) otpEmail.textContent = email; // “Código enviado a …”
-      if (stepEmail) stepEmail.style.display = 'none';
-      if (stepOtp)   stepOtp.style.display   = 'block';
-      setTimeout(() => otpInp?.focus(), 0);
-      toast('Código enviado. Revisa tu correo.');
-    } catch (e) {
-      console.error(e);
-      toast('No pudimos enviar el código.');
-    }
-  });
+      // Basic email format guard
+      const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      if (!looksLikeEmail) { toast('Ingresa un correo válido.'); return; }
 
-  // --- Verify OTP ---
-  verifyBtn && verifyBtn.addEventListener('click', async () => {
-    const token = (otpInp?.value || '').trim();
-    if (token.length !== 6) { toast('El código debe tener 6 dígitos.'); return; }
-
-    try {
-      const { data, error } = await window.supabaseClient.auth.verifyOtp({
-        email: pendingEmail,
-        token,
-        type: 'email'
-      });
-      if (error) throw error;
-
-      // SECURITY: Validate user has access to this client
-      const hasAccess = await validateClientAccess(data.session);
-      if (!hasAccess) {
-        // validateClientAccess already signed out and showed toast
-        resetModalState();
-        hideAuthModal();
+      // Rate limiting: Check cooldown period
+      const now = Date.now();
+      const timeSinceLastRequest = now - lastOtpRequestTime;
+      if (lastOtpRequestTime > 0 && timeSinceLastRequest < OTP_COOLDOWN_MS) {
+        const remainingSeconds = Math.ceil((OTP_COOLDOWN_MS - timeSinceLastRequest) / 1000);
+        toast(`Por favor espera ${remainingSeconds} segundos antes de solicitar otro código.`);
         return;
       }
 
-      resetModalState();
-      hideAuthModal();
-      toast('Has iniciado sesión.');
-      // UI will also update via auth state listener below
-    } catch (e) {
-      console.error(e);
-      toast('Código inválido o vencido.');
-    }
-  });
+      // Allowlist guard against public.editors(email)
+      const allowed = await isEmailAllowed(email);
+      if (!allowed) {
+        toast('Este correo no está autorizado.');
+        return;
+      }
+
+      // Disable button and show loading state
+      const originalText = reqBtn.textContent;
+      reqBtn.disabled = true;
+      reqBtn.textContent = 'Enviando...';
+
+      try {
+        const { error } = await window.supabaseClient.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.origin }
+        });
+        if (error) throw error;
+
+        // Update last request time on success
+        lastOtpRequestTime = now;
+
+        pendingEmail = email;
+        if (otpEmail) otpEmail.textContent = email; // "Código enviado a …"
+        if (stepEmail) stepEmail.style.display = 'none';
+        if (stepOtp)   stepOtp.style.display   = 'block';
+        setTimeout(() => otpInp?.focus(), 0);
+        toast('Código enviado. Revisa tu correo.');
+      } catch (e) {
+        console.error('OTP Error:', e);
+        console.error('Error message:', e.message);
+        console.error('Error details:', e.error_description || e.msg);
+
+        // Show more specific error to help debug
+        const errMsg = e.message || e.error_description || 'No pudimos enviar el código.';
+
+        // If rate limit error, provide helpful message
+        if (e.message && e.message.includes('rate limit')) {
+          toast('Se han enviado demasiados códigos. Por favor espera unos minutos e intenta de nuevo.');
+          // Update cooldown to prevent immediate retry
+          lastOtpRequestTime = now;
+        } else {
+          toast(`Error: ${errMsg}`);
+        }
+      } finally {
+        // Re-enable button after request completes
+        reqBtn.disabled = false;
+        reqBtn.textContent = originalText;
+      }
+    });
+  }
+
+  // --- Verify OTP ---
+  // Security: Prevent duplicate event listeners
+  if (verifyBtn && !window.__verifyOtpListenerSetup) {
+    window.__verifyOtpListenerSetup = true;
+
+    // Set button type to prevent form submission
+    verifyBtn.type = 'button';
+
+    verifyBtn.addEventListener('click', async () => {
+      const token = (otpInp?.value || '').trim();
+      if (token.length !== 6) { toast('El código debe tener 6 dígitos.'); return; }
+
+      // Disable button and show loading state
+      const originalText = verifyBtn.textContent;
+      verifyBtn.disabled = true;
+      verifyBtn.textContent = 'Verificando...';
+
+      try {
+        const { data, error } = await window.supabaseClient.auth.verifyOtp({
+          email: pendingEmail,
+          token,
+          type: 'email'
+        });
+        if (error) throw error;
+
+        // SECURITY: Validate user has access to this client
+        const hasAccess = await validateClientAccess(data.session);
+        if (!hasAccess) {
+          // validateClientAccess already signed out and showed toast
+          resetModalState();
+          hideAuthModal();
+          return;
+        }
+
+        resetModalState();
+        hideAuthModal();
+        toast('Has iniciado sesión.');
+        // UI will also update via auth state listener below
+      } catch (e) {
+        console.error(e);
+        toast('Código inválido o vencido.');
+      } finally {
+        // Re-enable button after request completes
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = originalText;
+      }
+    });
+  }
 
   // --- Initialize auth state (no toast on page refresh) ---
   const initAuth = async () => {
