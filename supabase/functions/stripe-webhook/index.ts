@@ -82,12 +82,20 @@ serve(async (req) => {
       console.log('Metadata:', paymentIntent.metadata)
 
       // Extract lot information from metadata
-      const { lotNumber, lotName } = paymentIntent.metadata
+      const { lotNumber, lotName, client_id } = paymentIntent.metadata
 
       if (!lotName) {
         console.error('No lotName in payment intent metadata')
         return new Response(
           JSON.stringify({ error: 'Missing lotName in metadata' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (!client_id) {
+        console.error('No client_id in payment intent metadata')
+        return new Response(
+          JSON.stringify({ error: 'Missing client_id in metadata' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -103,7 +111,7 @@ serve(async (req) => {
         .from('lots')
         .select('availability, fraccionamiento')
         .eq('lot_name', lotName)
-        .eq('client_id', 'inverta')
+        .eq('client_id', client_id)
         .single()
 
       if (fetchError) {
@@ -119,7 +127,7 @@ serve(async (req) => {
         .from('lots')
         .update({ availability: 'Sold' })
         .eq('lot_name', lotName)
-        .eq('client_id', 'inverta')
+        .eq('client_id', client_id)
 
       if (updateError) {
         console.error('Error updating lot status:', updateError)
@@ -132,7 +140,7 @@ serve(async (req) => {
       const { count: availableCount, error: countError } = await supabase
         .from('lots')
         .select('*', { count: 'exact', head: true })
-        .eq('client_id', 'inverta')
+        .eq('client_id', client_id)
         .neq('availability', 'Sold')
 
       if (countError) {
@@ -148,7 +156,8 @@ serve(async (req) => {
           old_availability: oldAvailability,
           new_availability: 'Sold',
           updated_by: 'Online Purchase (Stripe)',
-          available_lots: availableCount || 0
+          available_lots: availableCount || 0,
+          client_id: client_id
         })
 
       if (auditError) {
