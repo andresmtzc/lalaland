@@ -20,23 +20,20 @@ serve(async (req) => {
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!
-    const authHeader = req.headers.get('Authorization')!
+    const authHeader = req.headers.get('Authorization')
 
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } }
-    })
+    // Create Supabase client with auth header if provided
+    const supabase = createClient(supabaseUrl, supabaseKey,
+      authHeader ? { global: { headers: { Authorization: authHeader } } } : {}
+    )
 
-    // Get authenticated user (JWT is already verified by Supabase)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
+    // Get authenticated user if auth header is provided (optional for public payments)
+    let user = null
+    if (authHeader) {
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      if (!authError && authData) {
+        user = authData.user
+      }
     }
 
     // Get Stripe secret key from environment
@@ -64,23 +61,25 @@ serve(async (req) => {
       )
     }
 
-    // SECURITY: Validate user has access to the requested client_id
-    const { data: editorAccess, error: accessError } = await supabase
-      .from('editors')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('client_id', client_id)
-      .maybeSingle()
+    // SECURITY: If user is authenticated, validate they have access to the requested client_id
+    if (user) {
+      const { data: editorAccess, error: accessError } = await supabase
+        .from('editors')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('client_id', client_id)
+        .maybeSingle()
 
-    if (accessError || !editorAccess) {
-      console.warn(`User ${user.email} attempted unauthorized access to client: ${client_id}`)
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized: No access to this client' }),
-        {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
+      if (accessError || !editorAccess) {
+        console.warn(`User ${user.email} attempted unauthorized access to client: ${client_id}`)
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized: No access to this client' }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        )
+      }
     }
 
     // Create Payment Intent
@@ -93,7 +92,7 @@ serve(async (req) => {
         lotName: lotName || '', // lot_name for database update (e.g., "lotinverta17-17")
         lotId: lotId || '',
         client_id: client_id, // Store client_id for webhook processing
-        user_email: user.email, // Store user email for audit trail
+        user_email: user?.email || 'guest', // Store user email or 'guest' for non-authenticated purchases
       },
       description: `Apartado de Lote ${lotNumber} - ${client_id.toUpperCase()}`,
     })
