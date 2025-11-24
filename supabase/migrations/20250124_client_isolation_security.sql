@@ -15,6 +15,24 @@ CREATE INDEX IF NOT EXISTS idx_editors_user_id ON editors(user_id);
 CREATE INDEX IF NOT EXISTS idx_editors_email_client ON editors(email, client_id);
 
 -- ============================================================================
+-- STEP 1.5: Add client_id to lot_updates_audit if missing
+-- ============================================================================
+
+-- Add client_id column to lot_updates_audit table (if it doesn't exist)
+ALTER TABLE lot_updates_audit
+ADD COLUMN IF NOT EXISTS client_id TEXT;
+
+-- Create index for performance
+CREATE INDEX IF NOT EXISTS idx_lot_updates_audit_client_id ON lot_updates_audit(client_id);
+
+-- Backfill client_id from lots table using lot_name
+UPDATE lot_updates_audit lua
+SET client_id = l.client_id
+FROM lots l
+WHERE lua.lot_name = l.lot_name
+AND lua.client_id IS NULL;
+
+-- ============================================================================
 -- STEP 2: Create helper function to get user's allowed client_id
 -- ============================================================================
 
