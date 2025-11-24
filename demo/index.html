@@ -5669,9 +5669,31 @@ function hideCalendlyEmbed() {
   // ---- DB create
   PS.createPinAt = async function (lngLat) {
     await window.supabaseReady;
+
+    // Get authenticated user for RLS policy
+    const { data: { user } } = await window.supabaseClient.auth.getUser();
+    if (!user) {
+      console.error('User not authenticated');
+      toast('Please log in to add pins');
+      return;
+    }
+
     const { data, error } = await window.supabaseClient
-      .from('pins').insert({ lng: lngLat.lng, lat: lngLat.lat, heading: 0, title: 'PIN',client_id: CURRENT_CLIENT }).select().single();
-    if (error) { console.error(error); toast('Could not create pin'); return; }
+      .from('pins').insert({
+        lng: lngLat.lng,
+        lat: lngLat.lat,
+        heading: 0,
+        title: 'PIN',
+        client_id: CURRENT_CLIENT,
+        user_id: user.id
+      }).select().single();
+
+    if (error) {
+      console.error('Pin creation failed:', error);
+      toast(`Could not create pin: ${error.message}`);
+      return;
+    }
+
     PS.addMarker(data);
     toast('Pin added');
   };
@@ -5739,7 +5761,12 @@ function hideCalendlyEmbed() {
       const ll = marker.getLngLat();
       const { error } = await window.supabaseClient
         .from('pins').update({ lng: ll.lng, lat: ll.lat }).eq('id', pin.id);
-      if (error) toast('Failed to save position'); else toast('Position saved');
+      if (error) {
+        console.error('Failed to update pin position:', error);
+        toast(`Failed to save position: ${error.message}`);
+      } else {
+        toast('Position saved');
+      }
       const rec = PS.markers.get(pin.id);
       if (rec) {
         rec.pin.lng = ll.lng; rec.pin.lat = ll.lat;
@@ -5767,7 +5794,10 @@ function hideCalendlyEmbed() {
       await window.supabaseReady;
       const { error } = await window.supabaseClient
         .from('pins').update({ heading: h }).eq('id', pinId);
-      if (error) console.warn('Failed to save heading', error);
+      if (error) {
+        console.error('Failed to save pin heading:', error);
+        console.warn('Failed to save heading', error);
+      }
     }
   };
 
@@ -6083,12 +6113,17 @@ PS.openPinInModal = async function (pin) {
         const url = pub?.data?.publicUrl;
         if (!url) throw new Error('No public URL');
 
-const { error: insErr } = await window.supabaseClient
-  .from('pin_photos').insert({ 
-    pin_id: pin.id, 
-    url,
-    client_id: CURRENT_CLIENT 
-  });
+        // Get authenticated user for RLS policy
+        const { data: { user } } = await window.supabaseClient.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
+
+        const { error: insErr } = await window.supabaseClient
+          .from('pin_photos').insert({
+            pin_id: pin.id,
+            url,
+            client_id: CURRENT_CLIENT,
+            user_id: user.id
+          });
         if (insErr) throw insErr;
 
         const wrap = container.querySelector(`#ps-photo-wrap-${pin.id}`);
@@ -6567,6 +6602,9 @@ function refreshFeaturedLayer() {
   const logLocationToSupabase = async (lng, lat) => {
     if (!window.supabaseClient) return;
     try {
+      // Get authenticated user for RLS policy
+      const { data: { user } } = await window.supabaseClient.auth.getUser();
+
       const { error } = await window.supabaseClient
         .from('location_logs')
         .insert({
@@ -6574,7 +6612,8 @@ function refreshFeaturedLayer() {
           lng: lng,
           browser: navigator.userAgent,
           timestamp: new Date().toISOString(),
-          client_id: CURRENT_CLIENT
+          client_id: CURRENT_CLIENT,
+          user_id: user?.id || null // Allow null for unauthenticated users if RLS permits
         });
       if (error) console.error('Failed to log location:', error);
     } catch (err) {
