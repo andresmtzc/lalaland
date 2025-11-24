@@ -1120,44 +1120,6 @@ ctaobserver.observe(ctaToaster, {
     return !!data; // true if found
   }
 
-  // ======================
-  // CLIENT ACCESS VALIDATION (DATABASE-LEVEL SECURITY)
-  // ======================
-  async function validateClientAccess(session) {
-    if (!session || !session.user) {
-      return false;
-    }
-
-    try {
-      // Check if the authenticated user has access to the CURRENT_CLIENT
-      const { data, error } = await window.supabaseClient
-        .from('editors')
-        .select('id')
-        .eq('user_id', session.user.id)
-        .eq('client_id', CURRENT_CLIENT)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Client access validation failed:', error);
-        return false;
-      }
-
-      // If no matching record, user doesn't have access to this client
-      if (!data) {
-        console.warn(`User ${session.user.email} attempted to access unauthorized client: ${CURRENT_CLIENT}`);
-        // Sign them out immediately - they're logged in but not authorized for this client
-        await window.supabaseClient.auth.signOut();
-        toast('No tienes acceso a este cliente. Has sido desconectado.');
-        return false;
-      }
-
-      return true;
-    } catch (e) {
-      console.error('Client validation error:', e);
-      return false;
-    }
-  }
-
   // --- Send OTP (guarded by allowlist) ---
   reqBtn && reqBtn.addEventListener('click', async () => {
     const email = (emailInp?.value || '').trim().toLowerCase();
@@ -1199,21 +1161,12 @@ ctaobserver.observe(ctaToaster, {
     if (token.length !== 6) { toast('El código debe tener 6 dígitos.'); return; }
 
     try {
-      const { data, error } = await window.supabaseClient.auth.verifyOtp({
+      const { error } = await window.supabaseClient.auth.verifyOtp({
         email: pendingEmail,
         token,
         type: 'email'
       });
       if (error) throw error;
-
-      // SECURITY: Validate user has access to this client
-      const hasAccess = await validateClientAccess(data.session);
-      if (!hasAccess) {
-        // validateClientAccess already signed out and showed toast
-        resetModalState();
-        hideAuthModal();
-        return;
-      }
 
       resetModalState();
       hideAuthModal();
@@ -1230,26 +1183,13 @@ ctaobserver.observe(ctaToaster, {
     try {
       const { data: { session } = { session: null } } =
         await window.supabaseClient.auth.getSession();
-
-      // SECURITY: Validate client access on page load
-      if (session && session.user) {
-        const hasAccess = await validateClientAccess(session);
-        updateButtons(hasAccess);
-      } else {
-        updateButtons(false);
-      }
+      updateButtons(!!(session && session.user));
     } catch (e) {
       console.warn('getSession failed:', e);
     }
 
-    window.supabaseClient.auth.onAuthStateChange(async (_event, session) => {
-      // SECURITY: Validate client access on auth state change
-      if (session && session.user) {
-        const hasAccess = await validateClientAccess(session);
-        updateButtons(hasAccess);
-      } else {
-        updateButtons(false);
-      }
+    window.supabaseClient.auth.onAuthStateChange((_event, session) => {
+      updateButtons(!!(session && session.user));
       // No toast here—only in explicit login/logout actions above
     });
   };
@@ -9936,27 +9876,14 @@ async function showPaymentViewInModal(lot) {
       <!-- Error message -->
       <div id="payment-error" style="color: #f44336; margin-bottom: 16px; text-align: center; display: none; font-size: 14px;"></div>
 
-      <!-- Payment Button (Single Step) -->
-      <div id="payment-button-wrapper" style="text-align: center; margin-bottom: 60px;">
+      <!-- Action Button -->
+      <div style="text-align: center; margin-bottom: 60px;">
         <button id="submit-payment" style="width: 100%; max-width: 400px; padding: 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #ff8400; color: #fcfaf3; font-family: 'Barlow Condensed', Arial, sans-serif; font-size: 18px;">
           PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN
         </button>
       </div>
     </div>
   `;
-
-  // Initialize payment immediately (single-step flow)
-  initializePayment();
-}
-
-// Initialize payment immediately (single-step flow)
-async function initializePayment() {
-  // Show loading in payment button
-  const submitBtn = document.getElementById('submit-payment');
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'CARGANDO...';
-  }
 
   // Initialize Stripe and create payment
   try {
@@ -9973,42 +9900,28 @@ async function initializePayment() {
     // Create payment intent using Supabase Edge Function
     await window.supabaseReady;
     const supabaseUrl = window.supabaseClient?.supabaseUrl;
-    const supabaseKey = window.supabaseClient?.supabaseKey;
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseUrl) {
       throw new Error('Supabase not initialized. Check Supabase configuration.');
-    }
-
-    const lot = currentLotForPayment;
-    if (!lot) {
-      throw new Error('No lot selected for payment');
     }
 
     // Find the lot_name from lotData for database update via webhook
     const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
     const lotName = lotMapData?.name || '';
 
-    // Get customer info from form (will be validated on submission)
-    const emailInput = document.getElementById('customer-email');
-    const phoneInput = document.getElementById('customer-phone');
-
-    // Call Supabase Edge Function with customer info
+    // Call Supabase Edge Function
     const edgeFunctionUrl = `${supabaseUrl}/functions/v1/create-payment-intent`;
 
     const response = await fetch(edgeFunctionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': supabaseKey, // Required for non-authenticated edge function calls
       },
       body: JSON.stringify({
         amount: RESERVATION_AMOUNT * 100, // Stripe expects cents
         lotNumber: lot.number,
         lotName: lotName, // For webhook to update database (e.g., "lotinverta17-17")
-        lotId: lot.id,
-        client_id: CURRENT_CLIENT, // Add client_id for non-authenticated purchases
-        customer_email: emailInput?.value || 'guest', // Use form value or guest
-        customer_phone: phoneInput?.value || ''  // Use form value or empty
+        lotId: lot.id
       })
     });
 
@@ -10033,7 +9946,8 @@ async function initializePayment() {
       locale: 'es' // Use Spanish locale
     });
 
-    // Create and mount Payment Element (billing info collected in our form)
+    // Create and mount Payment Element
+    // Note: Stripe automatically collects required billing details based on payment method
     const paymentElement = elements.create('payment', {
       layout: {
         type: 'tabs',
@@ -10049,27 +9963,14 @@ async function initializePayment() {
     });
     paymentElement.mount('#stripe-payment-element');
 
-    // Re-enable submit button now that form is ready
-    const submitBtn = document.getElementById('submit-payment');
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = `PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN`;
-    }
-
-    // Add event listener for payment submission
-    document.getElementById('submit-payment')?.addEventListener('click', handlePaymentSubmit);
 
   } catch (error) {
     console.error('Error initializing payment:', error);
     showPaymentError(error.message || 'Error al inicializar el pago. Por favor intenta de nuevo.');
-
-    // Re-enable submit button on error
-    const submitBtn = document.getElementById('submit-payment');
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = `PAGAR $${RESERVATION_AMOUNT.toLocaleString('en-US')} MXN`;
-    }
   }
+
+  // Add event listener
+  document.getElementById('submit-payment')?.addEventListener('click', handlePaymentSubmit);
 }
 
 // Show payment error
@@ -10090,12 +9991,11 @@ async function handlePaymentSubmit(e) {
     return;
   }
 
-  // Get customer info for validation and billing details
+  // Validate name, email, and phone
   const nameInput = document.getElementById('customer-name');
   const emailInput = document.getElementById('customer-email');
   const phoneInput = document.getElementById('customer-phone');
 
-  // Validate customer info first
   if (!nameInput?.value || nameInput.value.trim().length < 3) {
     showPaymentError('Por favor ingresa tu nombre completo');
     return;
@@ -10119,7 +10019,7 @@ async function handlePaymentSubmit(e) {
   submitBtn.textContent = 'PROCESANDO...';
 
   try {
-    // Validate Stripe elements
+    // Validate Stripe elements first
     const { error: submitError } = await elements.submit();
     if (submitError) {
       showPaymentError(submitError.message);
@@ -10153,7 +10053,7 @@ async function handlePaymentSubmit(e) {
       console.log('Payment succeeded - webhook will update lot status');
 
       // Change button to VENDIDO state (don't close modal)
-      submitBtn.textContent = 'APARTADO';
+      submitBtn.textContent = 'VENDIDO';
       submitBtn.disabled = true;
       submitBtn.style.opacity = '0.5';
       submitBtn.style.cursor = 'not-allowed';
