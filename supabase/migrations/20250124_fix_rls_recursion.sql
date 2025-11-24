@@ -7,7 +7,7 @@
 -- This function bypasses RLS to prevent recursion
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION auth.get_user_client_ids()
+CREATE OR REPLACE FUNCTION get_user_client_ids()
 RETURNS TEXT[] AS $$
 BEGIN
   RETURN ARRAY(
@@ -19,7 +19,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Grant execute to authenticated users
-GRANT EXECUTE ON FUNCTION auth.get_user_client_ids() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_user_client_ids() TO authenticated;
 
 -- ============================================================================
 -- STEP 2: Drop and recreate all RLS policies using the security definer function
@@ -42,22 +42,22 @@ USING (user_id = auth.uid());
 CREATE POLICY "Users can only access their client's lots"
 ON lots
 FOR ALL
-USING (client_id = ANY(auth.get_user_client_ids()));
+USING (client_id = ANY(get_user_client_ids()));
 
 -- PINS table: Users can only access pins from their assigned client(s)
 CREATE POLICY "Users can only access their client's pins"
 ON pins
 FOR ALL
-USING (client_id = ANY(auth.get_user_client_ids()));
+USING (client_id = ANY(get_user_client_ids()));
 
 -- LOT_UPDATES_AUDIT table: Users can only see audit logs from their client(s)
 CREATE POLICY "Users can only access their client's audit logs"
 ON lot_updates_audit
 FOR ALL
-USING (client_id = ANY(auth.get_user_client_ids()));
+USING (client_id = ANY(get_user_client_ids()));
 
 -- ============================================================================
 -- COMMENTS
 -- ============================================================================
 
-COMMENT ON FUNCTION auth.get_user_client_ids() IS 'Returns array of client_ids user has access to - SECURITY DEFINER bypasses RLS to prevent recursion';
+COMMENT ON FUNCTION get_user_client_ids() IS 'Returns array of client_ids user has access to - SECURITY DEFINER bypasses RLS to prevent recursion';
