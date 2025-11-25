@@ -721,6 +721,8 @@ ctaobserver.observe(ctaToaster, {
       if (skipRender) {
         console.log('⏭️ Skipping realtime re-render for manually cycled lot');
         // Keep skipping until modal closes or detail view opens
+        // Don't update map source or re-render modal to prevent disrupting click handlers
+        return;
       }
 
       // 🟢 UPDATE ALL DATA SOURCES, not just lotData
@@ -1008,7 +1010,7 @@ ctaobserver.observe(ctaToaster, {
         modal.dataset.fracc = baseLots[0].fraccionamiento;
         console.log('Reset modal.dataset.fracc to:', baseLots[0].fraccionamiento);
       } else {
-        modal.dataset.fracc = 'marsella'; // Default fallback
+        modal.dataset.fracc = 'santte1'; // Default fallback
       }
     }
 
@@ -1128,8 +1130,9 @@ ctaobserver.observe(ctaToaster, {
       return false;
     }
 
-    const MAX_RETRIES = 3;
+        const MAX_RETRIES = 3;
     const RETRY_DELAY_MS = 500; // Wait 500ms between retries
+
 
     try {
       // Check if the authenticated user has access to the CURRENT_CLIENT
@@ -1147,7 +1150,7 @@ ctaobserver.observe(ctaToaster, {
 
       // If no matching record, might be a race condition with the trigger
       if (!data) {
-        // Retry logic: The database trigger might not have completed yet
+                // Retry logic: The database trigger might not have completed yet
         if (retryCount < MAX_RETRIES) {
           console.log(`No user_id match found (attempt ${retryCount + 1}/${MAX_RETRIES}). Retrying in ${RETRY_DELAY_MS}ms to allow trigger to complete...`);
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
@@ -1375,13 +1378,13 @@ ctaobserver.observe(ctaToaster, {
         modal.dataset.fracc = baseLots[0].fraccionamiento;
         console.log('openDashboardModal: Reset modal.dataset.fracc to:', baseLots[0].fraccionamiento);
       } else {
-        modal.dataset.fracc = 'marsella'; // Default fallback
+        modal.dataset.fracc = 'santte1'; // Default fallback
       }
     }
 
-    // Get current community based on modal dataset, default to 'marsella'
-    const currentFracc = modal?.dataset?.fracc || 'marsella';
-    const communityName = (currentFracc || 'marsella').toUpperCase();
+    // Get current community based on modal dataset, default to 'santte1'
+    const currentFracc = modal?.dataset?.fracc || 'santte1';
+    const communityName = (currentFracc || 'santte1').toUpperCase();
 
     // Show modal
     if (!modal.classList.contains('show')) {
@@ -1453,18 +1456,12 @@ ctaobserver.observe(ctaToaster, {
 
     console.log('🔄 Fetching dashboard data for', fracc);
 
-    // Fetch all lots for this community with timeout
-    const queryPromise = window.supabaseClient
+    // Fetch all lots for this community
+    const { data: allLots, error: lotsError } = await window.supabaseClient
       .from('lots')
       .select('*')
       .eq('client_id', CURRENT_CLIENT)
       .eq('fraccionamiento', fracc);
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
-
-    const { data: allLots, error: lotsError } = await Promise.race([queryPromise, timeoutPromise]);
 
     if (lotsError) {
       console.error('❌ ERROR fetching lots for dashboard:', lotsError);
@@ -1541,19 +1538,12 @@ ctaobserver.observe(ctaToaster, {
 
     console.log('🔄 Fetching lot_updates_audit for', fracc);
 
-    // Add timeout to prevent hanging
-    const auditQueryPromise = window.supabaseClient
+    const { data: auditData, error: auditError } = await window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
       .eq('fraccionamiento', fracc)  // FILTER BY COMMUNITY
       .gte('updated_at', sixtyDaysAgo.toISOString())
       .order('updated_at', { ascending: false });
-
-    const auditTimeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Audit query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
-
-    const { data: auditData, error: auditError } = await Promise.race([auditQueryPromise, auditTimeoutPromise]);
 
     if (auditError) {
       console.error('❌ ERROR fetching lot_updates_audit:', auditError);
@@ -1683,17 +1673,11 @@ ctaobserver.observe(ctaToaster, {
 
     console.log('🔄 Fetching GLOBAL dashboard data');
 
-    // Fetch ALL lots (no fraccionamiento filter) with timeout
-    const queryPromise = window.supabaseClient
+    // Fetch ALL lots (no fraccionamiento filter)
+    const { data: allLots, error: lotsError } = await window.supabaseClient
       .from('lots')
       .select('*')
       .eq('client_id', CURRENT_CLIENT);
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
-
-    const { data: allLots, error: lotsError } = await Promise.race([queryPromise, timeoutPromise]);
 
     if (lotsError) {
       console.error('❌ ERROR fetching lots for GLOBAL dashboard:', lotsError);
@@ -1752,19 +1736,12 @@ ctaobserver.observe(ctaToaster, {
 
     console.log('🔄 Fetching GLOBAL lot_updates_audit');
 
-    // Add timeout to prevent hanging
-    const auditQueryPromise = window.supabaseClient
+    const { data: auditData, error: auditError } = await window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
       .eq('client_id', CURRENT_CLIENT)  // FILTER BY CLIENT (all communities for this client)
       .gte('updated_at', sixtyDaysAgo.toISOString())
       .order('updated_at', { ascending: false });
-
-    const auditTimeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Audit query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
-
-    const { data: auditData, error: auditError } = await Promise.race([auditQueryPromise, auditTimeoutPromise]);
 
     if (auditError) {
       console.error('❌ ERROR fetching GLOBAL lot_updates_audit:', auditError);
@@ -1925,7 +1902,7 @@ ctaobserver.observe(ctaToaster, {
       : 0;
 
     // Calculate 1% commission (what sellers get)
-    const commission = data.projectedIncome * 0.01;
+    const commission = data.projectedIncome * 0.03;
 
     // Format percentage change with arrow
     const percentageChange = data.percentageChange || 0;
@@ -2028,8 +2005,8 @@ fetch('https://la-la.land/mapbox.txt')
     const m = new mapboxgl.Map({
       container: 'map',
       style: 'mapbox://styles/mapbox/satellite-streets-v12',
-      center: [-96.038183, 19.047528], // Santte 1 center
-      zoom: 16.4 // Marsella
+      center: [-100.157213, 25.462513], // Santte 1 center
+      zoom: 16.7 // Santte 1
     });
    
     window.map = m;
@@ -2058,18 +2035,11 @@ function setupCommunitySearchMenu() {
   
   const communities = {
 
-    'barcelona': {
-      center: [-96.035272, 19.046439],
-      zoom: 16.2,
-      fracc: 'barcelona',
-      name: 'Barcelona'
-    },
-
-    'marsella': {
-      center: [-96.038183, 19.047528], // Center of agora image bounds
-      zoom: 16.4,
-      fracc: 'marsella', 
-      name: 'Marsella'
+    'santte1': {
+      center: [-100.157213, 25.462513],
+      zoom: 16.7,
+      fracc: 'santte1',
+      name: 'Santte1'
     }
   };
 
@@ -2727,18 +2697,11 @@ function parseLots(text) {
 
     console.log('🔄 Fetching lot availability from Supabase for', names.length, 'lots');
 
-    // Add timeout to prevent hanging
-    const queryPromise = window.supabaseClient
+    const { data, error } = await window.supabaseClient
       .from('lots')
       .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2')
       .in('lot_name', names)
-      .eq('client_id', CURRENT_CLIENT);
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
-
-    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+          .eq('client_id', CURRENT_CLIENT);
 
     if (error) {
       console.error('❌ ERROR fetching lot availability from Supabase:', error);
@@ -3100,19 +3063,19 @@ function shuffle(arr) {
 </script>
 
 <script>
-// DRONE IMAGE - Add custom recent drone satellite image as a raster layer
+
 // DRONE IMAGE - Add custom recent drone satellite image as a raster layer
 function addCustomImage(map) {
   const config = {
-    url: 'https://la-la.land/demo/earth.png',
-    layerId: 'drone-satellite-layer',
-    sourceId: 'drone-satellite',
-    message: "Cargamos la imágen aérea más actual — (noviembre 2025)",
-    bounds: [
-[-96.041238, 19.0556],
-[-96.031988, 19.055425],
-[-96.032264, 19.042404],
-[-96.041515, 19.04258],
+      url: 'https://la-la.land/demo/earth.png',
+      layerId: 'drone-satellite-layer',
+      sourceId: 'drone-satellite',
+      message: "Cargamos la imágen aérea más actual — (marzo 2025)",
+      bounds: [
+        [-100.16483, 25.467111], // Top-left [lng, lat]
+        [-100.154874, 25.467111], // Top-right
+        [-100.154874, 25.457155], // Bottom-right
+        [-100.16483, 25.457155],  // Bottom-left
 
     ]
   };
@@ -3498,7 +3461,7 @@ let clampCooldown = false;
 let infoMode = false;
 
 function extractLotNumber(lotName) {
-  // Remove 'lotdemo', 'lot', and 'demo' prefixes to get clean lot number
+  // Remove 'lotinverta', 'lot', and 'inverta' prefixes to get clean lot number
   return lotName.replace(/^lotdemo/i, '').replace(/^lot/i, '').replace(/^demo/i, '');
 }
 
@@ -3511,19 +3474,12 @@ async function fetchLots() {
 
     console.log('🔄 Fetching lots data for modal from Supabase...');
 
-    // Fetch ALL data (including images) upfront with timeout
-    const queryPromise = window.supabaseClient
+    // Fetch ALL data (including images) upfront
+    const { data, error } = await window.supabaseClient
       .from('lots')
       .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image, price_m2')
       .eq('client_id', CURRENT_CLIENT)
       .order('lot_name', { ascending: true });
-
-    // Add 10 second timeout to detect hanging queries
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
-
-    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
 
     if (error) {
       console.error('❌ ERROR fetching lots for modal:', error);
@@ -3853,7 +3809,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     <div style="display: flex; align-items: center; justify-content: center; width: 100%; position: relative;">
       <!-- Lot name on left (smaller, two rows) -->
       <div class="lot-left" style="position: absolute; left: 0; align-items: flex-end !important; text-align: right !important; transform: scale(0.75); transform-origin: left center;">
-        <div class="lote-label">MZ-L</div>
+        <div class="lote-label">LOTE</div>
         <div class="lote-number" style="text-align: right !important; margin-left: 0 !important;">${lot.number.replace(/^[a-z]+/i, '')}</div>
       </div>
 
@@ -4229,8 +4185,8 @@ const isSold      = state === 'sold';
 let calculatedPrice = lot.price;
 if (!isSold && lot.priceM2 && lot.size) {
   const totalPrice = parseFloat(lot.priceM2) * parseFloat(lot.size);
-  const roundedPrice = Math.round(totalPrice / 1000) * 1000;
-  calculatedPrice = (roundedPrice / 1000).toString();
+  const roundedPrice = Math.round(totalPrice * 1) / 1000000; // Round to 2 decimal places
+  calculatedPrice = roundedPrice.toFixed(2); // Format as string with 2 decimals
 }
 
 // Format calculated price with commas
@@ -4243,7 +4199,7 @@ const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toStrin
 
 row.innerHTML = `
   <div class="lot-left">
-    <div class="lote-label">MZ-L</div>
+    <div class="lote-label">LOTE</div>
     <div class="lote-number">${lot.number.replace(/^[a-z]+/i, '')}</div>
   </div>
 
@@ -4258,7 +4214,7 @@ row.innerHTML = `
       <div class="lot-price ${isSold ? 'lot-price--hidden' : ''}">
         <div class="price-wrapper">
           <span class="price">$${calculatedPriceFormatted}</span>
-          <span class="mdp">MIL</span>
+          <span class="mdp">MDP</span>
         </div>
       </div>
 
@@ -4504,13 +4460,18 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
       // For each updated lot, calculate days since last change and insert audit record
       const auditPromises = data.map(async (lot) => {
         // Get the last price change for this lot
-        const { data: lastChange } = await window.supabaseClient
+        const { data: lastChange, error: lastChangeError } = await window.supabaseClient
           .from('lot_prices_audit')
           .select('updated_at')
           .eq('lot_name', lot.lot_name)
           .order('updated_at', { ascending: false })
           .limit(1)
           .single();
+
+        if (lastChangeError && lastChangeError.code !== 'PGRST116') { // PGRST116 = no rows returned (expected)
+          console.error('❌ ERROR fetching lot_prices_audit for', lot.lot_name, ':', lastChangeError);
+          console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+        }
 
         // Calculate days since last change
         let daysSinceChange = null;
@@ -4621,7 +4582,7 @@ const animatedFeaturedLots = new Set();
 
 
 
-function highlightCenter(isClamping = false) {
+ffunction highlightCenter(isClamping = false) {
     // 🟢 PREVENT RE-ADDING OUTLINE WHEN MODAL IS CLOSED
   if (!document.getElementById('lotModal').classList.contains('show')) return;
 
@@ -5029,7 +4990,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
   function applyFraccFilter(shouldRender = true) {
     try {
       // Get fracc directly from the lot data - this should work if your Supabase data is correct
-      const fracc = (lot && (lot.fraccionamiento || '').toString().trim()) || 'marsella';
+      const fracc = (lot && (lot.fraccionamiento || '').toString().trim()) || 'santte1';
       
       const modalEl = document.getElementById('lotModal');
       const currentFracc = modalEl?.dataset.fracc || '';
@@ -5129,8 +5090,8 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     
     modalInfoEl.innerHTML = `
       <div style="padding:20px; color:#8a8880; height:2000px;">
-        <h2 style="color:#a17345; margin-bottom:10px;">Sobre Barcelona</h2>
-        <p>Bienvenido a Barcelona. Aquí puedes poner descripción, ubicación, beneficios, etc.</p>
+        <h2 style="color:#a17345; margin-bottom:10px;">Sobre Santte1</h2>
+        <p>Bienvenido a Santte1. Aquí puedes poner descripción, ubicación, beneficios, etc.</p>
         <p>Para más información contáctanos por WhatsApp o visita nuestras oficinas.</p>
         <div style="height:1000px; background:linear-gradient(#f0f0f0, #e0e0e0);"></div>
       </div>
@@ -5158,7 +5119,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
 
   // Reset header to current fraccionamiento (in case it was showing "PIN" or something else)
   const headerFraccEl = document.getElementById('headerFracc');
-  const currentFracc = modal?.dataset?.fracc || (lot && (lot.fraccionamiento || '').toString().trim()) || 'marsella';
+  const currentFracc = modal?.dataset?.fracc || (lot && (lot.fraccionamiento || '').toString().trim()) || 'santte1';
   if (headerFraccEl) {
     headerFraccEl.textContent = currentFracc ? currentFracc.toUpperCase() : 'DEMO';
     // Reset header editability (in case we were viewing a pin)
@@ -5922,7 +5883,12 @@ function hideCalendlyEmbed() {
       const ll = marker.getLngLat();
       const { error } = await window.supabaseClient
         .from('pins').update({ lng: ll.lng, lat: ll.lat }).eq('id', pin.id);
-      if (error) toast('Failed to save position'); else toast('Position saved');
+      if (error) {
+        console.error('Failed to update pin position:', error);
+        toast(`Failed to save position: ${error.message}`);
+      } else {
+        toast('Position saved');
+      }
       const rec = PS.markers.get(pin.id);
       if (rec) {
         rec.pin.lng = ll.lng; rec.pin.lat = ll.lat;
@@ -5950,7 +5916,10 @@ function hideCalendlyEmbed() {
       await window.supabaseReady;
       const { error } = await window.supabaseClient
         .from('pins').update({ heading: h }).eq('id', pinId);
-      if (error) console.warn('Failed to save heading', error);
+      if (error) {
+        console.error('Failed to save pin heading:', error);
+        console.warn('Failed to save heading', error);
+      }
     }
   };
 
@@ -6804,6 +6773,9 @@ function refreshFeaturedLayer() {
   const logLocationToSupabase = async (lng, lat) => {
     if (!window.supabaseClient) return;
     try {
+      // Get authenticated user for RLS policy
+      const { data: { user } } = await window.supabaseClient.auth.getUser();
+
       const { error } = await window.supabaseClient
         .from('location_logs')
         .insert({
@@ -6811,7 +6783,8 @@ function refreshFeaturedLayer() {
           lng: lng,
           browser: navigator.userAgent,
           timestamp: new Date().toISOString(),
-          client_id: CURRENT_CLIENT
+          client_id: CURRENT_CLIENT,
+          user_id: user?.id || null // Allow null for unauthenticated users if RLS permits
         });
       if (error) console.error('Failed to log location:', error);
     } catch (err) {
@@ -7537,9 +7510,7 @@ function setupCommunitySearchMenu() {
 
     // 1) Config - Now with 4 communities using positions 1, 3, 5, 7
     const communities = [
-      { id:'positionFour', label:'Barcelona', center:[-96.035272, 19.046439], zoom:16.2, fracc:'barcelona', position: 1 },
-
-      { id:'positionTwo', label:'Marsella', center:[-96.038183, 19.047528], zoom:16.4, fracc:'marsella', position: 7 }
+      { id:'positionThree', label:'Santte 1', center:[-96.035272, 19.046439], zoom:16.7, fracc:'santte1', position: 3 }
     ];
     const N = 8;                 // Keep 8 positions in the circle
     const baseDeg = 0;           // 0° rotation
@@ -7587,7 +7558,7 @@ function setupCommunitySearchMenu() {
           e.stopPropagation();
           const c = community;
           if (c.center && window.map) {
-            map.flyTo({ center: c.center, zoom: c.zoom || 16.2, speed: 1.2, curve: 1.5 });
+            map.flyTo({ center: c.center, zoom: c.zoom || 16.7, speed: 1.2, curve: 1.5 });
             const modal = document.getElementById('lotModal');
             if (modal && modal.classList.contains('show')) {
               modal.dataset.fracc = c.fracc || '';
@@ -7641,9 +7612,9 @@ function getCurrentFraccCenter() {
   // 🟢 REUSE existing communities object from your search menu
   const communities = window.communities || {
     
-    'barcelona': { center: [-96.035272, 19.046439], zoom: 16.2 },
+    'santte1': { center: [-100.157213, 25.462513], zoom: 16.7 }
     
-    'marsella': { center: [-96.038183, 19.047528], zoom: 16.4 }
+
   };
   
   const modal = document.getElementById('lotModal');
@@ -7706,9 +7677,9 @@ function getCurrentFraccZoom() {
   // Match the zoom levels from your communities object
   const zooms = {
 
-    'barcelona': 16.2,
+    'santte1': 16.7
 
-    'marsella': 16.4
+
   };
   
   return zooms[currentFracc] || (window.innerWidth >= 768 ? 17 : 16.45);
@@ -10311,7 +10282,7 @@ async function initializePayment() {
       body: JSON.stringify({
         amount: RESERVATION_AMOUNT * 100, // Stripe expects cents
         lotNumber: lot.number,
-        lotName: lotName, // For webhook to update database (e.g., "lotdemo17-17")
+        lotName: lotName, // For webhook to update database (e.g., "lotinverta17-17")
         lotId: lot.id,
         client_id: CURRENT_CLIENT, // Add client_id for non-authenticated purchases
         customer_email: emailInput?.value || 'guest', // Use form value or guest
