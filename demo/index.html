@@ -356,6 +356,36 @@ select option {
   <img src="https://la-la.land/demo/logo.svg" alt="Logo"></a>
 </div>
 
+<!-- Tour Help Button -->
+<button id="tour-help-btn" onclick="window.startTour()" title="Mostrar tutorial" style="
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #ff8400;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255, 132, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 19H11V17H13V19ZM15.07 11.25L14.17 12.17C13.45 12.9 13 13.5 13 15H11V14.5C11 13.4 11.45 12.4 12.17 11.67L13.41 10.41C13.78 10.05 14 9.55 14 9C14 7.9 13.1 7 12 7C10.9 7 10 7.9 10 9H8C8 6.79 9.79 5 12 5C14.21 5 16 6.79 16 9C16 9.88 15.64 10.68 15.07 11.25Z" fill="#fcfaf3"/>
+  </svg>
+</button>
+
+<style>
+#tour-help-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(255, 132, 0, 0.6);
+}
+</style>
+
 <!-- Modal Panel -->
 <div id="lotModal">
   <div class="modal-header">
@@ -490,6 +520,92 @@ select option {
     <path d="M4 6 L8 10 L12 6" 
           fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" />
   </svg>
+  </div>
+</div>
+
+<!-- GUIDED TOUR OVERLAY -->
+<div id="tour-overlay" style="display: none;">
+  <!-- Dark backdrop -->
+  <div id="tour-backdrop" style="
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 9998;
+    transition: opacity 0.3s ease;
+  "></div>
+
+  <!-- Spotlight highlight -->
+  <div id="tour-spotlight" style="
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    transition: all 0.4s ease;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.8);
+    border-radius: 8px;
+  "></div>
+
+  <!-- Tour tooltip -->
+  <div id="tour-tooltip" style="
+    position: fixed;
+    z-index: 10000;
+    background: #fcfaf3;
+    border: 2px solid #ff8400;
+    border-radius: 8px;
+    padding: 20px;
+    max-width: 320px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    font-family: 'Barlow Condensed', Arial, sans-serif;
+  ">
+    <div id="tour-content">
+      <h3 style="margin: 0 0 12px 0; color: #ff8400; font-size: 20px; font-weight: 700;">Step Title</h3>
+      <p style="margin: 0 0 16px 0; color: #333; font-size: 15px; line-height: 1.5;">Step description goes here.</p>
+    </div>
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+      <button id="tour-skip" style="
+        background: none;
+        border: none;
+        color: #888;
+        font-size: 14px;
+        cursor: pointer;
+        font-family: 'Barlow Condensed', Arial, sans-serif;
+        font-weight: 600;
+        padding: 8px 12px;
+      ">SALTAR</button>
+      <div style="display: flex; gap: 8px;">
+        <button id="tour-prev" style="
+          background: #ddd;
+          border: none;
+          color: #333;
+          font-size: 14px;
+          cursor: pointer;
+          font-family: 'Barlow Condensed', Arial, sans-serif;
+          font-weight: 600;
+          padding: 8px 16px;
+          border-radius: 4px;
+        ">← ANTERIOR</button>
+        <button id="tour-next" style="
+          background: #ff8400;
+          border: none;
+          color: #fcfaf3;
+          font-size: 14px;
+          cursor: pointer;
+          font-family: 'Barlow Condensed', Arial, sans-serif;
+          font-weight: 600;
+          padding: 8px 16px;
+          border-radius: 4px;
+        ">SIGUIENTE →</button>
+      </div>
+    </div>
+    <div id="tour-progress" style="
+      margin-top: 12px;
+      text-align: center;
+      color: #888;
+      font-size: 12px;
+      font-weight: 600;
+    ">1 / 5</div>
   </div>
 </div>
 
@@ -10560,7 +10676,218 @@ async function markLotAsSold(lot) {
 
 // Export function to global scope
 window.showPaymentViewInModal = showPaymentViewInModal;
+
+// ===== GUIDED TOUR FUNCTIONALITY =====
+const tourSteps = [
+  {
+    title: "¡Bienvenido a La-La Land! 🌍",
+    description: "Este es un mapa interactivo donde puedes explorar terrenos disponibles. Haz clic en cualquier lote para ver sus detalles, fotos y opciones de compra.",
+    element: "#map",
+    position: "center"
+  },
+  {
+    title: "Explora los Lotes 📍",
+    description: "Los lotes en verde están disponibles, los naranjas están reservados y los grises ya están vendidos. Haz zoom y navega por el mapa para encontrar tu lote ideal.",
+    element: "#map",
+    position: "center"
+  },
+  {
+    title: "Panel de Detalles 📋",
+    description: "Cuando selecciones un lote, aquí verás toda la información: precio, tamaño, ubicación, fotos y vistas 360°. También podrás agendar visitas o hacer tu reserva.",
+    element: "#lotModal",
+    position: "right"
+  },
+  {
+    title: "Botones de Acción 🛠️",
+    description: "Usa estos botones para ordenar lotes por precio ($$$) o comparar varios lotes lado a lado (COMPARAR).",
+    element: "#unitControls",
+    position: "bottom"
+  },
+  {
+    title: "Iniciar Sesión 🔑",
+    description: "Inicia sesión para guardar tus favoritos, hacer reservas y acceder al dashboard con información exclusiva.",
+    element: "#globe-login-btn",
+    position: "left"
+  }
+];
+
+let currentTourStep = 0;
+let tourActive = false;
+
+function startTour() {
+  if (tourActive) return;
+
+  tourActive = true;
+  currentTourStep = 0;
+  document.getElementById('tour-overlay').style.display = 'block';
+
+  // Save to localStorage that tour has been seen
+  localStorage.setItem('tourCompleted', 'false');
+
+  showTourStep(currentTourStep);
+}
+
+function endTour() {
+  tourActive = false;
+  document.getElementById('tour-overlay').style.display = 'none';
+  localStorage.setItem('tourCompleted', 'true');
+}
+
+function showTourStep(stepIndex) {
+  if (stepIndex < 0 || stepIndex >= tourSteps.length) {
+    endTour();
+    return;
+  }
+
+  const step = tourSteps[stepIndex];
+  const tooltip = document.getElementById('tour-tooltip');
+  const spotlight = document.getElementById('tour-spotlight');
+  const prevBtn = document.getElementById('tour-prev');
+  const nextBtn = document.getElementById('tour-next');
+
+  // Update content
+  document.getElementById('tour-content').innerHTML = `
+    <h3 style="margin: 0 0 12px 0; color: #ff8400; font-size: 20px; font-weight: 700;">${step.title}</h3>
+    <p style="margin: 0 0 16px 0; color: #333; font-size: 15px; line-height: 1.5;">${step.description}</p>
+  `;
+
+  // Update progress
+  document.getElementById('tour-progress').textContent = `${stepIndex + 1} / ${tourSteps.length}`;
+
+  // Update button states
+  prevBtn.disabled = stepIndex === 0;
+  prevBtn.style.opacity = stepIndex === 0 ? '0.5' : '1';
+  prevBtn.style.cursor = stepIndex === 0 ? 'not-allowed' : 'pointer';
+
+  nextBtn.textContent = stepIndex === tourSteps.length - 1 ? 'FINALIZAR ✓' : 'SIGUIENTE →';
+
+  // Position spotlight and tooltip
+  if (step.element) {
+    const element = document.querySelector(step.element);
+    if (element) {
+      const rect = element.getBoundingClientRect();
+
+      // Position spotlight
+      spotlight.style.top = `${rect.top - 8}px`;
+      spotlight.style.left = `${rect.left - 8}px`;
+      spotlight.style.width = `${rect.width + 16}px`;
+      spotlight.style.height = `${rect.height + 16}px`;
+
+      // Position tooltip based on step.position
+      positionTooltip(tooltip, rect, step.position);
+    }
+  } else {
+    // Center spotlight for full-screen steps
+    spotlight.style.top = '50%';
+    spotlight.style.left = '50%';
+    spotlight.style.transform = 'translate(-50%, -50%)';
+    spotlight.style.width = '400px';
+    spotlight.style.height = '300px';
+
+    // Center tooltip
+    tooltip.style.top = '50%';
+    tooltip.style.left = '50%';
+    tooltip.style.transform = 'translate(-50%, -50%)';
+  }
+}
+
+function positionTooltip(tooltip, elementRect, position) {
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const padding = 20;
+
+  switch(position) {
+    case 'right':
+      tooltip.style.top = `${elementRect.top + (elementRect.height / 2) - (tooltipRect.height / 2)}px`;
+      tooltip.style.left = `${elementRect.right + padding}px`;
+      tooltip.style.transform = 'none';
+      break;
+    case 'left':
+      tooltip.style.top = `${elementRect.top + (elementRect.height / 2) - (tooltipRect.height / 2)}px`;
+      tooltip.style.left = `${elementRect.left - tooltipRect.width - padding}px`;
+      tooltip.style.transform = 'none';
+      break;
+    case 'bottom':
+      tooltip.style.top = `${elementRect.bottom + padding}px`;
+      tooltip.style.left = `${elementRect.left + (elementRect.width / 2) - (tooltipRect.width / 2)}px`;
+      tooltip.style.transform = 'none';
+      break;
+    case 'top':
+      tooltip.style.top = `${elementRect.top - tooltipRect.height - padding}px`;
+      tooltip.style.left = `${elementRect.left + (elementRect.width / 2) - (tooltipRect.width / 2)}px`;
+      tooltip.style.transform = 'none';
+      break;
+    case 'center':
+    default:
+      tooltip.style.top = '50%';
+      tooltip.style.left = '50%';
+      tooltip.style.transform = 'translate(-50%, -50%)';
+      break;
+  }
+
+  // Keep tooltip within viewport
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const currentLeft = parseFloat(tooltip.style.left);
+  const currentTop = parseFloat(tooltip.style.top);
+
+  if (currentLeft + tooltipRect.width > viewportWidth - 20) {
+    tooltip.style.left = `${viewportWidth - tooltipRect.width - 20}px`;
+  }
+  if (currentLeft < 20) {
+    tooltip.style.left = '20px';
+  }
+  if (currentTop + tooltipRect.height > viewportHeight - 20) {
+    tooltip.style.top = `${viewportHeight - tooltipRect.height - 20}px`;
+  }
+  if (currentTop < 20) {
+    tooltip.style.top = '20px';
+  }
+}
+
+// Event listeners for tour buttons
+document.getElementById('tour-next').addEventListener('click', () => {
+  if (currentTourStep < tourSteps.length - 1) {
+    currentTourStep++;
+    showTourStep(currentTourStep);
+  } else {
+    endTour();
+  }
+});
+
+document.getElementById('tour-prev').addEventListener('click', () => {
+  if (currentTourStep > 0) {
+    currentTourStep--;
+    showTourStep(currentTourStep);
+  }
+});
+
+document.getElementById('tour-skip').addEventListener('click', () => {
+  endTour();
+});
+
+// Close tour when clicking on backdrop
+document.getElementById('tour-backdrop').addEventListener('click', () => {
+  endTour();
+});
+
+// Auto-start tour on first visit
+document.addEventListener('DOMContentLoaded', () => {
+  // Check if user has completed the tour before
+  const tourCompleted = localStorage.getItem('tourCompleted');
+
+  // Start tour after a short delay if not completed
+  if (tourCompleted !== 'true') {
+    setTimeout(() => {
+      startTour();
+    }, 1500); // Wait 1.5 seconds after page load
+  }
+});
+
+// Expose startTour to global scope for manual triggering
+window.startTour = startTour;
+
+// ===== END GUIDED TOUR =====
 </script>
 
-</body> 
+</body>
 </html>
