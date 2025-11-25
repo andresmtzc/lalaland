@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Receipt Creator - La-La Land</title>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -143,6 +144,31 @@
       color: #aaa;
     }
 
+    .date-display {
+      width: 100%;
+      padding: 12px 16px;
+      font-family: 'Courier Prime', monospace;
+      font-size: 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      background: #fafafa;
+      color: #1a1a1a;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .date-display:hover {
+      border-color: #ff8400;
+      background: #fff;
+    }
+
+    .date-input-hidden {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
     /* Amount Field Special Styling */
     .amount-group {
       position: relative;
@@ -213,6 +239,30 @@
     .btn-secondary:hover {
       background: #e0e0e0;
       color: #333;
+    }
+
+    .btn-whatsapp {
+      background: #25D366;
+      color: #fff;
+      display: none;
+    }
+
+    .btn-whatsapp:hover {
+      background: #1ea952;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+    }
+
+    .btn-download {
+      background: #667eea;
+      color: #fff;
+      display: none;
+    }
+
+    .btn-download:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
     }
 
     /* Receipt Number */
@@ -297,10 +347,11 @@
       <div class="receipt-body">
         <div class="form-group">
           <label class="form-label" for="receiptDate">Date</label>
+          <div class="date-display" id="dateDisplay" onclick="document.getElementById('receiptDate').showPicker()"></div>
           <input
             type="date"
             id="receiptDate"
-            class="form-input"
+            class="date-input-hidden"
           >
         </div>
 
@@ -331,22 +382,51 @@
 
       <!-- Receipt Footer -->
       <div class="receipt-footer">
-        <button class="btn btn-secondary" onclick="clearReceipt()">Clear</button>
-        <button class="btn btn-primary" onclick="generateReceipt()">Generate</button>
+        <button class="btn btn-secondary" id="clearBtn" onclick="clearReceipt()">Clear</button>
+        <button class="btn btn-primary" id="generateBtn" onclick="generateReceipt()">Generate</button>
+        <button class="btn btn-download" id="downloadBtn" onclick="downloadReceipt()" style="display: none;">Download</button>
+        <button class="btn btn-whatsapp" id="whatsappBtn" onclick="shareToWhatsApp()" style="display: none;">WhatsApp</button>
       </div>
     </div>
   </div>
 
   <script>
+    let generatedImageBlob = null;
+    let currentFilename = '';
+
+    // Month abbreviations
+    const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
     // Set today's date by default
     document.addEventListener('DOMContentLoaded', function() {
       const dateInput = document.getElementById('receiptDate');
       const today = new Date().toISOString().split('T')[0];
       dateInput.value = today;
+      updateDateDisplay();
 
       // Generate random receipt number
       updateReceiptNumber();
+
+      // Listen for date changes
+      dateInput.addEventListener('change', updateDateDisplay);
     });
+
+    function updateDateDisplay() {
+      const dateInput = document.getElementById('receiptDate');
+      const dateDisplay = document.getElementById('dateDisplay');
+
+      if (!dateInput.value) {
+        dateDisplay.textContent = 'Select date...';
+        return;
+      }
+
+      const date = new Date(dateInput.value + 'T00:00:00');
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = MONTHS[date.getMonth()];
+      const year = date.getFullYear();
+
+      dateDisplay.textContent = `${day} ${month} ${year}`;
+    }
 
     function updateReceiptNumber() {
       const receiptNum = document.getElementById('receiptNum');
@@ -359,10 +439,19 @@
       document.getElementById('receiptAmount').value = '';
       const today = new Date().toISOString().split('T')[0];
       document.getElementById('receiptDate').value = today;
+      updateDateDisplay();
       updateReceiptNumber();
+
+      // Hide download/share buttons
+      document.getElementById('downloadBtn').style.display = 'none';
+      document.getElementById('whatsappBtn').style.display = 'none';
+      document.getElementById('generateBtn').style.display = 'block';
+      document.getElementById('clearBtn').style.display = 'block';
+
+      generatedImageBlob = null;
     }
 
-    function generateReceipt() {
+    async function generateReceipt() {
       const date = document.getElementById('receiptDate').value;
       const concept = document.getElementById('receiptConcept').value;
       const amount = document.getElementById('receiptAmount').value;
@@ -374,20 +463,99 @@
 
       const receiptNumber = document.getElementById('receiptNum').textContent;
 
-      // You can add functionality here to:
-      // - Generate a PDF
-      // - Save to database
-      // - Print the receipt
-      // - Download as image
+      // Show loading state
+      const generateBtn = document.getElementById('generateBtn');
+      const originalText = generateBtn.textContent;
+      generateBtn.textContent = 'Generating...';
+      generateBtn.disabled = true;
 
-      console.log('Receipt Generated:', {
-        number: receiptNumber,
-        date: date,
-        concept: concept,
-        amount: parseFloat(amount)
-      });
+      try {
+        // Generate image using html2canvas
+        const receiptElement = document.querySelector('.receipt-modal');
+        const canvas = await html2canvas(receiptElement, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          logging: false
+        });
 
-      alert(`Receipt #${receiptNumber} generated!\n\nDate: ${date}\nConcept: ${concept}\nAmount: $${parseFloat(amount).toFixed(2)}`);
+        // Convert to blob
+        canvas.toBlob(function(blob) {
+          generatedImageBlob = blob;
+
+          // Create filename with date prefix: YYYYMMMDD_receipt_number.png
+          const dateObj = new Date(date + 'T00:00:00');
+          const year = dateObj.getFullYear();
+          const month = MONTHS[dateObj.getMonth()];
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          currentFilename = `${year}${month}${day}_receipt_${receiptNumber}.png`;
+
+          // Hide Generate and Clear buttons, show Download and WhatsApp buttons
+          generateBtn.style.display = 'none';
+          document.getElementById('clearBtn').style.display = 'none';
+          document.getElementById('downloadBtn').style.display = 'block';
+          document.getElementById('whatsappBtn').style.display = 'block';
+
+          console.log('Receipt generated:', currentFilename);
+        }, 'image/png');
+
+      } catch (error) {
+        console.error('Error generating receipt:', error);
+        alert('Error generating receipt. Please try again.');
+        generateBtn.textContent = originalText;
+        generateBtn.disabled = false;
+      }
+    }
+
+    function downloadReceipt() {
+      if (!generatedImageBlob) {
+        alert('Please generate the receipt first');
+        return;
+      }
+
+      // Create download link
+      const url = URL.createObjectURL(generatedImageBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = currentFilename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      console.log('Downloaded:', currentFilename);
+    }
+
+    async function shareToWhatsApp() {
+      if (!generatedImageBlob) {
+        alert('Please generate the receipt first');
+        return;
+      }
+
+      try {
+        // Create a File from the blob
+        const file = new File([generatedImageBlob], currentFilename, { type: 'image/png' });
+
+        // Check if Web Share API is available
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'La-La Land Receipt',
+            text: 'Receipt from La-La Land'
+          });
+          console.log('Shared successfully');
+        } else {
+          // Fallback: Download the file and inform user to share manually
+          downloadReceipt();
+          alert('Image downloaded! Please share it manually via WhatsApp.');
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Error sharing:', error);
+          // Fallback: Download the file
+          downloadReceipt();
+          alert('Image downloaded! Please share it manually via WhatsApp.');
+        }
+      }
     }
 
     // Format amount on blur
