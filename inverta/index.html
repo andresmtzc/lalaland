@@ -1453,12 +1453,18 @@ ctaobserver.observe(ctaToaster, {
 
     console.log('🔄 Fetching dashboard data for', fracc);
 
-    // Fetch all lots for this community
-    const { data: allLots, error: lotsError } = await window.supabaseClient
+    // Fetch all lots for this community with timeout
+    const queryPromise = window.supabaseClient
       .from('lots')
       .select('*')
       .eq('client_id', CURRENT_CLIENT)
       .eq('fraccionamiento', fracc);
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
+    );
+
+    const { data: allLots, error: lotsError } = await Promise.race([queryPromise, timeoutPromise]);
 
     if (lotsError) {
       console.error('❌ ERROR fetching lots for dashboard:', lotsError);
@@ -1535,12 +1541,19 @@ ctaobserver.observe(ctaToaster, {
 
     console.log('🔄 Fetching lot_updates_audit for', fracc);
 
-    const { data: auditData, error: auditError } = await window.supabaseClient
+    // Add timeout to prevent hanging
+    const auditQueryPromise = window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
       .eq('fraccionamiento', fracc)  // FILTER BY COMMUNITY
       .gte('updated_at', sixtyDaysAgo.toISOString())
       .order('updated_at', { ascending: false });
+
+    const auditTimeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Audit query timeout - RLS policy may be too slow or blocking')), 10000)
+    );
+
+    const { data: auditData, error: auditError } = await Promise.race([auditQueryPromise, auditTimeoutPromise]);
 
     if (auditError) {
       console.error('❌ ERROR fetching lot_updates_audit:', auditError);
@@ -1670,11 +1683,17 @@ ctaobserver.observe(ctaToaster, {
 
     console.log('🔄 Fetching GLOBAL dashboard data');
 
-    // Fetch ALL lots (no fraccionamiento filter)
-    const { data: allLots, error: lotsError } = await window.supabaseClient
+    // Fetch ALL lots (no fraccionamiento filter) with timeout
+    const queryPromise = window.supabaseClient
       .from('lots')
       .select('*')
       .eq('client_id', CURRENT_CLIENT);
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
+    );
+
+    const { data: allLots, error: lotsError } = await Promise.race([queryPromise, timeoutPromise]);
 
     if (lotsError) {
       console.error('❌ ERROR fetching lots for GLOBAL dashboard:', lotsError);
@@ -1733,12 +1752,19 @@ ctaobserver.observe(ctaToaster, {
 
     console.log('🔄 Fetching GLOBAL lot_updates_audit');
 
-    const { data: auditData, error: auditError } = await window.supabaseClient
+    // Add timeout to prevent hanging
+    const auditQueryPromise = window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
       .eq('client_id', CURRENT_CLIENT)  // FILTER BY CLIENT (all communities for this client)
       .gte('updated_at', sixtyDaysAgo.toISOString())
       .order('updated_at', { ascending: false });
+
+    const auditTimeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Audit query timeout - RLS policy may be too slow or blocking')), 10000)
+    );
+
+    const { data: auditData, error: auditError } = await Promise.race([auditQueryPromise, auditTimeoutPromise]);
 
     if (auditError) {
       console.error('❌ ERROR fetching GLOBAL lot_updates_audit:', auditError);
@@ -2701,11 +2727,18 @@ function parseLots(text) {
 
     console.log('🔄 Fetching lot availability from Supabase for', names.length, 'lots');
 
-    const { data, error } = await window.supabaseClient
+    // Add timeout to prevent hanging
+    const queryPromise = window.supabaseClient
       .from('lots')
       .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2')
       .in('lot_name', names)
-          .eq('client_id', CURRENT_CLIENT);
+      .eq('client_id', CURRENT_CLIENT);
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
+    );
+
+    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
 
     if (error) {
       console.error('❌ ERROR fetching lot availability from Supabase:', error);
@@ -3478,12 +3511,19 @@ async function fetchLots() {
 
     console.log('🔄 Fetching lots data for modal from Supabase...');
 
-    // Fetch ALL data (including images) upfront
-    const { data, error } = await window.supabaseClient
+    // Fetch ALL data (including images) upfront with timeout
+    const queryPromise = window.supabaseClient
       .from('lots')
       .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image, price_m2')
       .eq('client_id', CURRENT_CLIENT)
       .order('lot_name', { ascending: true });
+
+    // Add 10 second timeout to detect hanging queries
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
+    );
+
+    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
 
     if (error) {
       console.error('❌ ERROR fetching lots for modal:', error);
