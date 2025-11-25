@@ -345,7 +345,15 @@
           .then(cfg => {
             window.supabaseClient = supabase.createClient(cfg.url, cfg.key);
             console.log('✅ Supabase client initialized with config.json');
-            resolve();
+
+            // Initialize auth state to handle RLS
+            initAuth().then(() => {
+              console.log('✅ Auth initialized');
+              resolve();
+            }).catch(err => {
+              console.error('❌ Auth initialization failed:', err);
+              resolve(); // Still resolve to allow app to continue
+            });
           })
           .catch(e => {
             console.error('Failed to load Supabase config:', e);
@@ -360,6 +368,25 @@
 
       document.head.appendChild(supabaseScript);
     });
+
+    // Initialize auth state (needed for RLS)
+    async function initAuth() {
+      try {
+        const { data: { session } = { session: null } } =
+          await window.supabaseClient.auth.getSession();
+
+        if (session && session.user) {
+          console.log('✅ User authenticated:', session.user.email);
+          return true;
+        } else {
+          console.log('⚠️  No active session - you may need to login if RLS is enabled');
+          return false;
+        }
+      } catch (e) {
+        console.warn('getSession failed:', e);
+        return false;
+      }
+    }
   </script>
 
   <script>
@@ -443,7 +470,26 @@
         .order('lot_name', { ascending: true });
 
       if (error) {
-        console.error('Error fetching lots:', error);
+        console.error('❌ ERROR fetching lots:', error);
+        console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+        console.error('❌ Error details:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
+
+        // Check if user is authenticated
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session || !session.user) {
+          console.error('❌ User is NOT authenticated - this may be why the query failed');
+          console.error('❌ If lots table has RLS enabled, you need to be logged in');
+          console.error('❌ Please login at /inverta/index.html first, then return here');
+        } else {
+          console.log('✅ User IS authenticated:', session.user.email);
+          console.error('❌ Query failed despite authentication - check RLS policies on lots table');
+        }
+
         return [];
       }
 
