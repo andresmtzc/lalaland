@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Receipt Creator - La-La Land</title>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.14.0/dist/dom-to-image-more.min.js"></script>
 
   <script>
   // ===== LOAD SUPABASE =====
@@ -71,7 +71,7 @@
     .receipt-modal {
       background: #fff;
       width: 100%;
-      max-width: 500px;
+      max-width: 600px;
       border-radius: 12px;
       box-shadow:
         0 8px 24px rgba(26, 26, 26, 0.12),
@@ -274,18 +274,6 @@
       color: #333;
     }
 
-    .btn-whatsapp {
-      background: #25D366;
-      color: #fff;
-      display: none;
-    }
-
-    .btn-whatsapp:hover {
-      background: #1ea952;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
-    }
-
     .btn-download {
       background: #667eea;
       color: #fff;
@@ -429,7 +417,6 @@
         <button class="btn btn-secondary" id="clearBtn" onclick="clearReceipt()">Clear</button>
         <button class="btn btn-primary" id="generateBtn" onclick="generateReceipt()">Generate</button>
         <button class="btn btn-download" id="downloadBtn" onclick="downloadReceipt()" style="display: none;">Download</button>
-        <button class="btn btn-whatsapp" id="whatsappBtn" onclick="shareToWhatsApp()" style="display: none;">WhatsApp</button>
       </div>
     </div>
     </div>
@@ -511,9 +498,8 @@
       updateDateDisplay();
       updateReceiptNumber();
 
-      // Hide download/share buttons
+      // Hide download button
       document.getElementById('downloadBtn').style.display = 'none';
-      document.getElementById('whatsappBtn').style.display = 'none';
       document.getElementById('generateBtn').style.display = 'block';
       document.getElementById('clearBtn').style.display = 'block';
 
@@ -599,41 +585,39 @@
         receiptModal.style.transform = 'translateY(0)';
 
         // Wait for DOM to fully update and settle
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Generate image using html2canvas - capture the wrapper to show padding and background
+        // Generate image using dom-to-image-more
         const captureElement = document.querySelector('.capture-wrapper');
-        const canvas = await html2canvas(captureElement, {
-          scale: 2,
-          backgroundColor: '#fcfaf3',
-          logging: false,
-          useCORS: true,
-          allowTaint: true
+        const blob = await domtoimage.toBlob(captureElement, {
+          quality: 0.95,
+          bgcolor: '#fcfaf3',
+          style: {
+            transform: 'scale(1)',
+            transformOrigin: 'top left'
+          }
         });
+
+        generatedImageBlob = blob;
+
+        // Create filename with date prefix: YYYYMMMDD_receipt_number.png
+        const dateObj = new Date(date + 'T00:00:00');
+        const year = dateObj.getFullYear();
+        const month = MONTHS[dateObj.getMonth()];
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        const receiptNumber = String(currentReceiptId).padStart(6, '0');
+        currentFilename = `${year}${month}${day}_receipt_${receiptNumber}.png`;
 
         // Restore original state
         receiptFooter.style.display = 'flex';
         receiptModal.style.pointerEvents = '';
 
-        // Convert to blob with quality setting
-        canvas.toBlob(function(blob) {
-          generatedImageBlob = blob;
+        // Hide Generate and Clear buttons, show Download button
+        generateBtn.style.display = 'none';
+        clearBtn.style.display = 'none';
+        document.getElementById('downloadBtn').style.display = 'block';
 
-          // Create filename with date prefix: YYYYMMMDD_receipt_number.png
-          const dateObj = new Date(date + 'T00:00:00');
-          const year = dateObj.getFullYear();
-          const month = MONTHS[dateObj.getMonth()];
-          const day = String(dateObj.getDate()).padStart(2, '0');
-          currentFilename = `${year}${month}${day}_receipt_${receiptNumber}.png`;
-
-          // Hide Generate and Clear buttons, show Download and WhatsApp buttons
-          generateBtn.style.display = 'none';
-          clearBtn.style.display = 'none';
-          document.getElementById('downloadBtn').style.display = 'block';
-          document.getElementById('whatsappBtn').style.display = 'block';
-
-          console.log('Receipt generated:', currentFilename);
-        }, 'image/png');
+        console.log('Receipt generated:', currentFilename);
 
       } catch (error) {
         console.error('Error generating receipt:', error);
@@ -661,75 +645,6 @@
       URL.revokeObjectURL(url);
 
       console.log('Downloaded:', currentFilename);
-    }
-
-    async function shareToWhatsApp() {
-      if (!generatedImageBlob) {
-        alert('Please generate the receipt first');
-        return;
-      }
-
-      console.log('Share initiated...');
-      console.log('Blob size:', generatedImageBlob.size);
-      console.log('Navigator.share available:', !!navigator.share);
-      console.log('Clipboard.write available:', !!(navigator.clipboard && navigator.clipboard.write));
-
-      try {
-        // Try Web Share API first (works great on mobile)
-        const file = new File([generatedImageBlob], currentFilename, { type: 'image/png' });
-
-        console.log('File created:', file.name, file.size);
-
-        if (navigator.share) {
-          console.log('Web Share API available');
-          const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
-          console.log('Can share files:', canShareFiles);
-
-          if (canShareFiles) {
-            console.log('Attempting Web Share API...');
-            await navigator.share({
-              files: [file],
-              title: 'La-La Land Receipt',
-              text: 'Receipt from La-La Land'
-            });
-            console.log('Shared successfully via Web Share API');
-            return;
-          }
-        }
-
-        // Fallback: Try clipboard (desktop)
-        if (navigator.clipboard && navigator.clipboard.write) {
-          console.log('Attempting clipboard copy...');
-          const item = new ClipboardItem({ 'image/png': generatedImageBlob });
-          await navigator.clipboard.write([item]);
-          console.log('Copied to clipboard successfully');
-
-          // Show success message with option to open WhatsApp
-          const openWA = confirm('✓ Image copied to clipboard!\n\nClick OK to open WhatsApp Web, then paste the image.\nClick Cancel to stay here.');
-
-          if (openWA) {
-            window.open('https://web.whatsapp.com/', '_blank');
-          }
-          return;
-        }
-
-        // Final fallback: Download
-        console.log('Using download fallback');
-        downloadReceipt();
-        alert('Image downloaded! Please share it manually via WhatsApp.');
-
-      } catch (error) {
-        if (error.name !== 'AbortError') {
-          console.error('Error sharing:', error);
-          console.error('Error name:', error.name);
-          console.error('Error message:', error.message);
-          // Fallback: Download the file
-          downloadReceipt();
-          alert('Share failed. Image downloaded! Please share it manually via WhatsApp.\n\nError: ' + error.message);
-        } else {
-          console.log('User cancelled share');
-        }
-      }
     }
 
     // Format amount with commas on blur
