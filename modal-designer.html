@@ -409,6 +409,33 @@
             margin-top: 4px;
             font-style: italic;
         }
+
+        .btn-lock {
+            background: #ffc107;
+            color: #333;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 8px;
+            font-weight: 600;
+        }
+
+        .btn-lock.locked {
+            background: #28a745;
+            color: white;
+        }
+
+        .section-control.locked {
+            background: #e8f5e9;
+            border-color: #28a745;
+        }
+
+        .section-name.locked::after {
+            content: ' 🔒';
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -515,7 +542,8 @@
                     id: Date.now() + index,
                     name: name,
                     height: 33.33,
-                    boxes: []
+                    boxes: [],
+                    locked: false
                 });
             });
 
@@ -528,26 +556,32 @@
         function addSection() {
             const sectionNumber = sections.length + 1;
 
-            // Calculate space to take from existing sections
+            // Calculate space to take from existing unlocked sections
             const targetHeight = 10;
-            const otherSections = sections;
+            const unlockedSections = sections.filter(s => !s.locked);
+            const lockedTotal = sections.filter(s => s.locked).reduce((sum, s) => sum + s.height, 0);
 
-            if (otherSections.length > 0) {
-                const totalOtherHeight = otherSections.reduce((sum, s) => sum + s.height, 0);
-                const remainingSpace = 100 - targetHeight;
+            if (unlockedSections.length > 0) {
+                const availableSpace = 100 - lockedTotal;
+                const remainingSpace = availableSpace - targetHeight;
 
-                // Shrink existing sections proportionally
-                otherSections.forEach(s => {
-                    const proportion = s.height / totalOtherHeight;
-                    s.height = remainingSpace * proportion;
-                });
+                const totalUnlockedHeight = unlockedSections.reduce((sum, s) => sum + s.height, 0);
+
+                // Shrink existing unlocked sections proportionally
+                if (totalUnlockedHeight > 0) {
+                    unlockedSections.forEach(s => {
+                        const proportion = s.height / totalUnlockedHeight;
+                        s.height = remainingSpace * proportion;
+                    });
+                }
             }
 
             const newSection = {
                 id: Date.now(),
                 name: `Section ${sectionNumber}`,
                 height: targetHeight,
-                boxes: []
+                boxes: [],
+                locked: false
             };
 
             sections.push(newSection);
@@ -579,38 +613,43 @@
             const oldHeight = section.height;
             const difference = newHeight - oldHeight;
 
-            // Get other sections
-            const otherSections = sections.filter(s => s.id !== id);
+            // Get other unlocked sections (excluding the one being changed)
+            const unlockedOtherSections = sections.filter(s => s.id !== id && !s.locked);
 
-            if (otherSections.length === 0) {
-                section.height = 100;
+            if (unlockedOtherSections.length === 0) {
+                // No other unlocked sections to adjust
+                // Check if we can make the change
+                const lockedTotal = sections.filter(s => s.id !== id && s.locked).reduce((sum, s) => sum + s.height, 0);
+                const maxAllowed = 100 - lockedTotal;
+                section.height = Math.min(newHeight, maxAllowed);
                 renderSections();
                 renderControls();
                 return;
             }
 
-            // Calculate total height of other sections
-            const othersTotalHeight = otherSections.reduce((sum, s) => sum + s.height, 0);
+            // Calculate total locked height
+            const lockedTotal = sections.filter(s => s.locked && s.id !== id).reduce((sum, s) => sum + s.height, 0);
+            const availableSpace = 100 - lockedTotal;
 
-            // If new height would exceed 100%, cap it
-            if (newHeight > 100) {
-                section.height = 100;
-                otherSections.forEach(s => s.height = 0);
+            // Calculate total height of unlocked other sections
+            const unlockedOthersTotalHeight = unlockedOtherSections.reduce((sum, s) => sum + s.height, 0);
+
+            // Cap new height to available space
+            const cappedNewHeight = Math.min(newHeight, availableSpace);
+            section.height = cappedNewHeight;
+
+            // Distribute the remaining space among other unlocked sections proportionally
+            const remainingSpace = availableSpace - cappedNewHeight;
+
+            if (unlockedOthersTotalHeight > 0) {
+                unlockedOtherSections.forEach(s => {
+                    const proportion = s.height / unlockedOthersTotalHeight;
+                    s.height = remainingSpace * proportion;
+                });
             } else {
-                section.height = newHeight;
-
-                // Distribute the difference among other sections proportionally
-                if (othersTotalHeight > 0) {
-                    const remainingSpace = 100 - newHeight;
-                    otherSections.forEach(s => {
-                        const proportion = s.height / othersTotalHeight;
-                        s.height = remainingSpace * proportion;
-                    });
-                } else {
-                    // If others were 0, distribute equally
-                    const equalHeight = (100 - newHeight) / otherSections.length;
-                    otherSections.forEach(s => s.height = equalHeight);
-                }
+                // If others were 0, distribute equally
+                const equalHeight = remainingSpace / unlockedOtherSections.length;
+                unlockedOtherSections.forEach(s => s.height = equalHeight);
             }
 
             // Ensure minimum heights and normalize to 100%
@@ -658,6 +697,16 @@
             selectedBoxId = null;
             renderSections();
             renderControls();
+        }
+
+        // Toggle section lock
+        function toggleSectionLock(id) {
+            const section = sections.find(s => s.id === id);
+            if (section) {
+                section.locked = !section.locked;
+                renderSections();
+                renderControls();
+            }
         }
 
         // Add box to selected section
@@ -973,10 +1022,19 @@
                     controlEl.classList.add('selected');
                 }
 
+                if (section.locked) {
+                    controlEl.classList.add('locked');
+                }
+
                 controlEl.innerHTML = `
                     <div class="section-header">
-                        <span class="section-name">${section.name}</span>
-                        <button class="btn-remove" onclick="removeSection(${section.id})">Remove</button>
+                        <span class="section-name ${section.locked ? 'locked' : ''}">${section.name}</span>
+                        <div>
+                            <button class="btn-lock ${section.locked ? 'locked' : ''}" onclick="event.stopPropagation(); toggleSectionLock(${section.id})">
+                                ${section.locked ? '🔒 Locked' : '🔓 Lock'}
+                            </button>
+                            <button class="btn-remove" onclick="removeSection(${section.id})">Remove</button>
+                        </div>
                     </div>
                     <div class="height-control">
                         <label>Height:</label>
@@ -985,12 +1043,14 @@
                                max="80"
                                step="0.5"
                                value="${section.height.toFixed(1)}"
+                               ${section.locked ? 'disabled' : ''}
                                oninput="updateSectionHeight(${section.id}, this.value); this.nextElementSibling.value = this.value">
                         <input type="number"
                                min="1"
                                max="80"
                                step="0.5"
                                value="${section.height.toFixed(1)}"
+                               ${section.locked ? 'disabled' : ''}
                                oninput="updateSectionHeight(${section.id}, this.value); this.previousElementSibling.value = this.value">
                     </div>
                 `;
@@ -1103,6 +1163,7 @@ ${JSON.stringify({
         id: section.id,
         name: section.name,
         heightPercentage: section.height,
+        locked: section.locked,
         boxes: section.boxes.map(box => ({
             id: box.id,
             name: box.name,
@@ -1203,7 +1264,7 @@ ${JSON.stringify({
             exportContent += `/* ========== IMPLEMENTATION NOTES ========== */
 /*
 SECTION BREAKDOWN:
-${sections.map((section, i) => `${i + 1}. ${section.name}:
+${sections.map((section, i) => `${i + 1}. ${section.name}${section.locked ? ' 🔒 [LOCKED]' : ''}:
    - Height: ${section.height.toFixed(1)}%
    - Boxes: ${section.boxes.length}
    ${section.boxes.map((box, j) => `   ${j + 1}. "${box.name}" - Margins: T${box.margin?.top || 0} R${box.margin?.right || 0} B${box.margin?.bottom || 0} L${box.margin?.left || 0}`).join('\n   ')}`).join('\n')}
