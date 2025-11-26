@@ -15,8 +15,11 @@
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 <link rel="stylesheet" href="https://la-la.land/styles.css">
 <script>
-// ===== CLIENT CONFIG =====  
-const CURRENT_CLIENT = 'demo';  
+// ===== CLIENT CONFIG =====
+const CURRENT_CLIENT = 'demo';
+// ===== PERFORMANCE: Client Access Cache =====
+// Cache validation results per session to avoid repeated DB queries
+window.clientAccessCache = window.clientAccessCache || {};
 </script>
 
   <script>
@@ -935,6 +938,7 @@ ctaobserver.observe(ctaToaster, {
 
   confirmLogoutBtn && confirmLogoutBtn.addEventListener('click', async () => {
     try {
+      window.clientAccessCache = {}; // PERFORMANCE: Clear cache on sign out
       await window.supabaseClient?.auth.signOut();
       updateButtons(false);
       hideLogoutModal();
@@ -1072,6 +1076,7 @@ ctaobserver.observe(ctaToaster, {
 
   btnLogout && btnLogout.addEventListener('click', async () => {
     try {
+      window.clientAccessCache = {}; // PERFORMANCE: Clear cache on sign out
       await window.supabaseClient?.auth.signOut();
       updateButtons(false);
       toast('Sesión cerrada.');
@@ -1132,6 +1137,13 @@ ctaobserver.observe(ctaToaster, {
       return false;
     }
 
+    // PERFORMANCE: Check cache first (per user + client combination)
+    const cacheKey = `${session.user.id}_${CURRENT_CLIENT}`;
+    if (window.clientAccessCache[cacheKey] !== undefined) {
+      console.log('✅ Using cached client access validation');
+      return window.clientAccessCache[cacheKey];
+    }
+
     const MAX_RETRIES = 3;
     const RETRY_DELAY_MS = 500; // Wait 500ms between retries
 
@@ -1163,9 +1175,14 @@ ctaobserver.observe(ctaToaster, {
         // Sign them out immediately - they're logged in but not authorized for this client
         await window.supabaseClient.auth.signOut();
         toast('No tienes acceso a este cliente. Has sido desconectado.');
+
+        // PERFORMANCE: Cache negative result
+        window.clientAccessCache[cacheKey] = false;
         return false;
       }
 
+      // PERFORMANCE: Cache positive result
+      window.clientAccessCache[cacheKey] = true;
       return true;
     } catch (e) {
       console.error('Client validation error:', e);
