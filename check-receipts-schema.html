@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Check Receipts Table Schema</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>Receipts Table Schema Checker</h1>
+  <button onclick="checkSchema()">Check Schema</button>
+  <pre id="output" style="background: #f0f0f0; padding: 20px; margin-top: 20px;"></pre>
+
+  <script>
+    async function checkSchema() {
+      const output = document.getElementById('output');
+      output.textContent = 'Loading...';
+
+      try {
+        // Load config
+        const response = await fetch('https://la-la.land/sb_config.json');
+        const config = await response.json();
+        const { createClient } = supabase;
+        const client = createClient(config.url, config.key);
+
+        // Get a sample receipt to see the columns
+        const { data, error } = await client
+          .from('receipts')
+          .select('*')
+          .limit(1);
+
+        if (error) {
+          output.textContent = `❌ Error: ${error.message}`;
+          return;
+        }
+
+        if (!data || data.length === 0) {
+          output.textContent = '⚠️ No receipts found in table. Insert one receipt first.';
+          return;
+        }
+
+        output.textContent = '✅ Receipts Table Columns:\n\n' +
+          Object.keys(data[0]).map(col => `  - ${col}: ${typeof data[0][col]} = ${JSON.stringify(data[0][col])}`).join('\n') +
+          '\n\n' +
+          (Object.keys(data[0]).includes('image')
+            ? '✅ Column "image" EXISTS'
+            : '❌ Column "image" MISSING - you need to add it!');
+
+      } catch (err) {
+        output.textContent = `❌ Error: ${err.message}`;
+      }
+    }
+  </script>
+</body>
+</html>

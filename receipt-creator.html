@@ -883,23 +883,38 @@ async function generateReceipt() {
         });
 
       if (uploadError) {
-        console.warn('Upload warning:', uploadError.message);
+        console.error('❌ Storage upload failed:', uploadError);
+        alert(`Image upload failed: ${uploadError.message}\n\nPlease check:\n- Storage bucket 'receipts' exists\n- Bucket has public upload permissions\n\nReceipt saved to database but without image.`);
       } else {
+        console.log('✅ Image uploaded to storage:', uploadData);
+
         const { data: urlData } = window.supabaseClient
           .storage
           .from('receipts')
           .getPublicUrl(currentFilename);
 
-        await window.supabaseClient
+        console.log('📸 Public URL:', urlData.publicUrl);
+
+        const { data: updateData, error: updateError } = await window.supabaseClient
           .from('receipts')
           .update({ image: urlData.publicUrl })
-          .eq('id', currentReceiptId);
+          .eq('id', currentReceiptId)
+          .select();
 
-        console.log('✅ High-res image uploaded');
+        if (updateError) {
+          console.error('❌ Database update failed:', updateError);
+          alert(`Failed to save image URL to database: ${updateError.message}\n\nColumn name might be wrong. Check if your table has an 'image' column.`);
+        } else {
+          console.log('✅ Database updated with image URL:', updateData);
+          if (!updateData || updateData.length === 0) {
+            console.warn('⚠️ Update returned no data - row might not exist or column name is wrong');
+          }
+        }
       }
 
     } catch (uploadErr) {
-      console.warn('Upload failed, but high-res image is saved locally:', uploadErr);
+      console.error('❌ Upload error:', uploadErr);
+      alert(`Upload failed: ${uploadErr.message}\n\nReceipt saved to database but without image.`);
     }
 
     // Restore footer and show download button
