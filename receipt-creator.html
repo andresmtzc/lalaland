@@ -6,6 +6,36 @@
   <title>Receipt Creator - La-La Land</title>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+  <script>
+  // ===== LOAD SUPABASE =====
+  window.supabaseReady = new Promise((resolve, reject) => {
+    const supabaseScript = document.createElement('script');
+    supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+
+    supabaseScript.onload = () => {
+      fetch('https://la-la.land/sb_config.json')
+        .then(r => r.json())
+        .then(cfg => {
+          window.supabaseClient = supabase.createClient(cfg.url, cfg.key);
+          console.log('✅ Supabase client initialized');
+          resolve();
+        })
+        .catch(e => {
+          console.error('Failed to load Supabase config:', e);
+          reject(new Error("❌ Failed to load Supabase config"));
+        });
+    };
+
+    supabaseScript.onerror = () => {
+      console.error("❌ Failed to load Supabase script");
+      reject(new Error("❌ Failed to load Supabase script"));
+    };
+
+    document.head.appendChild(supabaseScript);
+  });
+  </script>
+
   <style>
     * {
       margin: 0;
@@ -351,6 +381,16 @@
       <!-- Receipt Body -->
       <div class="receipt-body">
         <div class="form-group">
+          <label class="form-label" for="receiptClient">Client</label>
+          <select
+            id="receiptClient"
+            class="form-input"
+          >
+            <option value="inverta">Inverta</option>
+          </select>
+        </div>
+
+        <div class="form-group">
           <label class="form-label" for="receiptDate">Date</label>
           <div class="date-display" id="dateDisplay" onclick="document.getElementById('receiptDate').showPicker()"></div>
           <input
@@ -399,19 +439,20 @@
   <script>
     let generatedImageBlob = null;
     let currentFilename = '';
+    let currentReceiptId = null;
 
     // Month abbreviations
     const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
     // Set today's date by default
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', async function() {
       const dateInput = document.getElementById('receiptDate');
       const today = new Date().toISOString().split('T')[0];
       dateInput.value = today;
       updateDateDisplay();
 
-      // Generate random receipt number
-      updateReceiptNumber();
+      // Fetch next receipt number from database
+      await updateReceiptNumber();
 
       // Listen for date changes
       dateInput.addEventListener('change', updateDateDisplay);
@@ -434,13 +475,33 @@
       dateDisplay.textContent = `${day} ${month} ${year}`;
     }
 
-    function updateReceiptNumber() {
+    async function updateReceiptNumber() {
       const receiptNum = document.getElementById('receiptNum');
-      // Get last receipt number from localStorage and increment
-      let lastNumber = parseInt(localStorage.getItem('lastReceiptNumber') || '0');
-      lastNumber += 1;
-      localStorage.setItem('lastReceiptNumber', lastNumber.toString());
-      receiptNum.textContent = String(lastNumber).padStart(6, '0');
+
+      try {
+        await window.supabaseReady;
+
+        // Get the next ID by finding the max ID and adding 1
+        const { data, error } = await window.supabaseClient
+          .from('receipts')
+          .select('id')
+          .order('id', { ascending: false })
+          .limit(1);
+
+        if (error) {
+          console.error('Error fetching next receipt number:', error);
+          receiptNum.textContent = '------';
+          return;
+        }
+
+        const nextId = data && data.length > 0 ? data[0].id + 1 : 1;
+        receiptNum.textContent = String(nextId).padStart(6, '0');
+        currentReceiptId = nextId;
+
+      } catch (error) {
+        console.error('Failed to fetch receipt number:', error);
+        receiptNum.textContent = '------';
+      }
     }
 
     function clearReceipt() {
@@ -461,11 +522,12 @@
     }
 
     async function generateReceipt() {
+      const clientId = document.getElementById('receiptClient').value;
       const date = document.getElementById('receiptDate').value;
       const concept = document.getElementById('receiptConcept').value;
       const amountRaw = document.getElementById('receiptAmount').value;
 
-      if (!date || !concept || !amountRaw) {
+      if (!clientId || !date || !concept || !amountRaw) {
         alert('Please fill in all fields');
         return;
       }
@@ -477,9 +539,55 @@
         return;
       }
 
-      const receiptNumber = document.getElementById('receiptNum').textContent;
       const generateBtn = document.getElementById('generateBtn');
       const clearBtn = document.getElementById('clearBtn');
+
+      // Show saving state
+      generateBtn.textContent = 'Saving...';
+      generateBtn.disabled = true;
+
+      try {
+        // Save to database first
+        await window.supabaseReady;
+
+        const { data, error } = await window.supabaseClient
+          .from('receipts')
+          .insert([
+            {
+              client_id: clientId,
+              concept: concept,
+              amount: amount.toString()
+            }
+          ])
+          .select();
+
+        if (error) {
+          throw new Error(`Database error: ${error.message}`);
+        }
+
+        if (!data || data.length === 0) {
+          throw new Error('Failed to save receipt to database');
+        }
+
+        // Update receipt number with actual database ID
+        const receiptId = data[0].id;
+        const receiptNum = document.getElementById('receiptNum');
+        receiptNum.textContent = String(receiptId).padStart(6, '0');
+        currentReceiptId = receiptId;
+
+        console.log('✅ Receipt saved to database:', data[0]);
+
+        // Update button text
+        generateBtn.textContent = 'Generating Image...';
+
+      } catch (error) {
+        console.error('Error saving receipt:', error);
+        alert(`Failed to save receipt: ${error.message}`);
+        generateBtn.textContent = 'Generate';
+        generateBtn.disabled = false;
+        return;
+      }
+
       const receiptFooter = document.querySelector('.receipt-footer');
       const receiptModal = document.querySelector('.receipt-modal');
 
