@@ -809,16 +809,18 @@ async function generateReceipt() {
     const originalFooterDisplay = receiptFooter.style.display;
     receiptFooter.style.display = 'none';
 
-    // Wait for fonts to load
-    await document.fonts.ready;
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Convert text to SVG to ensure font preservation
+    await convertTextToSVG();
 
-    // Generate image using dom-to-image with FONT EMBEDDING
+    // Wait a bit for DOM to update
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // Generate image using dom-to-image
     const captureElement = document.querySelector('.capture-wrapper');
 
-    console.log('Starting image generation with font embedding...');
+    console.log('Starting image generation with SVG text...');
 
-    // HIGH RESOLUTION with font embedding
+    // HIGH RESOLUTION
     const scale = 4;
     const width = captureElement.offsetWidth * scale;
     const height = captureElement.offsetHeight * scale;
@@ -833,44 +835,15 @@ async function generateReceipt() {
         transformOrigin: 'top left',
         width: `${captureElement.offsetWidth}px`,
         height: `${captureElement.offsetHeight}px`
-      },
-      fontEmbedCSS: `
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap');
-        
-        @font-face {
-          font-family: 'Barlow Condensed';
-          font-style: normal;
-          font-weight: 400;
-          font-display: swap;
-          src: url(https://fonts.gstatic.com/s/barlowcondensed/v12/HTx3L3I-JCGChYJ8VI-L6OO_au7B43LT31vytKgbaw.woff2) format('woff2');
-        }
-        @font-face {
-          font-family: 'Barlow Condensed';
-          font-style: normal;
-          font-weight: 600;
-          font-display: swap;
-          src: url(https://fonts.gstatic.com/s/barlowcondensed/v12/HTx3L3I-JCGChYJ8VI-L6OO_au7B43LT31vytKgbaw.woff2) format('woff2');
-        }
-        @font-face {
-          font-family: 'Barlow Condensed';
-          font-style: normal;
-          font-weight: 700;
-          font-display: swap;
-          src: url(https://fonts.gstatic.com/s/barlowcondensed/v12/HTx3L3I-JCGChYJ8VI-L6OO_au7B43LT31vytKgbaw.woff2) format('woff2');
-        }
-        
-        * {
-          font-family: 'Barlow Condensed', sans-serif !important;
-          -webkit-font-smoothing: antialiased !important;
-          -moz-osx-font-smoothing: grayscale !important;
-        }
-      `,
-      preferredFontFormat: 'woff2'
+      }
     });
 
-    console.log('Image with embedded font generated successfully');
+    console.log('Image with SVG text generated successfully');
 
     generatedImageBlob = blob;
+
+    // Restore original text
+    restoreOriginalText();
 
     // Create filename
     const dateObj = new Date(date + 'T00:00:00');
@@ -906,7 +879,7 @@ async function generateReceipt() {
           .update({ image: urlData.publicUrl })
           .eq('id', currentReceiptId);
 
-        console.log('✅ Image with embedded font uploaded');
+        console.log('✅ Image uploaded');
       }
 
     } catch (uploadErr) {
@@ -922,12 +895,13 @@ async function generateReceipt() {
     downloadBtn.style.display = 'block';
     downloadBtn.textContent = 'Download Receipt';
 
-    console.log('✅ Receipt with embedded font ready for download:', currentFilename);
+    console.log('✅ Receipt ready for download:', currentFilename);
 
   } catch (error) {
-    console.error('Error generating receipt with font:', error);
+    console.error('Error generating receipt:', error);
     
-    // Restore footer in case of error
+    // Restore everything in case of error
+    restoreOriginalText();
     receiptFooter.style.display = 'flex';
     
     alert(`Error generating receipt: ${error.message}`);
@@ -937,6 +911,74 @@ async function generateReceipt() {
     generateBtn.disabled = false;
   }
 }
+
+// Function to convert text to SVG
+async function convertTextToSVG() {
+  // Store original content
+  window.originalContent = {};
+  
+  // Convert all text elements to SVG
+  const textElements = document.querySelectorAll('.receipt-title, .receipt-number, .form-label, .form-input, .date-display, .concept-input, .amount-input-field');
+  
+  textElements.forEach(element => {
+    const id = element.id || Math.random().toString(36);
+    window.originalContent[id] = {
+      element: element,
+      html: element.innerHTML,
+      text: element.textContent,
+      value: element.value
+    };
+    
+    // For form inputs, use their value
+    const text = element.value || element.textContent || element.innerHTML;
+    if (text && text.trim()) {
+      const svgText = createSVGText(text, getComputedStyle(element));
+      element.innerHTML = '';
+      element.appendChild(svgText);
+    }
+  });
+}
+
+// Function to create SVG text
+function createSVGText(text, style) {
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  const textElement = document.createElementNS(svgNS, "text");
+  
+  // Set SVG dimensions
+  svg.setAttribute('width', '1000');
+  svg.setAttribute('height', '100');
+  svg.setAttribute('viewBox', '0 0 1000 100');
+  
+  // Set text properties based on computed style
+  textElement.setAttribute('x', '0');
+  textElement.setAttribute('y', '70'); // Baseline position
+  textElement.setAttribute('font-family', "'Barlow Condensed', sans-serif");
+  textElement.setAttribute('font-weight', style.fontWeight || 'normal');
+  textElement.setAttribute('font-size', '60'); // Large size for quality
+  textElement.setAttribute('fill', style.color || '#000');
+  textElement.textContent = text;
+  
+  svg.appendChild(textElement);
+  return svg;
+}
+
+// Function to restore original text
+function restoreOriginalText() {
+  if (window.originalContent) {
+    Object.keys(window.originalContent).forEach(id => {
+      const original = window.originalContent[id];
+      if (original.element) {
+        original.element.innerHTML = original.html;
+        if (original.value !== undefined) {
+          original.element.value = original.value;
+        }
+      }
+    });
+  }
+}
+
+
 
     function downloadReceipt() {
       if (!generatedImageBlob) {
