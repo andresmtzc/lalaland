@@ -496,8 +496,10 @@
 
             <div class="control-section">
                 <h3>Actions</h3>
-                <button class="btn-add-section" onclick="exportHTML()" style="background: #17a2b8;">Export HTML</button>
-                <button class="btn-add-section" onclick="resetModal()" style="background: #ff4757;">Reset</button>
+                <button class="btn-add-section" onclick="exportHTML()" style="background: #17a2b8;">📄 Export HTML</button>
+                <button class="btn-add-section" onclick="exportJSON()" style="background: #6c757d;">💾 Save JSON</button>
+                <button class="btn-add-section" onclick="showImportModal()" style="background: #28a745;">📥 Load JSON</button>
+                <button class="btn-add-section" onclick="resetModal()" style="background: #ff4757;">🗑 Reset</button>
             </div>
         </div>
 
@@ -517,6 +519,19 @@
             <h3 id="exportTitle">Export HTML</h3>
             <textarea id="exportCode" readonly></textarea>
             <button onclick="copyExportCode()">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="importModal" class="export-modal">
+        <div class="export-content">
+            <span class="close-export" onclick="closeImportModal()">&times;</span>
+            <h3>Import Design (JSON)</h3>
+            <p style="font-size: 13px; color: #666; margin-bottom: 12px;">
+                Paste your saved JSON below to restore your design:
+            </p>
+            <textarea id="importCode" placeholder='Paste JSON here...&#10;Example: {"modalDimensions":{"width":400,"height":600},...}'></textarea>
+            <button onclick="importJSON()">Load Design</button>
         </div>
     </div>
 
@@ -916,7 +931,8 @@
 
                     // Make each box take equal width
                     boxEl.style.flex = '1';
-                    boxEl.style.height = '100%';
+                    boxEl.style.alignSelf = 'stretch';
+                    boxEl.style.minHeight = '0';
 
                     // Apply margins
                     boxEl.style.marginTop = `${box.margin?.top || 0}px`;
@@ -1310,6 +1326,102 @@ TO USE THIS DESIGN:
             alert('Code copied to clipboard!');
         }
 
+        // Export JSON
+        function exportJSON() {
+            const designData = {
+                version: '1.0',
+                modalDimensions: {
+                    width: modalWidth,
+                    height: modalHeight
+                },
+                sections: sections.map(section => ({
+                    id: section.id,
+                    name: section.name,
+                    heightPercentage: section.height,
+                    locked: section.locked,
+                    boxes: section.boxes.map(box => ({
+                        id: box.id,
+                        name: box.name,
+                        margin: box.margin
+                    }))
+                }))
+            };
+
+            const jsonString = JSON.stringify(designData, null, 2);
+            showExportModal('Save Design (JSON)', jsonString);
+        }
+
+        // Show import modal
+        function showImportModal() {
+            const modal = document.getElementById('importModal');
+            const codeEl = document.getElementById('importCode');
+            codeEl.value = '';
+            modal.classList.add('active');
+        }
+
+        // Close import modal
+        function closeImportModal() {
+            const modal = document.getElementById('importModal');
+            modal.classList.remove('active');
+        }
+
+        // Import JSON
+        function importJSON() {
+            const codeEl = document.getElementById('importCode');
+            const jsonString = codeEl.value.trim();
+
+            if (!jsonString) {
+                alert('Please paste JSON data to import.');
+                return;
+            }
+
+            try {
+                const data = JSON.parse(jsonString);
+
+                // Validate data structure
+                if (!data.modalDimensions || !data.sections) {
+                    throw new Error('Invalid JSON structure. Missing required fields.');
+                }
+
+                // Restore modal dimensions
+                modalWidth = data.modalDimensions.width || 400;
+                modalHeight = data.modalDimensions.height || 600;
+
+                const modal = document.getElementById('modalPreview');
+                modal.style.width = `${modalWidth}px`;
+                modal.style.height = `${modalHeight}px`;
+
+                // Restore sections
+                sections = data.sections.map(s => ({
+                    id: s.id || Date.now() + Math.random(),
+                    name: s.name || 'Section',
+                    height: s.heightPercentage || 33.33,
+                    locked: s.locked || false,
+                    boxes: (s.boxes || []).map(b => ({
+                        id: b.id || Date.now() + Math.random(),
+                        name: b.name || 'Box',
+                        margin: b.margin || { top: 0, right: 0, bottom: 0, left: 0 }
+                    }))
+                }));
+
+                // Reset selection
+                selectedSectionId = null;
+                selectedBoxId = null;
+
+                // Update display
+                updateSizeDisplay();
+                renderSections();
+                renderControls();
+
+                // Close modal
+                closeImportModal();
+
+                alert('Design loaded successfully!');
+            } catch (error) {
+                alert(`Failed to import JSON: ${error.message}\n\nPlease check your JSON format.`);
+            }
+        }
+
         // Reset modal
         function resetModal() {
             if (confirm('Are you sure you want to reset? This will clear everything.')) {
@@ -1328,11 +1440,17 @@ TO USE THIS DESIGN:
             }
         }
 
-        // Click outside export modal to close
+        // Click outside modals to close
         window.onclick = function(event) {
-            const modal = document.getElementById('exportModal');
-            if (event.target === modal) {
+            const exportModal = document.getElementById('exportModal');
+            const importModal = document.getElementById('importModal');
+
+            if (event.target === exportModal) {
                 closeExportModal();
+            }
+
+            if (event.target === importModal) {
+                closeImportModal();
             }
         }
 
