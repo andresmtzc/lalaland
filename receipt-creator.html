@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Receipt Creator - La-La Land</title>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.14.0/dist/dom-to-image-more.min.js"></script>
 
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap"></noscript>
@@ -134,9 +134,6 @@
       height: auto;
       filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
       shape-rendering: geometricPrecision;
-      image-rendering: -webkit-optimize-contrast;
-      image-rendering: crisp-edges;
-      image-rendering: pixelated;
     }
 
     .receipt-title {
@@ -183,6 +180,10 @@
       box-sizing: border-box;
       max-width: 100%;
       min-height: 44px;
+      /* Force consistent rendering */
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
     }
 
     .form-input:focus {
@@ -645,35 +646,29 @@
         // Wait for DOM to fully update and settle
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Generate image using html2canvas with better settings
+        // Generate image using dom-to-image-more with optimized settings
         const captureElement = document.querySelector('.capture-wrapper');
 
-        const canvas = await html2canvas(captureElement, {
-          backgroundColor: '#fcfaf3',
-          scale: 3, // Higher resolution
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          width: captureElement.offsetWidth,
-          height: captureElement.offsetHeight,
-          onclone: function(clonedDoc) {
-            // Ensure fonts are loaded in the cloned document
-            const style = clonedDoc.createElement('style');
-            style.textContent = `
-              @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap');
-              * { 
-                font-family: 'Barlow Condensed', sans-serif !important; 
-                -webkit-font-smoothing: antialiased;
-                -moz-osx-font-smoothing: grayscale;
-              }
-            `;
-            clonedDoc.head.appendChild(style);
-          }
-        });
+        // Get current dimensions
+        const rect = captureElement.getBoundingClientRect();
+        const scale = 2; // Reduced scale for better performance
 
-        // Convert canvas to blob
-        const blob = await new Promise(resolve => {
-          canvas.toBlob(resolve, 'image/png', 0.95);
+        const blob = await domtoimage.toBlob(captureElement, {
+          quality: 1.0, // Maximum quality
+          bgcolor: '#fcfaf3',
+          width: rect.width * scale,
+          height: rect.height * scale,
+          style: {
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+            width: rect.width + 'px',
+            height: rect.height + 'px'
+          },
+          filter: function(node) {
+            // Exclude hidden elements and buttons
+            return node.style.display !== 'none' && 
+                   !node.classList.contains('receipt-footer');
+          }
         });
 
         generatedImageBlob = blob;
