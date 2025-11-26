@@ -489,7 +489,14 @@
             </div>
 
             <div class="control-section">
-                <h3>Box Margins</h3>
+                <h3>Box Settings</h3>
+                <h4 style="font-size: 13px; color: #777; margin-bottom: 8px; font-weight: 500;">Text Alignment</h4>
+                <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                    <button class="btn-align" id="alignLeft" onclick="updateSelectedBoxAlign('left')" style="flex: 1; padding: 8px; background: white; border: 2px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 12px;">◀ Left</button>
+                    <button class="btn-align" id="alignCenter" onclick="updateSelectedBoxAlign('center')" style="flex: 1; padding: 8px; background: white; border: 2px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 12px;">▬ Center</button>
+                    <button class="btn-align" id="alignRight" onclick="updateSelectedBoxAlign('right')" style="flex: 1; padding: 8px; background: white; border: 2px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 12px;">▶ Right</button>
+                </div>
+                <h4 style="font-size: 13px; color: #777; margin-bottom: 8px; font-weight: 500;">Margins</h4>
                 <div class="margin-controls">
                     <div class="margin-control">
                         <label>Top</label>
@@ -509,7 +516,7 @@
                     </div>
                 </div>
                 <div style="font-size: 12px; color: #666; margin-top: 8px; text-align: center;">
-                    Select a box to adjust margins
+                    Select a box to adjust settings
                 </div>
             </div>
 
@@ -774,7 +781,8 @@
             const newBox = {
                 id: Date.now(),
                 name: `Box ${boxNumber}`,
-                margin: { top: 0, right: 0, bottom: 0, left: 0 }
+                margin: { top: 0, right: 0, bottom: 0, left: 0 },
+                textAlign: 'center'
             };
 
             section.boxes.push(newBox);
@@ -830,6 +838,25 @@
             }
 
             renderSections();
+        }
+
+        // Update box text alignment (applies to all selected boxes)
+        function updateSelectedBoxAlign(align) {
+            if (!selectedSectionId || selectedBoxIds.length === 0) return;
+
+            const section = sections.find(s => s.id === selectedSectionId);
+            if (!section) return;
+
+            // Apply alignment to all selected boxes
+            selectedBoxIds.forEach(boxId => {
+                const box = section.boxes.find(b => b.id === boxId);
+                if (box) {
+                    box.textAlign = align;
+                }
+            });
+
+            renderSections();
+            renderControls();
         }
 
         // Remove box
@@ -1085,13 +1112,14 @@
                     boxNameInput.type = 'text';
                     boxNameInput.className = 'box-name-editable';
                     boxNameInput.value = box.name;
+                    const textAlign = box.textAlign || 'center';
                     boxNameInput.style.cssText = `
                         background: transparent;
                         border: 1px dashed rgba(255,255,255,0.5);
                         color: white;
                         font-size: 14px;
                         font-weight: 600;
-                        text-align: center;
+                        text-align: ${textAlign};
                         padding: 4px 8px;
                         border-radius: 4px;
                         width: 80%;
@@ -1102,12 +1130,13 @@
                     boxNameInput.onblur = (e) => renameBox(section.id, box.id, e.target.value);
                     boxNameInput.placeholder = 'Box name...';
 
-                    // Center the name input
+                    // Container for the name input with proper alignment
+                    const justifyMap = { left: 'flex-start', center: 'center', right: 'flex-end' };
                     const centerContainer = document.createElement('div');
                     centerContainer.style.cssText = `
                         display: flex;
                         align-items: center;
-                        justify-content: center;
+                        justify-content: ${justifyMap[textAlign] || 'center'};
                         width: 100%;
                         height: 100%;
                         pointer-events: none;
@@ -1199,15 +1228,29 @@
                 totalEl.style.color = Math.abs(total - 100) < 0.1 ? '#667eea' : '#ff4757';
             }
 
-            // Update margin controls if boxes are selected
+            // Update box settings controls if boxes are selected
             if (selectedSectionId && selectedBoxIds.length > 0) {
                 const section = sections.find(s => s.id === selectedSectionId);
                 const firstBox = section?.boxes.find(b => b.id === selectedBoxIds[0]);
                 if (firstBox) {
+                    // Update margin inputs
                     document.getElementById('marginTop').value = firstBox.margin?.top || 0;
                     document.getElementById('marginRight').value = firstBox.margin?.right || 0;
                     document.getElementById('marginBottom').value = firstBox.margin?.bottom || 0;
                     document.getElementById('marginLeft').value = firstBox.margin?.left || 0;
+
+                    // Update alignment button states
+                    const textAlign = firstBox.textAlign || 'center';
+                    document.querySelectorAll('.btn-align').forEach(btn => {
+                        btn.style.background = 'white';
+                        btn.style.borderColor = '#ddd';
+                    });
+                    const activeBtn = document.getElementById('align' + textAlign.charAt(0).toUpperCase() + textAlign.slice(1));
+                    if (activeBtn) {
+                        activeBtn.style.background = '#667eea';
+                        activeBtn.style.borderColor = '#667eea';
+                        activeBtn.style.color = 'white';
+                    }
                 }
 
                 // Show multi-select indicator if multiple boxes selected
@@ -1313,7 +1356,8 @@ ${JSON.stringify({
         boxes: section.boxes.map(box => ({
             id: box.id,
             name: box.name,
-            margin: box.margin
+            margin: box.margin,
+            textAlign: box.textAlign
         }))
     }))
 }, null, 2)}
@@ -1472,7 +1516,8 @@ TO USE THIS DESIGN:
                     boxes: section.boxes.map(box => ({
                         id: box.id,
                         name: box.name,
-                        margin: box.margin
+                        margin: box.margin,
+                        textAlign: box.textAlign
                     }))
                 }))
             };
@@ -1530,7 +1575,8 @@ TO USE THIS DESIGN:
                     boxes: (s.boxes || []).map(b => ({
                         id: b.id || Date.now() + Math.random(),
                         name: b.name || 'Box',
-                        margin: b.margin || { top: 0, right: 0, bottom: 0, left: 0 }
+                        margin: b.margin || { top: 0, right: 0, bottom: 0, left: 0 },
+                        textAlign: b.textAlign || 'center'
                     }))
                 }));
 
