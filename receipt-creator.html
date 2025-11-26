@@ -535,52 +535,6 @@ select.form-input {
   text-rendering: optimizeLegibility !important;
 }
 
-/* Client History Section */
-.client-history-section {
-  margin-top: 40px;
-  text-align: center;
-  max-width: 1100px;
-  width: 100%;
-}
-
-.history-title {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 20px;
-  font-weight: 700;
-  color: #1a1a1a;
-  margin-bottom: 20px;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-}
-
-.client-buttons {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.btn-client {
-  padding: 12px 24px;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 14px;
-  font-weight: 600;
-  background: #1a1a1a;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.btn-client:hover {
-  background: #ff8400;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(255, 132, 0, 0.3);
-}
-
 /* Time Machine Modal */
 .time-machine-modal {
   position: fixed;
@@ -852,17 +806,10 @@ select.form-input {
         <!-- Receipt Footer -->
         <div class="receipt-footer">
           <button class="btn btn-secondary" id="clearBtn" onclick="clearReceipt()">Clear</button>
+          <button class="btn btn-secondary" id="historyBtn" onclick="openClientHistory()">History</button>
           <button class="btn btn-primary" id="generateBtn" onclick="generateReceipt()">Generate</button>
           <button class="btn btn-download" id="downloadBtn" onclick="downloadReceipt()" style="display: none;">Download</button>
         </div>
-      </div>
-    </div>
-
-    <!-- Client History Buttons -->
-    <div class="client-history-section">
-      <h3 class="history-title">Client History</h3>
-      <div class="client-buttons">
-        <button class="btn-client" onclick="openTimeMachine('inverta')">Inverta</button>
       </div>
     </div>
   </div>
@@ -877,7 +824,7 @@ select.form-input {
       <div class="carousel-container">
         <button class="carousel-btn carousel-prev" onclick="navigateReceipt(-1)" id="prevBtn">‹</button>
         <div class="carousel-viewer">
-          <img id="receiptImage" src="" alt="Receipt" class="receipt-image">
+          <img id="receiptImage" src="" alt="Receipt" class="receipt-image" style="cursor: pointer;" onclick="openReceiptImage()">
           <div class="receipt-info">
             <p id="receiptDate"></p>
             <p id="receiptConcept"></p>
@@ -1205,6 +1152,12 @@ async function generateReceipt() {
     let currentReceiptIndex = 0;
     let currentClientId = '';
 
+    function openClientHistory() {
+      const clientSelect = document.getElementById('receiptClient');
+      const clientId = clientSelect.value;
+      openTimeMachine(clientId);
+    }
+
     async function openTimeMachine(clientId) {
       currentClientId = clientId;
       const modal = document.getElementById('timeMachineModal');
@@ -1217,12 +1170,12 @@ async function generateReceipt() {
       try {
         await window.supabaseReady;
 
-        // Fetch all receipts for this client, ordered by date (newest first)
+        // Fetch all receipts for this client, ordered by date (oldest first)
         const { data, error } = await window.supabaseClient
           .from('receipts')
           .select('*')
           .eq('client_id', clientId)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: true });
 
         if (error) {
           throw new Error(`Failed to fetch receipts: ${error.message}`);
@@ -1236,13 +1189,14 @@ async function generateReceipt() {
         }
 
         timeMachineReceipts = data;
-        currentReceiptIndex = 0;
+        // Start at the newest (last item in array)
+        currentReceiptIndex = data.length - 1;
 
         title.textContent = `${clientId.toUpperCase()} - Receipt History`;
         document.querySelector('.carousel-container').style.display = 'flex';
         document.getElementById('carouselCounter').style.display = 'block';
 
-        displayReceipt(0);
+        displayReceipt(currentReceiptIndex);
 
         console.log(`✅ Loaded ${data.length} receipts for ${clientId}`);
 
@@ -1288,9 +1242,9 @@ async function generateReceipt() {
       // Update counter
       counter.textContent = `${index + 1} / ${timeMachineReceipts.length}`;
 
-      // Update button states
-      prevBtn.disabled = index === 0;
-      nextBtn.disabled = index === timeMachineReceipts.length - 1;
+      // Update button states (left = older, right = newer)
+      prevBtn.disabled = index === 0; // Can't go older than first (oldest)
+      nextBtn.disabled = index === timeMachineReceipts.length - 1; // Can't go newer than last (newest)
     }
 
     function navigateReceipt(direction) {
@@ -1308,6 +1262,15 @@ async function generateReceipt() {
       timeMachineReceipts = [];
       currentReceiptIndex = 0;
       currentClientId = '';
+    }
+
+    function openReceiptImage() {
+      if (timeMachineReceipts && timeMachineReceipts[currentReceiptIndex]) {
+        const imageUrl = timeMachineReceipts[currentReceiptIndex].image;
+        if (imageUrl) {
+          window.open(imageUrl, '_blank');
+        }
+      }
     }
 
     // Keyboard navigation
