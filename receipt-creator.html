@@ -525,6 +525,16 @@ select.form-input {
   -moz-osx-font-smoothing: grayscale !important;
   text-rendering: optimizeLegibility !important;
 }
+
+/* Force Barlow Condensed font in capture */
+.capture-wrapper * {
+  font-family: 'Barlow Condensed', Arial, sans-serif !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+}
+
+/* Pre-load font styles */
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap');
   </style>
 </head>
 <body>
@@ -809,41 +819,32 @@ async function generateReceipt() {
     const originalFooterDisplay = receiptFooter.style.display;
     receiptFooter.style.display = 'none';
 
-    // Convert text to SVG to ensure font preservation
-    await convertTextToSVG();
+    // Pre-load font as base64 to ensure it's available
+    await loadFontAsBase64();
 
-    // Wait a bit for DOM to update
-    await new Promise(resolve => setTimeout(resolve, 300));
+    // Wait for everything to settle
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Generate image using dom-to-image
     const captureElement = document.querySelector('.capture-wrapper');
 
-    console.log('Starting image generation with SVG text...');
+    console.log('Starting image generation...');
 
-    // HIGH RESOLUTION
-    const scale = 4;
-    const width = captureElement.offsetWidth * scale;
-    const height = captureElement.offsetHeight * scale;
-
+    // Use simpler approach without complex scaling
     const blob = await domtoimage.toBlob(captureElement, {
       quality: 1,
       bgcolor: '#fcfaf3',
-      width: width,
-      height: height,
+      width: captureElement.scrollWidth * 2, // 2x resolution
+      height: captureElement.scrollHeight * 2,
       style: {
-        transform: `scale(${scale})`,
-        transformOrigin: 'top left',
-        width: `${captureElement.offsetWidth}px`,
-        height: `${captureElement.offsetHeight}px`
+        transform: 'scale(2)',
+        transformOrigin: 'top left'
       }
     });
 
-    console.log('Image with SVG text generated successfully');
+    console.log('Image generated successfully');
 
     generatedImageBlob = blob;
-
-    // Restore original text
-    restoreOriginalText();
 
     // Create filename
     const dateObj = new Date(date + 'T00:00:00');
@@ -900,8 +901,7 @@ async function generateReceipt() {
   } catch (error) {
     console.error('Error generating receipt:', error);
     
-    // Restore everything in case of error
-    restoreOriginalText();
+    // Restore footer in case of error
     receiptFooter.style.display = 'flex';
     
     alert(`Error generating receipt: ${error.message}`);
@@ -911,6 +911,31 @@ async function generateReceipt() {
     generateBtn.disabled = false;
   }
 }
+
+// Function to load font as base64 to ensure availability
+async function loadFontAsBase64() {
+  // Create a hidden div with the font to force load
+  const fontLoader = document.createElement('div');
+  fontLoader.style.cssText = `
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    visibility: hidden;
+    font-family: 'Barlow Condensed';
+    font-weight: 400;
+  `;
+  fontLoader.textContent = 'Font Loader';
+  document.body.appendChild(fontLoader);
+  
+  // Wait for font to load
+  await document.fonts.ready;
+  
+  // Remove loader
+  document.body.removeChild(fontLoader);
+}
+
+
+
 
 // Function to convert text to SVG
 async function convertTextToSVG() {
