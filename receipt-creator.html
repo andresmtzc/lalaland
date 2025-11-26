@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Receipt Creator - La-La Land</title>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.14.0/dist/dom-to-image-more.min.js"></script>
 
   <script>
   // ===== LOAD SUPABASE =====
@@ -585,53 +585,39 @@
         receiptModal.style.transform = 'translateY(0)';
 
         // Wait for DOM to fully update and settle
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Generate image using html2canvas - capture the wrapper to show padding and background
+        // Generate image using dom-to-image-more
         const captureElement = document.querySelector('.capture-wrapper');
-        const tempCanvas = await html2canvas(captureElement, {
-          scale: 2,
-          backgroundColor: null,
-          logging: false,
-          useCORS: true,
-          allowTaint: true
+        const blob = await domtoimage.toBlob(captureElement, {
+          quality: 0.95,
+          bgcolor: '#fcfaf3',
+          style: {
+            transform: 'scale(1)',
+            transformOrigin: 'top left'
+          }
         });
 
-        // Create final canvas with solid background (no alpha)
-        const canvas = document.createElement('canvas');
-        canvas.width = tempCanvas.width;
-        canvas.height = tempCanvas.height;
-        const ctx = canvas.getContext('2d', { alpha: false });
+        generatedImageBlob = blob;
 
-        // Fill with solid off-white background
-        ctx.fillStyle = '#fcfaf3';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Draw the captured content on top
-        ctx.drawImage(tempCanvas, 0, 0);
+        // Create filename with date prefix: YYYYMMMDD_receipt_number.png
+        const dateObj = new Date(date + 'T00:00:00');
+        const year = dateObj.getFullYear();
+        const month = MONTHS[dateObj.getMonth()];
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        const receiptNumber = String(currentReceiptId).padStart(6, '0');
+        currentFilename = `${year}${month}${day}_receipt_${receiptNumber}.png`;
 
         // Restore original state
         receiptFooter.style.display = 'flex';
         receiptModal.style.pointerEvents = '';
 
-        // Convert to blob with quality setting
-        canvas.toBlob(function(blob) {
-          generatedImageBlob = blob;
+        // Hide Generate and Clear buttons, show Download button
+        generateBtn.style.display = 'none';
+        clearBtn.style.display = 'none';
+        document.getElementById('downloadBtn').style.display = 'block';
 
-          // Create filename with date prefix: YYYYMMMDD_receipt_number.png
-          const dateObj = new Date(date + 'T00:00:00');
-          const year = dateObj.getFullYear();
-          const month = MONTHS[dateObj.getMonth()];
-          const day = String(dateObj.getDate()).padStart(2, '0');
-          currentFilename = `${year}${month}${day}_receipt_${receiptNumber}.png`;
-
-          // Hide Generate and Clear buttons, show Download button
-          generateBtn.style.display = 'none';
-          clearBtn.style.display = 'none';
-          document.getElementById('downloadBtn').style.display = 'block';
-
-          console.log('Receipt generated:', currentFilename);
-        }, 'image/png');
+        console.log('Receipt generated:', currentFilename);
 
       } catch (error) {
         console.error('Error generating receipt:', error);
