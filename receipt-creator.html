@@ -371,11 +371,11 @@
           <label class="form-label" for="receiptAmount">Amount</label>
           <span class="currency-symbol">$</span>
           <input
-            type="number"
+            type="text"
             id="receiptAmount"
             class="form-input amount-input"
             placeholder="0.00"
-            step="0.01"
+            inputmode="decimal"
           >
         </div>
       </div>
@@ -454,22 +454,32 @@
     async function generateReceipt() {
       const date = document.getElementById('receiptDate').value;
       const concept = document.getElementById('receiptConcept').value;
-      const amount = document.getElementById('receiptAmount').value;
+      const amountRaw = document.getElementById('receiptAmount').value;
 
-      if (!date || !concept || !amount) {
+      if (!date || !concept || !amountRaw) {
         alert('Please fill in all fields');
         return;
       }
 
-      const receiptNumber = document.getElementById('receiptNum').textContent;
+      // Parse amount (remove commas)
+      const amount = parseFloat(amountRaw.replace(/,/g, ''));
+      if (isNaN(amount)) {
+        alert('Please enter a valid amount');
+        return;
+      }
 
-      // Show loading state
+      const receiptNumber = document.getElementById('receiptNum').textContent;
       const generateBtn = document.getElementById('generateBtn');
-      const originalText = generateBtn.textContent;
-      generateBtn.textContent = 'Generating...';
-      generateBtn.disabled = true;
+      const clearBtn = document.getElementById('clearBtn');
+      const receiptFooter = document.querySelector('.receipt-footer');
 
       try {
+        // Hide the footer completely before taking screenshot
+        receiptFooter.style.display = 'none';
+
+        // Wait a moment for the DOM to update
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         // Generate image using html2canvas
         const receiptElement = document.querySelector('.receipt-modal');
         const canvas = await html2canvas(receiptElement, {
@@ -477,6 +487,9 @@
           backgroundColor: '#ffffff',
           logging: false
         });
+
+        // Show footer again
+        receiptFooter.style.display = 'flex';
 
         // Convert to blob
         canvas.toBlob(function(blob) {
@@ -491,7 +504,7 @@
 
           // Hide Generate and Clear buttons, show Download and WhatsApp buttons
           generateBtn.style.display = 'none';
-          document.getElementById('clearBtn').style.display = 'none';
+          clearBtn.style.display = 'none';
           document.getElementById('downloadBtn').style.display = 'block';
           document.getElementById('whatsappBtn').style.display = 'block';
 
@@ -501,8 +514,8 @@
       } catch (error) {
         console.error('Error generating receipt:', error);
         alert('Error generating receipt. Please try again.');
-        generateBtn.textContent = originalText;
-        generateBtn.disabled = false;
+        // Make sure footer is visible again if error occurs
+        receiptFooter.style.display = 'flex';
       }
     }
 
@@ -532,10 +545,8 @@
       }
 
       try {
-        // Create a File from the blob
+        // Try Web Share API first (works great on mobile)
         const file = new File([generatedImageBlob], currentFilename, { type: 'image/png' });
-
-        // Check if Web Share API is available
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
@@ -543,11 +554,27 @@
             text: 'Receipt from La-La Land'
           });
           console.log('Shared successfully');
-        } else {
-          // Fallback: Download the file and inform user to share manually
-          downloadReceipt();
-          alert('Image downloaded! Please share it manually via WhatsApp.');
+          return;
         }
+
+        // Fallback: Try clipboard (desktop)
+        if (navigator.clipboard && navigator.clipboard.write) {
+          const item = new ClipboardItem({ 'image/png': generatedImageBlob });
+          await navigator.clipboard.write([item]);
+
+          // Show success message with option to open WhatsApp
+          const openWA = confirm('✓ Image copied to clipboard!\n\nClick OK to open WhatsApp Web, then paste the image.\nClick Cancel to stay here.');
+
+          if (openWA) {
+            window.open('https://web.whatsapp.com/', '_blank');
+          }
+          return;
+        }
+
+        // Final fallback: Download
+        downloadReceipt();
+        alert('Image downloaded! Please share it manually via WhatsApp.');
+
       } catch (error) {
         if (error.name !== 'AbortError') {
           console.error('Error sharing:', error);
@@ -558,11 +585,25 @@
       }
     }
 
-    // Format amount on blur
+    // Format amount with commas on blur
     document.getElementById('receiptAmount').addEventListener('blur', function() {
       if (this.value) {
-        this.value = parseFloat(this.value).toFixed(2);
+        // Remove existing commas and parse the number
+        const numValue = parseFloat(this.value.replace(/,/g, ''));
+        if (!isNaN(numValue)) {
+          // Format with commas and 2 decimals
+          this.value = numValue.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          });
+        }
       }
+    });
+
+    // Only allow numbers, decimal point, and commas
+    document.getElementById('receiptAmount').addEventListener('input', function(e) {
+      // Remove any characters that aren't numbers, dots, or commas
+      this.value = this.value.replace(/[^\d.,]/g, '');
     });
   </script>
 </body>
