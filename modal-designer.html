@@ -436,6 +436,25 @@
             content: ' 🔒';
             font-size: 12px;
         }
+
+        .modal-section.dragging-section {
+            opacity: 0.5;
+        }
+
+        .modal-section.drag-over-section {
+            border-top: 3px solid #28a745;
+        }
+
+        .multi-select-indicator {
+            background: #17a2b8;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            text-align: center;
+            margin-top: 8px;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -446,6 +465,9 @@
 
             <div class="control-section">
                 <h3>Sections <span id="totalHeight" style="float: right; font-size: 14px; color: #667eea;">(100%)</span></h3>
+                <div class="drag-hint" style="margin-top: 0; margin-bottom: 8px;">
+                    💡 Drag sections to reorder
+                </div>
                 <div class="section-controls" id="sectionControls"></div>
                 <button class="btn-add-section" onclick="addSection()">+ Add Section</button>
                 <button class="btn-add-section" onclick="equalizeAllSections()" style="background: #28a745;">⚖ Equalize All</button>
@@ -458,7 +480,7 @@
                     Select a section first
                 </div>
                 <div class="drag-hint">
-                    💡 Drag boxes to reorder them
+                    💡 Drag boxes to reorder | Shift+click for multi-select
                 </div>
             </div>
 
@@ -539,13 +561,14 @@
         // Modal Designer State
         let sections = [];
         let selectedSectionId = null;
-        let selectedBoxId = null;
+        let selectedBoxIds = []; // Changed to array for multi-select
         let modalWidth = 400;
         let modalHeight = 600;
 
         // Drag and drop state
         let draggedBox = null;
         let draggedFromSection = null;
+        let draggedSection = null;
 
         // Initialize with default sections
         function init() {
@@ -611,7 +634,7 @@
 
             if (selectedSectionId === id) {
                 selectedSectionId = null;
-                selectedBoxId = null;
+                selectedBoxIds = [];
             }
 
             normalizeHeights();
@@ -709,7 +732,7 @@
         // Select section
         function selectSection(id) {
             selectedSectionId = id;
-            selectedBoxId = null;
+            selectedBoxIds = [];
             renderSections();
             renderControls();
         }
@@ -746,32 +769,53 @@
             renderSections();
         }
 
-        // Select box
-        function selectBox(sectionId, boxId) {
+        // Select box (with shift-click multi-select support)
+        function selectBox(sectionId, boxId, shiftKey) {
             selectedSectionId = sectionId;
-            selectedBoxId = boxId;
+
+            if (shiftKey && selectedBoxIds.length > 0) {
+                // Shift+click: toggle selection
+                const index = selectedBoxIds.indexOf(boxId);
+                if (index > -1) {
+                    selectedBoxIds.splice(index, 1);
+                } else {
+                    selectedBoxIds.push(boxId);
+                }
+            } else {
+                // Regular click: select only this box
+                selectedBoxIds = [boxId];
+            }
+
             renderSections();
             renderControls();
         }
 
-        // Update box margin
+        // Update box margin (applies to all selected boxes)
         function updateSelectedBoxMargin(side, value) {
-            if (!selectedSectionId || !selectedBoxId) return;
+            if (!selectedSectionId || selectedBoxIds.length === 0) return;
 
             const section = sections.find(s => s.id === selectedSectionId);
             if (!section) return;
 
-            const box = section.boxes.find(b => b.id === selectedBoxId);
-            if (!box) return;
+            const marginValue = parseInt(value) || 0;
 
-            if (!box.margin) box.margin = { top: 0, right: 0, bottom: 0, left: 0 };
-            box.margin[side] = parseInt(value) || 0;
+            // Apply margin to all selected boxes
+            selectedBoxIds.forEach(boxId => {
+                const box = section.boxes.find(b => b.id === boxId);
+                if (box) {
+                    if (!box.margin) box.margin = { top: 0, right: 0, bottom: 0, left: 0 };
+                    box.margin[side] = marginValue;
+                }
+            });
 
-            // Update input values
-            document.getElementById('marginTop').value = box.margin.top;
-            document.getElementById('marginRight').value = box.margin.right;
-            document.getElementById('marginBottom').value = box.margin.bottom;
-            document.getElementById('marginLeft').value = box.margin.left;
+            // Update input values to match first selected box
+            const firstBox = section.boxes.find(b => b.id === selectedBoxIds[0]);
+            if (firstBox && firstBox.margin) {
+                document.getElementById('marginTop').value = firstBox.margin.top;
+                document.getElementById('marginRight').value = firstBox.margin.right;
+                document.getElementById('marginBottom').value = firstBox.margin.bottom;
+                document.getElementById('marginLeft').value = firstBox.margin.left;
+            }
 
             renderSections();
         }
@@ -781,12 +825,67 @@
             const section = sections.find(s => s.id === sectionId);
             if (section) {
                 section.boxes = section.boxes.filter(b => b.id !== boxId);
-                if (selectedBoxId === boxId) {
-                    selectedBoxId = null;
+                // Remove from selection if selected
+                const index = selectedBoxIds.indexOf(boxId);
+                if (index > -1) {
+                    selectedBoxIds.splice(index, 1);
                 }
                 renderSections();
                 renderControls();
             }
+        }
+
+        // Section drag and drop handlers
+        function handleSectionDragStart(e, sectionIndex) {
+            draggedSection = sectionIndex;
+            e.target.classList.add('dragging-section');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function handleSectionDragEnd(e) {
+            e.target.classList.remove('dragging-section');
+            document.querySelectorAll('.drag-over-section').forEach(el => {
+                el.classList.remove('drag-over-section');
+            });
+            draggedSection = null;
+        }
+
+        function handleSectionDragOver(e) {
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+
+        function handleSectionDragEnter(e, targetIndex) {
+            if (draggedSection !== null && draggedSection !== targetIndex) {
+                e.currentTarget.classList.add('drag-over-section');
+            }
+        }
+
+        function handleSectionDragLeave(e) {
+            e.currentTarget.classList.remove('drag-over-section');
+        }
+
+        function handleSectionDrop(e, targetIndex) {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+
+            e.currentTarget.classList.remove('drag-over-section');
+
+            if (draggedSection === null || draggedSection === targetIndex) return false;
+
+            // Reorder sections array
+            const draggedItem = sections[draggedSection];
+            sections.splice(draggedSection, 1);
+            sections.splice(targetIndex, 0, draggedItem);
+
+            renderSections();
+            renderControls();
+
+            return false;
         }
 
         // Drag and Drop Functions
@@ -883,10 +982,26 @@
                 const sectionEl = document.createElement('div');
                 sectionEl.className = 'modal-section';
                 sectionEl.style.height = `${section.height}%`;
+                sectionEl.draggable = true;
 
                 if (section.id === selectedSectionId) {
                     sectionEl.classList.add('selected');
                 }
+
+                // Section drag and drop events
+                sectionEl.addEventListener('dragstart', (e) => {
+                    // Only allow dragging if not dragging from name input
+                    if (!e.target.closest('.section-name-editable')) {
+                        handleSectionDragStart(e, index);
+                    } else {
+                        e.preventDefault();
+                    }
+                });
+                sectionEl.addEventListener('dragend', handleSectionDragEnd);
+                sectionEl.addEventListener('dragover', handleSectionDragOver);
+                sectionEl.addEventListener('dragenter', (e) => handleSectionDragEnter(e, index));
+                sectionEl.addEventListener('dragleave', handleSectionDragLeave);
+                sectionEl.addEventListener('drop', (e) => handleSectionDrop(e, index));
 
                 sectionEl.onclick = (e) => {
                     if (!e.target.closest('.content-box') && !e.target.closest('.box-name-editable')) {
@@ -925,7 +1040,7 @@
                     boxEl.className = 'content-box';
                     boxEl.draggable = true;
 
-                    if (selectedBoxId === box.id) {
+                    if (selectedBoxIds.includes(box.id)) {
                         boxEl.classList.add('selected');
                     }
 
@@ -950,7 +1065,7 @@
 
                     boxEl.onclick = (e) => {
                         e.stopPropagation();
-                        selectBox(section.id, box.id);
+                        selectBox(section.id, box.id, e.shiftKey);
                     };
 
                     // Add editable box name
@@ -1084,15 +1199,30 @@
                 totalEl.style.color = Math.abs(total - 100) < 0.1 ? '#667eea' : '#ff4757';
             }
 
-            // Update margin controls if a box is selected
-            if (selectedSectionId && selectedBoxId) {
+            // Update margin controls if boxes are selected
+            if (selectedSectionId && selectedBoxIds.length > 0) {
                 const section = sections.find(s => s.id === selectedSectionId);
-                const box = section?.boxes.find(b => b.id === selectedBoxId);
-                if (box) {
-                    document.getElementById('marginTop').value = box.margin?.top || 0;
-                    document.getElementById('marginRight').value = box.margin?.right || 0;
-                    document.getElementById('marginBottom').value = box.margin?.bottom || 0;
-                    document.getElementById('marginLeft').value = box.margin?.left || 0;
+                const firstBox = section?.boxes.find(b => b.id === selectedBoxIds[0]);
+                if (firstBox) {
+                    document.getElementById('marginTop').value = firstBox.margin?.top || 0;
+                    document.getElementById('marginRight').value = firstBox.margin?.right || 0;
+                    document.getElementById('marginBottom').value = firstBox.margin?.bottom || 0;
+                    document.getElementById('marginLeft').value = firstBox.margin?.left || 0;
+                }
+
+                // Show multi-select indicator if multiple boxes selected
+                const marginSection = document.querySelector('.control-section:nth-child(3)');
+                let indicator = marginSection.querySelector('.multi-select-indicator');
+
+                if (selectedBoxIds.length > 1) {
+                    if (!indicator) {
+                        indicator = document.createElement('div');
+                        indicator.className = 'multi-select-indicator';
+                        marginSection.appendChild(indicator);
+                    }
+                    indicator.textContent = `${selectedBoxIds.length} boxes selected - changes apply to all`;
+                } else if (indicator) {
+                    indicator.remove();
                 }
             }
         }
@@ -1406,7 +1536,7 @@ TO USE THIS DESIGN:
 
                 // Reset selection
                 selectedSectionId = null;
-                selectedBoxId = null;
+                selectedBoxIds = [];
 
                 // Update display
                 updateSizeDisplay();
@@ -1427,7 +1557,7 @@ TO USE THIS DESIGN:
             if (confirm('Are you sure you want to reset? This will clear everything.')) {
                 sections = [];
                 selectedSectionId = null;
-                selectedBoxId = null;
+                selectedBoxIds = [];
 
                 const modal = document.getElementById('modalPreview');
                 modal.style.width = '400px';
