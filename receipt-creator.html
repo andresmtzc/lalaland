@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
 
-  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.14.0/dist/dom-to-image-more.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
   <script>
   // ===== LOAD SUPABASE =====
@@ -826,86 +826,56 @@ async function generateReceipt() {
     // Wait a bit for DOM to update
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Generate image using dom-to-image with HIGH resolution
+    // Generate image using html2canvas (better font support than dom-to-image)
     const captureElement = document.querySelector('.capture-wrapper');
 
-    console.log('Starting high-res image generation...');
+    console.log('Starting high-res image generation with html2canvas...');
 
-    // ===== CRITICAL: Manually fetch and embed fonts for reliable rendering =====
-    console.log('Fetching Google Fonts for embedding...');
-    let embeddedFontCSS = '';
-
-    try {
-      // Fetch the Google Fonts CSS with a user agent that returns woff2
-      const fontResponse = await fetch('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap', {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-      });
-
-      const fontCSS = await fontResponse.text();
-      console.log('✅ Google Fonts CSS fetched');
-
-      // Extract font URLs and convert to data URIs
-      const urlRegex = /url\((https:\/\/fonts\.gstatic\.com[^)]+)\)/g;
-      const urls = [...fontCSS.matchAll(urlRegex)].map(m => m[1]);
-
-      console.log(`Found ${urls.length} font files to embed`);
-
-      // Download and convert each font to base64
-      let processedCSS = fontCSS;
-      for (const url of urls) {
-        try {
-          const fontFile = await fetch(url);
-          const fontBlob = await fontFile.blob();
-          const base64 = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.readAsDataURL(fontBlob);
-          });
-
-          // Replace the URL with the data URI
-          processedCSS = processedCSS.replace(url, base64);
-          console.log(`✅ Embedded font: ${url.substring(url.lastIndexOf('/') + 1)}`);
-        } catch (err) {
-          console.warn(`Failed to embed font ${url}:`, err);
-        }
+    // Generate canvas with high resolution
+    const canvas = await html2canvas(captureElement, {
+      scale: 4, // 4x resolution for crisp text
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: '#fcfaf3',
+      logging: false,
+      removeContainer: true,
+      imageTimeout: 0,
+      // Force opaque rendering to prevent washed out colors
+      foreignObjectRendering: false,
+      ignoreElements: (element) => {
+        // Ignore the footer
+        return element.classList && element.classList.contains('receipt-footer');
       }
-
-      embeddedFontCSS = processedCSS;
-      console.log('✅ All fonts embedded as data URIs');
-
-    } catch (fontError) {
-      console.warn('Failed to embed fonts, image may use fallback font:', fontError);
-    }
-
-    // HIGH RESOLUTION - 4x scale for crisp text and logo
-    const scale = 4;
-    const width = captureElement.offsetWidth * scale;
-    const height = captureElement.offsetHeight * scale;
-
-    const blob = await domtoimage.toBlob(captureElement, {
-      quality: 1, // Maximum quality
-      bgcolor: '#fcfaf3',
-      width: width,
-      height: height,
-      style: {
-        transform: `scale(${scale})`,
-        transformOrigin: 'top left',
-        width: `${captureElement.offsetWidth}px`,
-        height: `${captureElement.offsetHeight}px`
-      },
-      filter: function(node) {
-        // Only exclude the footer
-        return !node.classList || !node.classList.contains('receipt-footer');
-      },
-      // CRITICAL: Provide embedded fonts as data URIs
-      cacheBust: false,
-      imagePlaceholder: undefined,
-      fontEmbedCSS: embeddedFontCSS || null
     });
 
-    console.log('High-res image generated successfully');
+    console.log('✅ Canvas generated successfully');
+
+    // Fix washed-out colors by ensuring opaque background
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    // Create a new canvas with solid background
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = canvas.width;
+    finalCanvas.height = canvas.height;
+    const finalCtx = finalCanvas.getContext('2d', {
+      alpha: false,
+      colorSpace: 'srgb'
+    });
+
+    // Fill with background color first
+    finalCtx.fillStyle = '#fcfaf3';
+    finalCtx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+    // Draw the captured image on top
+    finalCtx.drawImage(canvas, 0, 0);
+
+    // Convert to blob
+    const blob = await new Promise((resolve) => {
+      finalCanvas.toBlob(resolve, 'image/png', 1.0);
+    });
+
+    console.log('✅ High-res image generated successfully');
 
     generatedImageBlob = blob;
 
