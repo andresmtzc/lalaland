@@ -4,14 +4,9 @@
 -- Related to: SUPABASE_PERFORMANCE_ANALYSIS.md Fix #2
 
 -- ============================================================================
--- STEP 1: Drop the existing function
+-- STEP 1: Replace function with STABLE to allow PostgreSQL to cache within statement
 -- ============================================================================
-
-DROP FUNCTION IF EXISTS get_user_client_ids();
-
--- ============================================================================
--- STEP 2: Recreate function with STABLE to allow PostgreSQL to cache within statement
--- ============================================================================
+-- Note: Using CREATE OR REPLACE instead of DROP to preserve RLS policy dependencies
 
 -- STABLE functions with same arguments return same results during a single statement
 -- This allows PostgreSQL to cache the result within a query execution, dramatically
@@ -33,7 +28,7 @@ END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
 -- ============================================================================
--- STEP 3: Add composite index to optimize the query
+-- STEP 2: Add composite index to optimize the query
 -- ============================================================================
 
 -- This index speeds up the WHERE clause in get_user_client_ids()
@@ -41,7 +36,7 @@ $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 CREATE INDEX IF NOT EXISTS idx_editors_user_id_client_id ON editors(user_id, client_id);
 
 -- ============================================================================
--- STEP 4: Grant execute permission to authenticated users
+-- STEP 3: Grant execute permission to authenticated users
 -- ============================================================================
 
 GRANT EXECUTE ON FUNCTION get_user_client_ids() TO authenticated;
