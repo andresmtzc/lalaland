@@ -620,6 +620,47 @@
         const receiptNumber = String(currentReceiptId).padStart(6, '0');
         currentFilename = `${year}${month}${day}_receipt_${receiptNumber}.png`;
 
+        // Upload to Supabase Storage
+        generateBtn.textContent = 'Uploading...';
+
+        try {
+          const { data: uploadData, error: uploadError } = await window.supabaseClient
+            .storage
+            .from('receipts')
+            .upload(currentFilename, blob, {
+              contentType: 'image/png',
+              cacheControl: '3600',
+              upsert: false
+            });
+
+          if (uploadError) {
+            throw new Error(`Upload error: ${uploadError.message}`);
+          }
+
+          // Get public URL
+          const { data: urlData } = window.supabaseClient
+            .storage
+            .from('receipts')
+            .getPublicUrl(currentFilename);
+
+          // Update receipt with image URL
+          const { error: updateError } = await window.supabaseClient
+            .from('receipts')
+            .update({ image: urlData.publicUrl })
+            .eq('id', currentReceiptId);
+
+          if (updateError) {
+            console.error('Failed to update receipt with image URL:', updateError);
+          } else {
+            console.log('✅ Image uploaded and URL saved:', urlData.publicUrl);
+          }
+
+        } catch (uploadErr) {
+          console.error('Failed to upload to storage:', uploadErr);
+          // Continue anyway - user can still download
+          alert(`Image saved locally but upload failed: ${uploadErr.message}`);
+        }
+
         // Restore original state
         receiptFooter.style.display = 'flex';
         receiptModal.style.pointerEvents = '';
