@@ -838,14 +838,47 @@
 
             const span = parseInt(document.getElementById('contentSpan').value) || 1;
 
+            const defaultLabels = {
+                'text': 'Text',
+                'button': 'Button',
+                'input': 'Input',
+                'image': 'Image'
+            };
+
             const content = {
                 id: Date.now(),
                 type: type,
-                span: Math.min(span, section.columns)
+                span: Math.min(span, section.columns),
+                label: defaultLabels[type] || type,
+                margin: { top: 0, right: 0, bottom: 0, left: 0 }
             };
 
             section.content.push(content);
             renderSections();
+        }
+
+        // Update content label
+        function updateContentLabel(sectionId, contentId, newLabel) {
+            const section = sections.find(s => s.id === sectionId);
+            if (section) {
+                const content = section.content.find(c => c.id === contentId);
+                if (content) {
+                    content.label = newLabel;
+                }
+            }
+        }
+
+        // Update content margin
+        function updateContentMargin(sectionId, contentId, side, value) {
+            const section = sections.find(s => s.id === sectionId);
+            if (section) {
+                const content = section.content.find(c => c.id === contentId);
+                if (content) {
+                    if (!content.margin) content.margin = { top: 0, right: 0, bottom: 0, left: 0 };
+                    content.margin[side] = parseInt(value) || 0;
+                    renderSections();
+                }
+            }
         }
 
         // Render sections in modal
@@ -930,8 +963,10 @@
 
         // Create content element
         function createContentElement(item, sectionId) {
+            const margin = item.margin || { top: 0, right: 0, bottom: 0, left: 0 };
+
             const wrapper = document.createElement('div');
-            wrapper.style.cssText = 'position: relative; display: flex; flex-direction: column; gap: 4px; min-height: 40px; background: rgba(255,255,255,0.5); border: 1px dashed #ddd; border-radius: 4px; padding: 8px;';
+            wrapper.style.cssText = `position: relative; display: flex; flex-direction: column; gap: 4px; min-height: 40px; background: rgba(255,255,255,0.5); border: 1px dashed #ddd; border-radius: 4px; padding: 8px; margin: ${margin.top}px ${margin.right}px ${margin.bottom}px ${margin.left}px;`;
 
             const removeBtn = document.createElement('button');
             removeBtn.textContent = '×';
@@ -948,8 +983,34 @@
             wrapper.appendChild(removeBtn);
             wrapper.appendChild(spanLabel);
 
+            // Add editable label
+            const labelInput = document.createElement('input');
+            labelInput.type = 'text';
+            labelInput.value = item.label || item.type;
+            labelInput.onclick = (e) => e.stopPropagation();
+            labelInput.onchange = (e) => updateContentLabel(sectionId, item.id, e.target.value);
+            labelInput.style.cssText = 'width: 100%; padding: 4px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 11px; font-weight: 600; background: white; margin-top: 16px; margin-bottom: 4px;';
+            wrapper.appendChild(labelInput);
+
+            // Add margin controls
+            const marginControls = document.createElement('div');
+            marginControls.style.cssText = 'display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 4px;';
+
+            ['top', 'right', 'bottom', 'left'].forEach(side => {
+                const marginInput = document.createElement('input');
+                marginInput.type = 'number';
+                marginInput.value = margin[side];
+                marginInput.placeholder = side[0].toUpperCase();
+                marginInput.onclick = (e) => e.stopPropagation();
+                marginInput.onchange = (e) => updateContentMargin(sectionId, item.id, side, e.target.value);
+                marginInput.style.cssText = 'width: 100%; padding: 2px 4px; border: 1px solid #ddd; border-radius: 3px; font-size: 10px; text-align: center;';
+                marginControls.appendChild(marginInput);
+            });
+
+            wrapper.appendChild(marginControls);
+
             const el = document.createElement('div');
-            el.style.cssText = 'margin-top: 14px;';
+            el.style.cssText = 'margin-top: 4px;';
 
             switch (item.type) {
                 case 'text':
