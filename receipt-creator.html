@@ -838,6 +838,10 @@ async function generateReceipt() {
       allowTaint: false,
       backgroundColor: '#fcfaf3',
       logging: false,
+      removeContainer: true,
+      imageTimeout: 0,
+      // Force opaque rendering to prevent washed out colors
+      foreignObjectRendering: false,
       ignoreElements: (element) => {
         // Ignore the footer
         return element.classList && element.classList.contains('receipt-footer');
@@ -846,9 +850,29 @@ async function generateReceipt() {
 
     console.log('✅ Canvas generated successfully');
 
-    // Convert canvas to blob
+    // Fix washed-out colors by ensuring opaque background
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    // Create a new canvas with solid background
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = canvas.width;
+    finalCanvas.height = canvas.height;
+    const finalCtx = finalCanvas.getContext('2d', {
+      alpha: false,
+      colorSpace: 'srgb'
+    });
+
+    // Fill with background color first
+    finalCtx.fillStyle = '#fcfaf3';
+    finalCtx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+    // Draw the captured image on top
+    finalCtx.drawImage(canvas, 0, 0);
+
+    // Convert to blob
     const blob = await new Promise((resolve) => {
-      canvas.toBlob(resolve, 'image/png', 1.0);
+      finalCanvas.toBlob(resolve, 'image/png', 1.0);
     });
 
     console.log('✅ High-res image generated successfully');
