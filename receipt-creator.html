@@ -52,8 +52,12 @@
       position: relative;
     }
 
-    .receipt-modal:hover {
-      transform: translateY(-4px);
+    /* Capture wrapper for screenshot with padding */
+    .capture-wrapper {
+      padding: 40px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: inline-block;
+      border-radius: 20px;
     }
 
     /* Receipt Header */
@@ -305,6 +309,7 @@
 </head>
 <body>
   <div class="modal-overlay">
+    <div class="capture-wrapper">
     <div class="receipt-modal">
       <!-- Receipt Header -->
       <div class="receipt-header">
@@ -388,6 +393,7 @@
         <button class="btn btn-whatsapp" id="whatsappBtn" onclick="shareToWhatsApp()" style="display: none;">WhatsApp</button>
       </div>
     </div>
+    </div>
   </div>
 
   <script>
@@ -430,8 +436,11 @@
 
     function updateReceiptNumber() {
       const receiptNum = document.getElementById('receiptNum');
-      const randomNum = Math.floor(Math.random() * 999999) + 1;
-      receiptNum.textContent = String(randomNum).padStart(6, '0');
+      // Get last receipt number from localStorage and increment
+      let lastNumber = parseInt(localStorage.getItem('lastReceiptNumber') || '0');
+      lastNumber += 1;
+      localStorage.setItem('lastReceiptNumber', lastNumber.toString());
+      receiptNum.textContent = String(lastNumber).padStart(6, '0');
     }
 
     function clearReceipt() {
@@ -472,24 +481,31 @@
       const generateBtn = document.getElementById('generateBtn');
       const clearBtn = document.getElementById('clearBtn');
       const receiptFooter = document.querySelector('.receipt-footer');
+      const receiptModal = document.querySelector('.receipt-modal');
 
       try {
         // Hide the footer completely before taking screenshot
         receiptFooter.style.display = 'none';
 
-        // Wait a moment for the DOM to update
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Remove hover effects to prevent color issues
+        receiptModal.style.pointerEvents = 'none';
+        receiptModal.style.transform = 'translateY(0)';
 
-        // Generate image using html2canvas
-        const receiptElement = document.querySelector('.receipt-modal');
-        const canvas = await html2canvas(receiptElement, {
+        // Wait for DOM to fully update and settle
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Generate image using html2canvas - capture the wrapper to show padding and background
+        const captureElement = document.querySelector('.capture-wrapper');
+        const canvas = await html2canvas(captureElement, {
           scale: 2,
-          backgroundColor: '#ffffff',
-          logging: false
+          backgroundColor: null,
+          logging: false,
+          useCORS: true
         });
 
-        // Show footer again
+        // Restore original state
         receiptFooter.style.display = 'flex';
+        receiptModal.style.pointerEvents = '';
 
         // Convert to blob
         canvas.toBlob(function(blob) {
@@ -516,6 +532,7 @@
         alert('Error generating receipt. Please try again.');
         // Make sure footer is visible again if error occurs
         receiptFooter.style.display = 'flex';
+        receiptModal.style.pointerEvents = '';
       }
     }
 
@@ -544,23 +561,40 @@
         return;
       }
 
+      console.log('Share initiated...');
+      console.log('Blob size:', generatedImageBlob.size);
+      console.log('Navigator.share available:', !!navigator.share);
+      console.log('Clipboard.write available:', !!(navigator.clipboard && navigator.clipboard.write));
+
       try {
         // Try Web Share API first (works great on mobile)
         const file = new File([generatedImageBlob], currentFilename, { type: 'image/png' });
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: 'La-La Land Receipt',
-            text: 'Receipt from La-La Land'
-          });
-          console.log('Shared successfully');
-          return;
+
+        console.log('File created:', file.name, file.size);
+
+        if (navigator.share) {
+          console.log('Web Share API available');
+          const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
+          console.log('Can share files:', canShareFiles);
+
+          if (canShareFiles) {
+            console.log('Attempting Web Share API...');
+            await navigator.share({
+              files: [file],
+              title: 'La-La Land Receipt',
+              text: 'Receipt from La-La Land'
+            });
+            console.log('Shared successfully via Web Share API');
+            return;
+          }
         }
 
         // Fallback: Try clipboard (desktop)
         if (navigator.clipboard && navigator.clipboard.write) {
+          console.log('Attempting clipboard copy...');
           const item = new ClipboardItem({ 'image/png': generatedImageBlob });
           await navigator.clipboard.write([item]);
+          console.log('Copied to clipboard successfully');
 
           // Show success message with option to open WhatsApp
           const openWA = confirm('✓ Image copied to clipboard!\n\nClick OK to open WhatsApp Web, then paste the image.\nClick Cancel to stay here.');
@@ -572,15 +606,20 @@
         }
 
         // Final fallback: Download
+        console.log('Using download fallback');
         downloadReceipt();
         alert('Image downloaded! Please share it manually via WhatsApp.');
 
       } catch (error) {
         if (error.name !== 'AbortError') {
           console.error('Error sharing:', error);
+          console.error('Error name:', error.name);
+          console.error('Error message:', error.message);
           // Fallback: Download the file
           downloadReceipt();
-          alert('Image downloaded! Please share it manually via WhatsApp.');
+          alert('Share failed. Image downloaded! Please share it manually via WhatsApp.\n\nError: ' + error.message);
+        } else {
+          console.log('User cancelled share');
         }
       }
     }
