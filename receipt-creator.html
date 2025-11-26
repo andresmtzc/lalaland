@@ -5,14 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Receipt Creator - La-La Land</title>
 
-  <!-- Load Google Fonts with preconnect for faster loading -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+  <!-- Use system font stack for reliable rendering everywhere -->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap');
+  </style>
 
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@3.3.0/dist/dom-to-image-more.min.js"></script>
 
   <script>
+  // ===== PRELOAD AND EMBED FONTS =====
+  window.fontsEmbedded = false;
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    try {
+      // Wait for Google Fonts to load
+      await document.fonts.ready;
+      console.log('✅ Fonts loaded in DOM');
+      window.fontsEmbedded = true;
+    } catch (err) {
+      console.warn('Font loading check failed:', err);
+    }
+  });
+
   // ===== LOAD SUPABASE =====
   window.supabaseReady = new Promise((resolve, reject) => {
     const supabaseScript = document.createElement('script');
@@ -49,7 +63,7 @@
     }
 
     body {
-      font-family: 'Barlow Condensed', sans-serif;
+      font-family: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
       background: #fcfaf3;
       min-height: 100vh;
       display: flex;
@@ -826,56 +840,29 @@ async function generateReceipt() {
     // Wait a bit for DOM to update
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Generate image using html2canvas (better font support than dom-to-image)
+    // Generate image using dom-to-image-more
     const captureElement = document.querySelector('.capture-wrapper');
 
-    console.log('Starting high-res image generation with html2canvas...');
+    console.log('Starting image generation with dom-to-image-more...');
 
-    // Generate canvas with high resolution
-    const canvas = await html2canvas(captureElement, {
-      scale: 4, // 4x resolution for crisp text
-      useCORS: true,
-      allowTaint: false,
-      backgroundColor: '#fcfaf3',
-      logging: false,
-      removeContainer: true,
-      imageTimeout: 0,
-      // Force opaque rendering to prevent washed out colors
-      foreignObjectRendering: false,
-      ignoreElements: (element) => {
-        // Ignore the footer
-        return element.classList && element.classList.contains('receipt-footer');
+    // Use toPng for better quality and color accuracy
+    const scale = 4;
+
+    const blob = await domtoimage.toBlob(captureElement, {
+      quality: 1,
+      bgcolor: '#fcfaf3',
+      width: captureElement.offsetWidth * scale,
+      height: captureElement.offsetHeight * scale,
+      style: {
+        transform: `scale(${scale})`,
+        transformOrigin: 'top left'
+      },
+      filter: (node) => {
+        return !node.classList || !node.classList.contains('receipt-footer');
       }
     });
 
-    console.log('✅ Canvas generated successfully');
-
-    // Fix washed-out colors by ensuring opaque background
-    const ctx = canvas.getContext('2d');
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-    // Create a new canvas with solid background
-    const finalCanvas = document.createElement('canvas');
-    finalCanvas.width = canvas.width;
-    finalCanvas.height = canvas.height;
-    const finalCtx = finalCanvas.getContext('2d', {
-      alpha: false,
-      colorSpace: 'srgb'
-    });
-
-    // Fill with background color first
-    finalCtx.fillStyle = '#fcfaf3';
-    finalCtx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
-
-    // Draw the captured image on top
-    finalCtx.drawImage(canvas, 0, 0);
-
-    // Convert to blob
-    const blob = await new Promise((resolve) => {
-      finalCanvas.toBlob(resolve, 'image/png', 1.0);
-    });
-
-    console.log('✅ High-res image generated successfully');
+    console.log('✅ Image generated successfully');
 
     generatedImageBlob = blob;
 
