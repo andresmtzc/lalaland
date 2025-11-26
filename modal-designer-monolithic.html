@@ -487,7 +487,7 @@
             <h2>Modal Designer</h2>
 
             <div class="control-section">
-                <h3>Sections</h3>
+                <h3>Sections <span id="totalHeight" style="float: right; font-size: 14px; color: #667eea;">(100%)</span></h3>
                 <div class="section-controls" id="sectionControls">
                     <!-- Section controls will be generated here -->
                 </div>
@@ -570,6 +570,7 @@
                 });
             });
 
+            normalizeHeights(); // Ensure sections sum to 100%
             renderSections();
             renderControls();
             setupDragAndResize();
@@ -578,35 +579,128 @@
         // Add new section
         function addSection() {
             const sectionNumber = sections.length + 1;
+
+            // Calculate space to take from existing sections
+            const targetHeight = 10;
+            const otherSections = sections;
+
+            if (otherSections.length > 0) {
+                const totalOtherHeight = otherSections.reduce((sum, s) => sum + s.height, 0);
+                const remainingSpace = 100 - targetHeight;
+
+                // Shrink existing sections proportionally
+                otherSections.forEach(s => {
+                    const proportion = s.height / totalOtherHeight;
+                    s.height = remainingSpace * proportion;
+                });
+            }
+
             const newSection = {
                 id: Date.now(),
                 name: `Line ${sectionNumber}`,
-                height: 10,
+                height: targetHeight,
                 content: []
             };
 
             sections.push(newSection);
+            normalizeHeights();
             renderSections();
             renderControls();
         }
 
         // Remove section
         function removeSection(id) {
+            const removedSection = sections.find(s => s.id === id);
+            if (!removedSection) return;
+
+            const removedHeight = removedSection.height;
             sections = sections.filter(s => s.id !== id);
+
             if (selectedSectionId === id) {
                 selectedSectionId = null;
             }
+
+            // Redistribute the removed section's height to remaining sections
+            if (sections.length > 0) {
+                const totalRemainingHeight = sections.reduce((sum, s) => sum + s.height, 0);
+                if (totalRemainingHeight > 0) {
+                    sections.forEach(s => {
+                        const proportion = s.height / totalRemainingHeight;
+                        s.height += removedHeight * proportion;
+                    });
+                } else {
+                    const equalHeight = 100 / sections.length;
+                    sections.forEach(s => s.height = equalHeight);
+                }
+            }
+
+            normalizeHeights();
             renderSections();
             renderControls();
         }
 
-        // Update section height
+        // Update section height and redistribute others
         function updateSectionHeight(id, height) {
+            const newHeight = parseFloat(height);
             const section = sections.find(s => s.id === id);
-            if (section) {
-                section.height = parseFloat(height);
+            if (!section) return;
+
+            const oldHeight = section.height;
+            const difference = newHeight - oldHeight;
+
+            // Get other sections
+            const otherSections = sections.filter(s => s.id !== id);
+
+            if (otherSections.length === 0) {
+                section.height = 100;
                 renderSections();
+                renderControls();
+                return;
             }
+
+            // Calculate total height of other sections
+            const othersTotalHeight = otherSections.reduce((sum, s) => sum + s.height, 0);
+
+            // If new height would exceed 100%, cap it
+            if (newHeight > 100) {
+                section.height = 100;
+                otherSections.forEach(s => s.height = 0);
+            } else {
+                section.height = newHeight;
+
+                // Distribute the difference among other sections proportionally
+                if (othersTotalHeight > 0) {
+                    const remainingSpace = 100 - newHeight;
+                    otherSections.forEach(s => {
+                        const proportion = s.height / othersTotalHeight;
+                        s.height = remainingSpace * proportion;
+                    });
+                } else {
+                    // If others were 0, distribute equally
+                    const equalHeight = (100 - newHeight) / otherSections.length;
+                    otherSections.forEach(s => s.height = equalHeight);
+                }
+            }
+
+            // Ensure minimum heights and normalize to 100%
+            normalizeHeights();
+            renderSections();
+            renderControls();
+        }
+
+        // Normalize all section heights to sum to 100%
+        function normalizeHeights() {
+            const total = sections.reduce((sum, s) => sum + s.height, 0);
+            if (total > 0 && Math.abs(total - 100) > 0.01) {
+                sections.forEach(s => {
+                    s.height = (s.height / total) * 100;
+                });
+            }
+        }
+
+        // Get total height
+        function getTotalHeight() {
+            return sections.reduce((sum, s) => sum + s.height, 0);
         }
 
         // Select section
@@ -731,16 +825,16 @@
                     <div class="height-control">
                         <label>Height:</label>
                         <input type="range"
-                               min="5"
-                               max="50"
+                               min="1"
+                               max="80"
                                step="0.5"
-                               value="${section.height}"
+                               value="${section.height.toFixed(1)}"
                                oninput="updateSectionHeight(${section.id}, this.value); this.nextElementSibling.value = this.value">
                         <input type="number"
-                               min="5"
-                               max="50"
+                               min="1"
+                               max="80"
                                step="0.5"
-                               value="${section.height}"
+                               value="${section.height.toFixed(1)}"
                                oninput="updateSectionHeight(${section.id}, this.value); this.previousElementSibling.value = this.value">
                     </div>
                 `;
@@ -749,6 +843,14 @@
 
                 container.appendChild(controlEl);
             });
+
+            // Update total height display
+            const total = getTotalHeight();
+            const totalEl = document.getElementById('totalHeight');
+            if (totalEl) {
+                totalEl.textContent = `(${total.toFixed(1)}%)`;
+                totalEl.style.color = Math.abs(total - 100) < 0.1 ? '#667eea' : '#ff4757';
+            }
         }
 
         // Setup drag and resize functionality
