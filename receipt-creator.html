@@ -733,7 +733,6 @@ select.form-input {
       generatedImageBlob = null;
     }
 
-
 async function generateReceipt() {
   const clientId = document.getElementById('receiptClient').value;
   const date = document.getElementById('receiptDate').value;
@@ -809,22 +808,21 @@ async function generateReceipt() {
     const originalFooterDisplay = receiptFooter.style.display;
     receiptFooter.style.display = 'none';
 
-    // Wait for fonts to load
-    await document.fonts.ready;
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Wait a bit for DOM to update
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Generate image using dom-to-image with FONT EMBEDDING
+    // Generate image using dom-to-image with HIGH resolution
     const captureElement = document.querySelector('.capture-wrapper');
 
-    console.log('Starting image generation with font embedding...');
+    console.log('Starting high-res image generation...');
 
-    // HIGH RESOLUTION with font embedding
+    // HIGH RESOLUTION - 4x scale for crisp text and logo
     const scale = 4;
     const width = captureElement.offsetWidth * scale;
     const height = captureElement.offsetHeight * scale;
 
     const blob = await domtoimage.toBlob(captureElement, {
-      quality: 1,
+      quality: 1, // Maximum quality
       bgcolor: '#fcfaf3',
       width: width,
       height: height,
@@ -834,41 +832,13 @@ async function generateReceipt() {
         width: `${captureElement.offsetWidth}px`,
         height: `${captureElement.offsetHeight}px`
       },
-      fontEmbedCSS: `
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap');
-        
-        @font-face {
-          font-family: 'Barlow Condensed';
-          font-style: normal;
-          font-weight: 400;
-          font-display: swap;
-          src: url(https://fonts.gstatic.com/s/barlowcondensed/v12/HTx3L3I-JCGChYJ8VI-L6OO_au7B43LT31vytKgbaw.woff2) format('woff2');
-        }
-        @font-face {
-          font-family: 'Barlow Condensed';
-          font-style: normal;
-          font-weight: 600;
-          font-display: swap;
-          src: url(https://fonts.gstatic.com/s/barlowcondensed/v12/HTx3L3I-JCGChYJ8VI-L6OO_au7B43LT31vytKgbaw.woff2) format('woff2');
-        }
-        @font-face {
-          font-family: 'Barlow Condensed';
-          font-style: normal;
-          font-weight: 700;
-          font-display: swap;
-          src: url(https://fonts.gstatic.com/s/barlowcondensed/v12/HTx3L3I-JCGChYJ8VI-L6OO_au7B43LT31vytKgbaw.woff2) format('woff2');
-        }
-        
-        * {
-          font-family: 'Barlow Condensed', sans-serif !important;
-          -webkit-font-smoothing: antialiased !important;
-          -moz-osx-font-smoothing: grayscale !important;
-        }
-      `,
-      preferredFontFormat: 'woff2'
+      filter: function(node) {
+        // Only exclude the footer
+        return !node.classList || !node.classList.contains('receipt-footer');
+      }
     });
 
-    console.log('Image with embedded font generated successfully');
+    console.log('High-res image generated successfully');
 
     generatedImageBlob = blob;
 
@@ -880,7 +850,7 @@ async function generateReceipt() {
     const receiptNumber = String(currentReceiptId).padStart(6, '0');
     currentFilename = `${year}${month}${day}_receipt_${receiptNumber}.png`;
 
-    // Try upload
+    // Try upload but don't block the user
     generateBtn.textContent = 'Uploading...';
 
     try {
@@ -906,11 +876,11 @@ async function generateReceipt() {
           .update({ image: urlData.publicUrl })
           .eq('id', currentReceiptId);
 
-        console.log('✅ Image with embedded font uploaded');
+        console.log('✅ High-res image uploaded');
       }
 
     } catch (uploadErr) {
-      console.warn('Upload failed, but image is saved locally:', uploadErr);
+      console.warn('Upload failed, but high-res image is saved locally:', uploadErr);
     }
 
     // Restore footer and show download button
@@ -922,10 +892,10 @@ async function generateReceipt() {
     downloadBtn.style.display = 'block';
     downloadBtn.textContent = 'Download Receipt';
 
-    console.log('✅ Receipt with embedded font ready for download:', currentFilename);
+    console.log('✅ High-res receipt ready for download:', currentFilename);
 
   } catch (error) {
-    console.error('Error generating receipt with font:', error);
+    console.error('Error generating high-res receipt:', error);
     
     // Restore footer in case of error
     receiptFooter.style.display = 'flex';
