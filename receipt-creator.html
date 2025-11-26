@@ -545,10 +545,22 @@
       }
 
       try {
-        // Create a File from the blob
-        const file = new File([generatedImageBlob], currentFilename, { type: 'image/png' });
+        // Try to copy to clipboard first
+        if (navigator.clipboard && navigator.clipboard.write) {
+          const item = new ClipboardItem({ 'image/png': generatedImageBlob });
+          await navigator.clipboard.write([item]);
 
-        // Check if Web Share API is available
+          // Show success message with option to open WhatsApp
+          const openWA = confirm('✓ Image copied to clipboard!\n\nClick OK to open WhatsApp Web, then paste the image.\nClick Cancel to stay here.');
+
+          if (openWA) {
+            window.open('https://web.whatsapp.com/', '_blank');
+          }
+          return;
+        }
+
+        // Fallback: Try Web Share API (mobile)
+        const file = new File([generatedImageBlob], currentFilename, { type: 'image/png' });
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
@@ -556,11 +568,13 @@
             text: 'Receipt from La-La Land'
           });
           console.log('Shared successfully');
-        } else {
-          // Fallback: Download the file and inform user to share manually
-          downloadReceipt();
-          alert('Image downloaded! Please share it manually via WhatsApp.');
+          return;
         }
+
+        // Final fallback: Download
+        downloadReceipt();
+        alert('Image downloaded! Please share it manually via WhatsApp.');
+
       } catch (error) {
         if (error.name !== 'AbortError') {
           console.error('Error sharing:', error);
