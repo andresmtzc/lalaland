@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Modal Designer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .designer-container {
+            display: flex;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+            height: calc(100vh - 40px);
+        }
+
+        /* Control Panel */
+        .control-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            width: 320px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow-y: auto;
+        }
+
+        .control-panel h2 {
+            margin-bottom: 24px;
+            color: #333;
+            font-size: 24px;
+        }
+
+        .control-section {
+            margin-bottom: 28px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .control-section:last-child {
+            border-bottom: none;
+        }
+
+        .control-section h3 {
+            margin-bottom: 16px;
+            color: #555;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .section-controls {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .section-control {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .section-control.selected {
+            border-color: #667eea;
+            background: #f0f3ff;
+        }
+
+        .section-control:hover {
+            background: #f0f0f0;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .section-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .btn-remove {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+
+        .btn-remove:hover {
+            background: #ff3838;
+        }
+
+        .height-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .height-control label {
+            font-size: 12px;
+            color: #666;
+            min-width: 50px;
+        }
+
+        .height-control input[type="range"] {
+            flex: 1;
+            height: 6px;
+        }
+
+        .height-control input[type="number"] {
+            width: 60px;
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .btn-add-section {
+            width: 100%;
+            padding: 12px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .btn-add-section:hover {
+            background: #5568d3;
+        }
+
+        .content-templates {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .content-templates button {
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .content-templates button:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .size-display {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            font-family: monospace;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .control-section button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .control-section button:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-section button:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        /* Preview Area */
+        .preview-area {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .device-frame {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+        }
+
+        .modal-preview {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            width: 400px;
+            min-height: 600px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+            user-select: none;
+        }
+
+        .modal-title {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .modal-drag-handle {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: move;
+            font-size: 16px;
+        }
+
+        .modal-sections {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .modal-section {
+            border-bottom: 1px dashed #e0e0e0;
+            padding: 16px;
+            position: relative;
+            min-height: 50px;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .modal-section:hover {
+            background: #f8f9fa;
+        }
+
+        .modal-section.selected {
+            background: #f0f3ff;
+            border-left: 4px solid #667eea;
+        }
+
+        .modal-section:last-child {
+            border-bottom: none;
+        }
+
+        .section-label {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            pointer-events: none;
+        }
+
+        /* Content Elements */
+        .dummy-text {
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .dummy-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            align-self: flex-start;
+            transition: background 0.2s;
+        }
+
+        .dummy-button:hover {
+            background: #5568d3;
+        }
+
+        .dummy-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .dummy-image {
+            width: 100%;
+            height: 120px;
+            background: linear-gradient(135deg, #e0e0e0 0%, #f0f0f0 100%);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            font-size: 14px;
+        }
+
+        /* Resize Handle */
+        .resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            cursor: nwse-resize;
+            background: linear-gradient(135deg, transparent 50%, #667eea 50%);
+            border-bottom-right-radius: 12px;
+        }
+
+        .resize-handle:hover {
+            background: linear-gradient(135deg, transparent 50%, #764ba2 50%);
+        }
+
+        /* Export Modal */
+        .export-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+
+        .export-modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .export-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 700px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .close-export {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 20px;
+        }
+
+        .close-export:hover {
+            color: #000;
+        }
+
+        .export-content h3 {
+            margin-bottom: 16px;
+            color: #333;
+        }
+
+        .export-content textarea {
+            width: 100%;
+            height: 400px;
+            padding: 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            resize: vertical;
+            margin-bottom: 16px;
+        }
+
+        .export-content button {
+            width: 100%;
+            padding: 12px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .export-content button:hover {
+            background: #5568d3;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .designer-container {
+                flex-direction: column;
+            }
+
+            .control-panel {
+                width: 100%;
+                max-height: 400px;
+            }
+
+            .preview-area {
+                min-height: 600px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="designer-container">
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <h2>Modal Designer</h2>
+
+            <div class="control-section">
+                <h3>Sections</h3>
+                <div class="section-controls" id="sectionControls">
+                    <!-- Section controls will be generated here -->
+                </div>
+                <button class="btn-add-section" onclick="addSection()">+ Add Section</button>
+            </div>
+
+            <div class="control-section">
+                <h3>Content Templates</h3>
+                <div class="content-templates">
+                    <button onclick="addContent('text')">Add Text</button>
+                    <button onclick="addContent('button')">Add Button</button>
+                    <button onclick="addContent('input')">Add Input</button>
+                    <button onclick="addContent('image')">Add Image</button>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Modal Size</h3>
+                <div class="size-display">
+                    <span id="modalWidth">400</span>px × <span id="modalHeight">600</span>px
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Export</h3>
+                <button onclick="exportHTML()">Export HTML</button>
+                <button onclick="exportCSS()">Export CSS</button>
+                <button onclick="resetModal()">Reset</button>
+            </div>
+        </div>
+
+        <!-- Preview Area -->
+        <div class="preview-area">
+            <div class="device-frame">
+                <div class="modal-preview" id="modalPreview">
+                    <div class="modal-header">
+                        <span class="modal-title">Modal Designer</span>
+                        <button class="modal-drag-handle" title="Drag to move">⋮⋮</button>
+                    </div>
+
+                    <div class="modal-sections" id="modalSections">
+                        <!-- Sections will be dynamically added here -->
+                    </div>
+
+                    <div class="resize-handle" title="Drag to resize"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="exportModal" class="export-modal">
+        <div class="export-content">
+            <span class="close-export" onclick="closeExportModal()">&times;</span>
+            <h3 id="exportTitle">Export Code</h3>
+            <textarea id="exportCode" readonly></textarea>
+            <button onclick="copyExportCode()">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <script>
+        // Modal Designer State
+        let sections = [];
+        let selectedSectionId = null;
+        let modalWidth = 400;
+        let modalHeight = 600;
+
+        // Initialize with default sections
+        function init() {
+            // Add default sections
+            const defaultSections = ['Header', 'Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5', 'Line 6', 'Line 7', 'Line 8'];
+
+            defaultSections.forEach((name, index) => {
+                const heightPercent = index === 0 ? 10 : 11.25; // Header 10%, others split remaining 90%
+                sections.push({
+                    id: Date.now() + index,
+                    name: name,
+                    height: heightPercent,
+                    content: []
+                });
+            });
+
+            renderSections();
+            renderControls();
+            setupDragAndResize();
+        }
+
+        // Add new section
+        function addSection() {
+            const sectionNumber = sections.length + 1;
+            const newSection = {
+                id: Date.now(),
+                name: `Line ${sectionNumber}`,
+                height: 10,
+                content: []
+            };
+
+            sections.push(newSection);
+            renderSections();
+            renderControls();
+        }
+
+        // Remove section
+        function removeSection(id) {
+            sections = sections.filter(s => s.id !== id);
+            if (selectedSectionId === id) {
+                selectedSectionId = null;
+            }
+            renderSections();
+            renderControls();
+        }
+
+        // Update section height
+        function updateSectionHeight(id, height) {
+            const section = sections.find(s => s.id === id);
+            if (section) {
+                section.height = parseFloat(height);
+                renderSections();
+            }
+        }
+
+        // Select section
+        function selectSection(id) {
+            selectedSectionId = id;
+            renderSections();
+            renderControls();
+        }
+
+        // Add content to selected section
+        function addContent(type) {
+            if (!selectedSectionId) {
+                alert('Please select a section first!');
+                return;
+            }
+
+            const section = sections.find(s => s.id === selectedSectionId);
+            if (!section) return;
+
+            const content = {
+                id: Date.now(),
+                type: type
+            };
+
+            section.content.push(content);
+            renderSections();
+        }
+
+        // Render sections in modal
+        function renderSections() {
+            const container = document.getElementById('modalSections');
+            container.innerHTML = '';
+
+            sections.forEach(section => {
+                const sectionEl = document.createElement('div');
+                sectionEl.className = 'modal-section';
+                sectionEl.style.height = `${section.height}%`;
+
+                if (section.id === selectedSectionId) {
+                    sectionEl.classList.add('selected');
+                }
+
+                sectionEl.onclick = (e) => {
+                    e.stopPropagation();
+                    selectSection(section.id);
+                };
+
+                // Add label
+                const label = document.createElement('div');
+                label.className = 'section-label';
+                label.textContent = `${section.name} (${section.height.toFixed(1)}%)`;
+                sectionEl.appendChild(label);
+
+                // Render content
+                section.content.forEach(item => {
+                    const contentEl = createContentElement(item);
+                    sectionEl.appendChild(contentEl);
+                });
+
+                container.appendChild(sectionEl);
+            });
+
+            // Click outside to deselect
+            container.onclick = () => {
+                selectedSectionId = null;
+                renderSections();
+                renderControls();
+            };
+        }
+
+        // Create content element
+        function createContentElement(item) {
+            const el = document.createElement('div');
+
+            switch (item.type) {
+                case 'text':
+                    el.className = 'dummy-text';
+                    el.textContent = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.';
+                    break;
+                case 'button':
+                    const btn = document.createElement('button');
+                    btn.className = 'dummy-button';
+                    btn.textContent = 'Click Me';
+                    el.appendChild(btn);
+                    break;
+                case 'input':
+                    const input = document.createElement('input');
+                    input.className = 'dummy-input';
+                    input.type = 'text';
+                    input.placeholder = 'Enter text...';
+                    el.appendChild(input);
+                    break;
+                case 'image':
+                    const img = document.createElement('div');
+                    img.className = 'dummy-image';
+                    img.textContent = '🖼️ Image Placeholder';
+                    el.appendChild(img);
+                    break;
+            }
+
+            return el;
+        }
+
+        // Render controls panel
+        function renderControls() {
+            const container = document.getElementById('sectionControls');
+            container.innerHTML = '';
+
+            sections.forEach(section => {
+                const controlEl = document.createElement('div');
+                controlEl.className = 'section-control';
+
+                if (section.id === selectedSectionId) {
+                    controlEl.classList.add('selected');
+                }
+
+                controlEl.innerHTML = `
+                    <div class="section-header">
+                        <span class="section-name">${section.name}</span>
+                        <button class="btn-remove" onclick="removeSection(${section.id})">Remove</button>
+                    </div>
+                    <div class="height-control">
+                        <label>Height:</label>
+                        <input type="range"
+                               min="5"
+                               max="50"
+                               step="0.5"
+                               value="${section.height}"
+                               oninput="updateSectionHeight(${section.id}, this.value); this.nextElementSibling.value = this.value">
+                        <input type="number"
+                               min="5"
+                               max="50"
+                               step="0.5"
+                               value="${section.height}"
+                               oninput="updateSectionHeight(${section.id}, this.value); this.previousElementSibling.value = this.value">
+                    </div>
+                `;
+
+                controlEl.onclick = () => selectSection(section.id);
+
+                container.appendChild(controlEl);
+            });
+        }
+
+        // Setup drag and resize functionality
+        function setupDragAndResize() {
+            const modal = document.getElementById('modalPreview');
+            const header = modal.querySelector('.modal-header');
+            const resizeHandle = modal.querySelector('.resize-handle');
+
+            // Dragging
+            let isDragging = false;
+            let currentX, currentY, initialX, initialY;
+
+            header.addEventListener('mousedown', dragStart);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', dragEnd);
+
+            function dragStart(e) {
+                if (e.target.closest('.modal-drag-handle') || e.target === header) {
+                    initialX = e.clientX - modal.offsetLeft;
+                    initialY = e.clientY - modal.offsetTop;
+                    isDragging = true;
+                }
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+
+                    modal.style.left = currentX + 'px';
+                    modal.style.top = currentY + 'px';
+                    modal.style.transform = 'none';
+                }
+            }
+
+            function dragEnd() {
+                isDragging = false;
+            }
+
+            // Resizing
+            let isResizing = false;
+            let originalWidth, originalHeight, originalMouseX, originalMouseY;
+
+            resizeHandle.addEventListener('mousedown', resizeStart);
+            document.addEventListener('mousemove', resize);
+            document.addEventListener('mouseup', resizeEnd);
+
+            function resizeStart(e) {
+                isResizing = true;
+                originalWidth = modal.offsetWidth;
+                originalHeight = modal.offsetHeight;
+                originalMouseX = e.clientX;
+                originalMouseY = e.clientY;
+                e.preventDefault();
+            }
+
+            function resize(e) {
+                if (isResizing) {
+                    const width = originalWidth + (e.clientX - originalMouseX);
+                    const height = originalHeight + (e.clientY - originalMouseY);
+
+                    if (width > 200) {
+                        modal.style.width = width + 'px';
+                        modalWidth = width;
+                    }
+                    if (height > 300) {
+                        modal.style.height = height + 'px';
+                        modalHeight = height;
+                    }
+
+                    updateSizeDisplay();
+                }
+            }
+
+            function resizeEnd() {
+                isResizing = false;
+            }
+        }
+
+        // Update size display
+        function updateSizeDisplay() {
+            document.getElementById('modalWidth').textContent = Math.round(modalWidth);
+            document.getElementById('modalHeight').textContent = Math.round(modalHeight);
+        }
+
+        // Export HTML
+        function exportHTML() {
+            let html = `<div class="modal-container">\n`;
+            html += `  <div class="modal-header">\n`;
+            html += `    <span class="modal-title">Modal Title</span>\n`;
+            html += `    <button class="modal-close">×</button>\n`;
+            html += `  </div>\n`;
+            html += `  <div class="modal-body">\n`;
+
+            sections.forEach(section => {
+                html += `    <div class="modal-section" data-height="${section.height}%">\n`;
+                html += `      <!-- ${section.name} -->\n`;
+
+                section.content.forEach(item => {
+                    switch (item.type) {
+                        case 'text':
+                            html += `      <p>Lorem ipsum dolor sit amet...</p>\n`;
+                            break;
+                        case 'button':
+                            html += `      <button>Click Me</button>\n`;
+                            break;
+                        case 'input':
+                            html += `      <input type="text" placeholder="Enter text...">\n`;
+                            break;
+                        case 'image':
+                            html += `      <img src="placeholder.jpg" alt="Placeholder">\n`;
+                            break;
+                    }
+                });
+
+                html += `    </div>\n`;
+            });
+
+            html += `  </div>\n`;
+            html += `</div>`;
+
+            showExportModal('Export HTML', html);
+        }
+
+        // Export CSS
+        function exportCSS() {
+            let css = `.modal-container {\n`;
+            css += `  width: ${modalWidth}px;\n`;
+            css += `  height: ${modalHeight}px;\n`;
+            css += `  background: white;\n`;
+            css += `  border-radius: 12px;\n`;
+            css += `  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);\n`;
+            css += `  display: flex;\n`;
+            css += `  flex-direction: column;\n`;
+            css += `  overflow: hidden;\n`;
+            css += `}\n\n`;
+
+            css += `.modal-header {\n`;
+            css += `  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);\n`;
+            css += `  color: white;\n`;
+            css += `  padding: 16px 20px;\n`;
+            css += `  display: flex;\n`;
+            css += `  justify-content: space-between;\n`;
+            css += `  align-items: center;\n`;
+            css += `}\n\n`;
+
+            css += `.modal-body {\n`;
+            css += `  flex: 1;\n`;
+            css += `  display: flex;\n`;
+            css += `  flex-direction: column;\n`;
+            css += `  overflow-y: auto;\n`;
+            css += `}\n\n`;
+
+            sections.forEach((section, index) => {
+                css += `.modal-section:nth-child(${index + 1}) {\n`;
+                css += `  height: ${section.height}%;\n`;
+                css += `  padding: 16px;\n`;
+                css += `  border-bottom: 1px solid #e0e0e0;\n`;
+                css += `}\n\n`;
+            });
+
+            showExportModal('Export CSS', css);
+        }
+
+        // Show export modal
+        function showExportModal(title, code) {
+            const modal = document.getElementById('exportModal');
+            const titleEl = document.getElementById('exportTitle');
+            const codeEl = document.getElementById('exportCode');
+
+            titleEl.textContent = title;
+            codeEl.value = code;
+            modal.classList.add('active');
+        }
+
+        // Close export modal
+        function closeExportModal() {
+            const modal = document.getElementById('exportModal');
+            modal.classList.remove('active');
+        }
+
+        // Copy export code
+        function copyExportCode() {
+            const codeEl = document.getElementById('exportCode');
+            codeEl.select();
+            document.execCommand('copy');
+            alert('Code copied to clipboard!');
+        }
+
+        // Reset modal
+        function resetModal() {
+            if (confirm('Are you sure you want to reset the modal? This will clear all sections and content.')) {
+                sections = [];
+                selectedSectionId = null;
+
+                const modal = document.getElementById('modalPreview');
+                modal.style.width = '400px';
+                modal.style.height = '600px';
+                modal.style.left = '50%';
+                modal.style.top = '50%';
+                modal.style.transform = 'translate(-50%, -50%)';
+
+                modalWidth = 400;
+                modalHeight = 600;
+
+                init();
+            }
+        }
+
+        // Click outside export modal to close
+        window.onclick = function(event) {
+            const modal = document.getElementById('exportModal');
+            if (event.target === modal) {
+                closeExportModal();
+            }
+        }
+
+        // Initialize on load
+        window.onload = init;
+    </script>
+</body>
+</html>
