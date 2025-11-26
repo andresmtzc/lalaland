@@ -291,7 +291,6 @@
             transition: background 0.2s;
             display: flex;
             flex-direction: column;
-            gap: 8px;
         }
 
         .modal-section:hover {
@@ -301,6 +300,13 @@
         .modal-section.selected {
             background: #f0f3ff;
             border-left: 4px solid #667eea;
+            background-image: repeating-linear-gradient(
+                90deg,
+                transparent,
+                transparent calc((100% / var(--columns)) - 1px),
+                rgba(102, 126, 234, 0.1) calc((100% / var(--columns)) - 1px),
+                rgba(102, 126, 234, 0.1) calc(100% / var(--columns))
+            );
         }
 
         .modal-section:last-child {
@@ -318,6 +324,7 @@
             font-size: 11px;
             font-weight: 600;
             pointer-events: none;
+            z-index: 5;
         }
 
         /* Content Elements */
@@ -511,12 +518,24 @@
             </div>
 
             <div class="control-section">
-                <h3>Content Templates</h3>
+                <h3>Add Content</h3>
                 <div class="content-templates">
-                    <button onclick="addContent('text')">Add Text</button>
-                    <button onclick="addContent('button')">Add Button</button>
-                    <button onclick="addContent('input')">Add Input</button>
-                    <button onclick="addContent('image')">Add Image</button>
+                    <button onclick="addContent('text')">Text</button>
+                    <button onclick="addContent('button')">Button</button>
+                    <button onclick="addContent('input')">Input</button>
+                    <button onclick="addContent('image')">Image</button>
+                </div>
+                <div style="margin-top: 12px; padding: 8px; background: #f0f3ff; border-radius: 6px; font-size: 12px; color: #667eea;">
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
+                        <label>Columns:</label>
+                        <input type="number" id="sectionColumns" min="1" max="12" value="1"
+                               style="width: 50px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;"
+                               onchange="updateSectionColumns()">
+                        <label>Span:</label>
+                        <input type="number" id="contentSpan" min="1" max="12" value="1"
+                               style="width: 50px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div style="font-size: 11px; opacity: 0.8;">Select section first, then add content</div>
                 </div>
             </div>
 
@@ -601,6 +620,7 @@
                     id: Date.now() + index,
                     name: name,
                     height: heightPercent,
+                    columns: 1,
                     content: []
                 });
             });
@@ -634,6 +654,7 @@
                 id: Date.now(),
                 name: `Line ${sectionNumber}`,
                 height: targetHeight,
+                columns: 1,
                 content: []
             };
 
@@ -782,8 +803,27 @@
         // Select section
         function selectSection(id) {
             selectedSectionId = id;
+            const section = sections.find(s => s.id === id);
+            if (section) {
+                document.getElementById('sectionColumns').value = section.columns;
+            }
             renderSections();
             renderControls();
+        }
+
+        // Update section columns
+        function updateSectionColumns() {
+            if (!selectedSectionId) {
+                alert('Please select a section first!');
+                return;
+            }
+
+            const section = sections.find(s => s.id === selectedSectionId);
+            if (!section) return;
+
+            const columns = parseInt(document.getElementById('sectionColumns').value);
+            section.columns = Math.max(1, Math.min(12, columns));
+            renderSections();
         }
 
         // Add content to selected section
@@ -796,9 +836,12 @@
             const section = sections.find(s => s.id === selectedSectionId);
             if (!section) return;
 
+            const span = parseInt(document.getElementById('contentSpan').value) || 1;
+
             const content = {
                 id: Date.now(),
-                type: type
+                type: type,
+                span: Math.min(span, section.columns)
             };
 
             section.content.push(content);
@@ -814,6 +857,7 @@
                 const sectionEl = document.createElement('div');
                 sectionEl.className = 'modal-section';
                 sectionEl.style.height = `${section.height}%`;
+                sectionEl.style.setProperty('--columns', section.columns);
 
                 if (section.id === selectedSectionId) {
                     sectionEl.classList.add('selected');
@@ -840,14 +884,29 @@
                 // Add label
                 const label = document.createElement('div');
                 label.className = 'section-label';
-                label.textContent = `${section.name} (${section.height.toFixed(1)}%)`;
+                label.textContent = `${section.name} (${section.height.toFixed(1)}%) [${section.columns} col]`;
                 sectionEl.appendChild(label);
 
-                // Render content
-                section.content.forEach(item => {
-                    const contentEl = createContentElement(item);
-                    sectionEl.appendChild(contentEl);
-                });
+                // Create grid container for content
+                if (section.content.length > 0) {
+                    const gridContainer = document.createElement('div');
+                    gridContainer.style.cssText = `
+                        display: grid;
+                        grid-template-columns: repeat(${section.columns}, 1fr);
+                        gap: 8px;
+                        width: 100%;
+                        height: calc(100% - 30px);
+                    `;
+
+                    // Render content
+                    section.content.forEach(item => {
+                        const contentEl = createContentElement(item, section.id);
+                        contentEl.style.gridColumn = `span ${item.span || 1}`;
+                        gridContainer.appendChild(contentEl);
+                    });
+
+                    sectionEl.appendChild(gridContainer);
+                }
 
                 container.appendChild(sectionEl);
             });
@@ -860,14 +919,42 @@
             };
         }
 
+        // Remove content item
+        function removeContent(sectionId, contentId) {
+            const section = sections.find(s => s.id === sectionId);
+            if (section) {
+                section.content = section.content.filter(c => c.id !== contentId);
+                renderSections();
+            }
+        }
+
         // Create content element
-        function createContentElement(item) {
+        function createContentElement(item, sectionId) {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'position: relative; display: flex; flex-direction: column; gap: 4px; min-height: 40px; background: rgba(255,255,255,0.5); border: 1px dashed #ddd; border-radius: 4px; padding: 8px;';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = '×';
+            removeBtn.onclick = (e) => {
+                e.stopPropagation();
+                removeContent(sectionId, item.id);
+            };
+            removeBtn.style.cssText = 'position: absolute; top: 2px; right: 2px; background: #ff4757; color: white; border: none; width: 18px; height: 18px; border-radius: 3px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; z-index: 10;';
+
+            const spanLabel = document.createElement('div');
+            spanLabel.textContent = `Span: ${item.span}`;
+            spanLabel.style.cssText = 'position: absolute; top: 2px; left: 4px; font-size: 10px; color: #999; font-weight: 600;';
+
+            wrapper.appendChild(removeBtn);
+            wrapper.appendChild(spanLabel);
+
             const el = document.createElement('div');
+            el.style.cssText = 'margin-top: 14px;';
 
             switch (item.type) {
                 case 'text':
                     el.className = 'dummy-text';
-                    el.textContent = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.';
+                    el.textContent = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';
                     break;
                 case 'button':
                     const btn = document.createElement('button');
@@ -885,12 +972,13 @@
                 case 'image':
                     const img = document.createElement('div');
                     img.className = 'dummy-image';
-                    img.textContent = '🖼️ Image Placeholder';
+                    img.textContent = '🖼️ Image';
                     el.appendChild(img);
                     break;
             }
 
-            return el;
+            wrapper.appendChild(el);
+            return wrapper;
         }
 
         // Render controls panel
