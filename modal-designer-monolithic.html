@@ -239,34 +239,8 @@
             overflow: hidden;
         }
 
-        .modal-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 16px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: move;
-            user-select: none;
-        }
-
-        .modal-title {
-            font-weight: 600;
-            font-size: 16px;
-        }
-
-        .modal-drag-handle {
-            background: rgba(255, 255, 255, 0.2);
-            border: none;
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: move;
-            font-size: 16px;
-        }
-
         .modal-sections {
-            flex: 1;
+            height: 100%;
             display: flex;
             flex-direction: column;
             overflow-y: auto;
@@ -513,6 +487,28 @@
             </div>
 
             <div class="control-section">
+                <h3>Border Radius</h3>
+                <div class="height-control">
+                    <label>Radius:</label>
+                    <input type="range"
+                           id="radiusSlider"
+                           min="0"
+                           max="50"
+                           step="1"
+                           value="12"
+                           oninput="updateBorderRadius(this.value); document.getElementById('radiusValue').value = this.value">
+                    <input type="number"
+                           id="radiusValue"
+                           min="0"
+                           max="50"
+                           step="1"
+                           value="12"
+                           oninput="updateBorderRadius(this.value); document.getElementById('radiusSlider').value = this.value"
+                           style="width: 60px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                </div>
+            </div>
+
+            <div class="control-section">
                 <h3>Export</h3>
                 <button onclick="exportHTML()">Export HTML</button>
                 <button onclick="exportCSS()">Export CSS</button>
@@ -524,11 +520,6 @@
         <div class="preview-area">
             <div class="device-frame">
                 <div class="modal-preview" id="modalPreview">
-                    <div class="modal-header">
-                        <span class="modal-title">Modal Designer</span>
-                        <button class="modal-drag-handle" title="Drag to move">⋮⋮</button>
-                    </div>
-
                     <div class="modal-sections" id="modalSections">
                         <!-- Sections will be dynamically added here -->
                     </div>
@@ -555,6 +546,8 @@
         let selectedSectionId = null;
         let modalWidth = 400;
         let modalHeight = 600;
+        let modalTitle = 'Modal Designer';
+        let modalBorderRadius = 12;
 
         // Initialize with default sections
         function init() {
@@ -717,6 +710,34 @@
             renderControls();
         }
 
+        // Rename section
+        function renameSection(id, newName) {
+            const section = sections.find(s => s.id === id);
+            if (section) {
+                section.name = newName || section.name;
+                renderSections();
+                renderControls();
+            }
+        }
+
+        // Update modal title
+        function updateModalTitle(newTitle) {
+            modalTitle = newTitle || 'Modal Designer';
+            const titleEl = document.getElementById('modalTitleDisplay');
+            if (titleEl) {
+                titleEl.textContent = modalTitle;
+            }
+        }
+
+        // Update border radius
+        function updateBorderRadius(radius) {
+            modalBorderRadius = parseInt(radius);
+            const modal = document.getElementById('modalPreview');
+            if (modal) {
+                modal.style.borderRadius = modalBorderRadius + 'px';
+            }
+        }
+
         // Select section
         function selectSection(id) {
             selectedSectionId = id;
@@ -748,13 +769,26 @@
             const container = document.getElementById('modalSections');
             container.innerHTML = '';
 
-            sections.forEach(section => {
+            sections.forEach((section, index) => {
                 const sectionEl = document.createElement('div');
                 sectionEl.className = 'modal-section';
                 sectionEl.style.height = `${section.height}%`;
 
                 if (section.id === selectedSectionId) {
                     sectionEl.classList.add('selected');
+                }
+
+                // Add drag handle to first section
+                if (index === 0) {
+                    sectionEl.classList.add('first-section');
+                    sectionEl.style.cursor = 'move';
+
+                    const dragHandle = document.createElement('button');
+                    dragHandle.className = 'modal-drag-handle';
+                    dragHandle.textContent = '⋮⋮';
+                    dragHandle.title = 'Drag to move';
+                    dragHandle.style.cssText = 'position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.1); border: none; color: #666; padding: 4px 8px; border-radius: 4px; cursor: move; font-size: 16px; z-index: 10;';
+                    sectionEl.appendChild(dragHandle);
                 }
 
                 sectionEl.onclick = (e) => {
@@ -833,7 +867,12 @@
 
                 controlEl.innerHTML = `
                     <div class="section-header">
-                        <span class="section-name">${section.name}</span>
+                        <input type="text"
+                               class="section-name-input"
+                               value="${section.name}"
+                               onchange="renameSection(${section.id}, this.value)"
+                               onclick="event.stopPropagation()"
+                               style="flex: 1; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-weight: 600;">
                         <button class="btn-remove" onclick="removeSection(${section.id})">Remove</button>
                     </div>
                     <div class="height-control">
@@ -870,22 +909,26 @@
         // Setup drag and resize functionality
         function setupDragAndResize() {
             const modal = document.getElementById('modalPreview');
-            const header = modal.querySelector('.modal-header');
             const resizeHandle = modal.querySelector('.resize-handle');
 
             // Dragging
             let isDragging = false;
             let currentX, currentY, initialX, initialY;
 
-            header.addEventListener('mousedown', dragStart);
+            document.addEventListener('mousedown', dragStart);
             document.addEventListener('mousemove', drag);
             document.addEventListener('mouseup', dragEnd);
 
             function dragStart(e) {
-                if (e.target.closest('.modal-drag-handle') || e.target === header) {
+                // Check if click is on drag handle or first section
+                const dragHandle = e.target.closest('.modal-drag-handle');
+                const firstSection = e.target.closest('.first-section');
+
+                if (dragHandle || (firstSection && !e.target.closest('input, button:not(.modal-drag-handle)'))) {
                     initialX = e.clientX - modal.offsetLeft;
                     initialY = e.clientY - modal.offsetTop;
                     isDragging = true;
+                    e.preventDefault();
                 }
             }
 
@@ -951,7 +994,7 @@
         function exportHTML() {
             let html = `<div class="modal-container">\n`;
             html += `  <div class="modal-header">\n`;
-            html += `    <span class="modal-title">Modal Title</span>\n`;
+            html += `    <span class="modal-title">${modalTitle}</span>\n`;
             html += `    <button class="modal-close">×</button>\n`;
             html += `  </div>\n`;
             html += `  <div class="modal-body">\n`;
@@ -1063,9 +1106,15 @@
                 modal.style.left = '50%';
                 modal.style.top = '50%';
                 modal.style.transform = 'translate(-50%, -50%)';
+                modal.style.borderRadius = '12px';
 
                 modalWidth = 400;
                 modalHeight = 600;
+                modalTitle = 'Modal Designer';
+                modalBorderRadius = 12;
+
+                document.getElementById('radiusSlider').value = 12;
+                document.getElementById('radiusValue').value = 12;
 
                 init();
             }
