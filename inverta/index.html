@@ -1560,447 +1560,307 @@ ctaobserver.observe(ctaToaster, {
     }
   };
 
-  async function fetchDashboardData(fracc) {
-    await window.supabaseReady;
+// Update fetchDashboardData with pagination
+async function fetchDashboardData(fracc) {
+  await window.supabaseReady;
 
-    console.log('🔄 Fetching dashboard data for', fracc);
+  console.log('🔄 Fetching dashboard data for', fracc);
 
-    // Fetch all lots for this community with timeout
-    const queryPromise = window.supabaseClient
+  // Fetch all lots for this community with pagination
+  const BATCH_SIZE = 1000;
+  let allLots = [];
+  let start = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data: batch, error: lotsError } = await window.supabaseClient
       .from('lots')
       .select('*')
       .eq('client_id', CURRENT_CLIENT)
-      .eq('fraccionamiento', fracc);
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
-
-    const { data: allLots, error: lotsError } = await Promise.race([queryPromise, timeoutPromise]);
+      .eq('fraccionamiento', fracc)
+      .range(start, start + BATCH_SIZE - 1);
 
     if (lotsError) {
-      console.error('❌ ERROR fetching lots for dashboard:', lotsError);
-      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
-      console.error('❌ Error details:', {
-        message: lotsError.message,
-        code: lotsError.code,
-        details: lotsError.details,
-        hint: lotsError.hint
-      });
-
-      // Check if user is authenticated
-      const { data: { session } } = await window.supabaseClient.auth.getSession();
-      if (!session || !session.user) {
-        console.error('❌ User is NOT authenticated - this may be why the query failed');
-      } else {
-        console.log('✅ User IS authenticated:', session.user.email);
-        console.error('❌ Query failed despite authentication - check RLS policies on lots table');
-      }
-
+      console.error('❌ ERROR fetching lot batch from Supabase:', lotsError);
       throw lotsError;
     }
 
-    console.log('✅ Successfully fetched', allLots?.length || 0, 'lots for dashboard');
+    if (batch && batch.length > 0) {
+      allLots = [...allLots, ...batch];
+      start += BATCH_SIZE;
+      // If we got less than a full batch, we're done
+      hasMore = batch.length === BATCH_SIZE;
+    } else {
+      hasMore = false;
+    }
+  }
 
-    console.log('Fetched lots for', fracc, ':', allLots?.length, 'lots');
-    console.log('Sample lot:', allLots?.[0]);
+  console.log('✅ Successfully fetched', allLots?.length || 0, 'lots for dashboard');
 
-    // Count available lots
-    const availableLots = allLots?.filter(lot =>
-      lot.availability?.toLowerCase() !== 'sold'
-    ).length || 0;
-    const totalLots = allLots?.length || 0;
+  // Rest of your existing dashboard calculation logic...
+  const availableLots = allLots?.filter(lot =>
+    lot.availability?.toLowerCase() !== 'sold'
+  ).length || 0;
+  const totalLots = allLots?.length || 0;
 
-    // Calculate projected income (sum all available lot prices)
-    let projectedIncome = 0;
-    let countedLots = 0;
-    console.log('=== INGRESOS CALCULATION DEBUG ===');
-    console.log('Checking', allLots?.length, 'total lots for', fracc);
+  // Calculate projected income
+  let projectedIncome = 0;
+  allLots?.forEach(lot => {
+    if (lot.availability?.toLowerCase() !== 'sold') {
+      const priceStr = String(lot.price || '0').replace(/[$,\s]/g, '');
+      const price = parseFloat(priceStr) || 0;
+      projectedIncome += price;
+    }
+  });
 
-    allLots?.forEach((lot, index) => {
-      if (lot.availability?.toLowerCase() !== 'sold') {
-        // Strip currency formatting: remove $, commas, and any whitespace
-        const priceStr = String(lot.price || '0').replace(/[$,\s]/g, '');
-        const price = parseFloat(priceStr) || 0;
+  // Fetch audit data with pagination
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
-        if (price > 0) {
-          projectedIncome += price;
-          countedLots++;
-          if (countedLots <= 5) { // Show first 5 for debugging
-            console.log(`Lot ${lot.name || index}: $${price.toLocaleString()} (raw: "${lot.price}" → cleaned: "${priceStr}")`);
-          }
-        } else {
-          if (index < 3) { // Show first 3 zero-price lots
-            console.log(`⚠️ Lot ${lot.name || index}: price is 0 or invalid (raw: "${lot.price}" → cleaned: "${priceStr}")`);
-          }
-        }
-      }
-    });
+  // Paginate audit data too
+  let allAuditData = [];
+  let auditStart = 0;
+  let hasMoreAudit = true;
 
-    console.log(`Total: ${countedLots} lots counted, Income: $${projectedIncome.toLocaleString()}`);
-    console.log('=== END DEBUG ===');
-
-    // Fetch lots sold in last 30 days from audit table
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-
-    console.log('=== AUDIT DATA DEBUG FOR', fracc, '===');
-    console.log('Date range: Last 60 days from', sixtyDaysAgo.toISOString());
-    console.log('30 days ago:', thirtyDaysAgo.toISOString());
-
-    console.log('🔄 Fetching lot_updates_audit for', fracc);
-
-    // Add timeout to prevent hanging
+  while (hasMoreAudit) {
     const auditQueryPromise = window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
-      .eq('fraccionamiento', fracc)  // FILTER BY COMMUNITY
+      .eq('fraccionamiento', fracc)
       .gte('updated_at', sixtyDaysAgo.toISOString())
-      .order('updated_at', { ascending: false });
+      .order('updated_at', { ascending: false })
+      .range(auditStart, auditStart + BATCH_SIZE - 1);
 
     const auditTimeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Audit query timeout - RLS policy may be too slow or blocking')), 10000)
+      setTimeout(() => reject(new Error('Audit query timeout')), 10000)
     );
 
-    const { data: auditData, error: auditError } = await Promise.race([auditQueryPromise, auditTimeoutPromise]);
+    const { data: auditBatch, error: auditError } = await Promise.race([auditQueryPromise, auditTimeoutPromise]);
 
     if (auditError) {
-      console.error('❌ ERROR fetching lot_updates_audit:', auditError);
-      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
-      console.error('❌ Error details:', {
-        message: auditError.message,
-        code: auditError.code,
-        details: auditError.details,
-        hint: auditError.hint
-      });
+      console.error('❌ ERROR fetching audit batch:', auditError);
+      break;
+    }
 
-      // Check if user is authenticated
-      const { data: { session } } = await window.supabaseClient.auth.getSession();
-      if (!session || !session.user) {
-        console.error('❌ User is NOT authenticated - this may be why the query failed');
-        console.error('❌ If lot_updates_audit table has RLS enabled, you need to be logged in');
-      } else {
-        console.log('✅ User IS authenticated:', session.user.email);
-        console.error('❌ Query failed despite authentication - check RLS policies on lot_updates_audit table');
-      }
+    if (auditBatch && auditBatch.length > 0) {
+      allAuditData = [...allAuditData, ...auditBatch];
+      auditStart += BATCH_SIZE;
+      hasMoreAudit = auditBatch.length === BATCH_SIZE;
     } else {
-      console.log('✅ Successfully fetched', auditData?.length || 0, 'audit records for', fracc);
+      hasMoreAudit = false;
     }
-
-    console.log('Total audit records fetched for', fracc, ':', auditData?.length || 0);
-    console.log('Sample audit records:', auditData?.slice(0, 3));
-
-    // Count lots that changed to 'sold' in the last 30 days
-    const last30DaysRecords = auditData?.filter(record =>
-      record.new_availability?.toLowerCase() === 'sold' &&
-      record.old_availability?.toLowerCase() !== 'sold' &&
-      new Date(record.updated_at) >= thirtyDaysAgo
-    ) || [];
-
-    // Filter out lots where the sale fell through (lot became available again)
-    const validSalesLast30Days = last30DaysRecords.filter(saleRecord => {
-      // Check if this lot has any later record showing it became available again
-      // Could be: sold -> available OR sold -> featured -> available
-      const laterReverts = auditData?.filter(record =>
-        record.lot_name === saleRecord.lot_name &&
-        new Date(record.updated_at) > new Date(saleRecord.updated_at) &&
-        record.new_availability?.toLowerCase() === 'available'
-        // Don't check old_availability - we just need to know if it ended up available
-      ) || [];
-
-      const isStillSold = laterReverts.length === 0;
-
-      if (!isStillSold && laterReverts.length > 0) {
-        console.log(`  ❌ Sale fell through for ${saleRecord.lot_name}: sold at ${saleRecord.updated_at}, became available again at ${laterReverts[0].updated_at}`);
-      }
-
-      // If there's a later revert to available, this sale fell through - don't count it
-      return isStillSold;
-    });
-
-    const soldLast30Days = validSalesLast30Days.length;
-    console.log('Lots sold in LAST 30 days (initial):', last30DaysRecords.length);
-    console.log('Sales that fell through:', last30DaysRecords.length - validSalesLast30Days.length);
-    console.log('Valid sales (final count):', soldLast30Days);
-    console.log('Sample sold records (last 30):', validSalesLast30Days.slice(0, 3).map(r => ({
-      lot: r.lot_name,
-      updated: r.updated_at,
-      old: r.old_availability,
-      new: r.new_availability
-    })));
-
-    // Count lots sold between 30-60 days ago
-    const prev30DaysRecords = auditData?.filter(record =>
-      record.new_availability?.toLowerCase() === 'sold' &&
-      record.old_availability?.toLowerCase() !== 'sold' &&
-      new Date(record.updated_at) >= sixtyDaysAgo &&
-      new Date(record.updated_at) < thirtyDaysAgo
-    ) || [];
-
-    // Filter out lots where the sale fell through (lot became available again)
-    const validSalesPrev30Days = prev30DaysRecords.filter(saleRecord => {
-      // Check if this lot has any later record showing it became available again
-      // Could be: sold -> available OR sold -> featured -> available
-      const laterReverts = auditData?.filter(record =>
-        record.lot_name === saleRecord.lot_name &&
-        new Date(record.updated_at) > new Date(saleRecord.updated_at) &&
-        record.new_availability?.toLowerCase() === 'available'
-        // Don't check old_availability - we just need to know if it ended up available
-      ) || [];
-
-      // If there's a later revert to available, this sale fell through - don't count it
-      return laterReverts.length === 0;
-    });
-
-    const soldLast60Days = validSalesPrev30Days.length;
-    console.log('Lots sold in PREVIOUS 30 days (initial):', prev30DaysRecords.length);
-    console.log('Sales that fell through (prev):', prev30DaysRecords.length - validSalesPrev30Days.length);
-    console.log('Valid sales in previous period (final count):', soldLast60Days);
-    console.log('Sample sold records (previous 30):', validSalesPrev30Days.slice(0, 3).map(r => ({
-      lot: r.lot_name,
-      updated: r.updated_at,
-      old: r.old_availability,
-      new: r.new_availability
-    })));
-
-    // Calculate percentage change (comparing last 30 days to previous 30 days)
-    let percentageChange = 0;
-    if (soldLast60Days > 0) {
-      percentageChange = ((soldLast30Days - soldLast60Days) / soldLast60Days * 100);
-    } else if (soldLast30Days > 0) {
-      percentageChange = 100; // If no sales in previous period but sales now = 100% increase
-    }
-
-    console.log('Percentage change calculation:');
-    console.log(`  Last 30 days: ${soldLast30Days} lots`);
-    console.log(`  Previous 30 days: ${soldLast60Days} lots`);
-    console.log(`  Change: ${percentageChange.toFixed(1)}%`);
-    console.log('=== END AUDIT DEBUG ===');
-
-    return {
-      availableLots,
-      totalLots,
-      projectedIncome,
-      soldLast30Days,
-      percentageChange
-    };
   }
 
-  // Fetch global dashboard data for ALL communities
-  async function fetchGlobalDashboardData() {
-    await window.supabaseReady;
+  console.log('✅ Successfully fetched', allAuditData?.length || 0, 'audit records');
 
-    console.log('🔄 Fetching GLOBAL dashboard data');
+  // Count lots sold in last 30 days
+  const last30DaysRecords = allAuditData?.filter(record =>
+    record.new_availability?.toLowerCase() === 'sold' &&
+    record.old_availability?.toLowerCase() !== 'sold' &&
+    new Date(record.updated_at) >= thirtyDaysAgo
+  ) || [];
 
-    // Fetch ALL lots (no fraccionamiento filter) with timeout
-    const queryPromise = window.supabaseClient
+  // Filter out lots where the sale fell through
+  const validSalesLast30Days = last30DaysRecords.filter(saleRecord => {
+    const laterReverts = allAuditData?.filter(record =>
+      record.lot_name === saleRecord.lot_name &&
+      new Date(record.updated_at) > new Date(saleRecord.updated_at) &&
+      record.new_availability?.toLowerCase() === 'available'
+    ) || [];
+    return laterReverts.length === 0;
+  });
+
+  const soldLast30Days = validSalesLast30Days.length;
+
+  // Count lots sold between 30-60 days ago
+  const prev30DaysRecords = allAuditData?.filter(record =>
+    record.new_availability?.toLowerCase() === 'sold' &&
+    record.old_availability?.toLowerCase() !== 'sold' &&
+    new Date(record.updated_at) >= sixtyDaysAgo &&
+    new Date(record.updated_at) < thirtyDaysAgo
+  ) || [];
+
+  const validSalesPrev30Days = prev30DaysRecords.filter(saleRecord => {
+    const laterReverts = allAuditData?.filter(record =>
+      record.lot_name === saleRecord.lot_name &&
+      new Date(record.updated_at) > new Date(saleRecord.updated_at) &&
+      record.new_availability?.toLowerCase() === 'available'
+    ) || [];
+    return laterReverts.length === 0;
+  });
+
+  const soldLast60Days = validSalesPrev30Days.length;
+
+  // Calculate percentage change
+  let percentageChange = 0;
+  if (soldLast60Days > 0) {
+    percentageChange = ((soldLast30Days - soldLast60Days) / soldLast60Days * 100);
+  } else if (soldLast30Days > 0) {
+    percentageChange = 100;
+  }
+
+  return {
+    availableLots,
+    totalLots,
+    projectedIncome,
+    soldLast30Days,
+    percentageChange
+  };
+}
+
+// Update fetchGlobalDashboardData with pagination
+async function fetchGlobalDashboardData() {
+  await window.supabaseReady;
+
+  console.log('🔄 Fetching GLOBAL dashboard data');
+
+  // Fetch ALL lots with pagination
+  const BATCH_SIZE = 1000;
+  let allLots = [];
+  let start = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data: batch, error: lotsError } = await window.supabaseClient
       .from('lots')
       .select('*')
-      .eq('client_id', CURRENT_CLIENT);
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
-
-    const { data: allLots, error: lotsError } = await Promise.race([queryPromise, timeoutPromise]);
+      .eq('client_id', CURRENT_CLIENT)
+      .range(start, start + BATCH_SIZE - 1);
 
     if (lotsError) {
       console.error('❌ ERROR fetching lots for GLOBAL dashboard:', lotsError);
-      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
-      console.error('❌ Error details:', {
-        message: lotsError.message,
-        code: lotsError.code,
-        details: lotsError.details,
-        hint: lotsError.hint
-      });
-
-      // Check if user is authenticated
-      const { data: { session } } = await window.supabaseClient.auth.getSession();
-      if (!session || !session.user) {
-        console.error('❌ User is NOT authenticated - this may be why the query failed');
-      } else {
-        console.log('✅ User IS authenticated:', session.user.email);
-        console.error('❌ Query failed despite authentication - check RLS policies on lots table');
-      }
-
       throw lotsError;
     }
 
-    console.log('✅ Successfully fetched', allLots?.length || 0, 'lots for GLOBAL dashboard');
-    console.log('Fetched ALL lots:', allLots?.length, 'lots');
+    if (batch && batch.length > 0) {
+      allLots = [...allLots, ...batch];
+      start += BATCH_SIZE;
+      hasMore = batch.length === BATCH_SIZE;
+    } else {
+      hasMore = false;
+    }
+  }
 
-    // Count available lots
-    const availableLots = allLots?.filter(lot =>
-      lot.availability?.toLowerCase() !== 'sold'
-    ).length || 0;
-    const totalLots = allLots?.length || 0;
+  console.log('✅ Successfully fetched', allLots?.length || 0, 'lots for GLOBAL dashboard');
 
-    // Calculate projected income (sum all available lot prices)
-    let projectedIncome = 0;
-    allLots?.forEach(lot => {
-      if (lot.availability?.toLowerCase() !== 'sold') {
-        // Strip currency formatting: remove $, commas, and any whitespace
-        const priceStr = String(lot.price || '0').replace(/[$,\s]/g, '');
-        const price = parseFloat(priceStr) || 0;
-        projectedIncome += price;
-      }
-    });
+  // Calculate dashboard metrics
+  const availableLots = allLots?.filter(lot =>
+    lot.availability?.toLowerCase() !== 'sold'
+  ).length || 0;
+  const totalLots = allLots?.length || 0;
 
-    console.log('Global projected income:', projectedIncome);
+  let projectedIncome = 0;
+  allLots?.forEach(lot => {
+    if (lot.availability?.toLowerCase() !== 'sold') {
+      const priceStr = String(lot.price || '0').replace(/[$,\s]/g, '');
+      const price = parseFloat(priceStr) || 0;
+      projectedIncome += price;
+    }
+  });
 
-    // Fetch lots sold in last 30 days from audit table
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  console.log('Global projected income:', projectedIncome);
 
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+  // Fetch audit data with pagination
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
-    console.log('=== GLOBAL AUDIT DATA DEBUG ===');
-    console.log('Date range: Last 60 days from', sixtyDaysAgo.toISOString());
-    console.log('30 days ago:', thirtyDaysAgo.toISOString());
+  let allAuditData = [];
+  let auditStart = 0;
+  let hasMoreAudit = true;
 
-    console.log('🔄 Fetching GLOBAL lot_updates_audit');
-
-    // Add timeout to prevent hanging
+  while (hasMoreAudit) {
     const auditQueryPromise = window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
-      .eq('client_id', CURRENT_CLIENT)  // FILTER BY CLIENT (all communities for this client)
+      .eq('client_id', CURRENT_CLIENT)
       .gte('updated_at', sixtyDaysAgo.toISOString())
-      .order('updated_at', { ascending: false });
+      .order('updated_at', { ascending: false })
+      .range(auditStart, auditStart + BATCH_SIZE - 1);
 
     const auditTimeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Audit query timeout - RLS policy may be too slow or blocking')), 10000)
+      setTimeout(() => reject(new Error('Audit query timeout')), 10000)
     );
 
-    const { data: auditData, error: auditError } = await Promise.race([auditQueryPromise, auditTimeoutPromise]);
+    const { data: auditBatch, error: auditError } = await Promise.race([auditQueryPromise, auditTimeoutPromise]);
 
     if (auditError) {
-      console.error('❌ ERROR fetching GLOBAL lot_updates_audit:', auditError);
-      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
-      console.error('❌ Error details:', {
-        message: auditError.message,
-        code: auditError.code,
-        details: auditError.details,
-        hint: auditError.hint
-      });
+      console.error('❌ ERROR fetching GLOBAL audit batch:', auditError);
+      break;
+    }
 
-      // Check if user is authenticated
-      const { data: { session } } = await window.supabaseClient.auth.getSession();
-      if (!session || !session.user) {
-        console.error('❌ User is NOT authenticated - this may be why the query failed');
-        console.error('❌ If lot_updates_audit table has RLS enabled, you need to be logged in');
-      } else {
-        console.log('✅ User IS authenticated:', session.user.email);
-        console.error('❌ Query failed despite authentication - check RLS policies on lot_updates_audit table');
-      }
+    if (auditBatch && auditBatch.length > 0) {
+      allAuditData = [...allAuditData, ...auditBatch];
+      auditStart += BATCH_SIZE;
+      hasMoreAudit = auditBatch.length === BATCH_SIZE;
     } else {
-      console.log('✅ Successfully fetched', auditData?.length || 0, 'GLOBAL audit records');
+      hasMoreAudit = false;
     }
-
-    console.log('Total GLOBAL audit records fetched:', auditData?.length || 0);
-    console.log('Sample audit records:', auditData?.slice(0, 3));
-
-    // Count lots that changed to 'sold' in the last 30 days
-    const last30DaysRecords = auditData?.filter(record =>
-      record.new_availability?.toLowerCase() === 'sold' &&
-      record.old_availability?.toLowerCase() !== 'sold' &&
-      new Date(record.updated_at) >= thirtyDaysAgo
-    ) || [];
-
-    // Filter out lots where the sale fell through (lot became available again)
-    const validSalesLast30Days = last30DaysRecords.filter(saleRecord => {
-      // Check if this lot has any later record showing it became available again
-      // Could be: sold -> available OR sold -> featured -> available
-      const laterReverts = auditData?.filter(record =>
-        record.lot_name === saleRecord.lot_name &&
-        new Date(record.updated_at) > new Date(saleRecord.updated_at) &&
-        record.new_availability?.toLowerCase() === 'available'
-        // Don't check old_availability - we just need to know if it ended up available
-      ) || [];
-
-      const isStillSold = laterReverts.length === 0;
-
-      if (!isStillSold && laterReverts.length > 0) {
-        console.log(`  ❌ Sale fell through for ${saleRecord.lot_name}: sold at ${saleRecord.updated_at}, became available again at ${laterReverts[0].updated_at}`);
-      }
-
-      // If there's a later revert to available, this sale fell through - don't count it
-      return isStillSold;
-    });
-
-    const soldLast30Days = validSalesLast30Days.length;
-    console.log('GLOBAL lots sold in LAST 30 days (initial):', last30DaysRecords.length);
-    console.log('GLOBAL sales that fell through:', last30DaysRecords.length - validSalesLast30Days.length);
-    console.log('GLOBAL valid sales (final count):', soldLast30Days);
-    console.log('Sample sold records (last 30):', validSalesLast30Days.slice(0, 3).map(r => ({
-      lot: r.lot_name,
-      fracc: r.fraccionamiento,
-      updated: r.updated_at,
-      old: r.old_availability,
-      new: r.new_availability
-    })));
-
-    // Count lots sold between 30-60 days ago
-    const prev30DaysRecords = auditData?.filter(record =>
-      record.new_availability?.toLowerCase() === 'sold' &&
-      record.old_availability?.toLowerCase() !== 'sold' &&
-      new Date(record.updated_at) >= sixtyDaysAgo &&
-      new Date(record.updated_at) < thirtyDaysAgo
-    ) || [];
-
-    // Filter out lots where the sale fell through (lot became available again)
-    const validSalesPrev30Days = prev30DaysRecords.filter(saleRecord => {
-      // Check if this lot has any later record showing it became available again
-      // Could be: sold -> available OR sold -> featured -> available
-      const laterReverts = auditData?.filter(record =>
-        record.lot_name === saleRecord.lot_name &&
-        new Date(record.updated_at) > new Date(saleRecord.updated_at) &&
-        record.new_availability?.toLowerCase() === 'available'
-        // Don't check old_availability - we just need to know if it ended up available
-      ) || [];
-
-      // If there's a later revert to available, this sale fell through - don't count it
-      return laterReverts.length === 0;
-    });
-
-    const soldLast60Days = validSalesPrev30Days.length;
-    console.log('GLOBAL lots sold in PREVIOUS 30 days (initial):', prev30DaysRecords.length);
-    console.log('GLOBAL sales that fell through (prev):', prev30DaysRecords.length - validSalesPrev30Days.length);
-    console.log('GLOBAL valid sales in previous period (final count):', soldLast60Days);
-    console.log('Sample sold records (previous 30):', validSalesPrev30Days.slice(0, 3).map(r => ({
-      lot: r.lot_name,
-      fracc: r.fraccionamiento,
-      updated: r.updated_at,
-      old: r.old_availability,
-      new: r.new_availability
-    })));
-
-    // Calculate percentage change (comparing last 30 days to previous 30 days)
-    let percentageChange = 0;
-    if (soldLast60Days > 0) {
-      percentageChange = ((soldLast30Days - soldLast60Days) / soldLast60Days * 100);
-    } else if (soldLast30Days > 0) {
-      percentageChange = 100; // If no sales in previous period but sales now = 100% increase
-    }
-
-    console.log('GLOBAL percentage change calculation:');
-    console.log(`  Last 30 days: ${soldLast30Days} lots`);
-    console.log(`  Previous 30 days: ${soldLast60Days} lots`);
-    console.log(`  Change: ${percentageChange.toFixed(1)}%`);
-    console.log('=== END GLOBAL AUDIT DEBUG ===');
-
-    return {
-      availableLots,
-      totalLots,
-      projectedIncome,
-      soldLast30Days,
-      percentageChange
-    };
   }
+
+  console.log('✅ Successfully fetched', allAuditData?.length || 0, 'GLOBAL audit records');
+
+  // Count lots sold in last 30 days
+  const last30DaysRecords = allAuditData?.filter(record =>
+    record.new_availability?.toLowerCase() === 'sold' &&
+    record.old_availability?.toLowerCase() !== 'sold' &&
+    new Date(record.updated_at) >= thirtyDaysAgo
+  ) || [];
+
+  const validSalesLast30Days = last30DaysRecords.filter(saleRecord => {
+    const laterReverts = allAuditData?.filter(record =>
+      record.lot_name === saleRecord.lot_name &&
+      new Date(record.updated_at) > new Date(saleRecord.updated_at) &&
+      record.new_availability?.toLowerCase() === 'available'
+    ) || [];
+    return laterReverts.length === 0;
+  });
+
+  const soldLast30Days = validSalesLast30Days.length;
+
+  // Count lots sold between 30-60 days ago
+  const prev30DaysRecords = allAuditData?.filter(record =>
+    record.new_availability?.toLowerCase() === 'sold' &&
+    record.old_availability?.toLowerCase() !== 'sold' &&
+    new Date(record.updated_at) >= sixtyDaysAgo &&
+    new Date(record.updated_at) < thirtyDaysAgo
+  ) || [];
+
+  const validSalesPrev30Days = prev30DaysRecords.filter(saleRecord => {
+    const laterReverts = allAuditData?.filter(record =>
+      record.lot_name === saleRecord.lot_name &&
+      new Date(record.updated_at) > new Date(saleRecord.updated_at) &&
+      record.new_availability?.toLowerCase() === 'available'
+    ) || [];
+    return laterReverts.length === 0;
+  });
+
+  const soldLast60Days = validSalesPrev30Days.length;
+
+  // Calculate percentage change
+  let percentageChange = 0;
+  if (soldLast60Days > 0) {
+    percentageChange = ((soldLast30Days - soldLast60Days) / soldLast60Days * 100);
+  } else if (soldLast30Days > 0) {
+    percentageChange = 100;
+  }
+
+  console.log('GLOBAL percentage change calculation:');
+  console.log(`  Last 30 days: ${soldLast30Days} lots`);
+  console.log(`  Previous 30 days: ${soldLast60Days} lots`);
+  console.log(`  Change: ${percentageChange.toFixed(1)}%`);
+
+  return {
+    availableLots,
+    totalLots,
+    projectedIncome,
+    soldLast30Days,
+    percentageChange
+  };
+}
 
   // Open global dashboard showing all communities
   window.openGlobalDashboard = async function() {
@@ -6811,30 +6671,30 @@ function refreshFeaturedLayer() {
           .eq('client_id', CURRENT_CLIENT);
         if (error) throw error;
 
-        // Log to audit table
-        try {
-          // Count total and sold lots from the in-memory lotData array
-          const totalLots = lotData.length;
-          const soldLots = lotData.filter(l => normalize(l.availability) === 'sold').length;
-          const availableCount = totalLots - soldLots;
+// Log to audit table
+try {
+  // Count total and sold lots from the in-memory lotData array
+  const totalLots = lotData.length;
+  const soldLots = lotData.filter(l => normalize(l.availability) === 'sold').length;
+  const availableCount = totalLots - soldLots;
 
-          // Get fraccionamiento from lot data
-          const lotFracc = lotData[i]?.fraccionamiento || null;
+  // Get fraccionamiento from lot data
+  const lotFracc = lotData[i]?.fraccionamiento || null;
 
-          await window.supabaseClient
-            .from('lot_updates_audit')
-            .insert({
-              lot_name: sel.lotName,
-              fraccionamiento: lotFracc,
-              old_availability: current,
-              new_availability: next,
-              updated_by: updatedBy,
-              available_lots: availableCount
-            });
-        } catch (auditError) {
-          console.warn('Failed to log audit:', auditError);
-          // Don't fail the main operation if audit logging fails
-        }
+  await window.supabaseClient
+    .from('lot_updates_audit')
+    .insert({
+      lot_name: sel.lotName,
+      fraccionamiento: lotFracc,
+      old_availability: current,
+      new_availability: next,
+      updated_by: updatedBy,
+      available_lots: availableCount,
+      client_id: CURRENT_CLIENT  // 🟢 ADD THIS LINE
+    });
+} catch (auditError) {
+  console.warn('Failed to log audit:', auditError);
+}
       } catch (e) {
         console.error('Background save failed:', e);
         window.showToaster?.('No se pudo guardar. Revirtiendo…');
