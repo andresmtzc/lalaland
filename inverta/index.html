@@ -2862,7 +2862,7 @@ function parseLots(text) {
       while (hasMore) {
         const { data: batch, error } = await window.supabaseClient
           .from('lots')
-          .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2')
+          .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2, nickname, subtitle, image')
           .eq('client_id', CURRENT_CLIENT)
           .range(start, start + BATCH_SIZE - 1);
 
@@ -2919,6 +2919,9 @@ function parseLots(text) {
             lot.fraccionamiento = row.fraccionamiento;          // Add fraccionamiento data
             lot.price_m2 = row.price_m2;                        // Keep snake_case for DB
             lot.priceM2 = row.price_m2;                         // Also add camelCase for consistency
+            lot.nickname = row.nickname;                        // Add modal detail fields
+            lot.subtitle = row.subtitle;
+            lot.image = row.image;
           }
         });
 
@@ -2945,12 +2948,36 @@ function parseLots(text) {
         }
 
         console.log('Lot data enriched with availability and fraccionamiento:', lotData);
+
+        // Transform lotData → baseLots for modal use
+        transformLotDataToBaseLots();
       } else {
         console.warn('No availability data returned for lots');
       }
     } catch (error) {
       console.error('❌ Exception fetching lots:', error);
     }
+  }
+
+  // Transform lotData into baseLots format for modal
+  function transformLotDataToBaseLots() {
+    baseLots = lotData.map(lot => ({
+      number: extractLotNumber(lot.name),
+      size: lot.rSize,
+      price: lot.millones,
+      availability: lot.availability,
+      fraccionamiento: lot.fraccionamiento,
+      priceM2: lot.priceM2 || lot.price_m2,
+      detailData: {
+        nickname: lot.nickname,
+        subtitle: lot.subtitle,
+        image: lot.image
+      }
+    }));
+
+    // Store full list for filtering
+    window.baseLotsAll = baseLots.slice();
+    console.log('✅ Transformed lotData → baseLots:', baseLots.length, 'lots');
   }
 </script>
 
@@ -3667,8 +3694,8 @@ let clampCooldown = false;
 let infoMode = false;
 
 function extractLotNumber(lotName) {
-  // Remove 'lotinverta', 'lot', and 'inverta' prefixes to get clean lot number
-  return lotName.replace(/^lotinverta/i, '').replace(/^lot/i, '').replace(/^inverta/i, '');
+  // Remove 'lotinverta', 'lot', 'inverta', and 'p' prefixes to get clean lot number
+  return lotName.replace(/^lotinverta/i, '').replace(/^lot/i, '').replace(/^inverta/i, '').replace(/^p/i, '');
 }
 
 async function fetchLots() {
@@ -3676,76 +3703,33 @@ async function fetchLots() {
     loadingSpinner.style.display = 'block';
     modalInfo.style.opacity = '0.5';
 
-    await window.supabaseReady;
+    // Check if baseLots already populated from map data
+    if (window.baseLotsAll && window.baseLotsAll.length > 0) {
+      console.log('✅ Reusing existing baseLots from map data:', window.baseLotsAll.length, 'lots');
+      baseLots = window.baseLotsAll.slice();
+      updateLotsArray();
+      isDataLoaded = true;
+    } else {
+      // Fallback: data not yet loaded, wait for it
+      console.log('⏳ Waiting for map data to load...');
+      await window.supabaseReady;
 
-    console.log('🔄 Fetching lots data for modal from Supabase...');
-
-    // Fetch ALL data (including images) upfront with pagination
-    // Note: Supabase has a hard limit of 1000 rows per request
-    const BATCH_SIZE = 1000;
-    let allModalLots = [];
-    let start = 0;
-    let hasMore = true;
-
-    while (hasMore) {
-      console.log(`📥 Fetching modal lots batch: ${start} to ${start + BATCH_SIZE - 1}`);
-
-      const queryPromise = window.supabaseClient
-        .from('lots')
-        .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image, price_m2')
-        .eq('client_id', CURRENT_CLIENT)
-        .order('lot_name', { ascending: true })
-        .range(start, start + BATCH_SIZE - 1);
-
-      // Add 10 second timeout to detect hanging queries
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
-      );
-
-      const { data: batchData, error: batchError } = await Promise.race([queryPromise, timeoutPromise]);
-
-      if (batchError) {
-        console.error('❌ ERROR fetching modal lots batch:', batchError);
-        throw batchError;
+      // Wait a bit and check again
+      let attempts = 0;
+      while ((!window.baseLotsAll || window.baseLotsAll.length === 0) && attempts < 20) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
       }
 
-      if (batchData && batchData.length > 0) {
-        allModalLots = allModalLots.concat(batchData);
-        start += BATCH_SIZE;
-
-        // If we got less than BATCH_SIZE, we've reached the end
-        if (batchData.length < BATCH_SIZE) {
-          hasMore = false;
-        }
+      if (window.baseLotsAll && window.baseLotsAll.length > 0) {
+        console.log('✅ Map data loaded, using baseLots:', window.baseLotsAll.length, 'lots');
+        baseLots = window.baseLotsAll.slice();
+        updateLotsArray();
+        isDataLoaded = true;
       } else {
-        hasMore = false;
+        throw new Error('Map data not available after waiting');
       }
     }
-
-    const data = allModalLots;
-
-    console.log('✅ Successfully fetched', data?.length || 0, 'lots for modal (using pagination)');
-    
-    baseLots = data.map(lot => ({
-      number: extractLotNumber(lot.lot_name),
-      size: lot.rSize,
-      price: lot.millones,
-      availability: lot.availability,
-      fraccionamiento: lot.fraccionamiento,
-      priceM2: lot.price_m2, 
-      // Store all detail data upfront
-      detailData: {
-        nickname: lot.nickname,
-        subtitle: lot.subtitle,
-        image: lot.image
-      }
-    }));
-    
-    
-    window.baseLotsAll = baseLots.slice();
-updateLotsArray();
-    isDataLoaded = true;
-    console.log('✅ Pre-loaded all lots + images');
   } catch (error) {
     console.error('Error fetching lots:', error);
     // Fallback dummy data
