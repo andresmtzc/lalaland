@@ -2839,60 +2839,56 @@ function parseLots(text) {
 
     console.log('🔄 Fetching lot availability from Supabase for', names.length, 'lots');
 
-    // Add timeout to prevent hanging (30s for large datasets)
-    const queryPromise = window.supabaseClient
-      .from('lots')
-      .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2')
-      .in('lot_name', names)
-      .eq('client_id', CURRENT_CLIENT);
+    try {
+      // Query all lots at once - database indexes and public read policy make this fast even for 1000+ lots
+      const { data, error } = await window.supabaseClient
+        .from('lots')
+        .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2')
+        .in('lot_name', names)
+        .eq('client_id', CURRENT_CLIENT);
 
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 30000)
-    );
+      if (error) {
+        console.error('❌ ERROR fetching lot availability from Supabase:', error);
+        console.error('❌ Error details:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
 
-    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
-
-    if (error) {
-      console.error('❌ ERROR fetching lot availability from Supabase:', error);
-      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
-      console.error('❌ Error details:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint
-      });
-
-      // Check if user is authenticated
-      const { data: { session } } = await window.supabaseClient.auth.getSession();
-      if (!session || !session.user) {
-        console.error('❌ User is NOT authenticated - this may be why the query failed');
-        console.error('❌ If lots table has RLS enabled, you need to be logged in to view data');
-      } else {
-        console.log('✅ User IS authenticated:', session.user.email);
-        console.error('❌ Query failed despite authentication - check RLS policies on lots table');
-      }
-      return;
-    }
-
-    console.log('✅ Successfully fetched', data?.length || 0, 'lots from Supabase');
-
-    if (data && data.length > 0) {
-      data.forEach(row => {
-        const lot = lotData.find(l => l.name === row.lot_name);
-        if (lot) {
-          const raw = row.availability ?? 'Available';        // preserve title case if you want it in DB
-          lot.availability = raw;                             // e.g. "Available", "Sold", "Featured"
-          lot.featured = raw.toLowerCase() === 'featured';    // keep a boolean too (for legacy paths)
-          lot.rSize = row.rSize;
-          lot.millones = row.millones;
-          lot.fraccionamiento = row.fraccionamiento;          // Add fraccionamiento data
-          lot.price_m2 = row.price_m2;                        // Keep snake_case for DB
-          lot.priceM2 = row.price_m2;                         // Also add camelCase for consistency
+        // Check if user is authenticated
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session || !session.user) {
+          console.error('❌ User is NOT authenticated - this may be why the query failed');
+        } else {
+          console.log('✅ User IS authenticated:', session.user.email);
+          console.error('❌ Query failed despite authentication - check RLS policies or indexes');
         }
-      });
-      console.log('Lot data enriched with availability and fraccionamiento:', lotData);
-    } else {
-      console.warn('No availability data returned for lots');
+        return;
+      }
+
+      console.log('✅ Successfully fetched', data?.length || 0, 'lots from Supabase');
+
+      if (data && data.length > 0) {
+        data.forEach(row => {
+          const lot = lotData.find(l => l.name === row.lot_name);
+          if (lot) {
+            const raw = row.availability ?? 'Available';        // preserve title case if you want it in DB
+            lot.availability = raw;                             // e.g. "Available", "Sold", "Featured"
+            lot.featured = raw.toLowerCase() === 'featured';    // keep a boolean too (for legacy paths)
+            lot.rSize = row.rSize;
+            lot.millones = row.millones;
+            lot.fraccionamiento = row.fraccionamiento;          // Add fraccionamiento data
+            lot.price_m2 = row.price_m2;                        // Keep snake_case for DB
+            lot.priceM2 = row.price_m2;                         // Also add camelCase for consistency
+          }
+        });
+        console.log('Lot data enriched with availability and fraccionamiento:', lotData);
+      } else {
+        console.warn('No availability data returned for lots');
+      }
+    } catch (error) {
+      console.error('❌ Exception fetching lots:', error);
     }
   }
 </script>
@@ -5789,18 +5785,20 @@ communitySearchBtn?.classList.add('hide');
   observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
 
   // Reset map view (existing behavior)
-  resetBtn.addEventListener('click', () => {
-    if (!window.map) return;
-    const initialZoom = getCurrentFraccZoom();
-    map.flyTo({
-      center: [-100.15994, 25.461823],
-      zoom: initialZoom,
-      bearing: 0,
-      pitch: 0,
-      speed: 1.2,
-      curve: 1.5
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (!window.map) return;
+      const initialZoom = getCurrentFraccZoom();
+      map.flyTo({
+        center: [-100.15994, 25.461823],
+        zoom: initialZoom,
+        bearing: 0,
+        pitch: 0,
+        speed: 1.2,
+        curve: 1.5
+      });
     });
-  });
+  }
 });
 
 
