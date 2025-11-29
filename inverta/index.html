@@ -2841,11 +2841,12 @@ function parseLots(text) {
 
     try {
       // Query all lots at once - database indexes and public read policy make this fast even for 1000+ lots
+      // Note: Removed .in('lot_name', names) to avoid URL length limits with 697+ lot names
       const { data, error } = await window.supabaseClient
         .from('lots')
         .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2')
-        .in('lot_name', names)
-        .eq('client_id', CURRENT_CLIENT);
+        .eq('client_id', CURRENT_CLIENT)
+        .limit(1000);
 
       if (error) {
         console.error('❌ ERROR fetching lot availability from Supabase:', error);
@@ -2870,6 +2871,9 @@ function parseLots(text) {
       console.log('✅ Successfully fetched', data?.length || 0, 'lots from Supabase');
 
       if (data && data.length > 0) {
+        // Track which lots were found in DB
+        const fetchedLotNames = new Set(data.map(row => row.lot_name));
+
         data.forEach(row => {
           const lot = lotData.find(l => l.name === row.lot_name);
           if (lot) {
@@ -2883,6 +2887,18 @@ function parseLots(text) {
             lot.priceM2 = row.price_m2;                         // Also add camelCase for consistency
           }
         });
+
+        // Find lots that weren't returned by the query
+        const missingLots = lotData
+          .filter(lot => !fetchedLotNames.has(lot.name))
+          .map(lot => lot.name);
+
+        if (missingLots.length > 0) {
+          console.warn(`⚠️ ${missingLots.length} lots were NOT returned by Supabase query:`, missingLots.slice(0, 20));
+          console.warn('First missing lot:', missingLots[0]);
+          console.warn('Last missing lot:', missingLots[missingLots.length - 1]);
+        }
+
         console.log('Lot data enriched with availability and fraccionamiento:', lotData);
       } else {
         console.warn('No availability data returned for lots');
