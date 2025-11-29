@@ -2842,35 +2842,51 @@ function parseLots(text) {
     console.log('🔍 Last 20 lot names expected by frontend:', names.slice(-20));
 
     try {
-      // Query all lots at once - database indexes and public read policy make this fast even for 1000+ lots
-      // Note: Removed .in('lot_name', names) to avoid URL length limits with 697+ lot names
-      // Using limit(2000) to explicitly fetch up to 2000 rows (more than enough for 1214 lots)
-      const { data, error } = await window.supabaseClient
-        .from('lots')
-        .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2')
-        .eq('client_id', CURRENT_CLIENT)
-        .limit(2000);
+      // Fetch all lots using pagination to bypass Supabase's 1000-row hard limit
+      // Note: Supabase has a hard limit of 1000 rows per request regardless of .limit() value
+      const BATCH_SIZE = 1000;
+      let allLots = [];
+      let start = 0;
+      let hasMore = true;
 
-      if (error) {
-        console.error('❌ ERROR fetching lot availability from Supabase:', error);
-        console.error('❌ Error details:', {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint
-        });
+      while (hasMore) {
+        const { data: batch, error } = await window.supabaseClient
+          .from('lots')
+          .select('lot_name, availability, rSize, millones, fraccionamiento, price_m2')
+          .eq('client_id', CURRENT_CLIENT)
+          .range(start, start + BATCH_SIZE - 1);
 
-        // Check if user is authenticated
-        const { data: { session } } = await window.supabaseClient.auth.getSession();
-        if (!session || !session.user) {
-          console.error('❌ User is NOT authenticated - this may be why the query failed');
-        } else {
-          console.log('✅ User IS authenticated:', session.user.email);
-          console.error('❌ Query failed despite authentication - check RLS policies or indexes');
+        if (error) {
+          console.error('❌ ERROR fetching lot batch from Supabase:', error);
+          console.error('❌ Error details:', {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint
+          });
+
+          // Check if user is authenticated
+          const { data: { session } } = await window.supabaseClient.auth.getSession();
+          if (!session || !session.user) {
+            console.error('❌ User is NOT authenticated - this may be why the query failed');
+          } else {
+            console.log('✅ User IS authenticated:', session.user.email);
+            console.error('❌ Query failed despite authentication - check RLS policies or indexes');
+          }
+          return;
         }
-        return;
+
+        if (batch && batch.length > 0) {
+          allLots = [...allLots, ...batch];
+          start += BATCH_SIZE;
+          // If we got less than a full batch, we're done
+          hasMore = batch.length === BATCH_SIZE;
+        } else {
+          hasMore = false;
+        }
       }
 
+      const data = allLots;
       console.log('✅ Successfully fetched', data?.length || 0, 'lots from Supabase');
 
       if (data && data.length > 0) {
