@@ -2512,8 +2512,18 @@ map.on('click', 'lots-final-click', (e) => {
 
   const feature = e.features[0];
   const lotName = feature.properties.name;
+  console.log('🔍 CLICK DEBUG - Looking for lot:', lotName);
+  console.log('🔍 CLICK DEBUG - lotData has', lotData.length, 'lots');
+  console.log('🔍 CLICK DEBUG - First 5 lot names:', lotData.slice(0, 5).map(l => l.name));
   const lot = lotData.find(l => l.name === lotName);
-  if (!lot) return;
+  console.log('🔍 CLICK DEBUG - Found lot?', !!lot, lot ? lot.name : 'NOT FOUND');
+  if (!lot) {
+    console.error('❌ CLICK DEBUG - Lot not found! Clicked:', lotName);
+    console.log('🔍 CLICK DEBUG - Checking for similar names...');
+    const similar = lotData.filter(l => l.name.includes('lotinvertap4-05'));
+    console.log('🔍 CLICK DEBUG - Similar lots:', similar.map(l => l.name));
+    return;
+  }
 
   // 🟢 FIX: Check if we're already in detail view
   const isInDetailView = modal.classList.contains('info-mode') && window.isDetailOpen;
@@ -2921,6 +2931,17 @@ function parseLots(text) {
           console.warn(`⚠️ ${missingLots.length} lots were NOT returned by Supabase query:`, missingLots.slice(0, 20));
           console.warn('First missing lot:', missingLots[0]);
           console.warn('Last missing lot:', missingLots[missingLots.length - 1]);
+
+          // Analyze missing lots by type for MZ 10-17
+          const missingInverta = missingLots.filter(name => /^lotinverta(10|11|12|13|14|15|16|17)-/.test(name) && !name.includes('lotinvertap'));
+          const missingInvertap = missingLots.filter(name => /^lotinvertap(10|11|12|13|14|15|16|17)-/.test(name));
+
+          if (missingInverta.length > 0) {
+            console.warn(`🔴 Missing ${missingInverta.length} lotinverta (non-p) lots for MZ 10-17:`, missingInverta.slice(0, 10));
+          }
+          if (missingInvertap.length > 0) {
+            console.warn(`🔴 Missing ${missingInvertap.length} lotinvertap lots for MZ 10-17:`, missingInvertap.slice(0, 10));
+          }
         }
 
         console.log('Lot data enriched with availability and fraccionamiento:', lotData);
@@ -3659,44 +3680,51 @@ async function fetchLots() {
 
     console.log('🔄 Fetching lots data for modal from Supabase...');
 
-    // Fetch ALL data (including images) upfront with timeout
-    const queryPromise = window.supabaseClient
-      .from('lots')
-      .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image, price_m2')
-      .eq('client_id', CURRENT_CLIENT)
-      .order('lot_name', { ascending: true });
+    // Fetch ALL data (including images) upfront with pagination
+    // Note: Supabase has a hard limit of 1000 rows per request
+    const BATCH_SIZE = 1000;
+    let allModalLots = [];
+    let start = 0;
+    let hasMore = true;
 
-    // Add 10 second timeout to detect hanging queries
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
+    while (hasMore) {
+      console.log(`📥 Fetching modal lots batch: ${start} to ${start + BATCH_SIZE - 1}`);
 
-    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+      const queryPromise = window.supabaseClient
+        .from('lots')
+        .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image, price_m2')
+        .eq('client_id', CURRENT_CLIENT)
+        .order('lot_name', { ascending: true })
+        .range(start, start + BATCH_SIZE - 1);
 
-    if (error) {
-      console.error('❌ ERROR fetching lots for modal:', error);
-      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
-      console.error('❌ Error details:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint
-      });
+      // Add 10 second timeout to detect hanging queries
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
+      );
 
-      // Check if user is authenticated
-      const { data: { session } } = await window.supabaseClient.auth.getSession();
-      if (!session || !session.user) {
-        console.error('❌ User is NOT authenticated - this may be why the query failed');
-        console.error('❌ If lots table has RLS enabled, you need to be logged in to view data');
-      } else {
-        console.log('✅ User IS authenticated:', session.user.email);
-        console.error('❌ Query failed despite authentication - check RLS policies on lots table');
+      const { data: batchData, error: batchError } = await Promise.race([queryPromise, timeoutPromise]);
+
+      if (batchError) {
+        console.error('❌ ERROR fetching modal lots batch:', batchError);
+        throw batchError;
       }
 
-      throw error;
+      if (batchData && batchData.length > 0) {
+        allModalLots = allModalLots.concat(batchData);
+        start += BATCH_SIZE;
+
+        // If we got less than BATCH_SIZE, we've reached the end
+        if (batchData.length < BATCH_SIZE) {
+          hasMore = false;
+        }
+      } else {
+        hasMore = false;
+      }
     }
 
-    console.log('✅ Successfully fetched', data?.length || 0, 'lots for modal');
+    const data = allModalLots;
+
+    console.log('✅ Successfully fetched', data?.length || 0, 'lots for modal (using pagination)');
     
     baseLots = data.map(lot => ({
       number: extractLotNumber(lot.lot_name),
