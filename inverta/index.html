@@ -3680,44 +3680,51 @@ async function fetchLots() {
 
     console.log('🔄 Fetching lots data for modal from Supabase...');
 
-    // Fetch ALL data (including images) upfront with timeout
-    const queryPromise = window.supabaseClient
-      .from('lots')
-      .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image, price_m2')
-      .eq('client_id', CURRENT_CLIENT)
-      .order('lot_name', { ascending: true });
+    // Fetch ALL data (including images) upfront with pagination
+    // Note: Supabase has a hard limit of 1000 rows per request
+    const BATCH_SIZE = 1000;
+    let allModalLots = [];
+    let start = 0;
+    let hasMore = true;
 
-    // Add 10 second timeout to detect hanging queries
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
-    );
+    while (hasMore) {
+      console.log(`📥 Fetching modal lots batch: ${start} to ${start + BATCH_SIZE - 1}`);
 
-    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+      const queryPromise = window.supabaseClient
+        .from('lots')
+        .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, image, price_m2')
+        .eq('client_id', CURRENT_CLIENT)
+        .order('lot_name', { ascending: true })
+        .range(start, start + BATCH_SIZE - 1);
 
-    if (error) {
-      console.error('❌ ERROR fetching lots for modal:', error);
-      console.error('❌ This may be an RLS (Row Level Security) policy issue.');
-      console.error('❌ Error details:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint
-      });
+      // Add 10 second timeout to detect hanging queries
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Query timeout - RLS policy may be too slow or blocking')), 10000)
+      );
 
-      // Check if user is authenticated
-      const { data: { session } } = await window.supabaseClient.auth.getSession();
-      if (!session || !session.user) {
-        console.error('❌ User is NOT authenticated - this may be why the query failed');
-        console.error('❌ If lots table has RLS enabled, you need to be logged in to view data');
-      } else {
-        console.log('✅ User IS authenticated:', session.user.email);
-        console.error('❌ Query failed despite authentication - check RLS policies on lots table');
+      const { data: batchData, error: batchError } = await Promise.race([queryPromise, timeoutPromise]);
+
+      if (batchError) {
+        console.error('❌ ERROR fetching modal lots batch:', batchError);
+        throw batchError;
       }
 
-      throw error;
+      if (batchData && batchData.length > 0) {
+        allModalLots = allModalLots.concat(batchData);
+        start += BATCH_SIZE;
+
+        // If we got less than BATCH_SIZE, we've reached the end
+        if (batchData.length < BATCH_SIZE) {
+          hasMore = false;
+        }
+      } else {
+        hasMore = false;
+      }
     }
 
-    console.log('✅ Successfully fetched', data?.length || 0, 'lots for modal');
+    const data = allModalLots;
+
+    console.log('✅ Successfully fetched', data?.length || 0, 'lots for modal (using pagination)');
     
     baseLots = data.map(lot => ({
       number: extractLotNumber(lot.lot_name),
