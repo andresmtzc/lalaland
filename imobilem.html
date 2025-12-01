@@ -141,8 +141,46 @@ header {
     max-height: 70vh;
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    /* Remove black background and ensure transparency */
+    background: transparent;
     /* Let video be its natural size */
     width: auto;
+    /* Hide video until it's loaded to prevent black flash */
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.demo-video.loaded {
+    opacity: 1;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.loading-spinner.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid rgba(255, 132, 0, 0.3);
+    border-radius: 50%;
+    border-top-color: var(--brand-orange);
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
 .video-chapters {
@@ -251,7 +289,7 @@ header {
     transform: translateY(-2px);
 }
 
-/* Responsive */
+/* Responsive - MATCHING ORIGINAL LAYOUT */
 @media (max-width: 1200px) {
     .video-chapters {
         grid-template-columns: repeat(4, 1fr);
@@ -266,7 +304,6 @@ header {
     
     .video-chapters {
         grid-template-columns: repeat(3, 1fr);
-        max-width: 800px;
     }
     
     .chapter-btn {
@@ -275,6 +312,7 @@ header {
     }
 }
 
+/* MOBILE - 2 COLUMNS LIKE ORIGINAL */
 @media (max-width: 768px) {
     .logo-wrapper {
         top: 16px;
@@ -293,9 +331,11 @@ header {
         padding: 80px 20px 40px;
     }
     
+    /* THIS IS THE FIX: 2 columns on mobile */
     .video-chapters {
         grid-template-columns: repeat(2, 1fr);
         gap: 10px;
+        width: 100%;
         max-width: 500px;
     }
     
@@ -338,14 +378,15 @@ header {
     }
     
     .video-chapters {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, 1fr); /* STILL 2 columns */
         gap: 8px;
-        max-width: 300px;
+        max-width: 100%;
     }
     
     .chapter-btn {
         padding: 10px 12px;
         font-size: 14px;
+        min-height: 40px;
     }
     
     .lang-toggle {
@@ -354,6 +395,20 @@ header {
     
     .demo-video {
         max-height: 50vh;
+    }
+    
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border-width: 3px;
+    }
+}
+
+/* Extra small screens - switch to 1 column */
+@media (max-width: 360px) {
+    .video-chapters {
+        grid-template-columns: 1fr;
+        max-width: 280px;
     }
 }
 
@@ -406,6 +461,9 @@ header {
     <!-- Video Section -->
     <section class="video-section">
         <div class="video-container">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+            </div>
             <video id="demoVideo" class="demo-video" muted playsinline preload="auto">
                 <source src="imobilem60sec.mp4" type="video/mp4">
                 Your browser does not support the video tag.
@@ -426,13 +484,14 @@ header {
 
     <!-- Demo Section -->
     <section class="demo-section">
-        <a href="https://la-la.land/email?link=mas" class="btn-demo" data-i18n="ctaDemo">See it in action - Demo</a>
+        <a href="https://la-la.land/email?link=mas" class="btn-demo" data-i18n="ctaDemo">Conocer Más</a>
     </section>
 
     <script>
         // Video Autoplay & Chapter Navigation
         const demoVideo = document.getElementById('demoVideo');
         const chapterButtons = document.querySelectorAll('.chapter-btn');
+        const loadingSpinner = document.querySelector('.loading-spinner');
         
         // Translations
         const translations = {
@@ -448,7 +507,7 @@ header {
                     sell247: 'Sell 24/7',
                     saleInsights: 'Sale Insights'
                 },
-                ctaDemo: 'See it in action - Demo'
+                ctaDemo: 'Learn More'
             },
             es: {
                 contact: 'Contáctanos',
@@ -516,8 +575,42 @@ header {
             });
         });
         
+        // Show video when loaded and hide spinner
+        function showVideo() {
+            demoVideo.classList.add('loaded');
+            if (loadingSpinner) {
+                loadingSpinner.classList.add('hidden');
+            }
+        }
+        
+        // Handle video loading events
+        demoVideo.addEventListener('loadeddata', function() {
+            // Video has loaded enough to start playing
+            showVideo();
+        });
+        
+        demoVideo.addEventListener('canplay', function() {
+            // Video can start playing
+            showVideo();
+        });
+        
+        demoVideo.addEventListener('error', function() {
+            // Handle video loading error
+            console.error('Video loading failed');
+            if (loadingSpinner) {
+                loadingSpinner.classList.add('hidden');
+            }
+        });
+        
         // Start loading video immediately
         demoVideo.load();
+        
+        // Fallback: if video takes too long to load, show it anyway
+        setTimeout(function() {
+            if (!demoVideo.classList.contains('loaded')) {
+                showVideo();
+            }
+        }, 3000); // Show video after 3 seconds max
         
         // Autoplay video when it becomes visible
         const videoObserver = new IntersectionObserver(
