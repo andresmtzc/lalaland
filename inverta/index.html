@@ -2203,13 +2203,14 @@ map.on('moveend', () => {
     // Clear labels when clicking a different lot
 map.on('click', 'lots-final-click', (e) => {
   if (e.features.length > 0) {
-    const newLot = lotData.find(l => l.name === e.features[0].properties.name);
-    
+    // 🔥 FIX: Use feature.id directly instead of searching by name
+    const newLot = lotData[e.features[0].id];
+
     // Always remove existing labels first
     if (currentLabeledLot) {
       removeSideLengthLabels();
     }
-    
+
     // Add labels for the new lot if zoom is high enough
     const currentZoom = map.getZoom();
     if (currentZoom >= 18.8 && newLot) {
@@ -2235,8 +2236,8 @@ map.on('click', 'lots-final-click', (e) => {
       // If clicking on a lot while pin modal is open
       if (lotFeatures.length > 0 && document.getElementById('lotModal').classList.contains('pin-mode')) {
         const feature = lotFeatures[0];
-        const lotName = feature.properties.name;
-        const lot = lotData.find(l => l.name === lotName);
+        // 🔥 FIX: Use feature.id directly instead of searching by name
+        const lot = lotData[feature.id];
         if (lot) {
           // Switch from pin modal to lot modal without closing
           document.getElementById('lotModal').classList.remove('pin-mode');
@@ -2250,8 +2251,8 @@ map.on('click', 'lots-final-click', (e) => {
 
       if (lotFeatures.length > 0 && modal.classList.contains('info-mode') && window.isDashboardOpen) {
         const feature = lotFeatures[0];
-        const lotName = feature.properties.name;
-        const lot = lotData.find(l => l.name === lotName);
+        // 🔥 FIX: Use feature.id directly instead of searching by name
+        const lot = lotData[feature.id];
 
         if (lot) {
           // Set flag FIRST to prevent ANY panning during this transition
@@ -2385,17 +2386,16 @@ map.on('click', 'lots-final-click', (e) => {
   if (handleEditClick(e)) return;
 
   const feature = e.features[0];
-  const lotName = feature.properties.name;
-  console.log('🔍 CLICK DEBUG - Looking for lot:', lotName);
-  console.log('🔍 CLICK DEBUG - lotData has', lotData.length, 'lots');
-  console.log('🔍 CLICK DEBUG - First 5 lot names:', lotData.slice(0, 5).map(l => l.name));
-  const lot = lotData.find(l => l.name === lotName);
-  console.log('🔍 CLICK DEBUG - Found lot?', !!lot, lot ? lot.name : 'NOT FOUND');
+  // 🔥 FIX: Use feature.id directly instead of searching by name
+  // This ensures we get the EXACT lot that was clicked, even when duplicate lot numbers exist
+  const idx = feature.id;
+  const lot = lotData[idx];
+
+  console.log('🔍 CLICK DEBUG - Clicked feature id:', idx);
+  console.log('🔍 CLICK DEBUG - Lot:', lot?.name);
+
   if (!lot) {
-    console.error('❌ CLICK DEBUG - Lot not found! Clicked:', lotName);
-    console.log('🔍 CLICK DEBUG - Checking for similar names...');
-    const similar = lotData.filter(l => l.name.includes('lotinvertap4-05'));
-    console.log('🔍 CLICK DEBUG - Similar lots:', similar.map(l => l.name));
+    console.error('❌ CLICK DEBUG - Lot not found at index:', idx);
     return;
   }
 
@@ -2410,8 +2410,7 @@ map.on('click', 'lots-final-click', (e) => {
 
   window.hoveredId = null;
 
-  // Find index and set new hover state
-  const idx = lotData.findIndex(l => l.name === lot.name);
+  // Use the correct index from the clicked feature
   if (idx !== -1) {
     map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
     window.hoveredId = idx;
@@ -3672,8 +3671,12 @@ function setupLotClickHandlers() {
         }
 
         const lotNumber = lot.number;
-        const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
-        
+        // 🔥 FIX: Match by BOTH number AND fraccionamiento to avoid selecting wrong lot
+        const lotMapIndex = lotData.findIndex(l =>
+          extractLotNumber(l.name) === lotNumber &&
+          l.fraccionamiento === lot.fraccionamiento
+        );
+
         if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
           const [lng, lat] = lotData[lotMapIndex].center;
           currentLotIndex = lotMapIndex;
@@ -3719,8 +3722,12 @@ function setupLotClickHandlers() {
         }
 
         const lotNumber = lot.number;
-        const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
-        
+        // 🔥 FIX: Match by BOTH number AND fraccionamiento to avoid selecting wrong lot
+        const lotMapIndex = lotData.findIndex(l =>
+          extractLotNumber(l.name) === lotNumber &&
+          l.fraccionamiento === lot.fraccionamiento
+        );
+
         if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
           previousMapView = {
             center: map.getCenter().toArray(),
@@ -3799,8 +3806,12 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const status = String(lot.availability || '').toLowerCase();
   if (status === 'sold') return;
 
+  // 🔥 FIX: Match by BOTH number AND fraccionamiento to avoid selecting wrong lot
   const lotMapData = Array.isArray(lotData)
-    ? lotData.find(l => extractLotNumber(l.name) === lot.number)
+    ? lotData.find(l =>
+        extractLotNumber(l.name) === lot.number &&
+        l.fraccionamiento === lot.fraccionamiento
+      )
     : null;
 
 
@@ -4703,7 +4714,11 @@ function highlightCenter(isClamping = false) {
       if (!isNaN(baseIndex)) {
         const lot = baseLots[baseIndex];
         if (lot && window.map && lotData) {
-          newLotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lot.number);
+          // 🔥 FIX: Match by BOTH number AND fraccionamiento to avoid selecting wrong lot
+          newLotMapIndex = lotData.findIndex(l =>
+            extractLotNumber(l.name) === lot.number &&
+            l.fraccionamiento === lot.fraccionamiento
+          );
           if (newLotMapIndex !== -1) {
             if (window.hoveredId !== null && window.hoveredId !== newLotMapIndex) {
               map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
@@ -6509,7 +6524,13 @@ const nextState = cur => {
     if (isNaN(baseIndex) || baseIndex < 0) return null;
     const base = baseLots[baseIndex];
     if (!base) return null;
-    const mapIdx = lotData.findIndex(l => extractLotNumber(l.name) === base.number);
+
+    // 🔥 FIX: Search for lot matching BOTH number AND fraccionamiento
+    // This prevents selecting the wrong lot when duplicate numbers exist (e.g., lot 17-05 in both marsella and sierraalta)
+    const mapIdx = lotData.findIndex(l =>
+      extractLotNumber(l.name) === base.number &&
+      l.fraccionamiento === base.fraccionamiento
+    );
     if (mapIdx === -1) return null;
     return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
   } 
@@ -6664,10 +6685,14 @@ function refreshFeaturedLayer() {
         const { data: { user } } = await window.supabaseClient.auth.getUser();
         const updatedBy = user?.email || user?.id || 'unknown';
 
+        // Get fraccionamiento from lot data BEFORE the update
+        const lotFracc = lotData[i]?.fraccionamiento || null;
+
         const { error } = await window.supabaseClient
           .from('lots')
           .update({ availability: next })
           .eq('lot_name', sel.lotName)
+          .eq('fraccionamiento', lotFracc)
           .eq('client_id', CURRENT_CLIENT);
         if (error) throw error;
 
@@ -6677,9 +6702,6 @@ try {
   const totalLots = lotData.length;
   const soldLots = lotData.filter(l => normalize(l.availability) === 'sold').length;
   const availableCount = totalLots - soldLots;
-
-  // Get fraccionamiento from lot data
-  const lotFracc = lotData[i]?.fraccionamiento || null;
 
   await window.supabaseClient
     .from('lot_updates_audit')
@@ -6752,7 +6774,11 @@ try {
 
       try {
         const lot = lots[index];
-        const mapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
+        // 🔥 FIX: Match by BOTH number AND fraccionamiento to avoid selecting wrong lot
+        const mapData = lotData.find(l =>
+          extractLotNumber(l.name) === lot.number &&
+          l.fraccionamiento === lot.fraccionamiento
+        );
         if (mapData?.name) selectedLotName = mapData.name;
 
         // 🔥 FIX: When switching lots, restore the hover state that was set by map click handler
