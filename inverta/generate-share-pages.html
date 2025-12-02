@@ -94,12 +94,19 @@
     }
 
     function extractLotNumber(lotName) {
-      return lotName.replace(/^lotinverta/i, '').replace(/^lot/i, '').replace(/^inverta/i, '');
+      // Remove any prefix: (lot)(inverta)(optional letter like p, c, x, etc.)
+      // Handles: lotinverta, lotinvertap, lotinvertac, invertap, inverta, etc.
+      return lotName.replace(/^(lot)?(inverta[a-z]?)/i, '');
     }
+
+    // Global cache-busting version (YYMMDD format - clean and unique for 100 years)
+    const now = new Date();
+    const CACHE_VERSION = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
 
     function createSharePageHTML(lot) {
       const lotNumber = extractLotNumber(lot.lot_name);
       const community = lot.fraccionamiento || 'Marsella';
+      const communitySlug = community.toLowerCase().replace(/\s+/g, '-');
       const size = parseFloat(lot.rSize);
       const priceM2 = parseFloat(lot.price_m2);
       const totalPrice = size * priceM2;
@@ -108,8 +115,9 @@
       const imageFileName = lot.lot_name.toLowerCase().startsWith('lot')
         ? lot.lot_name
         : `lot${lot.lot_name}`;
-      const cardImageUrl = `https://la-la.land/inverta/cards/${imageFileName}.jpg`;
-      const pageUrl = `https://la-la.land/inverta/lot/${lotNumber}.html`;
+      // Add cache-busting version to force WhatsApp/social media to refetch new images
+      const cardImageUrl = `https://la-la.land/inverta/cards/${imageFileName}.jpg?v=${CACHE_VERSION}`;
+      const pageUrl = `https://la-la.land/inverta/lot/${communitySlug}-${lotNumber}.html`;
 
       const sizeFormatted = size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
       const priceM2Formatted = priceM2.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -198,12 +206,12 @@
 
   // Parse URL parameters to allow overrides
   const params = new URLSearchParams(location.search);
-  const downpayment = params.get("downpayment") || DOWNPAYMENT;
-  const installmentMonths = params.get("months") || MONTHS;
-  const interestRate = params.get("interest") || INTEREST;
+  const downpayment = params.get("a") || DOWNPAYMENT;
+  const installmentMonths = params.get("m") || MONTHS;
+  const interestRate = params.get("i") || INTEREST;
 
-  // Build destination URL with lot deeplink
-  const dest = \`https://la-la.land/inverta/index.html?lot=\${LOT_NAME}&downpayment=\${downpayment}&months=\${installmentMonths}&interest=\${interestRate}\`;
+  // Build destination URL with lot deeplink (using short params: a=anticipo, m=mensualidades, i=intereses)
+  const dest = \`https://la-la.land/inverta/index.html?lot=\${LOT_NAME}&a=\${downpayment}&m=\${installmentMonths}&i=\${interestRate}\`;
 
   // ===== Device & browser detection =====
   function parseUA(ua) {
@@ -463,7 +471,9 @@
       lots.forEach((lot, index) => {
         const html = createSharePageHTML(lot);
         const cleanLotNumber = extractLotNumber(lot.lot_name);
-        lotFolder.file(`${cleanLotNumber}.html`, html);
+        const community = lot.fraccionamiento || 'Marsella';
+        const communitySlug = community.toLowerCase().replace(/\s+/g, '-');
+        lotFolder.file(`${communitySlug}-${cleanLotNumber}.html`, html);
 
         if ((index + 1) % 50 === 0) {
           statusEl.textContent = `Generated ${index + 1}/${lots.length} pages...`;
