@@ -4270,12 +4270,23 @@ const isFeatured  = state === 'featured';
 const isAvailable = state === 'available';
 const isSold      = state === 'sold';
 
-// Calculate price: (price_m2 × size), round to nearest 1000, divide by 1000
+// Calculate price: (price_m2 × size)
+// If >= 1M: show in millions (MDP), if < 1M: show in thousands (MIL)
 let calculatedPrice = lot.price;
+let priceUnit = 'MIL';
 if (!isSold && lot.priceM2 && lot.size) {
   const totalPrice = parseFloat(lot.priceM2) * parseFloat(lot.size);
-  const roundedPrice = Math.round(totalPrice / 1000) * 1000;
-  calculatedPrice = (roundedPrice / 1000).toString();
+
+  if (totalPrice >= 1000000) {
+    // Over 1 million: show as MDP with 2 decimals
+    calculatedPrice = (totalPrice / 1000000).toFixed(2);
+    priceUnit = 'MDP';
+  } else {
+    // Under 1 million: show as MIL, rounded to nearest thousand
+    const roundedPrice = Math.round(totalPrice / 1000) * 1000;
+    calculatedPrice = (roundedPrice / 1000).toString();
+    priceUnit = 'MIL';
+  }
 }
 
 // Format calculated price with commas
@@ -4303,7 +4314,7 @@ row.innerHTML = `
       <div class="lot-price ${isSold ? 'lot-price--hidden' : ''}">
         <div class="price-wrapper">
           <span class="price">$${calculatedPriceFormatted}</span>
-          <span class="mdp">MIL</span>
+          <span class="mdp">${priceUnit}</span>
         </div>
       </div>
 
@@ -7398,12 +7409,10 @@ const setupAuthListener = setInterval(function() {
       break;
     case 'price':
       set.sort((a, b) => {
-        // Calculate price same as render: (price_m2 × size), round to nearest 1000, ÷ 1000
+        // Calculate total price in pesos for sorting
         const calcPrice = (lot) => {
           if (!lot.priceM2 || !lot.size) return parseFloat(lot.price) || 0;
-          const totalPrice = parseFloat(lot.priceM2) * parseFloat(lot.size);
-          const roundedPrice = Math.round(totalPrice / 1000) * 1000;
-          return roundedPrice / 1000;
+          return parseFloat(lot.priceM2) * parseFloat(lot.size);
         };
         return calcPrice(b) - calcPrice(a); // Highest to lowest
       });
