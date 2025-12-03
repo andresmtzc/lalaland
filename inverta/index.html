@@ -2010,10 +2010,27 @@ fetch('https://la-la.land/mapbox.txt')
     map.doubleClickZoom.disable();
 
     map.on('load', async () => {
-      await loadRoad(map, async () => {
-        await loadLotsAsync(map);
-        await window.supabaseReady;
-        await enrichLotsWithAvailability();
+      await loadLotsAsync(map);
+      await window.supabaseReady;
+
+      // Wait for auth check to complete before loading road labels
+      await new Promise(resolve => {
+        const checkAuth = () => {
+          if (window.isUserAuthenticated !== undefined) {
+            resolve();
+          } else {
+            setTimeout(checkAuth, 50);
+          }
+        };
+        checkAuth();
+      });
+
+      // Load road labels with auth check
+      await new Promise(resolve => {
+        loadRoad(map, resolve);
+      });
+
+      await enrichLotsWithAvailability();
 
         animateLots(map, () => {
 ['drone', 'agora'].forEach(type => addCustomImage(map, type));
@@ -2656,6 +2673,15 @@ function cleanLabelsGeoJSON(geojson) {
 
 // Function to load and animate labels layer
 function loadRoad(map, cb) {
+  // Check authentication status
+  const isAuthenticated = window.isUserAuthenticated === true;
+
+  if (!isAuthenticated) {
+    console.log('⚠️ User not authenticated - skipping road labels');
+    cb(); // Continue without showing labels
+    return;
+  }
+
   // Fetch labels from JSON file
   console.log('Loading labels from labels.json...');
   fetch('labels.json')
@@ -2672,22 +2698,13 @@ function loadRoad(map, cb) {
       // Clean the GeoJSON data
       const cleanedLabels = cleanLabelsGeoJSON(labelsGeojson);
 
-      // Check authentication status
-      const isAuthenticated = window.isUserAuthenticated === true;
-
-      if (!isAuthenticated) {
-        console.log('⚠️ User not authenticated - skipping road labels');
-        cb(); // Continue without showing labels
-        return;
-      }
-
       // Staggered animation similar to lots
       const features = cleanedLabels.features;
       const groups = 20;
       const delay = 80;
       const fadeDuration = 500;
 
-      // Shuffle features (inline shuffle to avoid function order issues)
+      // Shuffle features (inline to avoid function order issues)
       const shuffled = [...Array(features.length).keys()];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
