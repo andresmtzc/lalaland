@@ -2656,6 +2656,13 @@ function cleanLabelsGeoJSON(geojson) {
 
 // Function to load and animate labels layer
 function loadRoad(map, cb) {
+  // Check if user is authenticated
+  if (window.isUserAuthenticated !== true) {
+    console.log('⚠️ User not authenticated - skipping road labels');
+    cb(); // Continue without showing labels
+    return;
+  }
+
   // Fetch labels from JSON file
   console.log('Loading labels from labels.json...');
   fetch('labels.json')
@@ -2671,29 +2678,55 @@ function loadRoad(map, cb) {
 
       // Clean the GeoJSON data
       const cleanedLabels = cleanLabelsGeoJSON(labelsGeojson);
+      const features = cleanedLabels.features;
 
-      map.addSource('road', { type: 'geojson', data: cleanedLabels });
-      map.addLayer({
-        id: 'road',
-        type: 'line',
-        source: 'road',
-        paint: {
-          'line-color': LABEL_CONFIG.color,
-          'line-width': LABEL_CONFIG.width,
-          'line-opacity': 0
-        }
-      });
-      console.log('Labels layer added to map');
+      // Staggered animation similar to lots
+      const groups = 20;
+      const delay = 80;
+      const fadeDuration = 500;
 
-      let start = null;
-      function animate(ts) {
-        if (!start) start = ts;
-        let p = Math.min((ts - start) / 500, 1);
-        map.setPaintProperty('road', 'line-opacity', p * LABEL_CONFIG.opacity);
-        if (p < 1) requestAnimationFrame(animate);
-        else cb();
+      // Shuffle features
+      const shuffled = [...Array(features.length).keys()];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
       }
-      requestAnimationFrame(animate);
+
+      // Divide into groups
+      const groupArr = Array.from({ length: groups }, () => []);
+      shuffled.forEach((i, idx) => groupArr[idx % groups].push(i));
+
+      // Render each group with fade-in animation
+      groupArr.forEach((g, i) => {
+        const geojson = {
+          type: "FeatureCollection",
+          features: g.map((idx) => features[idx])
+        };
+
+        map.addSource(`road-group-${i}`, { type: 'geojson', data: geojson });
+        map.addLayer({
+          id: `road-group-${i}`,
+          type: 'line',
+          source: `road-group-${i}`,
+          paint: {
+            'line-color': LABEL_CONFIG.color,
+            'line-width': LABEL_CONFIG.width,
+            'line-opacity': 0,
+            'line-opacity-transition': { duration: fadeDuration }
+          }
+        });
+
+        setTimeout(() => {
+          map.setPaintProperty(`road-group-${i}`, 'line-opacity', LABEL_CONFIG.opacity);
+        }, i * delay);
+      });
+
+      console.log('Labels layer added with staggered animation');
+
+      // Call callback after all animations complete
+      setTimeout(() => {
+        cb();
+      }, groups * delay + fadeDuration);
     })
     .catch(error => {
       console.error('Error loading labels:', error);
