@@ -2010,13 +2010,14 @@ fetch('https://la-la.land/mapbox.txt')
     map.doubleClickZoom.disable();
 
     map.on('load', async () => {
+      await loadRoad(map, async () => {
         await loadLotsAsync(map);
         await window.supabaseReady;
         await enrichLotsWithAvailability();
 
         animateLots(map, () => {
-          addCustomImage(map);
-          addFeaturedLotsLayer(map, () => {
+['drone', 'agora'].forEach(type => addCustomImage(map, type));
+  addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
     
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
@@ -2491,14 +2492,7 @@ map.on('click', 'lots-final-click', (e) => {
           }
           window.hoveredId = null;
         });
-
-        // Load road labels last (only for authenticated users)
-        loadRoad(map, () => {
-          console.log('Road labels animation complete');
-        });
-
-      }); // addFeaturedLotsLayer callback ends
-      }); // animateLots callback ends
+      }); // loadRoad callback ends
     }); // map load ends
   }); // fetch token ends
 
@@ -2661,9 +2655,17 @@ function cleanLabelsGeoJSON(geojson) {
 }
 
 // Function to load and animate labels layer
-function loadRoad(map, cb) {
-  // Check if user is authenticated
-  if (window.isUserAuthenticated !== true) {
+async function loadRoad(map, cb) {
+  // Wait for auth to be initialized
+  await window.supabaseReady;
+
+  // Small delay to ensure updateButtons has been called
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  // Check authentication status
+  const isAuthenticated = window.isUserAuthenticated === true;
+
+  if (!isAuthenticated) {
     console.log('⚠️ User not authenticated - skipping road labels');
     cb(); // Continue without showing labels
     return;
@@ -2691,7 +2693,7 @@ function loadRoad(map, cb) {
       const delay = 80;
       const fadeDuration = 500;
 
-      // Shuffle features
+      // Shuffle features (inline to avoid function order issues)
       const shuffled = [...Array(features.length).keys()];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -2729,7 +2731,7 @@ function loadRoad(map, cb) {
 
       console.log('Labels layer added with staggered animation');
 
-      // Call callback after all animations complete
+      // Call callback after all animations would complete
       setTimeout(() => {
         cb();
       }, groups * delay + fadeDuration);
