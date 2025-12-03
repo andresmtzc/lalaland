@@ -2607,6 +2607,35 @@ const LABEL_CONFIG = {
   opacity: 1          // Final opacity (0-1)
 };
 
+// Function to clean GeoJSON by removing duplicate consecutive points
+function cleanLabelsGeoJSON(geojson) {
+  const cleaned = {
+    type: geojson.type,
+    features: geojson.features.map(feature => {
+      const coords = feature.geometry.coordinates;
+      const cleanedCoords = [];
+
+      // Remove duplicate consecutive points
+      for (let i = 0; i < coords.length; i++) {
+        if (i === 0 || coords[i][0] !== coords[i-1][0] || coords[i][1] !== coords[i-1][1]) {
+          cleanedCoords.push(coords[i]);
+        }
+      }
+
+      return {
+        ...feature,
+        geometry: {
+          ...feature.geometry,
+          coordinates: cleanedCoords
+        }
+      };
+    })
+  };
+
+  console.log('Cleaned labels: removed duplicate points');
+  return cleaned;
+}
+
 // Function to load and animate labels layer
 function loadRoad(map, cb) {
   // Fetch labels from JSON file
@@ -2621,7 +2650,11 @@ function loadRoad(map, cb) {
     })
     .then(labelsGeojson => {
       console.log('Labels loaded:', labelsGeojson.features.length, 'features');
-      map.addSource('road', { type: 'geojson', data: labelsGeojson });
+
+      // Clean the GeoJSON data
+      const cleanedLabels = cleanLabelsGeoJSON(labelsGeojson);
+
+      map.addSource('road', { type: 'geojson', data: cleanedLabels });
       map.addLayer({
         id: 'road',
         type: 'line',
