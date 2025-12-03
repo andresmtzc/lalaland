@@ -2607,13 +2607,72 @@ const LABEL_CONFIG = {
   opacity: 1          // Final opacity (0-1)
 };
 
+// Function to clean GeoJSON by removing duplicate consecutive points while preserving closed polylines
+function cleanLabelsGeoJSON(geojson) {
+  const cleaned = {
+    type: geojson.type,
+    features: geojson.features.map(feature => {
+      const coords = feature.geometry.coordinates;
+
+      // Check if polyline is already closed
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      const isClosed = (first[0] === last[0] && first[1] === last[1]);
+
+      // Remove duplicate consecutive points (except the closing point)
+      const cleanedCoords = [];
+      for (let i = 0; i < coords.length; i++) {
+        const isDuplicate = i > 0 && coords[i][0] === coords[i-1][0] && coords[i][1] === coords[i-1][1];
+        const isClosingPoint = isClosed && i === coords.length - 1;
+
+        // Keep point if: it's the first point, not a duplicate, or it's the closing point
+        if (i === 0 || !isDuplicate || isClosingPoint) {
+          cleanedCoords.push(coords[i]);
+        }
+      }
+
+      // Ensure polyline is closed if it wasn't already
+      if (!isClosed) {
+        const cleanedFirst = cleanedCoords[0];
+        const cleanedLast = cleanedCoords[cleanedCoords.length - 1];
+        if (cleanedFirst[0] !== cleanedLast[0] || cleanedFirst[1] !== cleanedLast[1]) {
+          cleanedCoords.push([cleanedFirst[0], cleanedFirst[1]]);
+        }
+      }
+
+      return {
+        ...feature,
+        geometry: {
+          ...feature.geometry,
+          coordinates: cleanedCoords
+        }
+      };
+    })
+  };
+
+  console.log('Cleaned labels: removed duplicates and ensured closed polylines');
+  return cleaned;
+}
+
 // Function to load and animate labels layer
 function loadRoad(map, cb) {
   // Fetch labels from JSON file
+  console.log('Loading labels from labels.json...');
   fetch('labels.json')
-    .then(response => response.json())
+    .then(response => {
+      console.log('Labels fetch response:', response.status);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
     .then(labelsGeojson => {
-      map.addSource('road', { type: 'geojson', data: labelsGeojson });
+      console.log('Labels loaded:', labelsGeojson.features.length, 'features');
+
+      // Clean the GeoJSON data
+      const cleanedLabels = cleanLabelsGeoJSON(labelsGeojson);
+
+      map.addSource('road', { type: 'geojson', data: cleanedLabels });
       map.addLayer({
         id: 'road',
         type: 'line',
@@ -2624,6 +2683,7 @@ function loadRoad(map, cb) {
           'line-opacity': 0
         }
       });
+      console.log('Labels layer added to map');
 
       let start = null;
       function animate(ts) {
