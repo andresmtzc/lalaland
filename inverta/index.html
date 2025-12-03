@@ -1005,6 +1005,12 @@ ctaobserver.observe(ctaToaster, {
 
     // Update global auth state and re-render list to show/hide action buttons
     window.isUserAuthenticated = loggedIn;
+
+    // 🔒 Toggle road labels based on auth state
+    if (typeof toggleRoadLabels === 'function') {
+      toggleRoadLabels(loggedIn);
+    }
+
     if (typeof render === 'function') {
       render();
       if (typeof highlightCenter === 'function') highlightCenter();
@@ -1979,6 +1985,45 @@ let lastOpenedBaseIndex = null;
 // Global authentication state
 window.isUserAuthenticated = false;
 
+// 🔒 Function to toggle road label visibility based on authentication
+function toggleRoadLabels(isAuthenticated) {
+  if (!map || !map.getStyle()) return;
+
+  const style = map.getStyle();
+  if (!style || !style.layers) return;
+
+  // Toggle custom labels from labels.json (the 'road' layer) based on auth
+  if (map.getLayer('road')) {
+    try {
+      map.setLayoutProperty(
+        'road',
+        'visibility',
+        isAuthenticated ? 'visible' : 'none'
+      );
+    } catch (e) {
+      console.warn('Could not toggle visibility for road layer:', e);
+    }
+  }
+
+  // Always hide built-in Mapbox label layers (for all users)
+  style.layers.forEach(layer => {
+    if (layer.id.includes('label') ||
+        layer.id.includes('shield') ||
+        layer.id.includes('symbol')) {
+      try {
+        map.setLayoutProperty(
+          layer.id,
+          'visibility',
+          'none'
+        );
+      } catch (e) {
+        // Layer might not support visibility property
+        console.warn(`Could not toggle visibility for layer: ${layer.id}`);
+      }
+    }
+  });
+}
+
 // Initialize map
 fetch('https://la-la.land/mapbox.txt')
   .then(r => r.text())
@@ -2010,6 +2055,9 @@ fetch('https://la-la.land/mapbox.txt')
     map.doubleClickZoom.disable();
 
     map.on('load', async () => {
+      // 🔒 Set initial road label visibility based on auth state
+      toggleRoadLabels(window.isUserAuthenticated);
+
       await loadRoad(map, async () => {
         await loadLotsAsync(map);
         await window.supabaseReady;
