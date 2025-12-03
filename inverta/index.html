@@ -2607,26 +2607,37 @@ const LABEL_CONFIG = {
   opacity: 1          // Final opacity (0-1)
 };
 
-// Function to clean GeoJSON by removing duplicate consecutive points and ensuring closed polylines
+// Function to clean GeoJSON by removing duplicate consecutive points while preserving closed polylines
 function cleanLabelsGeoJSON(geojson) {
   const cleaned = {
     type: geojson.type,
     features: geojson.features.map(feature => {
       const coords = feature.geometry.coordinates;
-      const cleanedCoords = [];
 
-      // Remove duplicate consecutive points
+      // Check if polyline is already closed
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      const isClosed = (first[0] === last[0] && first[1] === last[1]);
+
+      // Remove duplicate consecutive points (except the closing point)
+      const cleanedCoords = [];
       for (let i = 0; i < coords.length; i++) {
-        if (i === 0 || coords[i][0] !== coords[i-1][0] || coords[i][1] !== coords[i-1][1]) {
+        const isDuplicate = i > 0 && coords[i][0] === coords[i-1][0] && coords[i][1] === coords[i-1][1];
+        const isClosingPoint = isClosed && i === coords.length - 1;
+
+        // Keep point if: it's the first point, not a duplicate, or it's the closing point
+        if (i === 0 || !isDuplicate || isClosingPoint) {
           cleanedCoords.push(coords[i]);
         }
       }
 
-      // Ensure polyline is closed (first point === last point)
-      const first = cleanedCoords[0];
-      const last = cleanedCoords[cleanedCoords.length - 1];
-      if (first[0] !== last[0] || first[1] !== last[1]) {
-        cleanedCoords.push([first[0], first[1]]);
+      // Ensure polyline is closed if it wasn't already
+      if (!isClosed) {
+        const cleanedFirst = cleanedCoords[0];
+        const cleanedLast = cleanedCoords[cleanedCoords.length - 1];
+        if (cleanedFirst[0] !== cleanedLast[0] || cleanedFirst[1] !== cleanedLast[1]) {
+          cleanedCoords.push([cleanedFirst[0], cleanedFirst[1]]);
+        }
       }
 
       return {
