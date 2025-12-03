@@ -2010,10 +2010,27 @@ fetch('https://la-la.land/mapbox.txt')
     map.doubleClickZoom.disable();
 
     map.on('load', async () => {
-      await loadRoad(map, async () => {
-        await loadLotsAsync(map);
-        await window.supabaseReady;
-        await enrichLotsWithAvailability();
+      await loadLotsAsync(map);
+      await window.supabaseReady;
+
+      // Wait for auth check to complete before loading road labels
+      await new Promise(resolve => {
+        const checkAuth = () => {
+          if (window.isUserAuthenticated !== undefined) {
+            resolve();
+          } else {
+            setTimeout(checkAuth, 50);
+          }
+        };
+        checkAuth();
+      });
+
+      // Load road labels with auth check
+      await new Promise(resolve => {
+        loadRoad(map, resolve);
+      });
+
+      await enrichLotsWithAvailability();
 
         animateLots(map, () => {
 ['drone', 'agora'].forEach(type => addCustomImage(map, type));
