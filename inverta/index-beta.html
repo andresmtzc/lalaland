@@ -5069,10 +5069,32 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
 function closeModal() {
   console.log('🚀 closeModal CALLED - isDashboardOpen:', window.isDashboardOpen);
 
+  const modal = document.getElementById('lotModal');
+  if (!modal) return;
+
+  // 🟢 EARLY RETURN: Don't do anything if modal is already closed
+  if (!modal.classList.contains('show')) {
+    console.log('✅ closeModal: Modal already closed, skipping');
+    return;
+  }
+
   // Don't close modal if POI mode is active
   if (window.poiModeActive) {
     console.log('❌ closeModal BLOCKED - POI mode is active');
     return;
+  }
+
+  // 🟢 IMMEDIATELY clear hover state and hoveredId BEFORE any setTimeout
+  const lastHoveredId = window.hoveredId;
+  window.hoveredId = null;
+
+  if (map && map.getSource('lots-final') && lastHoveredId !== null) {
+    try {
+      map.setFeatureState({ source: 'lots-final', id: lastHoveredId }, { hover: false });
+      console.log('✅ closeModal: Cleared hover state for lot', lastHoveredId);
+    } catch (e) {
+      console.log('⚠️ closeModal: Error clearing hover state:', e);
+    }
   }
 
   // Clear skip set when closing modal
@@ -5241,43 +5263,8 @@ function closeModal() {
 // --- 7) Close modal (let CSS transition run)
 modal.classList.remove('show');
 
-// 🔥 Clear immediately when show class is removed
-if (map && map.getSource('lots-final') && window.hoveredId !== null) {
-  try {
-    map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
-  } catch {}
-}
-
 setTimeout(() => {
   modal.style.display = 'none';
-
-  // 🔥 Clear hover states AFTER modal is fully closed
-  if (map && map.getSource('lots-final')) {
-    try {
-      if (window.hoveredId !== null) {
-        map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
-      }
-
-      lotData.forEach((lot, index) => {
-        try {
-          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
-        } catch {}
-      });
-
-      window.hoveredId = null;
-    } catch {}
-  }
-  
-  // 🔥 Clear one more time after another frame
-  requestAnimationFrame(() => {
-    if (map && map.getSource('lots-final')) {
-      lotData.forEach((lot, index) => {
-        try {
-          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
-        } catch {}
-      });
-    }
-  });
 }, 50);
   
   disableInfiniteScrollbar();
