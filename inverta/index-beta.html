@@ -5207,6 +5207,14 @@ function closeModal() {
   try { animatedFeaturedLots?.clear?.(); } catch {}
   
   // --- 6) Restore map view (undo panBy offset + preModalView fly)
+
+  // 🟢 CLEAR modal.dataset.fracc when closing to prevent stale lot selection
+  // This ensures that after closing, the fracc doesn't persist from a previous lot
+  // Community search button will set it explicitly when needed
+  if (modal) {
+    modal.dataset.fracc = '';
+  }
+
   if (preModalView && map) {
     map.flyTo({
       center: preModalView.center,
@@ -7534,19 +7542,45 @@ function findClosestCommunityCenter(point, communities) {
 function getCurrentFraccZoom() {
   const modal = document.getElementById('lotModal');
   let currentFracc = (modal?.dataset.fracc || '').trim().toLowerCase();
-  
+
   // Match the zoom levels from your communities object
   const zooms = {
-
     'barcelona': 16.2,
-
     'marsella': 16.4,
-
     'sierraalta': 15.9,
-
     'sierrabaja': 16.7
   };
-  
+
+  // If no fracc is set, detect it from current map position
+  if (!currentFracc && window.map) {
+    const center = map.getCenter();
+    const communities = {
+      'barcelona': { center: [-96.035272, 19.046439] },
+      'marsella': { center: [-96.038183, 19.047528] },
+      'sierraalta': { center: [-96.090267, 19.072525] },
+      'sierrabaja': { center: [-96.091717, 19.074769] }
+    };
+
+    // Find closest community to current map center
+    let closestFracc = 'marsella';
+    let closestDistance = Infinity;
+
+    Object.keys(communities).forEach(fracc => {
+      const communityCenter = communities[fracc].center;
+      const distance = Math.sqrt(
+        Math.pow(center.lng - communityCenter[0], 2) +
+        Math.pow(center.lat - communityCenter[1], 2)
+      );
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestFracc = fracc;
+      }
+    });
+
+    currentFracc = closestFracc;
+  }
+
   return zooms[currentFracc] || (window.innerWidth >= 768 ? 17 : 16.45);
 }
 
