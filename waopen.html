@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Chat Opener</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 400px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .phone-container {
+            display: flex;
+            gap: 10px;
+        }
+        
+        select {
+            flex: 0 0 120px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            background-color: white;
+        }
+        
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        
+        .info-text {
+            font-size: 13px;
+            color: #777;
+            margin-top: 8px;
+            margin-left: 2px;
+        }
+        
+        button {
+            width: 100%;
+            padding: 14px;
+            background-color: #25d366;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        button:hover {
+            background-color: #128c7e;
+        }
+        
+        .message {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .message.success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+            display: block;
+        }
+        
+        .message.error {
+            background-color: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WhatsApp Chat Opener</h1>
+        
+        <div class="input-group">
+            <label for="country-code">Country Code</label>
+            <select id="country-code">
+                <option value="52" data-prefix="1" selected>Mexico (+52)</option>
+                <option value="1" data-prefix="">USA/Canada (+1)</option>
+                <option value="44" data-prefix="">UK (+44)</option>
+                <option value="91" data-prefix="">India (+91)</option>
+                <option value="86" data-prefix="">China (+86)</option>
+            </select>
+        </div>
+        
+        <div class="input-group">
+            <label for="phone-number">Phone Number</label>
+            <input type="tel" id="phone-number" placeholder="Enter 10-digit number" maxlength="10">
+            <div class="info-text" id="mexico-info">For Mexico: +52 1 + 10 digits</div>
+            <div class="info-text" id="other-info" style="display:none;">Enter 10-digit phone number</div>
+        </div>
+        
+        <button id="open-chat">Open WhatsApp Chat</button>
+        
+        <div class="message" id="message"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const countryCodeSelect = document.getElementById('country-code');
+            const phoneNumberInput = document.getElementById('phone-number');
+            const openChatButton = document.getElementById('open-chat');
+            const messageDiv = document.getElementById('message');
+            const mexicoInfo = document.getElementById('mexico-info');
+            const otherInfo = document.getElementById('other-info');
+            
+            // Store country prefixes
+            const countryPrefixes = {};
+            Array.from(countryCodeSelect.options).forEach(option => {
+                countryPrefixes[option.value] = option.dataset.prefix || '';
+            });
+            
+            // Update info text based on selected country
+            function updateCountryInfo() {
+                const countryCode = countryCodeSelect.value;
+                if (countryCode === '52') {
+                    mexicoInfo.style.display = 'block';
+                    otherInfo.style.display = 'none';
+                } else {
+                    mexicoInfo.style.display = 'none';
+                    otherInfo.style.display = 'block';
+                }
+            }
+            
+            // Initial update
+            updateCountryInfo();
+            
+            // Only allow digits in phone input
+            phoneNumberInput.addEventListener('input', function() {
+                this.value = this.value.replace(/\D/g, '');
+                if (this.value.length > 10) {
+                    this.value = this.value.slice(0, 10);
+                }
+            });
+            
+            // Update info when country changes
+            countryCodeSelect.addEventListener('change', updateCountryInfo);
+            
+            // Open WhatsApp chat
+            openChatButton.addEventListener('click', function() {
+                const countryCode = countryCodeSelect.value;
+                const countryPrefix = countryPrefixes[countryCode] || '';
+                let phoneNumber = phoneNumberInput.value.trim();
+                
+                // Validation
+                if (!phoneNumber) {
+                    showMessage('Please enter a phone number', 'error');
+                    phoneNumberInput.focus();
+                    return;
+                }
+                
+                if (phoneNumber.length !== 10) {
+                    showMessage('Please enter exactly 10 digits', 'error');
+                    phoneNumberInput.focus();
+                    return;
+                }
+                
+                // Format full number for WhatsApp
+                let fullPhoneNumber;
+                if (countryPrefix) {
+                    // Mexico: +52 + 1 + 10 digits
+                    fullPhoneNumber = countryCode + countryPrefix + phoneNumber;
+                } else {
+                    // Other countries: country code + phone number
+                    fullPhoneNumber = countryCode + phoneNumber;
+                }
+                
+                // Show success message
+                const formattedDisplay = countryPrefix 
+                    ? `+${countryCode} ${countryPrefix} ${phoneNumber}`
+                    : `+${countryCode} ${phoneNumber}`;
+                
+                showMessage(`Opening WhatsApp for ${formattedDisplay}...`, 'success');
+                
+                // Open WhatsApp
+                const whatsappUrl = `https://wa.me/${fullPhoneNumber}`;
+                setTimeout(() => {
+                    window.open(whatsappUrl, '_blank');
+                }, 500);
+            });
+            
+            // Allow Enter key to submit
+            phoneNumberInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    openChatButton.click();
+                }
+            });
+            
+            // Show message function
+            function showMessage(text, type) {
+                messageDiv.textContent = text;
+                messageDiv.className = 'message ' + type;
+                
+                // Clear message after 3 seconds
+                setTimeout(() => {
+                    messageDiv.className = 'message';
+                }, 3000);
+            }
+            
+            // Auto-focus on phone number input
+            phoneNumberInput.focus();
+        });
+    </script>
+</body>
+</html>
