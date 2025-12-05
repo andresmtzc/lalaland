@@ -437,6 +437,112 @@ const FRAMES_BASE = CONFIG.data.framesBase;
 </script>
 
 <script>
+// ===== VIEW CONE SYSTEM =====
+function initConeSystem(){
+  if (!map.getSource('view-cone')){
+    map.addSource('view-cone', {
+      type:'geojson',
+      data:{ type:'Feature', geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] } }
+    });
+    map.addLayer({
+      id:'view-cone-fill',
+      type:'fill',
+      source:'view-cone',
+      paint:{ 'fill-color':'#ff8400', 'fill-opacity':0.5 }
+    });
+    map.addLayer({
+      id:'view-cone-outline',
+      type:'line',
+      source:'view-cone',
+      paint:{ 'line-color':'#ff6b6b', 'line-width':2, 'line-opacity':0 }
+    });
+  }
+}
+
+function hideViewCone(){
+  if (map && map.getSource('view-cone')){
+    map.getSource('view-cone').setData({
+      type:'Feature',
+      geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] }
+    });
+  }
+}
+
+function getHorizontalFovDeg(){
+  const c=document.getElementById('canvas');
+  const aspect = (camera && camera.aspect) || (c && c.clientHeight ? c.clientWidth/c.clientHeight : 16/9);
+  const vRad = THREE.MathUtils.degToRad(currentFov);
+  const hRad = 2 * Math.atan(Math.tan(vRad/2)*aspect);
+  return THREE.MathUtils.radToDeg(hRad);
+}
+
+function updateViewCone() {
+  if (!map || !map.getSource('view-cone')) return;
+
+  const track = getCurrentTrack();
+  if (!track || !selectedMarbleId) return;
+
+  const marble = track.marbles.find(m => m.id === selectedMarbleId);
+  if (!marble) return;
+
+  const currentIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+
+  let pathBearing;
+  if (lastHopBearingDeg !== null) {
+    pathBearing = lastHopBearingDeg;
+  } else if (track._lastPathBearing !== undefined) {
+    pathBearing = track._lastPathBearing;
+  } else if (currentIndex < track.marbles.length - 1) {
+    const nextMarble = track.marbles[currentIndex + 1];
+    const dx = nextMarble.position[0] - marble.position[0];
+    const dy = nextMarble.position[1] - marble.position[1];
+    pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+  } else if (currentIndex > 0) {
+    const prevMarble = track.marbles[currentIndex - 1];
+    const dx = marble.position[0] - prevMarble.position[0];
+    const dy = marble.position[1] - prevMarble.position[1];
+    pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+  } else {
+    pathBearing = 0;
+  }
+  track._lastPathBearing = pathBearing;
+
+  // Apply user yaw offset
+  const userYawDeg = THREE.MathUtils.radToDeg(currentYaw);
+  const finalHeading = (pathBearing + userYawDeg + 360) % 360;
+
+  const fovH = getHorizontalFovDeg();
+  const radiusMeters = 15;
+
+  const ring = makeViewConeRing(
+    marble.position[1],
+    marble.position[0],
+    finalHeading,
+    fovH,
+    radiusMeters,
+    24
+  );
+
+  map.getSource('view-cone').setData({
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [ring] }
+  });
+}
+
+function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters=7, steps=24){
+  const half = Math.max(0, Math.min(89, fovDeg/2));
+  const start = headingDeg - half, end = headingDeg + half;
+  const ring = [[lon,lat]];
+  for (let s=0;s<=steps;s++){
+    const t=s/steps, brg=start + (end-start)*t;
+    ring.push(destFromBearingDistance(lat, lon, brg, radiusMeters));
+  }
+  ring.push([lon,lat]);
+  return ring;
+}
+</script>
+
+<script>
   const btn = document.querySelector('.lalaland-button');
 
   function bounceButton() {
@@ -9497,112 +9603,6 @@ function handleMapClickForDeselect(e){
   if (!f.length) deselectMarble();
 }
 
-// ===== VIEW CONE SYSTEM =====
-function initConeSystem(){
-  if (!map.getSource('view-cone')){
-    map.addSource('view-cone', {
-      type:'geojson',
-      data:{ type:'Feature', geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] } }
-    });
-    map.addLayer({ 
-      id:'view-cone-fill', 
-      type:'fill', 
-      source:'view-cone', 
-      paint:{ 'fill-color':'#ff8400', 'fill-opacity':0.5 } 
-    });
-    map.addLayer({ 
-      id:'view-cone-outline', 
-      type:'line', 
-      source:'view-cone', 
-      paint:{ 'line-color':'#ff6b6b', 'line-width':2, 'line-opacity':0 } 
-    });
-  }
-}
-
-function hideViewCone(){
-  if (map && map.getSource('view-cone')){
-    map.getSource('view-cone').setData({ 
-      type:'Feature', 
-      geometry:{ type:'Polygon', coordinates:[[[0,0],[0,0],[0,0]]] } 
-    });
-  }
-}
-
-function getHorizontalFovDeg(){
-  const c=document.getElementById('canvas');
-  const aspect = (camera && camera.aspect) || (c && c.clientHeight ? c.clientWidth/c.clientHeight : 16/9);
-  const vRad = THREE.MathUtils.degToRad(currentFov);
-  const hRad = 2 * Math.atan(Math.tan(vRad/2)*aspect);
-  return THREE.MathUtils.radToDeg(hRad);
-}
-
-function updateViewCone() {
-  if (!map || !map.getSource('view-cone')) return;
-  
-  const track = getCurrentTrack();
-  if (!track || !selectedMarbleId) return;
-  
-  const marble = track.marbles.find(m => m.id === selectedMarbleId);
-  if (!marble) return;
-
-  const currentIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  
-  // Get path direction
-  let pathBearing = track._lastPathBearing || 0;
-  if (currentIndex < track.marbles.length - 1) {
-    const nextMarble = track.marbles[currentIndex + 1];
-    const dx = nextMarble.position[0] - marble.position[0];
-    const dy = nextMarble.position[1] - marble.position[1];
-    pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
-  } else if (currentIndex > 0) {
-    const prevMarble = track.marbles[currentIndex - 1];
-    const dx = marble.position[0] - prevMarble.position[0];
-    const dy = marble.position[1] - prevMarble.position[1];
-    pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
-  }
-
-  // Smooth continuity
-  if (track._lastPathBearing !== undefined) {
-    const diff = pathBearing - track._lastPathBearing;
-    if (Math.abs(diff) > 180) {
-      pathBearing += diff > 0 ? -360 : 360;
-    }
-  }
-  track._lastPathBearing = pathBearing;
-
-  // Apply user yaw offset
-  const userYawDeg = THREE.MathUtils.radToDeg(currentYaw);
-  const finalHeading = (pathBearing + userYawDeg + 360) % 360;
-
-  const fovH = getHorizontalFovDeg();
-  const radiusMeters = 15;
-  
-  const ring = makeViewConeRing(
-    marble.position[1],
-    marble.position[0],
-    finalHeading,
-    fovH,
-    radiusMeters,
-    24
-  );
-
-  map.getSource('view-cone').setData({
-    type: 'Feature',
-    geometry: { type: 'Polygon', coordinates: [ring] }
-  });
-}
-
-function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters=7, steps=24){
-  const half = Math.max(0, Math.min(89, fovDeg/2));
-  const start = headingDeg - half, end = headingDeg + half;
-  const ring = [[lon,lat]];
-  for (let s=0;s<=steps;s++){
-    const t=s/steps, brg=start + (end-start)*t;
-    ring.push(destFromBearingDistance(lat, lon, brg, radiusMeters));
-  }
-  ring.push([lon,lat]); 
-  return ring;
-}
 
 // ===== IMAGE LOADING AND DISPLAY =====
 function showImageInViewer(imageUrl, imageData) {
