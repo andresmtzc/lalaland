@@ -5228,10 +5228,12 @@ function closeModal() {
   
   // --- 6) Restore map view (undo panBy offset + preModalView fly)
 
-  // 🟢 CLEAR modal.dataset.fracc when closing to prevent stale lot selection
-  // This ensures that after closing, the fracc doesn't persist from a previous lot
-  // Community search button will set it explicitly when needed
-  if (modal) {
+  // 🟢 When closing pin modal, DON'T clear fracc - keep it set to pin location
+  // 🟢 When closing lot modal, CLEAR fracc to prevent stale selection
+  const wasPinMode = modal.classList.contains('pin-mode');
+
+  if (!wasPinMode && modal) {
+    // Only clear fracc when closing lot modal (not pin modal)
     modal.dataset.fracc = '';
 
     // Hide community logo when modal closes
@@ -5239,8 +5241,18 @@ function closeModal() {
       window.updateCommunityLogo();
     }
   }
+  // For pin mode, fracc stays set to the pin's location
 
-  if (preModalView && map) {
+  // 🟢 For pin modal, DON'T fly back to preModalView - stay at pin location
+  if (wasPinMode) {
+    // Just clear preModalView without flying
+    preModalView = null;
+    if (map && lastOffset) {
+      map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
+      lastOffset = [0, 0];
+    }
+  } else if (preModalView && map) {
+    // For lot modal, fly back to previous view
     map.flyTo({
       center: preModalView.center,
       zoom: preModalView.zoom,
@@ -5249,14 +5261,14 @@ function closeModal() {
       speed: 1.2,
       curve: 1.5
     });
-    
+
     map.once('moveend', () => {
       if (lastOffset) {
         map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
         lastOffset = [0, 0];
       }
     });
-    
+
     preModalView = null;
   } else if (map && lastOffset) {
     map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
@@ -5872,6 +5884,16 @@ PS.openPinInModal = async function (pin) {
   if (!modal.classList.contains('show')) {
     try {
       if (window.map) {
+        // Set placeholder fracc for POI (not matching to any real fracc)
+        // This tells closeModal to stay at current location instead of flying to a fracc center
+        modal.dataset.fracc = 'poi';
+
+        // Update community logo (won't match 'poi', so logo stays as-is)
+        if (typeof window.updateCommunityLogo === 'function') {
+          window.updateCommunityLogo();
+        }
+
+        // Save current view but we won't fly back to it - closeModal will clear preModalView for pins
         window.preModalView = {
           center: map.getCenter().toArray(),
           zoom: map.getZoom(),
@@ -7584,6 +7606,11 @@ function getCurrentFraccZoom() {
     'sierraalta': 15.9,
     'sierrabaja': 16.7
   };
+
+  // If fracc is 'poi' (placeholder for POI/pin), use current map zoom
+  if (currentFracc === 'poi' && window.map) {
+    return map.getZoom();
+  }
 
   // If no fracc is set, detect it from current map position
   if (!currentFracc && window.map) {
