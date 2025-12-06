@@ -449,7 +449,7 @@ let viewConeMarker = null;
 let isSwitchingTrack = false;
 
 // Constants
-const FRAMES_BASE = (CONFIG && CONFIG.data) ? CONFIG.data.framesBase : 'https://la-la.land/inverta/frames/';
+const FRAMES_BASE = CONFIG.data.framesBase;
 // ===== REST OF YOUR EXISTING CODE STARTS HERE =====
 //button tracking here
 </script>
@@ -4129,14 +4129,19 @@ function parseLots(text) {
           console.warn('Last missing lot:', missingLots[missingLots.length - 1]);
 
           // Analyze missing lots by type for MZ 10-17
-          const missingInverta = missingLots.filter(name => /^lotinverta(10|11|12|13|14|15|16|17)-/.test(name) && !name.includes('lotinvertap'));
-          const missingInvertap = missingLots.filter(name => /^lotinvertap(10|11|12|13|14|15|16|17)-/.test(name));
+          const standardPrefix = CONFIG.lotPrefixes.standard;
+          const premiumPrefix = CONFIG.lotPrefixes.premium;
+          const standardPattern = new RegExp(`^${standardPrefix}(10|11|12|13|14|15|16|17)-`);
+          const premiumPattern = new RegExp(`^${premiumPrefix}(10|11|12|13|14|15|16|17)-`);
 
-          if (missingInverta.length > 0) {
-            console.warn(`🔴 Missing ${missingInverta.length} lotinverta (non-p) lots for MZ 10-17:`, missingInverta.slice(0, 10));
+          const missingStandard = missingLots.filter(name => standardPattern.test(name) && !name.includes(premiumPrefix));
+          const missingPremium = missingLots.filter(name => premiumPattern.test(name));
+
+          if (missingStandard.length > 0) {
+            console.warn(`🔴 Missing ${missingStandard.length} ${standardPrefix} (non-premium) lots for MZ 10-17:`, missingStandard.slice(0, 10));
           }
-          if (missingInvertap.length > 0) {
-            console.warn(`🔴 Missing ${missingInvertap.length} lotinvertap lots for MZ 10-17:`, missingInvertap.slice(0, 10));
+          if (missingPremium.length > 0) {
+            console.warn(`🔴 Missing ${missingPremium.length} ${premiumPrefix} lots for MZ 10-17:`, missingPremium.slice(0, 10));
           }
         }
 
@@ -4876,8 +4881,14 @@ let clampCooldown = false;
 let infoMode = false;
 
 function extractLotNumber(lotName) {
-  // Remove 'lotinverta', 'lot', 'inverta', and 'p' prefixes to get clean lot number
-  return lotName.replace(/^lotinverta/i, '').replace(/^lot/i, '').replace(/^inverta/i, '').replace(/^p/i, '');
+  // Remove client-specific lot prefixes to get clean lot number
+  const prefixes = CONFIG.lotPrefixes;
+  return lotName
+    .replace(new RegExp(`^${prefixes.standard}`, 'i'), '')
+    .replace(new RegExp(`^${prefixes.premium}`, 'i'), '')
+    .replace(/^lot/i, '')
+    .replace(new RegExp(`^${prefixes.base}`, 'i'), '')
+    .replace(/^p/i, '');
 }
 
 async function fetchLots() {
@@ -9636,9 +9647,15 @@ function shareCurrentLot() {
   const communityCapitalized = community.charAt(0).toUpperCase() + community.slice(1);
 
   // Create share URL with community prefix and short params (a=anticipo, m=mensualidades)
-  const shareUrl = `${window.location.origin}/inverta/lot/${communitySlug}-${lotNumber}.html?a=${downPaymentPercent}&m=${installments}`;
-  const shareText = `Te comparto el Lote ${lotNumber} de ${communityCapitalized} - Inverta`;
-  
+  const shareUrl = `${window.location.origin}${CONFIG.share.urlTemplate
+    .replace('{slug}', CONFIG.slug)
+    .replace('{communitySlug}', communitySlug)
+    .replace('{lotNumber}', lotNumber)}?a=${downPaymentPercent}&m=${installments}`;
+  const shareText = CONFIG.share.textTemplate
+    .replace('{lotNumber}', lotNumber)
+    .replace('{community}', communityCapitalized)
+    .replace('{name}', CONFIG.name);
+
   console.log('🔗 Share attempt:', { lotName, lotNumber, shareUrl });
 
   // Check if mobile device

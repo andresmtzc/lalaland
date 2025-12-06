@@ -18,6 +18,7 @@ const CLIENT_CONFIGS = {
     // ----- BASIC INFO -----
     name: 'INVERTA',
     displayName: 'INVERTA - La-La Land',
+    slug: 'inverta', // URL path slug (e.g., /inverta/)
     defaultCommunity: 'marsella',
 
     // ----- BRANDING -----
@@ -150,10 +151,10 @@ const CLIENT_CONFIGS = {
 
     // ----- SHARE SETTINGS -----
     share: {
-      // Template for share URLs: /{client}/lot/{community}-{lotNumber}.html
-      urlTemplate: '/inverta/lot/{communitySlug}-{lotNumber}.html',
+      // Template for share URLs: /{slug}/lot/{community}-{lotNumber}.html
+      urlTemplate: '/{slug}/lot/{communitySlug}-{lotNumber}.html',
       // Template for share text
-      textTemplate: 'Te comparto el Lote {lotNumber} de {community} - Inverta'
+      textTemplate: 'Te comparto el Lote {lotNumber} de {community} - {name}'
     },
 
     // ----- TOASTER MESSAGES -----
