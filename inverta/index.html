@@ -8375,48 +8375,20 @@ try {
     if (NS.headingListenerAttached) return;
 
     NS._onOrientation = (e) => {
-      // Debug: log first few events to see what device provides
-      if (!NS._debugCount) NS._debugCount = 0;
-      if (NS._debugCount < 3) {
-        console.log('🧭 DeviceOrientation event:', {
-          alpha: e?.alpha,
-          absolute: e?.absolute,
-          webkitCompassHeading: e?.webkitCompassHeading,
-          webkitCompassAccuracy: e?.webkitCompassAccuracy
-        });
-        NS._debugCount++;
+      // Show on-screen debug info once
+      if (!NS._debugShown) {
+        NS._debugShown = true;
+        const hasWebkit = typeof e?.webkitCompassHeading === 'number';
+        const absValue = e?.absolute;
+        const alphaValue = e?.alpha !== null && e?.alpha !== undefined ? e.alpha.toFixed(0) : 'none';
+        safeToaster(`Device: webkit=${hasWebkit}, absolute=${absValue}, alpha=${alphaValue}`, 5000);
       }
 
-      let rawHeading;
-
-      // iOS with compass
-      if (typeof e?.webkitCompassHeading === 'number') {
-        rawHeading = e.webkitCompassHeading;
-        if (!NS.hasCompass) {
-          NS.hasCompass = true;
-          console.log('✅ Compass detected: iOS webkitCompassHeading');
-        }
-      }
-      // Android - only use if device has actual compass (absolute orientation)
-      // Check that absolute is explicitly true (not undefined, not false, not 0)
-      else if (typeof e?.alpha === 'number' && e?.absolute === true) {
-        rawHeading = (360 - e.alpha) % 360;
-        if (!NS.hasCompass) {
-          NS.hasCompass = true;
-          console.log('✅ Compass detected: Android absolute orientation');
-        }
-      }
-      else {
-        // No compass data available - don't update heading
-        if (NS._debugCount < 5) {
-          console.log('❌ No compass: absolute=' + e?.absolute + ', alpha=' + e?.alpha);
-          NS._debugCount++;
-        }
-        return;
-      }
-
-      NS.userHeading = smoothHeading(rawHeading);
-      if (NS.lastUserLngLat) updateUserLocation(NS.lastUserLngLat[0], NS.lastUserLngLat[1]);
+      // DISABLED: Don't use compass heading at all
+      // Compass detection is unreliable on tablets - many report orientation
+      // data from gyroscope which is not suitable for directional cone
+      // Only GPS location will be shown (no directional cone)
+      return;
     };
 
     try {
