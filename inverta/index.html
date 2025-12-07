@@ -8202,7 +8202,8 @@ try {
   NS.farWarned = false;
   NS.headingMarker = null;
   NS._onOrientation = null;
-  
+  NS.hasCompass = false; // Track if device has real compass
+
   // Smoothing (for Android)
   NS.headingSmoothingFactor = 0.15;
   NS.lastSmoothedHeading = null;
@@ -8375,11 +8376,19 @@ try {
 
     NS._onOrientation = (e) => {
       let rawHeading;
+
+      // iOS with compass
       if (typeof e?.webkitCompassHeading === 'number') {
-        rawHeading = e.webkitCompassHeading; // iOS (true north)
-      } else if (typeof e?.alpha === 'number') {
-        rawHeading = (360 - e.alpha) % 360;   // Android
-      } else {
+        rawHeading = e.webkitCompassHeading;
+        NS.hasCompass = true;
+      }
+      // Android - only use if device has actual compass (absolute orientation)
+      else if (typeof e?.alpha === 'number' && e?.absolute === true) {
+        rawHeading = (360 - e.alpha) % 360;
+        NS.hasCompass = true;
+      }
+      else {
+        // No compass data available - don't update heading
         return;
       }
 
@@ -8422,6 +8431,8 @@ try {
     } catch {}
     NS._onOrientation = null;
     NS.headingListenerAttached = false;
+    NS.hasCompass = false;
+    NS.userHeading = null; // Reset heading when listener removed
   }
 
   // Update user location and heading cone
