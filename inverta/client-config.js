@@ -178,9 +178,12 @@ const CLIENT_CONFIGS = {
       textBrown: '#a17345',      // Brown - headings, special text
 
       // Neutral colors
+      black: '#000',             // Pure black - rare use cases
       white: '#fff',             // White - backgrounds, strokes
-      grayLight: '#e0e0e0',      // Light gray - dividers, borders
+      grayLightest: '#ddd',      // Lightest gray - subtle borders
       grayVeryLight: '#f0f0f0',  // Very light gray - subtle backgrounds
+      grayLight: '#e0e0e0',      // Light gray - dividers, borders
+      gray777: '#777',           // Medium-light gray - FAQ sources
       grayMedium: '#888',        // Medium gray - icons, inactive elements
       grayDark: '#525252',       // Dark gray - commission displays
 
@@ -190,6 +193,26 @@ const CLIENT_CONFIGS = {
       info: '#4285F4',           // Blue - tracks, info elements
       brown: '#8B4513',          // Brown - lot markers without images
 
+      // Overlay & transparency colors
+      overlayDark: 'rgba(0,0,0,.92)',      // Very dark overlay - viewers
+      overlayMedium: 'rgba(0,0,0,.45)',    // Medium overlay - gradients
+      overlayLight: 'rgba(0,0,0,.35)',     // Light overlay - gradients
+      overlaySubtle: 'rgba(0,0,0,0.40)',   // Subtle overlay - backgrounds
+      overlaySoft: 'rgba(0,0,0,0.3)',      // Soft overlay
+      overlayFaint: 'rgba(0,0,0,0.1)',     // Faint overlay
+      transparent: 'rgba(0,0,0,0)',        // Fully transparent
+
+      // Primary color variations with alpha
+      primaryFull: 'rgba(255,132,0,1)',      // Primary solid
+      primaryFaint: 'rgba(255, 132, 0, 0.1)',  // Primary very light
+      primaryPale: 'rgba(255, 132, 0, 0.05)',  // Primary extremely light
+
+      // Success color variations
+      successPale: 'rgba(67, 190, 169, 0.05)', // Success extremely light
+
+      // Gray color variations
+      grayDarkPale: 'rgba(82, 82, 82, 0.05)',  // Dark gray extremely light
+
       // Map & GIS colors
       lotMarkerDefault: '#8B4513',     // Brown - default lot marker
       lotMarkerSelected: '#ff8400',    // Orange - selected lot
@@ -198,7 +221,11 @@ const CLIENT_CONFIGS = {
       viewConeStroke: '#ff6b6b',       // Coral - view cone outline
       lotBorderHighlight: '#ff8400',   // Orange - lot borders
       gpsMarker: '#1a73e8',            // Blue - GPS location
-      gpsMarkerBg: '#1a73e826'         // Blue transparent - GPS background
+      gpsMarkerBg: '#1a73e826',        // Blue transparent - GPS background
+
+      // Debug colors (not typically used in production)
+      debugGreen: '#00ff00',           // Pure green - debugging
+      debugYellow: '#ffff00'           // Pure yellow - debugging
     },
 
     // ----- MISCELLANEOUS -----
