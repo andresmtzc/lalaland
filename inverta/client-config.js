@@ -162,6 +162,72 @@ const CLIENT_CONFIGS = {
       aerialImageLoaded: 'Loaded most recent aerial image (March 2025)'
     },
 
+    // ----- COLORS -----
+    // All colors used throughout the site for easy customization
+    colors: {
+      // Primary brand colors
+      primary: '#ff8400',        // Orange - main CTA and accent color
+      primaryLight: '#ff6b6b',   // Coral - view cone outlines
+      cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
+
+      // Text colors
+      textDark: '#1a1a1a',       // Almost black - primary text
+      textMedium: '#333',        // Dark gray - secondary elements
+      textLight: '#8a8880',      // Grayish - tertiary text, labels
+      textTan: '#b18d69',        // Tan - superscript, units
+      textBrown: '#a17345',      // Brown - headings, special text
+
+      // Neutral colors
+      black: '#000',             // Pure black - rare use cases
+      white: '#fff',             // White - backgrounds, strokes
+      grayLightest: '#ddd',      // Lightest gray - subtle borders
+      grayVeryLight: '#f0f0f0',  // Very light gray - subtle backgrounds
+      grayLight: '#e0e0e0',      // Light gray - dividers, borders
+      gray777: '#777',           // Medium-light gray - FAQ sources
+      grayMedium: '#888',        // Medium gray - icons, inactive elements
+      grayDark: '#525252',       // Dark gray - commission displays
+
+      // Status & feedback colors
+      success: '#43bea9',        // Teal - sold lots, positive changes
+      error: '#f44336',          // Red - errors, delete actions
+      info: '#4285F4',           // Blue - tracks, info elements
+      brown: '#8B4513',          // Brown - lot markers without images
+
+      // Overlay & transparency colors
+      overlayDark: 'rgba(0,0,0,.92)',      // Very dark overlay - viewers
+      overlayMedium: 'rgba(0,0,0,.45)',    // Medium overlay - gradients
+      overlayLight: 'rgba(0,0,0,.35)',     // Light overlay - gradients
+      overlaySubtle: 'rgba(0,0,0,0.40)',   // Subtle overlay - backgrounds
+      overlaySoft: 'rgba(0,0,0,0.3)',      // Soft overlay
+      overlayFaint: 'rgba(0,0,0,0.1)',     // Faint overlay
+      transparent: 'rgba(0,0,0,0)',        // Fully transparent
+
+      // Primary color variations with alpha
+      primaryFull: 'rgba(255,132,0,1)',      // Primary solid
+      primaryFaint: 'rgba(255, 132, 0, 0.1)',  // Primary very light
+      primaryPale: 'rgba(255, 132, 0, 0.05)',  // Primary extremely light
+
+      // Success color variations
+      successPale: 'rgba(67, 190, 169, 0.05)', // Success extremely light
+
+      // Gray color variations
+      grayDarkPale: 'rgba(82, 82, 82, 0.05)',  // Dark gray extremely light
+
+      // Map & GIS colors
+      lotMarkerDefault: '#8B4513',     // Brown - default lot marker
+      lotMarkerSelected: '#ff8400',    // Orange - selected lot
+      lotMarkerWithImage: 'rgba(52, 168, 83, 0)', // Transparent green
+      viewConeFill: '#ff8400',         // Orange - view cone fill
+      viewConeStroke: '#ff6b6b',       // Coral - view cone outline
+      lotBorderHighlight: '#ff8400',   // Orange - lot borders
+      gpsMarker: '#1a73e8',            // Blue - GPS location
+      gpsMarkerBg: '#1a73e826',        // Blue transparent - GPS background
+
+      // Debug colors (not typically used in production)
+      debugGreen: '#00ff00',           // Pure green - debugging
+      debugYellow: '#ffff00'           // Pure yellow - debugging
+    },
+
     // ----- MISCELLANEOUS -----
     misc: {
       // Font family for the site
@@ -169,7 +235,7 @@ const CLIENT_CONFIGS = {
 
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
-      ctaColor: '#ff8400'
+      ctaColor: '#ff8400' // DEPRECATED: Use colors.primary instead
     }
 
   }
@@ -331,6 +397,35 @@ function extractLotNumber(clientName, lotName) {
   return cleanName;
 }
 
+/**
+ * Get a color value from client configuration
+ * @param {string} clientName - The client identifier
+ * @param {string} colorKey - The color key (e.g., 'primary', 'textDark', 'success')
+ * @returns {string} Color hex code or rgba value
+ */
+function getColor(clientName, colorKey) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.colors) return '#000000';
+  return config.colors[colorKey] || '#000000';
+}
+
+/**
+ * Apply colors from config to CSS custom properties (CSS variables)
+ * Call this function early in your page load to make colors available as CSS variables
+ * @param {string} clientName - The client identifier
+ */
+function applyColorsToCSS(clientName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.colors) return;
+
+  const root = document.documentElement;
+  for (const [key, value] of Object.entries(config.colors)) {
+    root.style.setProperty(`--color-${key}`, value);
+  }
+
+  console.log('✅ Colors applied to CSS variables');
+}
+
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -341,6 +436,8 @@ if (typeof module !== 'undefined' && module.exports) {
     getAllCommunities,
     buildShareUrl,
     buildShareText,
-    extractLotNumber
+    extractLotNumber,
+    getColor,
+    applyColorsToCSS
   };
 }
