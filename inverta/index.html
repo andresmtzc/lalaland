@@ -4438,11 +4438,35 @@ function animateLots(map, cb) {
     }
   });
 
+  // Add lot number labels at centroids
+  map.addLayer({
+    id: "lot-labels",
+    type: "symbol",
+    source: "lots-final",
+    layout: {
+      "text-field": ["get", "lotLabel"],
+      "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+      "text-size": 14,
+      "text-anchor": "center",
+      "text-allow-overlap": false, // Prevent overlapping labels
+      "text-ignore-placement": false,
+      "symbol-placement": "point",
+      "visibility": "visible"
+    },
+    paint: {
+      "text-color": CONFIG.colors.white,
+      "text-halo-color": CONFIG.colors.black,
+      "text-halo-width": 1,
+      "text-opacity": 0 // Start invisible, will fade in with lots
+    }
+  });
+
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
     // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
     map.setPaintProperty("lots-final-available", "line-opacity", 1);
     map.setPaintProperty("lots-final-sold", "line-opacity", 0.25); // ⬅️ 0.25 for final layer during transition
+    map.setPaintProperty("lot-labels", "text-opacity", 1); // Fade in lot labels
 
     setTimeout(() => {
       // Fade out all lot groups simultaneously
@@ -4478,12 +4502,25 @@ function animateLots(map, cb) {
 function lotFeature(lot, index) {
   const c = [...lot.coords];
   if (c[0][0] !== c[c.length - 1][0] || c[0][1] !== c[c.length - 1][1]) c.push(c[0]);
+
+  // Extract lot number (L value) from lot.name
+  // Format is usually "20-10" where we want "10" (the part after the dash)
+  let lotLabel = '';
+  if (lot.name) {
+    const parts = lot.name.split('-');
+    if (parts.length >= 2) {
+      // Get the last part (after the last dash) and trim any whitespace
+      lotLabel = parts[parts.length - 1].trim();
+    }
+  }
+
   return {
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [c] },
-    properties: { 
+    properties: {
       name: lot.name,
-      availability: lot.availability || 'Available' // Add this line
+      availability: lot.availability || 'Available',
+      lotLabel: lotLabel // Add the extracted lot number for labeling
     },
     id: index
   };
