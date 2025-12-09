@@ -4467,7 +4467,7 @@ function animateLots(map, cb) {
     }
   });
 
-  // Add lot number labels at bottom-right vertex (calculated once, no shifting on zoom)
+  // Add lot number labels at centroid (calculated once, no shifting on zoom)
   map.addLayer({
     id: "lot-labels",
     type: "symbol",
@@ -4562,18 +4562,23 @@ function lotFeature(lot, index) {
     }
   }
 
-  // Find bottom-right vertex (max longitude, min latitude)
-  let bottomRight = c[0];
-  for (let i = 1; i < c.length - 1; i++) { // Skip last point (duplicate of first)
-    const current = c[i];
-    // Bottom-right means: rightmost (max lng) and bottommost (min lat)
-    // Prioritize rightmost, then bottommost
-    if (current[0] > bottomRight[0] ||
-        (current[0] === bottomRight[0] && current[1] < bottomRight[1])) {
-      bottomRight = current;
+  // Calculate centroid once using Turf.js
+  let centroid = [0, 0];
+  try {
+    const polygon = turf.polygon([c]);
+    const center = turf.centroid(polygon);
+    centroid = center.geometry.coordinates;
+  } catch (err) {
+    console.warn('Failed to calculate centroid for', lot.name, 'using simple average', err);
+    // Fallback to simple average of coordinates
+    let sumLng = 0, sumLat = 0;
+    for (let i = 0; i < c.length - 1; i++) {
+      sumLng += c[i][0];
+      sumLat += c[i][1];
     }
+    centroid = [sumLng / (c.length - 1), sumLat / (c.length - 1)];
   }
-  const labelPosition = bottomRight;
+  const labelPosition = centroid;
 
   return {
     type: "Feature",
@@ -4582,7 +4587,7 @@ function lotFeature(lot, index) {
       name: lot.name,
       availability: lot.availability || 'Available',
       lotLabel: lotLabel, // Add the extracted lot number for labeling
-      centroidLng: labelPosition[0], // Store bottom-right vertex coordinates
+      centroidLng: labelPosition[0], // Store centroid coordinates
       centroidLat: labelPosition[1]
     },
     id: index
