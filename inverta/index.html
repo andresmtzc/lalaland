@@ -3198,7 +3198,7 @@ function toggleRoadLabels(isAuthenticated) {
   if (!map || !map.getStyle()) return;
 
   const style = map.getStyle();
-  if (!style || !style.layers) return;
+  if (!style) return;
 
   // Toggle custom labels from labels.json (the 'road' layer) based on auth
   if (map.getLayer('road')) {
@@ -3218,22 +3218,29 @@ function toggleRoadLabels(isAuthenticated) {
   }
 
   // Always hide built-in Mapbox label layers (for all users)
-  style.layers.forEach(layer => {
-    if (layer.id.includes('label') ||
-        layer.id.includes('shield') ||
-        layer.id.includes('symbol')) {
-      try {
-        map.setLayoutProperty(
-          layer.id,
-          'visibility',
-          'none'
-        );
-      } catch (e) {
-        // Layer might not support visibility property
-        console.warn(`Could not toggle visibility for layer: ${layer.id}`);
-      }
+  // Handle both regular styles and v3 styles with imports
+  try {
+    if (style.layers && Array.isArray(style.layers)) {
+      style.layers.forEach(layer => {
+        if (layer.id.includes('label') ||
+            layer.id.includes('shield') ||
+            layer.id.includes('symbol')) {
+          try {
+            map.setLayoutProperty(
+              layer.id,
+              'visibility',
+              'none'
+            );
+          } catch (e) {
+            // Layer might not support visibility property
+            console.warn(`Could not toggle visibility for layer: ${layer.id}`);
+          }
+        }
+      });
     }
-  });
+  } catch (e) {
+    console.warn('Could not iterate over style layers:', e);
+  }
 }
 
 // Initialize map
@@ -3273,12 +3280,20 @@ fetch(mapboxTokenUrl)
 
     map.on('load', async () => {
       // 🔒 Hide Mapbox built-in labels immediately
-      toggleRoadLabels(window.isUserAuthenticated);
+      try {
+        toggleRoadLabels(window.isUserAuthenticated);
+      } catch (e) {
+        console.warn('Error toggling road labels on load:', e);
+      }
 
       await loadRoad(map, async () => {
         // 🔒 Ensure labels.json visibility is synced after layer creation
         if (map.getLayer('road')) {
-          toggleRoadLabels(window.isUserAuthenticated);
+          try {
+            toggleRoadLabels(window.isUserAuthenticated);
+          } catch (e) {
+            console.warn('Error toggling road labels after road load:', e);
+          }
         }
 
         await loadLotsAsync(map);
