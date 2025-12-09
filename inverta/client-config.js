@@ -33,12 +33,12 @@ const CLIENT_CONFIGS = {
     communityLogos: {
       'mediterraneo': {
         // For marsella & barcelona
-        url: 'https://la-la.land/inverta/lomasmediterraneo.svg',
+        url: 'https://la-la.land/inverta/lomasmediterraneo.png',
         communities: ['marsella', 'barcelona']
       },
       'puntolomas': {
         // For sierraalta & sierrabaja
-        url: 'https://la-la.land/inverta/puntolomas.svg',
+        url: 'https://la-la.land/inverta/puntolomas.png',
         communities: ['sierraalta', 'sierrabaja']
       }
     },
