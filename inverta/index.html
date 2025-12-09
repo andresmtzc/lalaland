@@ -4579,23 +4579,38 @@ function lotFeature(lot, index) {
     }
   }
 
-  // Calculate centroid once using Turf.js
-  let centroid = [0, 0];
+  // Calculate label position
+  // For simple polygons (4 or fewer vertices), use turf centroid
+  // For complex polygons (more than 4 vertices), use bounding box center for better placement
+  let labelPosition = [0, 0];
+  const vertexCount = c.length - 1; // Subtract 1 because last point duplicates first
+
   try {
     const polygon = turf.polygon([c]);
-    const center = turf.centroid(polygon);
-    centroid = center.geometry.coordinates;
+
+    if (vertexCount <= 4) {
+      // Simple polygon - use true centroid
+      const center = turf.centroid(polygon);
+      labelPosition = center.geometry.coordinates;
+    } else {
+      // Complex polygon - use bounding box center for better visual alignment
+      const bbox = turf.bbox(polygon);
+      // bbox is [minLng, minLat, maxLng, maxLat]
+      labelPosition = [
+        (bbox[0] + bbox[2]) / 2,  // Center longitude
+        (bbox[1] + bbox[3]) / 2   // Center latitude
+      ];
+    }
   } catch (err) {
-    console.warn('Failed to calculate centroid for', lot.name, 'using simple average', err);
+    console.warn('Failed to calculate label position for', lot.name, 'using simple average', err);
     // Fallback to simple average of coordinates
     let sumLng = 0, sumLat = 0;
     for (let i = 0; i < c.length - 1; i++) {
       sumLng += c[i][0];
       sumLat += c[i][1];
     }
-    centroid = [sumLng / (c.length - 1), sumLat / (c.length - 1)];
+    labelPosition = [sumLng / (c.length - 1), sumLat / (c.length - 1)];
   }
-  const labelPosition = centroid;
 
   return {
     type: "Feature",
