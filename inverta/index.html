@@ -4403,20 +4403,29 @@ function animateLots(map, cb) {
     type: "FeatureCollection",
     features: lotData.map((lot, i) => {
       const feature = lotFeature(lot, i);
+      const coords = [feature.properties.centroidLng, feature.properties.centroidLat];
+
+      // Debug: log first 3 labels
+      if (i < 3) {
+        console.log(`Label ${i}: ${feature.properties.lotLabel} at [${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}]`);
+      }
+
       return {
         type: "Feature",
         geometry: {
           type: "Point",
-          coordinates: [feature.properties.centroidLng, feature.properties.centroidLat]
+          coordinates: coords
         },
         properties: {
-          lotLabel: feature.properties.lotLabel
+          lotLabel: feature.properties.lotLabel,
+          lotName: feature.properties.name // Add for debugging
         },
         id: i
       };
     })
   };
   map.addSource("lot-labels-source", { type: "geojson", data: labelGeojson });
+  console.log(`✅ Created ${labelGeojson.features.length} lot label points`);
 
   // Create TWO separate layers instead of one
   map.addLayer({
@@ -4468,17 +4477,22 @@ function animateLots(map, cb) {
       "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
       "text-size": 14,
       "text-anchor": "center",
-      "text-allow-overlap": false, // Prevent overlapping labels
+      "text-allow-overlap": true, // Allow overlapping to ensure all labels show
       "text-ignore-placement": false,
+      "text-optional": false, // Make sure text is always drawn
+      "text-pitch-alignment": "viewport", // Keep labels flat on screen
+      "text-rotation-alignment": "viewport", // Keep labels oriented to screen
       "visibility": "visible"
     },
     paint: {
       "text-color": CONFIG.colors.white,
       "text-halo-color": CONFIG.colors.black,
-      "text-halo-width": 1,
+      "text-halo-width": 1.5,
       "text-opacity": 0 // Start invisible, will fade in with lots
     }
   });
+
+  console.log('✅ Lot labels layer created with', lotData.length, 'labels');
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
@@ -4517,29 +4531,6 @@ function animateLots(map, cb) {
   }, groups * delay + duration);
 }
 
-// Calculate polygon centroid once
-function calculateCentroid(coords) {
-  let area = 0;
-  let cx = 0;
-  let cy = 0;
-  const n = coords.length - 1; // Exclude the repeated last point
-
-  for (let i = 0; i < n; i++) {
-    const [x0, y0] = coords[i];
-    const [x1, y1] = coords[i + 1];
-    const a = x0 * y1 - x1 * y0;
-    area += a;
-    cx += (x0 + x1) * a;
-    cy += (y0 + y1) * a;
-  }
-
-  area *= 0.5;
-  cx /= (6 * area);
-  cy /= (6 * area);
-
-  return [cx, cy];
-}
-
 // Helpers unchanged HERE COLOR IS ADDED DEPENDING ON AVAILABILITY
 function lotFeature(lot, index) {
   const c = [...lot.coords];
@@ -4556,8 +4547,22 @@ function lotFeature(lot, index) {
     }
   }
 
-  // Calculate centroid once and store it
-  const centroid = calculateCentroid(c);
+  // Calculate centroid once using Turf.js (more accurate and reliable)
+  let centroid = [0, 0];
+  try {
+    const polygon = turf.polygon([c]);
+    const center = turf.centroid(polygon);
+    centroid = center.geometry.coordinates;
+  } catch (err) {
+    console.warn('Failed to calculate centroid for', lot.name, 'using simple average', err);
+    // Fallback to simple average of coordinates
+    let sumLng = 0, sumLat = 0;
+    for (let i = 0; i < c.length - 1; i++) {
+      sumLng += c[i][0];
+      sumLat += c[i][1];
+    }
+    centroid = [sumLng / (c.length - 1), sumLat / (c.length - 1)];
+  }
 
   return {
     type: "Feature",
