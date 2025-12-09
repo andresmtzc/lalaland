@@ -4398,6 +4398,26 @@ function animateLots(map, cb) {
   };
   map.addSource("lots-final", { type: "geojson", data: finalGeojson });
 
+  // Create separate source for lot labels with fixed Point geometries
+  const labelGeojson = {
+    type: "FeatureCollection",
+    features: lotData.map((lot, i) => {
+      const feature = lotFeature(lot, i);
+      return {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [feature.properties.centroidLng, feature.properties.centroidLat]
+        },
+        properties: {
+          lotLabel: feature.properties.lotLabel
+        },
+        id: i
+      };
+    })
+  };
+  map.addSource("lot-labels-source", { type: "geojson", data: labelGeojson });
+
   // Create TWO separate layers instead of one
   map.addLayer({
     id: "lots-final-available",
@@ -4412,7 +4432,7 @@ function animateLots(map, cb) {
     },
     filter: ["!=", ["get", "availability"], "Sold"] // Show only available lots
   });
-  
+
   map.addLayer({
     id: "lots-final-sold",
     type: "line",
@@ -4438,11 +4458,11 @@ function animateLots(map, cb) {
     }
   });
 
-  // Add lot number labels at centroids
+  // Add lot number labels at fixed centroid points (calculated once, no shifting on zoom)
   map.addLayer({
     id: "lot-labels",
     type: "symbol",
-    source: "lots-final",
+    source: "lot-labels-source", // Use separate Point source instead of polygon source
     layout: {
       "text-field": ["get", "lotLabel"],
       "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
@@ -4450,7 +4470,6 @@ function animateLots(map, cb) {
       "text-anchor": "center",
       "text-allow-overlap": false, // Prevent overlapping labels
       "text-ignore-placement": false,
-      "symbol-placement": "point",
       "visibility": "visible"
     },
     paint: {
@@ -4498,6 +4517,29 @@ function animateLots(map, cb) {
   }, groups * delay + duration);
 }
 
+// Calculate polygon centroid once
+function calculateCentroid(coords) {
+  let area = 0;
+  let cx = 0;
+  let cy = 0;
+  const n = coords.length - 1; // Exclude the repeated last point
+
+  for (let i = 0; i < n; i++) {
+    const [x0, y0] = coords[i];
+    const [x1, y1] = coords[i + 1];
+    const a = x0 * y1 - x1 * y0;
+    area += a;
+    cx += (x0 + x1) * a;
+    cy += (y0 + y1) * a;
+  }
+
+  area *= 0.5;
+  cx /= (6 * area);
+  cy /= (6 * area);
+
+  return [cx, cy];
+}
+
 // Helpers unchanged HERE COLOR IS ADDED DEPENDING ON AVAILABILITY
 function lotFeature(lot, index) {
   const c = [...lot.coords];
@@ -4514,13 +4556,18 @@ function lotFeature(lot, index) {
     }
   }
 
+  // Calculate centroid once and store it
+  const centroid = calculateCentroid(c);
+
   return {
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [c] },
     properties: {
       name: lot.name,
       availability: lot.availability || 'Available',
-      lotLabel: lotLabel // Add the extracted lot number for labeling
+      lotLabel: lotLabel, // Add the extracted lot number for labeling
+      centroidLng: centroid[0], // Store centroid coordinates
+      centroidLat: centroid[1]
     },
     id: index
   };
