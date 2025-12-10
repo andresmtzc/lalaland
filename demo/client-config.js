@@ -16,9 +16,9 @@ const CLIENT_CONFIGS = {
   inverta: {
 
     // ----- BASIC INFO -----
-    name: 'INVERTA',
-    displayName: 'INVERTA - La-La Land',
-    slug: 'inverta', // URL path slug (e.g., /inverta/)
+    name: 'DEMO',
+    displayName: 'DEMO - La-La Land',
+    slug: 'demo', // URL path slug (e.g., /inverta/)
     defaultCommunity: 'marsella',
 
     // ----- BRANDING -----
@@ -50,22 +50,22 @@ const CLIENT_CONFIGS = {
 
       // Initial map view (can be overridden by default community)
       initialView: {
-        center: [-96.038183, 19.047528], // Marsella center
-        zoom: 16.4
+      center: [-100.157213, 25.462513], // Santte 1 center
+      zoom: 16.7 // Santte 1
       }
     },
 
     // ----- AERIAL/SATELLITE IMAGE -----
     aerialImage: {
-      url: 'https://la-la.land/inverta/invertaearth.png',
+      url: 'https://la-la.land/demo/earth.png',
       layerId: 'drone-satellite-layer',
       sourceId: 'drone-satellite',
       message: "Cargamos la imágen aérea más actual — (noviembre 2025)",
       bounds: [
-        [-96.041238, 19.0556],
-        [-96.031988, 19.055425],
-        [-96.032264, 19.042404],
-        [-96.041515, 19.04258]
+        [-100.16483, 25.467111], // Top-left [lng, lat]
+        [-100.154874, 25.467111], // Top-right
+        [-100.154874, 25.457155], // Bottom-right
+        [-100.16483, 25.457155]  // Bottom-left
       ]
     },
 
@@ -129,9 +129,9 @@ const CLIENT_CONFIGS = {
     // ----- LOT NAMING CONVENTIONS -----
     // Prefixes used in lot IDs
     lotPrefixes: {
-      standard: 'lotinverta',  // e.g., lotinverta10-1
-      premium: 'lotinvertap',  // e.g., lotinvertap10-1
-      base: 'inverta'          // Used in some contexts
+      standard: 'lotdemo',  // e.g., lotinverta10-1
+      premium: 'lotdemop',  // e.g., lotinvertap10-1
+      base: 'demo'          // Used in some contexts
     },
 
     // ----- CONTACT & CTA -----
@@ -165,8 +165,11 @@ const CLIENT_CONFIGS = {
     // ----- COLORS -----
     // All colors used throughout the site for easy customization
     colors: {
-      // Primary brand colors
-      primary: '#2ac6f4',        // Orange - main CTA and accent color
+      // Primary brand ff8400 colors
+      primary: '#ff8400',        // Orange - main CTA and accent color
+      primaryHover: '#cc6900',   // Dark orange - button hover states
+      primaryHoverAlt: '#d97000', // Dark orange alt - some hover states
+      primaryHoverLight: '#e67300', // Medium dark orange - lighter hover states
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
@@ -217,7 +220,6 @@ const CLIENT_CONFIGS = {
       overlaySubtle: 'rgba(0,0,0,0.40)',   // Subtle overlay - backgrounds
       overlaySoft: 'rgba(0,0,0,0.3)',      // Soft overlay
       overlayFaint: 'rgba(0,0,0,0.1)',     // Faint overlay
-      overlayHover: 'rgba(0,0,0,0.15)',    // Hover darkening - works with any color
       transparent: 'rgba(0,0,0,0)',        // Fully transparent
 
       // Primary color variations with alpha
