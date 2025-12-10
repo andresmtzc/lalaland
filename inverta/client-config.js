@@ -165,11 +165,8 @@ const CLIENT_CONFIGS = {
     // ----- COLORS -----
     // All colors used throughout the site for easy customization
     colors: {
-      // Primary brand ff8400 colors
+      // Primary brand colors
       primary: '#2ac6f4',        // Orange - main CTA and accent color
-      primaryHover: '#cc6900',   // Dark orange - button hover states
-      primaryHoverAlt: '#d97000', // Dark orange alt - some hover states
-      primaryHoverLight: '#e67300', // Medium dark orange - lighter hover states
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
@@ -220,6 +217,7 @@ const CLIENT_CONFIGS = {
       overlaySubtle: 'rgba(0,0,0,0.40)',   // Subtle overlay - backgrounds
       overlaySoft: 'rgba(0,0,0,0.3)',      // Soft overlay
       overlayFaint: 'rgba(0,0,0,0.1)',     // Faint overlay
+      overlayHover: 'rgba(0,0,0,0.15)',    // Hover darkening - works with any color
       transparent: 'rgba(0,0,0,0)',        // Fully transparent
 
       // Primary color variations with alpha
