@@ -167,9 +167,6 @@ const CLIENT_CONFIGS = {
     colors: {
       // Primary brand ff8400 colors
       primary: '#2ac6f4',        // Orange - main CTA and accent color
-      primaryHover: '#cc6900',   // Dark orange - button hover states
-      primaryHoverAlt: '#d97000', // Dark orange alt - some hover states
-      primaryHoverLight: '#e67300', // Medium dark orange - lighter hover states
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
