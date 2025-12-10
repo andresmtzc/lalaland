@@ -166,7 +166,7 @@ const CLIENT_CONFIGS = {
     // All colors used throughout the site for easy customization
     colors: {
       // Primary brand colors
-      primary: '#ff8400',        // Orange - main CTA and accent color
+      primary: '#199cc4',        // Orange - main CTA and accent color
       primaryHover: '#cc6900',   // Dark orange - button hover states
       primaryHoverAlt: '#d97000', // Dark orange alt - some hover states
       primaryHoverLight: '#e67300', // Medium dark orange - lighter hover states
