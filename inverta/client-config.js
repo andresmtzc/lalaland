@@ -167,6 +167,9 @@ const CLIENT_CONFIGS = {
     colors: {
       // Primary brand colors
       primary: '#ff8400',        // Orange - main CTA and accent color
+      primaryHover: '#cc6900',   // Dark orange - button hover states
+      primaryHoverAlt: '#d97000', // Dark orange alt - some hover states
+      primaryHoverLight: '#e67300', // Medium dark orange - lighter hover states
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
@@ -180,18 +183,35 @@ const CLIENT_CONFIGS = {
       // Neutral colors
       black: '#000',             // Pure black - rare use cases
       white: '#fff',             // White - backgrounds, strokes
+      offWhite: '#fffdf8',       // Off-white - subtle backgrounds
+      creamLight: '#f2efe4',     // Light cream - backgrounds
       grayLightest: '#ddd',      // Lightest gray - subtle borders
       grayVeryLight: '#f0f0f0',  // Very light gray - subtle backgrounds
+      grayVeryLight2: '#f3f3f3', // Another very light gray variant
       grayLight: '#e0e0e0',      // Light gray - dividers, borders
+      grayLight2: '#c0c0c0',     // Light gray alt - borders
       gray777: '#777',           // Medium-light gray - FAQ sources
+      gray666: '#666',           // Medium gray - text
+      gray555: '#555',           // Medium-dark gray - text
+      gray444: '#444',           // Dark gray - text
       grayMedium: '#888',        // Medium gray - icons, inactive elements
+      grayMediumAlt: '#a0a0a0',  // Medium gray alt - UI elements
       grayDark: '#525252',       // Dark gray - commission displays
+      grayDark2: '#323232',      // Darker gray - backgrounds
+      grayDark3: '#2a2a2a',      // Very dark gray - backgrounds
 
       // Status & feedback colors
       success: '#43bea9',        // Teal - sold lots, positive changes
       error: '#f44336',          // Red - errors, delete actions
       info: '#4285F4',           // Blue - tracks, info elements
+      infoLight: '#f0f7ff',      // Light blue - info backgrounds
+      whatsapp: '#25d366',       // WhatsApp green - contact buttons
+      cyan: '#22d3ee',           // Cyan - accent elements
       brown: '#8B4513',          // Brown - lot markers without images
+      brownAlt: '#8a5f38',       // Brown alt - UI elements
+      tan: '#ac8f5f',            // Tan - UI elements
+      tanLight: '#a9a698',       // Light tan - backgrounds
+      tanLight2: '#d8cbbc',      // Very light tan - backgrounds
 
       // Overlay & transparency colors
       overlayDark: 'rgba(0,0,0,.92)',      // Very dark overlay - viewers
