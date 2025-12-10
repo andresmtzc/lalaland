@@ -165,8 +165,8 @@ const CLIENT_CONFIGS = {
     // ----- COLORS -----
     // All colors used throughout the site for easy customization
     colors: {
-      // Primary brand colors
-      primary: '#199cc4',        // Orange - main CTA and accent color
+      // Primary brand ff8400 colors
+      primary: '#2ac6f4',        // Orange - main CTA and accent color
       primaryHover: '#cc6900',   // Dark orange - button hover states
       primaryHoverAlt: '#d97000', // Dark orange alt - some hover states
       primaryHoverLight: '#e67300', // Medium dark orange - lighter hover states
