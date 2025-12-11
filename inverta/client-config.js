@@ -33,12 +33,14 @@ const CLIENT_CONFIGS = {
     communityLogos: {
       'mediterraneo': {
         // For marsella & barcelona
-        url: 'https://la-la.land/inverta/lomasmediterraneo.png',
+        url: 'https://la-la.land/inverta/lomasmediterraneo.png', // Original for index.html
+        cardLogoUrl: 'https://la-la.land/inverta/lomasmediterraneo_black.png', // Black version for cards
         communities: ['marsella', 'barcelona']
       },
       'puntolomas': {
         // For sierraalta & sierrabaja
-        url: 'https://la-la.land/inverta/puntolomas.png',
+        url: 'https://la-la.land/inverta/puntolomas.png', // Original for index.html
+        cardLogoUrl: 'https://la-la.land/inverta/puntolomas_black.png', // Black version for cards
         communities: ['sierraalta', 'sierrabaja']
       }
     },
@@ -298,9 +300,10 @@ function getClientConfig(clientName) {
  * Get community logo URL based on current fracc/community
  * @param {string} clientName - The client identifier
  * @param {string} fraccName - The fraccionamiento/community name
+ * @param {boolean} forCard - If true, returns cardLogoUrl (black version), otherwise returns url (original)
  * @returns {string} Logo URL
  */
-function getCommunityLogo(clientName, fraccName) {
+function getCommunityLogo(clientName, fraccName, forCard = false) {
   const config = getClientConfig(clientName);
   if (!config) return null;
 
@@ -309,13 +312,14 @@ function getCommunityLogo(clientName, fraccName) {
   // Search through community logo groups
   for (const [groupName, logoData] of Object.entries(config.communityLogos)) {
     if (logoData.communities.includes(fracc)) {
-      return logoData.url;
+      return forCard ? (logoData.cardLogoUrl || logoData.url) : logoData.url;
     }
   }
 
   // Return first logo as default
   const firstLogo = Object.values(config.communityLogos)[0];
-  return firstLogo ? firstLogo.url : null;
+  if (!firstLogo) return null;
+  return forCard ? (firstLogo.cardLogoUrl || firstLogo.url) : firstLogo.url;
 }
 
 /**
