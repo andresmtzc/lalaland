@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inverta Card Generator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.14.0/dist/dom-to-image-more.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+
+    .controls {
+      max-width: 1200px;
+      margin: 0 auto 30px;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .controls h1 {
+      margin-bottom: 20px;
+      color: #1a1a1a;
+    }
+
+    .preview-section {
+      margin-bottom: 20px;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 6px;
+    }
+
+    .preview-section h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+      color: #1a1a1a;
+    }
+
+    .preview-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    select {
+      padding: 8px 12px;
+      font-size: 14px;
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      border: 2px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      min-width: 200px;
+    }
+
+    .preview-container {
+      width: 540px;
+      height: 675px;
+      margin: 0 auto;
+      border: 2px solid #ddd;
+      border-radius: 12px;
+      overflow: hidden;
+      background: white;
+      position: relative;
+    }
+
+    .preview-card {
+      width: 1080px;
+      height: 1350px;
+      transform: scale(0.5);
+      transform-origin: top left;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      border: 2px solid #ff8400;
+      background: #ff8400;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: #e67600;
+      border-color: #e67600;
+    }
+
+    button:disabled {
+      background: #ccc;
+      border-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    .status {
+      padding: 10px;
+      background: #f0f0f0;
+      border-radius: 4px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    /* Card container */
+    .card-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+    }
+
+    /* Share card - 1080x1350px (4:5 ratio) */
+    .share-card {
+      width: 1080px;
+      height: 1350px;
+      background: white;
+      position: relative;
+      overflow: hidden;
+      border-radius: 24px;
+    }
+
+    /* Card content area - floating on top */
+    .card-content {
+      height: 675px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      background: #fcfaf3;
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      z-index: 10;
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Logo - top right */
+    .card-logo {
+      position: absolute;
+      top: 40px;
+      right: 40px;
+      height: 50px;
+      width: auto;
+    }
+
+    /* Lot number - top left, same row as logo */
+    .lot-left {
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      text-align: right;
+    }
+
+    .lote-label {
+      font-size: 48px;
+      color: #b18d69;
+      text-align: right;
+      line-height: 1;
+    }
+
+    .lote-number {
+      font-size: 96px;
+      color: #8a8880;
+      font-weight: 400;
+      text-align: right;
+      margin-left: 0;
+      line-height: 1;
+    }
+
+    /* Community name */
+    .card-community {
+      margin-top: 100px;
+      font-size: 80px;
+      font-weight: 600;
+      color: #ff8400;
+      text-transform: uppercase;
+      margin-bottom: 40px;
+      text-align: center;
+    }
+
+    /* Lot info section */
+    .card-lot-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 0;
+      position: relative;
+      width: 100%;
+    }
+
+    .lot-calculation {
+      font-size: 72px;
+      color: #8a8880;
+      text-align: center;
+      white-space: nowrap;
+      width: 100%;
+    }
+
+    .lot-total-price {
+      font-size: 128px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-top: 10px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .lot-monthly {
+      font-size: 64px;
+      color: #8a8880;
+      margin-top: 20px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .lot-monthly-price {
+      color: #1a1a1a;
+      font-weight: 600;
+      border-bottom: 3px solid #1a1a1a;
+      padding-bottom: 2px;
+      display: inline-block;
+    }
+
+    .superscript {
+      font-size: 60%;
+      vertical-align: super;
+      color: #b18d69;
+      font-weight: 600;
+    }
+
+    /* Map area (100% - full background) */
+    .card-map {
+      height: 100%;
+      width: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      background: #e5e5e5;
+      z-index: 1;
+    }
+
+    .card-map-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Hidden staging area for cards */
+    #staging-area {
+      position: fixed;
+      left: -9999px;
+      top: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <h1>Inverta Share Card Generator</h1>
+
+    <div class="preview-section">
+      <h2>Preview</h2>
+      <div class="preview-controls">
+        <label for="lotSelect">Select Lot:</label>
+        <select id="lotSelect">
+          <option value="">Loading lots...</option>
+        </select>
+        <label style="margin-left: 20px;">
+          <input type="checkbox" id="debugMode"> Debug Mode
+        </label>
+      </div>
+      <div id="debugPanel" style="display: none; background: #fffacd; padding: 15px; border-radius: 6px; margin-bottom: 15px; font-family: monospace; font-size: 12px;">
+        <strong>Debug Info:</strong><br>
+        Zoom: <input type="number" id="debugZoom" step="0.1" value="19.82" style="width: 100px;">
+        Lat Shift: <input type="number" id="debugLatShift" step="0.00005" value="0.00025" style="width: 100px;">
+        <button id="applyDebug" style="margin-left: 10px; padding: 4px 8px; font-size: 12px;">Apply</button>
+        <br>
+        <div id="debugInfo" style="margin-top: 10px;"></div>
+      </div>
+      <div class="preview-container" id="previewContainer">
+        <div class="preview-card" id="previewCard"></div>
+      </div>
+    </div>
+
+    <div class="button-group">
+      <button id="generateSingleBtn">Generate Single Card (Test)</button>
+      <button id="generateBatchBtn">Generate 5 Cards (Test Batch)</button>
+      <button id="generateAllBtn">Generate All Cards (~264)</button>
+    </div>
+    <div class="status" id="status">Ready. Click a button to start.</div>
+  </div>
+
+  <div class="card-container" id="cardContainer"></div>
+  <div id="staging-area"></div>
+  <div id="staging-area-1" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-2" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-3" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-4" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-5" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-6" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-7" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-8" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-9" style="position: fixed; left: -9999px; top: 0;"></div>
+
+  <script>
+    const CURRENT_CLIENT = 'inverta';
+
+    // LOAD SUPABASE - Same approach as index.html
+    window.supabaseReady = new Promise((resolve, reject) => {
+      const supabaseScript = document.createElement('script');
+      supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+
+      supabaseScript.onload = () => {
+        fetch('https://la-la.land/sb_config.json')
+          .then(r => r.json())
+          .then(cfg => {
+            window.supabaseClient = supabase.createClient(cfg.url, cfg.key, {
+              auth: {
+                storageKey: `sb-${CURRENT_CLIENT}-auth`
+              }
+            });
+            console.log(`✅ Supabase client initialized with config.json (storageKey: sb-${CURRENT_CLIENT}-auth)`);
+
+            // Initialize auth state to handle RLS
+            initAuth().then(() => {
+              console.log('✅ Auth initialized');
+              resolve();
+            }).catch(err => {
+              console.error('❌ Auth initialization failed:', err);
+              resolve(); // Still resolve to allow app to continue
+            });
+          })
+          .catch(e => {
+            console.error('Failed to load Supabase config:', e);
+            reject(new Error("❌ Failed to load Supabase config"));
+          });
+      };
+
+      supabaseScript.onerror = () => {
+        console.error("❌ Failed to load Supabase script");
+        reject(new Error("❌ Failed to load Supabase script"));
+      };
+
+      document.head.appendChild(supabaseScript);
+    });
+
+    // Initialize auth state (needed for RLS)
+    async function initAuth() {
+      try {
+        const { data: { session } = { session: null } } =
+          await window.supabaseClient.auth.getSession();
+
+        if (session && session.user) {
+          console.log('✅ User authenticated:', session.user.email);
+          return true;
+        } else {
+          console.log('⚠️  No active session - you may need to login if RLS is enabled');
+          return false;
+        }
+      } catch (e) {
+        console.warn('getSession failed:', e);
+        return false;
+      }
+    }
+  </script>
+
+  <script>
+    const INTEREST_RATES = {
+      24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17
+    };
+
+    let lotData = [];
+    let lotsWithPolygons = [];
+    let allAvailableLots = [];
+    let previewMapInstance = null;
+    let mapboxTokenReady = null;
+    let debugMode = false;
+    let currentDebugZoom = 19.82;
+    let currentDebugLatShift = 0.00025;
+
+    // Load Mapbox token
+    mapboxTokenReady = fetch('https://la-la.land/mapbox.txt')
+      .then(r => r.text())
+      .then(token => {
+        mapboxgl.accessToken = token.trim();
+        console.log('✅ Mapbox token loaded');
+      })
+      .catch(e => {
+        console.error('Failed to load Mapbox token:', e);
+      });
+
+    // Parse lots.txt format
+    function parseLots(txt) {
+      const lines = txt.split('\n').map(l => l.trim()).filter(Boolean);
+      const lots = [];
+      let currentLot = null;
+
+      lines.forEach(line => {
+        if (!line.startsWith('{')) {
+          if (currentLot) lots.push(currentLot);
+          currentLot = { name: line, coords: [] };
+        } else {
+          const match = line.match(/lat:\s*([\d.-]+),\s*lng:\s*([\d.-]+)/);
+          if (match && currentLot) {
+            currentLot.coords.push([parseFloat(match[2]), parseFloat(match[1])]);
+          }
+        }
+      });
+
+      if (currentLot) lots.push(currentLot);
+
+      // Calculate center using Turf
+      lots.forEach(lot => {
+        try {
+          const poly = turf.polygon([[...lot.coords, lot.coords[0]]]);
+          const center = turf.centroid(poly).geometry.coordinates;
+          lot.center = center;
+          lot.bounds = turf.bbox(poly);
+        } catch (err) {
+          console.warn('Failed to calculate center for', lot.name, err);
+          lot.center = [0, 0];
+        }
+      });
+
+      return lots;
+    }
+
+    // Load lot polygon data
+    async function loadLotPolygons() {
+      const response = await fetch('lots.txt');
+      const txt = await response.text();
+      lotData = parseLots(txt);
+      console.log('Loaded', lotData.length, 'lot polygons');
+    }
+
+    // Fetch available lots from Supabase
+    async function fetchAvailableLots() {
+      await window.supabaseReady;
+
+      const { data, error } = await window.supabaseClient
+        .from('lots')
+        .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, price_m2')
+        .eq('client_id', CURRENT_CLIENT)
+        .order('lot_name', { ascending: true });
+
+      if (error) {
+        console.error('❌ ERROR fetching lots:', error);
+        console.error('❌ This may be an RLS (Row Level Security) policy issue.');
+        console.error('❌ Error details:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
+
+        // Check if user is authenticated
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session || !session.user) {
+          console.error('❌ User is NOT authenticated - this may be why the query failed');
+          console.error('❌ If lots table has RLS enabled, you need to be logged in');
+          console.error('❌ Please login at /inverta/index.html first, then return here');
+        } else {
+          console.log('✅ User IS authenticated:', session.user.email);
+          console.error('❌ Query failed despite authentication - check RLS policies on lots table');
+        }
+
+        return [];
+      }
+
+      console.log('Fetched lots from Supabase:', data?.length || 0);
+      if (data && data.length > 0) {
+        console.log('Sample lot:', data[0]);
+      }
+
+      // Filter for available lots (client-side to handle different availability values)
+      const availableLots = (data || []).filter(lot => {
+        const availability = (lot.availability || '').toString().toLowerCase();
+        return availability === 'available' || availability === 'featured';
+      });
+
+      console.log('Available lots after filtering:', availableLots.length);
+      return availableLots;
+    }
+
+    // Calculate monthly payment
+    function calculateMonthlyPayment(principal, annualRate, months) {
+      const monthlyRate = annualRate / 12;
+      if (monthlyRate === 0) return principal / months;
+      const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
+      const denominator = Math.pow(1 + monthlyRate, months) - 1;
+      return numerator / denominator;
+    }
+
+    // Get "desde" monthly payment (72 months, 20% down)
+    function getDesdeMonthlyPayment(totalPrice) {
+      const downPaymentPercent = 0.20;
+      const months = 72;
+      const interestRate = INTEREST_RATES[months];
+      const downPaymentAmount = totalPrice * downPaymentPercent;
+      const amountFinanced = totalPrice - downPaymentAmount;
+      return calculateMonthlyPayment(amountFinanced, interestRate, months);
+    }
+
+    // Extract lot number from lot_name
+    function extractLotNumber(lotName) {
+      return lotName.replace(/^lot/i, '');
+    }
+
+    // Merge Supabase data with polygon data
+    async function mergeData() {
+      await loadLotPolygons();
+      const availableLots = await fetchAvailableLots();
+
+      lotsWithPolygons = availableLots.map(lot => {
+        const lotNumber = extractLotNumber(lot.lot_name);
+        const polygonData = lotData.find(l => l.name === lot.lot_name);
+
+        if (!polygonData) {
+          console.warn('No polygon data for', lot.lot_name);
+          return null;
+        }
+
+        const size = parseFloat(lot.rSize);
+        const priceM2 = parseFloat(lot.price_m2);
+        const totalPrice = size * priceM2;
+        const monthlyPayment = getDesdeMonthlyPayment(totalPrice);
+
+        return {
+          lotName: lot.lot_name,
+          lotNumber: lotNumber,
+          size: size,
+          priceM2: priceM2,
+          totalPrice: totalPrice,
+          monthlyPayment: monthlyPayment,
+          community: lot.fraccionamiento || 'Marsella',
+          coords: polygonData.coords,
+          center: polygonData.center,
+          bounds: polygonData.bounds
+        };
+      }).filter(Boolean);
+
+      allAvailableLots = lotsWithPolygons;
+      console.log('Merged', allAvailableLots.length, 'available lots with polygon data');
+    }
+
+    // Create card HTML
+    function createCardElement(lot, mapId = null) {
+      const card = document.createElement('div');
+      card.className = 'share-card';
+      card.id = `card-${lot.lotName}`;
+
+      const sizeFormatted = lot.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      const priceM2Formatted = lot.priceM2.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      const totalPriceFormatted = lot.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const monthlyFormatted = lot.monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      const finalMapId = mapId || `map-${lot.lotName}`;
+
+      card.innerHTML = `
+        <div class="card-content">
+          <img src="https://la-la.land/inverta/inverta.svg" alt="Inverta" class="card-logo" crossorigin="anonymous">
+          <div class="lot-left">
+            <div class="lote-label">MZ-L</div>
+            <div class="lote-number">${lot.lotNumber.replace(/^[a-z]+/i, '')}</div>
+          </div>
+          <div class="card-community">${lot.community}</div>
+          <div class="card-lot-info">
+            <div class="lot-calculation">
+              ${sizeFormatted}<span class="superscript">M2</span>
+              × $${priceM2Formatted}<span class="superscript">/M2</span>
+            </div>
+            <div class="lot-total-price" style="position: relative;">
+              $${totalPriceFormatted}<span class="superscript">MXN</span>
+              <span style="position: absolute; right: 6px; top: 100px; font-size: 28px; color: #8a8880; font-weight: 400; white-space: nowrap;">Precio de contado</span>
+            </div>
+            <div class="lot-monthly" style="position: relative;">
+              Desde: <span class="lot-monthly-price">$${monthlyFormatted}</span><span class="superscript">/MES</span>
+              <span style="position: absolute; right: 6px; top: 36px; font-size: 28px; color: #8a8880; font-weight: 400; white-space: nowrap;">Con 20% de enganche</span>
+            </div>
+          </div>
+        </div>
+        <div class="card-map">
+          <div class="card-map-canvas" id="${finalMapId}"></div>
+        </div>
+      `;
+
+      return card;
+    }
+
+    // Render map for a lot
+    async function renderMap(lot, containerId, isPreview = false) {
+      // Wait for Mapbox token to be ready
+      await mapboxTokenReady;
+
+      return new Promise((resolve) => {
+        // Calculate lot center
+        const bounds = lot.bounds;
+        const centerLng = (bounds[0] + bounds[2]) / 2;
+        const centerLat = (bounds[1] + bounds[3]) / 2;
+
+        // Shift center UP in lat (north) to compensate for floating card covering top half
+        // This makes the lot appear centered in the visible bottom portion
+        const latShift = currentDebugLatShift; // Always use current values
+
+        const map = new mapboxgl.Map({
+          container: containerId,
+          style: 'mapbox://styles/mapbox/satellite-streets-v12',
+          center: [centerLng, centerLat + latShift],
+          zoom: currentDebugZoom, // Use current debug zoom value
+          interactive: isPreview && debugMode, // Make interactive in debug mode
+          attributionControl: false,
+          preserveDrawingBuffer: true // Important for html2canvas
+        });
+
+        map.on('load', () => {
+          // Add drone image overlay first
+          map.addSource('drone-satellite', {
+            type: 'image',
+            url: 'https://la-la.land/inverta/invertaearth.png',
+            coordinates: [
+              [-96.041238, 19.0556],
+              [-96.031988, 19.055425],
+              [-96.032264, 19.042404],
+              [-96.041515, 19.04258]
+            ]
+          });
+
+          map.addLayer({
+            id: 'drone-satellite-layer',
+            type: 'raster',
+            source: 'drone-satellite',
+            paint: {
+              'raster-opacity': 1
+            }
+          });
+
+          // Add ALL lots as white outlines for context (1.5px like index.html)
+          const allLotsGeoJSON = {
+            type: 'FeatureCollection',
+            features: lotData.map((lotItem) => ({
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[...lotItem.coords, lotItem.coords[0]]]
+              },
+              properties: {
+                name: lotItem.name
+              }
+            }))
+          };
+
+          map.addSource('all-lots', {
+            type: 'geojson',
+            data: allLotsGeoJSON
+          });
+
+          map.addLayer({
+            id: 'all-lots-outline',
+            type: 'line',
+            source: 'all-lots',
+            paint: {
+              'line-color': '#ffffff',
+              'line-width': 5,
+              'line-opacity': 0.6
+            }
+          });
+
+          // Add selected lot polygon with orange outline
+          map.addSource('lot-polygon', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[...lot.coords, lot.coords[0]]]
+              }
+            }
+          });
+
+          // Orange outline for selected lot (thickest)
+          map.addLayer({
+            id: 'lot-outline',
+            type: 'line',
+            source: 'lot-polygon',
+            paint: {
+              'line-color': '#ff8400',
+              'line-width': 8
+            }
+          });
+
+          // Add dimension labels on ALL sides
+          const coords = lot.coords;
+          if (coords.length >= 3) {
+            // Close the polygon if not already closed
+            const closedCoords = [...coords];
+            if (closedCoords[0][0] !== closedCoords[closedCoords.length - 1][0] ||
+                closedCoords[0][1] !== closedCoords[closedCoords.length - 1][1]) {
+              closedCoords.push(closedCoords[0]);
+            }
+
+            // Add dimension line and label for each side
+            for (let i = 0; i < closedCoords.length - 1; i++) {
+              const p1 = turf.point(closedCoords[i]);
+              const p2 = turf.point(closedCoords[i + 1]);
+              const distance = turf.distance(p1, p2, { units: 'meters' });
+
+              // Round to nearest 0.5m like index.html
+              const roundedDistance = Math.round(distance * 2) / 2;
+
+              // Add dashed dimension line
+              map.addSource(`dimension-${i}`, {
+                type: 'geojson',
+                data: {
+                  type: 'Feature',
+                  geometry: {
+                    type: 'LineString',
+                    coordinates: [closedCoords[i], closedCoords[i + 1]]
+                  }
+                }
+              });
+
+              map.addLayer({
+                id: `dimension-line-${i}`,
+                type: 'line',
+                source: `dimension-${i}`,
+                paint: {
+                  'line-color': '#ff8400',
+                  'line-width': 2,
+                  'line-dasharray': [2, 2]
+                }
+              });
+
+              // Add label at midpoint - styled like index.html
+              const midpoint = turf.midpoint(p1, p2);
+
+              const label = document.createElement('div');
+              label.className = 'side-length-label';
+              label.style.cssText = `
+                position: absolute;
+                background-color: rgba(255, 255, 255, 0.95);
+                padding: 8px 8px;
+                border-radius: 8px;
+                font-size: 36px;
+                font-weight: 700;
+                color: #333;
+                font-family: 'Barlow Condensed', Arial, sans-serif;
+                white-space: nowrap;
+                pointer-events: none;
+                z-index: 1000;
+              `;
+              label.innerHTML = `${roundedDistance}<span translate="no">m</span>`;
+
+              new mapboxgl.Marker({ element: label })
+                .setLngLat(midpoint.geometry.coordinates)
+                .addTo(map);
+            }
+          }
+
+          // Wait for map to fully render
+          setTimeout(() => {
+            // Add debug info listener if in debug mode
+            if (isPreview && debugMode) {
+              map.on('moveend', () => {
+                const center = map.getCenter();
+                const zoom = map.getZoom();
+
+                const debugInfo = `
+                  Map Center: [${center.lng.toFixed(6)}, ${center.lat.toFixed(6)}]<br>
+                  Zoom: ${zoom.toFixed(2)}<br>
+                  Lot Center: [${centerLng.toFixed(6)}, ${centerLat.toFixed(6)}]<br>
+                  Lat Shift from lot center: ${(center.lat - centerLat).toFixed(6)}
+                `;
+                document.getElementById('debugInfo').innerHTML = debugInfo;
+              });
+              // Trigger initial update
+              map.fire('moveend');
+            }
+
+            resolve(map);
+          }, 1000);
+        });
+      });
+    }
+
+    // Generate card as JPG
+    async function generateCardImage(lot, stagingId = 'staging-area') {
+      let mapInstance = null;
+
+      try {
+        // Create unique map ID for this staging area
+        const mapId = `map-${lot.lotName}-${stagingId}`;
+
+        // Create card element with custom map ID
+        const card = createCardElement(lot, mapId);
+        const staging = document.getElementById(stagingId);
+        staging.innerHTML = '';
+        staging.appendChild(card);
+
+        // Render map
+        mapInstance = await renderMap(lot, mapId);
+
+        // Wait a bit more for everything to settle
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Capture card as image using dom-to-image at full size (1080x1350)
+        const blob = await domtoimage.toBlob(card, {
+          width: 1080,
+          height: 1350,
+          quality: 0.95,
+          style: {
+            transform: 'scale(1)',
+            transformOrigin: 'top left'
+          },
+          filter: (node) => {
+            // Filter out external stylesheets to avoid CORS errors
+            if (node.tagName === 'LINK' && node.rel === 'stylesheet') {
+              return false;
+            }
+            // Filter out problematic nodes that cause fetch errors
+            if (node.tagName === 'STYLE') return true;
+
+            // Remove clip-path and mask attributes that cause 404 errors
+            if (node.getAttribute) {
+              if (node.getAttribute('clip-path')) {
+                node.removeAttribute('clip-path');
+              }
+              if (node.getAttribute('mask')) {
+                node.removeAttribute('mask');
+              }
+              // Also check style attribute for clip-path
+              const style = node.getAttribute('style');
+              if (style && style.includes('clip-path')) {
+                node.setAttribute('style', style.replace(/clip-path:[^;]+;?/g, ''));
+              }
+            }
+            return true;
+          }
+        });
+
+        // Resize to 600x750 for WhatsApp optimization
+        const resizedBlob = await resizeBlob(blob, 600, 750);
+
+        return {
+          blob: resizedBlob,
+          filename: `${lot.lotName}.jpg`
+        };
+      } finally {
+        // CRITICAL: Clean up map instance to free WebGL context
+        if (mapInstance) {
+          mapInstance.remove();
+        }
+      }
+    }
+
+    // Resize blob to target dimensions
+    async function resizeBlob(blob, width, height) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob((resizedBlob) => {
+            resolve(resizedBlob);
+          }, 'image/jpeg', 0.95);
+        };
+        img.src = URL.createObjectURL(blob);
+      });
+    }
+
+    // Generate single card (test)
+    async function generateSingle() {
+      if (allAvailableLots.length === 0) {
+        updateStatus('No lots available. Loading data...');
+        await mergeData();
+      }
+
+      // Get currently selected lot from dropdown
+      const lotSelect = document.getElementById('lotSelect');
+      const selectedLotName = lotSelect.value;
+
+      if (!selectedLotName) {
+        updateStatus('❌ Please select a lot first');
+        return;
+      }
+
+      const selectedLot = allAvailableLots.find(l => l.lotName === selectedLotName);
+      if (!selectedLot) {
+        updateStatus('❌ Selected lot not found');
+        return;
+      }
+
+      updateStatus(`Generating card for ${selectedLot.lotName}...`);
+
+      const { blob, filename } = await generateCardImage(selectedLot);
+
+      // Download
+      saveAs(blob, filename);
+      updateStatus(`✅ Generated: ${filename}`);
+    }
+
+    // Generate batch of cards with parallel processing
+    async function generateBatch(count) {
+      if (allAvailableLots.length === 0) {
+        updateStatus('Loading lot data...');
+        await mergeData();
+      }
+
+      const lotsToGenerate = allAvailableLots.slice(0, Math.min(count, allAvailableLots.length));
+
+      updateStatus(`Generating ${lotsToGenerate.length} cards...`);
+      const zip = new JSZip();
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Process in parallel batches of 10
+      const PARALLEL_BATCH_SIZE = 10;
+      const stagingAreas = ['staging-area', 'staging-area-1', 'staging-area-2', 'staging-area-3', 'staging-area-4', 'staging-area-5', 'staging-area-6', 'staging-area-7', 'staging-area-8', 'staging-area-9'];
+
+      for (let i = 0; i < lotsToGenerate.length; i += PARALLEL_BATCH_SIZE) {
+        const batchLots = lotsToGenerate.slice(i, i + PARALLEL_BATCH_SIZE);
+        updateStatus(`Generating ${i + 1}-${Math.min(i + PARALLEL_BATCH_SIZE, lotsToGenerate.length)}/${lotsToGenerate.length}...`);
+
+        // Generate all cards in this batch in parallel
+        const promises = batchLots.map((lot, index) =>
+          generateCardImage(lot, stagingAreas[index])
+            .then(result => ({ success: true, ...result }))
+            .catch(error => {
+              console.error(`Failed to generate card for ${lot.lotName}:`, error);
+              return { success: false, lotName: lot.lotName };
+            })
+        );
+
+        const results = await Promise.all(promises);
+
+        // Add successful results to ZIP
+        results.forEach(result => {
+          if (result.success) {
+            zip.file(result.filename, result.blob);
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      updateStatus('Creating ZIP file...');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, `inverta-cards-batch-${lotsToGenerate.length}.zip`);
+      updateStatus(`✅ Generated ${successCount} cards! ${errorCount > 0 ? `(${errorCount} errors)` : ''} Download started.`);
+    }
+
+    // Generate all cards with parallel processing
+    async function generateAll() {
+      if (allAvailableLots.length === 0) {
+        updateStatus('Loading lot data...');
+        await mergeData();
+      }
+
+      updateStatus(`Generating ${allAvailableLots.length} cards...`);
+      const zip = new JSZip();
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Process in parallel batches of 10
+      const PARALLEL_BATCH_SIZE = 10;
+      const stagingAreas = ['staging-area', 'staging-area-1', 'staging-area-2', 'staging-area-3', 'staging-area-4', 'staging-area-5', 'staging-area-6', 'staging-area-7', 'staging-area-8', 'staging-area-9'];
+
+      for (let i = 0; i < allAvailableLots.length; i += PARALLEL_BATCH_SIZE) {
+        const batchLots = allAvailableLots.slice(i, i + PARALLEL_BATCH_SIZE);
+        updateStatus(`Generating ${i + 1}-${Math.min(i + PARALLEL_BATCH_SIZE, allAvailableLots.length)}/${allAvailableLots.length}...`);
+
+        // Generate all cards in this batch in parallel
+        const promises = batchLots.map((lot, index) =>
+          generateCardImage(lot, stagingAreas[index])
+            .then(result => ({ success: true, ...result }))
+            .catch(error => {
+              console.error(`Failed to generate card for ${lot.lotName}:`, error);
+              return { success: false, lotName: lot.lotName };
+            })
+        );
+
+        const results = await Promise.all(promises);
+
+        // Add successful results to ZIP
+        results.forEach(result => {
+          if (result.success) {
+            zip.file(result.filename, result.blob);
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      updateStatus('Creating ZIP file...');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, 'inverta-share-cards.zip');
+      updateStatus(`✅ Generated ${successCount} cards! ${errorCount > 0 ? `(${errorCount} errors)` : ''} Download started.`);
+    }
+
+    function updateStatus(message) {
+      document.getElementById('status').textContent = message;
+      console.log(message);
+    }
+
+    // Event listeners
+    document.getElementById('generateSingleBtn').addEventListener('click', async () => {
+      document.getElementById('generateSingleBtn').disabled = true;
+      try {
+        await generateSingle();
+      } catch (error) {
+        console.error('Error generating card:', error);
+        updateStatus('❌ Error: ' + error.message);
+      } finally {
+        document.getElementById('generateSingleBtn').disabled = false;
+      }
+    });
+
+    document.getElementById('generateBatchBtn').addEventListener('click', async () => {
+      document.getElementById('generateBatchBtn').disabled = true;
+      document.getElementById('generateSingleBtn').disabled = true;
+      document.getElementById('generateAllBtn').disabled = true;
+
+      try {
+        await generateBatch(5);
+      } catch (error) {
+        console.error('Error generating batch:', error);
+        updateStatus('❌ Error: ' + error.message);
+      } finally {
+        document.getElementById('generateBatchBtn').disabled = false;
+        document.getElementById('generateSingleBtn').disabled = false;
+        document.getElementById('generateAllBtn').disabled = false;
+      }
+    });
+
+    document.getElementById('generateAllBtn').addEventListener('click', async () => {
+      const confirm = window.confirm(`This will generate all ${allAvailableLots.length || '~264'} cards and may take 10-20 minutes. Continue?`);
+      if (!confirm) return;
+
+      document.getElementById('generateAllBtn').disabled = true;
+      document.getElementById('generateSingleBtn').disabled = true;
+      document.getElementById('generateBatchBtn').disabled = true;
+
+      try {
+        await generateAll();
+      } catch (error) {
+        console.error('Error generating cards:', error);
+        updateStatus('❌ Error: ' + error.message);
+      } finally {
+        document.getElementById('generateAllBtn').disabled = false;
+        document.getElementById('generateSingleBtn').disabled = false;
+        document.getElementById('generateBatchBtn').disabled = false;
+      }
+    });
+
+    // Populate lot selector
+    async function populateLotSelector() {
+      if (allAvailableLots.length === 0) {
+        await mergeData();
+      }
+
+      const select = document.getElementById('lotSelect');
+      select.innerHTML = '<option value="">-- Select a lot --</option>';
+
+      allAvailableLots.forEach(lot => {
+        const option = document.createElement('option');
+        option.value = lot.lotName;
+        option.textContent = `${lot.lotName} - ${lot.community}`;
+        select.appendChild(option);
+      });
+
+      // Select first lot by default
+      if (allAvailableLots.length > 0) {
+        select.value = allAvailableLots[0].lotName;
+        updatePreview(allAvailableLots[0].lotName);
+      }
+    }
+
+    // Update preview card
+    async function updatePreview(lotName) {
+      if (!lotName) return;
+
+      const lot = allAvailableLots.find(l => l.lotName === lotName);
+      if (!lot) return;
+
+      // Destroy previous map instance
+      if (previewMapInstance) {
+        previewMapInstance.remove();
+        previewMapInstance = null;
+      }
+
+      const previewCard = document.getElementById('previewCard');
+
+      // Create card HTML
+      const sizeFormatted = lot.size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      const priceM2Formatted = lot.priceM2.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      const totalPriceFormatted = lot.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const monthlyFormatted = lot.monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      previewCard.innerHTML = `
+        <div class="card-content">
+          <img src="https://la-la.land/inverta/inverta.svg" alt="Inverta" class="card-logo" crossorigin="anonymous">
+          <div class="lot-left">
+            <div class="lote-label">MZ-L</div>
+            <div class="lote-number">${lot.lotNumber.replace(/^[a-z]+/i, '')}</div>
+          </div>
+          <div class="card-community">${lot.community}</div>
+          <div class="card-lot-info">
+            <div class="lot-calculation">
+              ${sizeFormatted}<span class="superscript">M2</span>
+              × $${priceM2Formatted}<span class="superscript">/M2</span>
+            </div>
+            <div class="lot-total-price" style="position: relative;">
+              $${totalPriceFormatted}<span class="superscript">MXN</span>
+              <span style="position: absolute; right: 6px; top: 100px; font-size: 28px; color: #8a8880; font-weight: 400; white-space: nowrap;">Precio de contado</span>
+            </div>
+            <div class="lot-monthly" style="position: relative;">
+              Desde: <span class="lot-monthly-price">$${monthlyFormatted}</span><span class="superscript">/MES</span>
+              <span style="position: absolute; right: 6px; top: 36px; font-size: 28px; color: #8a8880; font-weight: 400; white-space: nowrap;">Con 20% de enganche</span>
+            </div>
+          </div>
+        </div>
+        <div class="card-map">
+          <div class="card-map-canvas" id="preview-map"></div>
+        </div>
+      `;
+
+      // Render map and save instance
+      previewMapInstance = await renderMap(lot, 'preview-map', true); // true = isPreview
+    }
+
+    // Lot selector change event
+    document.getElementById('lotSelect').addEventListener('change', (e) => {
+      updatePreview(e.target.value);
+    });
+
+    // Debug mode toggle
+    document.getElementById('debugMode').addEventListener('change', (e) => {
+      debugMode = e.target.checked;
+      document.getElementById('debugPanel').style.display = debugMode ? 'block' : 'none';
+
+      // Refresh preview with new debug mode
+      const lotSelect = document.getElementById('lotSelect');
+      if (lotSelect.value) {
+        updatePreview(lotSelect.value);
+      }
+    });
+
+    // Apply debug values
+    document.getElementById('applyDebug').addEventListener('click', () => {
+      currentDebugZoom = parseFloat(document.getElementById('debugZoom').value);
+      currentDebugLatShift = parseFloat(document.getElementById('debugLatShift').value);
+
+      // Refresh preview with new values
+      const lotSelect = document.getElementById('lotSelect');
+      if (lotSelect.value) {
+        updatePreview(lotSelect.value);
+      }
+    });
+
+    // Initialize
+    window.addEventListener('load', async () => {
+      updateStatus('Loading lot data for preview...');
+      await populateLotSelector();
+      updateStatus('Ready. Select a lot to preview, or click "Generate Single Card" to test.');
+    });
+  </script>
+</body>
+</html>
