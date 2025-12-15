@@ -235,6 +235,7 @@ const CLIENT_CONFIGS = {
       overlayFaint: 'rgba(0,0,0,0.1)',     // Faint overlay
       overlayHover: 'rgba(0,0,0,0.15)',    // Hover darkening - works with any color
       transparent: 'rgba(0,0,0,0)',        // Fully transparent
+      textHalo: 'rgba(0,0,0,0.6)',         // Semi-transparent black - text halos for labels
 
       // Primary color variations with alpha
       primaryFull: 'rgba(255,132,0,1)',      // Primary solid
