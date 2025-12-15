@@ -3266,6 +3266,7 @@ fetch(mapboxTokenUrl)
 
         animateLots(map, () => {
           addCustomImage(map);
+          loadManzanaLabels(map);
           addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
     
@@ -4609,6 +4610,112 @@ function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+</script>
+
+<script>
+// MANZANA LABELS - Load and display block/manzana numbers at specific coordinates
+async function loadManzanaLabels(map) {
+  try {
+    console.log('Loading manzana labels from labels.txt...');
+    const response = await fetch('labels.txt');
+    if (!response.ok) {
+      throw new Error(`Failed to fetch labels.txt: ${response.status}`);
+    }
+
+    const text = await response.text();
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+
+    const features = [];
+    let currentManzana = null;
+
+    for (const line of lines) {
+      // Check if line is a number (manzana ID)
+      if (/^\d+$/.test(line)) {
+        currentManzana = line;
+      }
+      // Check if line is a coordinate object
+      else if (line.includes('lat:') && line.includes('lng:')) {
+        if (currentManzana) {
+          // Parse coordinate: { lat: 19.047888, lng: -96.037081},
+          const latMatch = line.match(/lat:\s*([-\d.]+)/);
+          const lngMatch = line.match(/lng:\s*([-\d.]+)/);
+
+          if (latMatch && lngMatch) {
+            const lat = parseFloat(latMatch[1]);
+            const lng = parseFloat(lngMatch[1]);
+
+            features.push({
+              type: 'Feature',
+              geometry: {
+                type: 'Point',
+                coordinates: [lng, lat]
+              },
+              properties: {
+                manzanaLabel: currentManzana
+              }
+            });
+          }
+        }
+      }
+    }
+
+    console.log(`✅ Parsed ${features.length} manzana label points`);
+
+    // Create GeoJSON
+    const manzanaGeojson = {
+      type: 'FeatureCollection',
+      features: features
+    };
+
+    // Add source
+    map.addSource('manzana-labels-source', {
+      type: 'geojson',
+      data: manzanaGeojson
+    });
+
+    // Add layer
+    map.addLayer({
+      id: 'manzana-labels',
+      type: 'symbol',
+      source: 'manzana-labels-source',
+      minzoom: 15, // Show earlier than lot labels since manzanas are larger areas
+      layout: {
+        'text-field': ['get', 'manzanaLabel'],
+        'text-font': ['Barlow Condensed Regular', 'Arial Unicode MS Regular'],
+        'text-size': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          15, 14,  // At zoom 15, text is 14px
+          16, 16,  // At zoom 16, text is 16px
+          17, 18,  // At zoom 17, text is 18px
+          18, 20   // At zoom 18+, text is 20px
+        ],
+        'text-anchor': 'center',
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-optional': false,
+        'text-pitch-alignment': 'viewport',
+        'text-rotation-alignment': 'viewport',
+        'visibility': 'visible'
+      },
+      paint: {
+        'text-color': CONFIG.colors.white, // Same white color as lot labels
+        'text-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          15.0, 0,   // Fully transparent at zoom 15
+          15.5, 1    // Fully visible at zoom 15.5+
+        ]
+      }
+    });
+
+    console.log('✅ Manzana labels layer created');
+  } catch (error) {
+    console.warn('Failed to load manzana labels:', error.message);
   }
 }
 </script>
