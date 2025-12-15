@@ -57,19 +57,33 @@ const CLIENT_CONFIGS = {
       }
     },
 
-    // ----- AERIAL/SATELLITE IMAGE -----
-    aerialImage: {
-      url: 'https://la-la.land/inverta/invertaearth.png',
-      layerId: 'drone-satellite-layer',
-      sourceId: 'drone-satellite',
-      message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
-      bounds: [
-        [-96.041238, 19.0556],
-        [-96.031988, 19.055425],
-        [-96.032264, 19.042404],
-        [-96.041515, 19.04258]
-      ]
-    },
+    // ----- AERIAL/SATELLITE IMAGES -----
+    aerialImages: [
+      {
+        url: 'https://la-la.land/inverta/invertaearth.png',
+        layerId: 'drone-satellite-layer-1',
+        sourceId: 'drone-satellite-1',
+        message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
+        bounds: [
+          [-96.041238, 19.0556],
+          [-96.031988, 19.055425],
+          [-96.032264, 19.042404],
+          [-96.041515, 19.04258]
+        ]
+      },
+      {
+        url: 'https://la-la.land/inverta/invertaearth2.png',
+        layerId: 'drone-satellite-layer-2',
+        sourceId: 'drone-satellite-2',
+        message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
+        bounds: [
+          [-96.093978, 19.076367],
+          [-96.086683, 19.076449],
+          [-96.086602, 19.070002],
+          [-96.093896, 19.06992]
+        ]
+      }
+    ],
 
     // ----- COMMUNITIES/DEVELOPMENTS -----
     // Each community has center coordinates, zoom level, and display info
