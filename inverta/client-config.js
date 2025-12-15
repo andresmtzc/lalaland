@@ -62,7 +62,7 @@ const CLIENT_CONFIGS = {
       url: 'https://la-la.land/inverta/invertaearth.png',
       layerId: 'drone-satellite-layer',
       sourceId: 'drone-satellite',
-      message: "Cargamos la imágen aérea más actual — (noviembre 2025)",
+      message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
       bounds: [
         [-96.041238, 19.0556],
         [-96.031988, 19.055425],
