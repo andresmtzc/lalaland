@@ -3258,10 +3258,9 @@ fetch(mapboxTokenUrl)
     map.on('load', async () => {
       console.log('✅ Map loaded successfully!');
 
-      // Labels.json is no longer used
-      // await loadRoad(map, async () => { ... }); // REMOVED
-
-      await loadLotsAsync(map);
+      // Load road labels (or create empty 'road' layer if labels.json doesn't exist)
+      await loadRoad(map, async () => {
+        await loadLotsAsync(map);
         await window.supabaseReady;
         await enrichLotsWithAvailability();
 
@@ -3743,6 +3742,7 @@ map.on('click', 'lots-final-click', (e) => {
           }
           window.hoveredId = null;
         });
+      }); // loadRoad callback ends
     }); // map load ends
   }); // fetch token ends
 
@@ -3954,8 +3954,25 @@ function loadRoad(map, cb) {
       }
     })
     .catch(error => {
-      console.error('Error loading labels:', error);
-      cb(); // Continue even if labels fail to load
+      console.warn('Labels.json not found or failed to load:', error.message);
+      console.log('Creating empty road layer as insertion point...');
+
+      // Create empty road layer so it can still be used as a reference for other layers
+      const emptyGeojson = { type: 'FeatureCollection', features: [] };
+      map.addSource('road', { type: 'geojson', data: emptyGeojson });
+      map.addLayer({
+        id: 'road',
+        type: 'line',
+        source: 'road',
+        layout: { 'visibility': 'none' },
+        paint: {
+          'line-color': '#000000',
+          'line-width': 0,
+          'line-opacity': 0
+        }
+      });
+      console.log('Empty road layer created');
+      cb(); // Continue with the rest of the map loading
     });
 }
 </script>
@@ -4624,7 +4641,7 @@ function addCustomImage(map) {
       paint: {
         'raster-opacity': 0
       }
-    });
+    }, 'road'); // Insert before 'road' layer so drone images appear underneath lots
 
     fadeInImage(map, config.layerId);
 
