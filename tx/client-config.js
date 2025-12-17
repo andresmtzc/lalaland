@@ -145,9 +145,9 @@ const CLIENT_CONFIGS = {
     // ----- LOT NAMING CONVENTIONS -----
     // Prefixes used in lot IDs
     lotPrefixes: {
-      standard: 'lotinverta',  // e.g., lotinverta10-1
-      premium: 'lotinvertap',  // e.g., lotinvertap10-1
-      base: 'inverta'          // Used in some contexts
+      standard: 'lottx',  // e.g., lotinverta10-1
+      premium: 'lottxp',  // e.g., lotinvertap10-1
+      base: 'tx'          // Used in some contexts
     },
 
     // ----- CONTACT & CTA -----
