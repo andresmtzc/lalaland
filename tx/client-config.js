@@ -13,7 +13,7 @@
 const CLIENT_CONFIGS = {
 
   // ===== INVERTA CLIENT CONFIGURATION =====
-  inverta: {
+  tx: {
 
     // ----- BASIC INFO -----
     name: 'INVERTA',
