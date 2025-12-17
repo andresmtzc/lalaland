@@ -1,43 +1,9 @@
--- Migration: Create Secure Upload Functions
--- Description: Creates upload_tokens table and secure functions for CSV upload
+-- Migration: Add Upload Functions for Existing client_upload_tokens Table
+-- Description: Creates validate_upload_token and replace_client_lots functions
 -- Date: 2025-12-17
 
 -- ============================================================================
--- STEP 1: Create upload_tokens table
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS upload_tokens (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    token TEXT UNIQUE NOT NULL,
-    client_id TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    expires_at TIMESTAMPTZ,
-    is_active BOOLEAN DEFAULT true,
-    created_by TEXT,
-    last_used_at TIMESTAMPTZ
-);
-
--- Create index for performance
-CREATE INDEX IF NOT EXISTS idx_upload_tokens_token ON upload_tokens(token);
-CREATE INDEX IF NOT EXISTS idx_upload_tokens_client_id ON upload_tokens(client_id);
-
--- Enable RLS on upload_tokens
-ALTER TABLE upload_tokens ENABLE ROW LEVEL SECURITY;
-
--- Only authenticated users with client access can view tokens
-CREATE POLICY "Users can only view their client's upload tokens"
-ON upload_tokens
-FOR SELECT
-USING (
-  client_id IN (
-    SELECT DISTINCT e.client_id
-    FROM editors e
-    WHERE e.user_id = auth.uid()
-  )
-);
-
--- ============================================================================
--- STEP 2: Create validate_upload_token function
+-- STEP 1: Create validate_upload_token function
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION validate_upload_token(input_token TEXT)
@@ -49,11 +15,11 @@ RETURNS TABLE (
 DECLARE
     token_record RECORD;
 BEGIN
-    -- Look up the token
-    SELECT ut.client_id, ut.is_active, ut.expires_at
+    -- Look up the token in client_upload_tokens table
+    SELECT cut.client_id
     INTO token_record
-    FROM upload_tokens ut
-    WHERE ut.token = input_token;
+    FROM client_upload_tokens cut
+    WHERE cut.token = input_token;
 
     -- If token doesn't exist
     IF NOT FOUND THEN
@@ -61,30 +27,13 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Check if token is active
-    IF NOT token_record.is_active THEN
-        RETURN QUERY SELECT false, NULL::TEXT, 'Token is inactive'::TEXT;
-        RETURN;
-    END IF;
-
-    -- Check if token is expired
-    IF token_record.expires_at IS NOT NULL AND token_record.expires_at < NOW() THEN
-        RETURN QUERY SELECT false, NULL::TEXT, 'Token has expired'::TEXT;
-        RETURN;
-    END IF;
-
-    -- Token is valid - update last_used_at
-    UPDATE upload_tokens
-    SET last_used_at = NOW()
-    WHERE token = input_token;
-
-    -- Return success
+    -- Token is valid - return success
     RETURN QUERY SELECT true, token_record.client_id, 'Token is valid'::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
--- STEP 3: Create replace_client_lots function
+-- STEP 2: Create replace_client_lots function
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION replace_client_lots(
@@ -141,15 +90,27 @@ BEGIN
             fraccionamiento,
             client_id
         ) VALUES (
-            (lot_record->>'id')::INTEGER,
-            (lot_record->>'uuid')::UUID,
+            CASE WHEN lot_record->>'id' IS NOT NULL AND lot_record->>'id' != ''
+                 THEN (lot_record->>'id')::INTEGER
+                 ELSE NULL
+            END,
+            CASE WHEN lot_record->>'uuid' IS NOT NULL AND lot_record->>'uuid' != ''
+                 THEN (lot_record->>'uuid')::UUID
+                 ELSE gen_random_uuid()
+            END,
             lot_record->>'lot_name',
             lot_record->>'size',
             lot_record->>'rSize',
-            (lot_record->>'price')::NUMERIC,
+            CASE WHEN lot_record->>'price' IS NOT NULL AND lot_record->>'price' != ''
+                 THEN (lot_record->>'price')::NUMERIC
+                 ELSE NULL
+            END,
             lot_record->>'millones',
             lot_record->>'availability',
-            (lot_record->>'price_m2')::NUMERIC,
+            CASE WHEN lot_record->>'price_m2' IS NOT NULL AND lot_record->>'price_m2' != ''
+                 THEN (lot_record->>'price_m2')::NUMERIC
+                 ELSE NULL
+            END,
             lot_record->>'nickname',
             lot_record->>'subtitle',
             lot_record->>'image',
@@ -161,6 +122,11 @@ BEGIN
 
     -- Return success
     RETURN QUERY SELECT true, validated_client_id, deleted_count, inserted_count, NULL::TEXT;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Catch any errors and return them
+        RETURN QUERY SELECT false, validated_client_id, deleted_count, inserted_count, SQLERRM::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -168,6 +134,5 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- COMMENTS
 -- ============================================================================
 
-COMMENT ON TABLE upload_tokens IS 'Stores secure tokens for CSV upload functionality';
-COMMENT ON FUNCTION validate_upload_token(TEXT) IS 'Validates an upload token and returns client_id if valid';
+COMMENT ON FUNCTION validate_upload_token(TEXT) IS 'Validates an upload token from client_upload_tokens table and returns client_id if valid';
 COMMENT ON FUNCTION replace_client_lots(TEXT, JSONB) IS 'Securely replaces all lots for a client using token-based authentication';
