@@ -18,7 +18,7 @@ const CLIENT_CONFIGS = {
     // ----- BASIC INFO -----
     name: 'INVERTA',
     displayName: 'INVERTA - La-La Land',
-    slug: 'inverta', // URL path slug (e.g., /inverta/)
+    slug: 'tx', // URL path slug (e.g., /inverta/)
     defaultCommunity: 'marsella',
 
     // ----- BRANDING -----
@@ -138,8 +138,8 @@ const CLIENT_CONFIGS = {
 
     // ----- DATA SOURCES -----
     data: {
-      lotsFile: 'https://la-la.land/inverta/lots.txt',
-      framesBase: 'https://la-la.land/inverta/frames/'
+      lotsFile: 'https://la-la.land/tx/lots.txt',
+      framesBase: 'https://la-la.land/tx/frames/'
     },
 
     // ----- LOT NAMING CONVENTIONS -----
