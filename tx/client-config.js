@@ -16,8 +16,8 @@ const CLIENT_CONFIGS = {
   tx: {
 
     // ----- BASIC INFO -----
-    name: 'JOHNSON DEVELOPMENT',
-    displayName: 'JOHNSON DEVELOPMENT - La-La Land',
+    name: 'JDC',
+    displayName: 'JDC - La-La Land',
     slug: 'tx', // URL path slug (e.g., /inverta/)
     defaultCommunity: '',
 
