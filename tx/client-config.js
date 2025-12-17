@@ -16,14 +16,14 @@ const CLIENT_CONFIGS = {
   tx: {
 
     // ----- BASIC INFO -----
-    name: 'INVERTA',
-    displayName: 'INVERTA - La-La Land',
+    name: 'JOHNSON DEVELOPMENT',
+    displayName: 'JOHNSON DEVELOPMENT - La-La Land',
     slug: 'tx', // URL path slug (e.g., /inverta/)
-    defaultCommunity: 'marsella',
+    defaultCommunity: '',
 
     // ----- BRANDING -----
     branding: {
-      mainLogo: 'https://la-la.land/inverta/inverta.svg',
+      mainLogo: 'https://la-la.land/tx/johnson.png',
       mainLogoAlt: 'Logo',
       favicon: 'favicon.ico',
     },
@@ -31,17 +31,17 @@ const CLIENT_CONFIGS = {
     // ----- COMMUNITY LOGOS -----
     // Maps community groups to their respective logos
     communityLogos: {
-      'mediterraneo': {
+      'kresston': {
         // For marsella & barcelona
-        url: 'https://la-la.land/inverta/lomasmediterraneo.png', // Original for index.html
-        cardLogoUrl: 'https://la-la.land/inverta/lomasmediterraneo_black.png', // Black version for cards
-        communities: ['marsella', 'barcelona']
+        url: 'https://la-la.land/tx/kress.png', // Original for index.html
+        cardLogoUrl: 'https://la-la.land/tx/lomasmediterraneo_black.png', // Black version for cards
+        communities: ['heartland', 'stableton']
       },
-      'puntolomas': {
+      'thegeorge': {
         // For sierraalta & sierrabaja
-        url: 'https://la-la.land/inverta/puntolomas.png', // Original for index.html
-        cardLogoUrl: 'https://la-la.land/inverta/puntolomas_black.png', // Black version for cards
-        communities: ['sierraalta', 'sierrabaja']
+        url: 'https://la-la.land/tx/george.png', // Original for index.html
+        cardLogoUrl: 'https://la-la.land/tx/puntolomas_black.png', // Black version for cards
+        communities: ['thegeorge']
       }
     },
 
@@ -63,7 +63,7 @@ const CLIENT_CONFIGS = {
         url: 'https://la-la.land/tx/txearth.png',
         layerId: 'drone-satellite-layer-1',
         sourceId: 'drone-satellite-1',
-        message: "Loaded most recent sat image — (october 2025)",
+        message: "Loaded most recent aerial image — (October 2025)",
         bounds: [
 [-95.792658, 30.293473],
 [-95.780529, 30.293473],
@@ -131,7 +131,7 @@ const CLIENT_CONFIGS = {
     // ----- CONTACT & CTA -----
     contact: {
       whatsapp: {
-        number: '5218185261819',
+        number: '5218112881110',
         defaultMessage: '¿Tienes dudas? ¡Chatea con nosotros por WhatsApp!',
         // UTM parameters for tracking
         utmSource: 'website',
@@ -160,7 +160,7 @@ const CLIENT_CONFIGS = {
     // All colors used throughout the site for easy customization
     colors: {
       // Primary brand colors
-      primary: '#2ac6f4',        // Orange - main CTA and accent color
+      primary: '#f29437',        // Orange - main CTA and accent color
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
