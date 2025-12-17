@@ -96,7 +96,7 @@ const CLIENT_CONFIGS = {
         fracc: 'heartland',
         center: [-95.787758, 30.288481],
         zoom: 16.2,
-        position: 8, // Position in community selector
+        position: 0, // Position in community selector
         // Alternative reference for search menu:
         searchMenuId: 'positionTwo'
       },
