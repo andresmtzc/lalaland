@@ -65,11 +65,10 @@ const CLIENT_CONFIGS = {
         sourceId: 'drone-satellite-1',
         message: "Loaded most recent sat image — (october 2025)",
         bounds: [
-[-95.790864, 30.293471],
-[-95.780476, 30.293471],
-[-95.780476, 30.27965],
-[-95.790864, 30.27965]
-
+[-95.792658, 30.293473],
+[-95.780529, 30.293473],
+[-95.780529, 30.279717],
+[-95.792658, 30.279717]
         ]
       },
       {
@@ -90,50 +89,39 @@ const CLIENT_CONFIGS = {
     // Each community has center coordinates, zoom level, and display info
     communities: {
 
-      barcelona: {
-        id: 'barcelona',
-        name: 'Barcelona',
-        displayName: 'Barcelona',
-        fracc: 'barcelona',
-        center: [-96.035272, 19.046439],
+      heartland: {
+        id: 'heartland',
+        name: 'Heartland',
+        displayName: 'Heartland',
+        fracc: 'heartland',
+        center: [-95.787758, 30.288481],
         zoom: 16.2,
         position: 2, // Position in community selector
         // Alternative reference for search menu:
         searchMenuId: 'positionFour'
       },
 
-      marsella: {
-        id: 'marsella',
-        name: 'Marsella',
-        displayName: 'Marsella',
-        fracc: 'marsella',
-        center: [-96.038183, 19.047528],
+      stableton: {
+        id: 'stableton',
+        name: 'Stableton',
+        displayName: 'Stableton',
+        fracc: 'stableton',
+        center: [-95.784408, 30.282286],
         zoom: 16.4,
         position: 1,
         searchMenuId: 'positionThree'
       },
 
-      sierraalta: {
-        id: 'sierraalta',
-        name: 'Sierra Alta',
-        displayName: 'Sierra Alta',
-        fracc: 'sierraalta',
-        center: [-96.090267, 19.072525],
+      thegeorge: {
+        id: 'thegeorge',
+        name: 'The George',
+        displayName: 'The George',
+        fracc: 'thegeorge',
+        center: [-95.740267, 29.503108],
         zoom: 15.9,
         position: 7,
         searchMenuId: 'positionTwo'
       },
-
-      sierrabaja: {
-        id: 'sierrabaja',
-        name: 'Sierra Baja',
-        displayName: 'Sierra Baja',
-        fracc: 'sierrabaja',
-        center: [-96.091717, 19.074769],
-        zoom: 16.7,
-        position: 6,
-        searchMenuId: 'positionOne'
-      }
 
     },
 
