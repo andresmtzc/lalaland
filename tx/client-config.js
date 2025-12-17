@@ -53,7 +53,7 @@ const CLIENT_CONFIGS = {
       // Initial map view (can be overridden by default community)
       initialView: {
         center: [-95.785294, 30.285464], // Kresston center
-        zoom: 13.6
+        zoom: 15.0
       }
     },
 
