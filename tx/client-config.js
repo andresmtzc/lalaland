@@ -53,7 +53,7 @@ const CLIENT_CONFIGS = {
       // Initial map view (can be overridden by default community)
       initialView: {
         center: [-95.785294, 30.285464], // Kresston center
-        zoom: 16.4
+        zoom: 13.6
       }
     },
 
@@ -71,18 +71,7 @@ const CLIENT_CONFIGS = {
 [-95.792658, 30.279717]
         ]
       },
-      {
-        url: 'https://la-la.land/inverta/invertaearth2.png',
-        layerId: 'drone-satellite-layer-2',
-        sourceId: 'drone-satellite-2',
-        message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
-        bounds: [
-          [-96.093978, 19.076367],
-          [-96.086683, 19.076449],
-          [-96.086602, 19.070002],
-          [-96.093896, 19.06992]
-        ]
-      }
+
     ],
 
     // ----- COMMUNITIES/DEVELOPMENTS -----
