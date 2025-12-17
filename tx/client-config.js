@@ -60,15 +60,16 @@ const CLIENT_CONFIGS = {
     // ----- AERIAL/SATELLITE IMAGES -----
     aerialImages: [
       {
-        url: 'https://la-la.land/inverta/invertaearth.png',
+        url: 'https://la-la.land/tx/txearth.png',
         layerId: 'drone-satellite-layer-1',
         sourceId: 'drone-satellite-1',
-        message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
+        message: "Loaded most recent sat image — (october 2025)",
         bounds: [
-          [-96.041238, 19.0556],
-          [-96.031988, 19.055425],
-          [-96.032264, 19.042404],
-          [-96.041515, 19.04258]
+[-95.791745, 30.294737],
+[-95.779715, 30.294737],
+[-95.779715, 30.278732],
+[-95.791745, 30.278732]
+
         ]
       },
       {
