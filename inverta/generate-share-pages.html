@@ -38,7 +38,7 @@
   <h1>Generate Share Pages for All Lots</h1>
   <p>This will generate individual HTML pages for each lot with proper Open Graph meta tags for WhatsApp/social media sharing.</p>
 
-  <button id="generateBtn">Generate All Share Pages (264 HTML files)</button>
+  <button id="generateBtn">Generate All Share Pages</button>
   <div class="status" id="status">Ready. Click the button to generate.</div>
 
   <script>
@@ -73,22 +73,44 @@
     async function fetchAvailableLots() {
       await window.supabaseReady;
 
-      const { data, error } = await window.supabaseClient
-        .from('lots')
-        .select('lot_name, rSize, price_m2, fraccionamiento, availability')
-        .eq('client_id', CURRENT_CLIENT)
-        .order('lot_name', { ascending: true });
+      // Fetch all lots using pagination to bypass Supabase's 1000-row hard limit
+      const BATCH_SIZE = 1000;
+      let allLots = [];
+      let start = 0;
+      let hasMore = true;
 
-      if (error) {
-        console.error('Error fetching lots:', error);
-        return [];
+      while (hasMore) {
+        const { data: batch, error } = await window.supabaseClient
+          .from('lots')
+          .select('lot_name, rSize, price_m2, fraccionamiento, availability')
+          .eq('client_id', CURRENT_CLIENT)
+          .order('lot_name', { ascending: true })
+          .range(start, start + BATCH_SIZE - 1);
+
+        if (error) {
+          console.error('Error fetching lot batch from Supabase:', error);
+          return [];
+        }
+
+        if (batch && batch.length > 0) {
+          allLots = [...allLots, ...batch];
+          start += BATCH_SIZE;
+          // If we got less than a full batch, we're done
+          hasMore = batch.length === BATCH_SIZE;
+        } else {
+          hasMore = false;
+        }
       }
 
+      console.log(`✅ Fetched ${allLots.length} total lots from Supabase`);
+
       // Filter for available lots
-      const availableLots = (data || []).filter(lot => {
+      const availableLots = (allLots || []).filter(lot => {
         const availability = (lot.availability || '').toString().toLowerCase();
         return availability === 'available' || availability === 'featured';
       });
+
+      console.log(`✅ Found ${availableLots.length} available/featured lots`);
 
       return availableLots;
     }
