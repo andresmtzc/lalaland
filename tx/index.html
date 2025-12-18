@@ -3258,21 +3258,24 @@ fetch(mapboxTokenUrl)
     map.on('load', async () => {
       console.log('✅ Map loaded successfully!');
 
-      // Hide house numbers and other unwanted labels
-      const layersToHide = [
-        'house-num',
-        'housenumber-label',
-        'place-label',
-        'poi-label',
-        'airport-label',
-        'settlement-subdivision-label'
-      ];
-
-      layersToHide.forEach(layerId => {
-        if (map.getLayer(layerId)) {
-          map.setLayoutProperty(layerId, 'visibility', 'none');
-        }
-      });
+      // Hide all label layers from the Mapbox style
+      const style = map.getStyle();
+      if (style && style.layers) {
+        style.layers.forEach(layer => {
+          // Hide any layer that is a symbol type OR contains label/text keywords
+          // BUT keep our custom layers (lot-labels, manzana-labels)
+          const keepLayers = ['lot-labels', 'manzana-labels'];
+          if (!keepLayers.includes(layer.id)) {
+            if (layer.type === 'symbol' ||
+                /label|text|place|poi|address|house.*num|number/i.test(layer.id)) {
+              if (map.getLayer(layer.id)) {
+                map.setLayoutProperty(layer.id, 'visibility', 'none');
+                console.log('Hiding layer:', layer.id);
+              }
+            }
+          }
+        });
+      }
 
       // Load road labels (or create empty 'road' layer if labels.json doesn't exist)
       await loadRoad(map, async () => {
