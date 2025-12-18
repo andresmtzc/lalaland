@@ -48,7 +48,7 @@ const CLIENT_CONFIGS = {
     // ----- MAPBOX SETTINGS -----
     mapbox: {
       tokenUrl: 'https://la-la.land/mapbox.txt',
-      style: 'mapbox://styles/mapbox/satellite-v9', // Clean satellite with no labels
+      style: 'mapbox://styles/andresmtzc/cmgpy4sy8005101qo65pf7ve2',
 
       // Initial map view (can be overridden by default community)
       initialView: {
