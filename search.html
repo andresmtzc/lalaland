@@ -472,6 +472,7 @@
   let dotVisibility = {}; // Track which dots are visible
   let miniDotsVisibility = {}; // Track which dots have mini-dots enabled
   let individualMiniVisibility = {}; // Track which individual mini-dots are visible for each dot
+  let individualMiniMirror = {}; // Track which individual mini-dots have mirrored rotation
 
   function setCSSVar(name, value){
     document.documentElement.style.setProperty(name, value);
@@ -552,11 +553,13 @@
     for(let i=0; i<count; i++){
       if(miniDotsVisibility[i] === false) continue; // Skip if mini-dots not enabled for this dot
 
-      // Initialize visibility for this dot's mini-dots if not exists
+      // Initialize visibility and mirror for this dot's mini-dots if not exists
       if(!individualMiniVisibility[i]){
         individualMiniVisibility[i] = {};
+        individualMiniMirror[i] = {};
         for(let j=0; j<miniCount; j++){
           individualMiniVisibility[i][j] = true; // Default all to visible
+          individualMiniMirror[i][j] = false; // Default no mirror
         }
       }
 
@@ -573,11 +576,16 @@
 
       const grid = document.createElement('div');
       grid.className = 'toggle-grid';
+      grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(100px, 1fr))';
 
       for(let j=0; j<miniCount; j++){
         const item = document.createElement('div');
-        item.className = 'toggle-item';
+        item.style.display = 'flex';
+        item.style.alignItems = 'center';
+        item.style.gap = '4px';
+        item.style.fontSize = '12px';
 
+        // Visibility checkbox
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.id = `mini-${i}-${j}`;
@@ -589,9 +597,33 @@
         const label = document.createElement('label');
         label.htmlFor = `mini-${i}-${j}`;
         label.textContent = `${i+1}.${j+1}`;
+        label.style.cursor = 'pointer';
+        label.style.userSelect = 'none';
+
+        // Mirror checkbox
+        const mirrorCheckbox = document.createElement('input');
+        mirrorCheckbox.type = 'checkbox';
+        mirrorCheckbox.id = `mirror-${i}-${j}`;
+        mirrorCheckbox.checked = individualMiniMirror[i] && individualMiniMirror[i][j];
+        mirrorCheckbox.addEventListener('change', () => {
+          if(!individualMiniMirror[i]) individualMiniMirror[i] = {};
+          individualMiniMirror[i][j] = mirrorCheckbox.checked;
+          // Reposition this dot's mini-dots
+          const dot = dots[i];
+          if(dot) positionMiniDots(dot);
+        });
+
+        const mirrorLabel = document.createElement('label');
+        mirrorLabel.htmlFor = `mirror-${i}-${j}`;
+        mirrorLabel.textContent = '🔄';
+        mirrorLabel.title = 'Mirror rotation';
+        mirrorLabel.style.cursor = 'pointer';
+        mirrorLabel.style.userSelect = 'none';
 
         item.appendChild(checkbox);
         item.appendChild(label);
+        item.appendChild(mirrorCheckbox);
+        item.appendChild(mirrorLabel);
         grid.appendChild(item);
       }
 
@@ -747,10 +779,16 @@
     const N = Math.max(1, miniCount);
     const ringCenterX = miniRadius;
     const ringCenterY = miniRadius;
+    const dotIndex = dot.i;
 
     dot.miniDots.forEach(({container, index})=>{
       const baseAngle = (2*Math.PI*index)/N;
-      const angle = baseAngle + (miniRotation * Math.PI / 180);
+
+      // Check if this mini-dot should be mirrored
+      const shouldMirror = individualMiniMirror[dotIndex] && individualMiniMirror[dotIndex][index];
+      const mirroredBaseAngle = shouldMirror ? -baseAngle : baseAngle;
+
+      const angle = mirroredBaseAngle + (miniRotation * Math.PI / 180);
       const x = ringCenterX + miniRadius*Math.cos(angle);
       const y = ringCenterY + miniRadius*Math.sin(angle);
       container.style.left = x+'px';
