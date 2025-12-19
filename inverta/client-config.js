@@ -136,6 +136,101 @@ const CLIENT_CONFIGS = {
 
     },
 
+    // ----- COMMUNITY SEARCH MENU CONFIGURATION -----
+    // Interactive circular menu for community search (designed in /search.html)
+    // Export settings from search.html and paste here
+    communitySearchMenu: {
+      // Main dots settings
+      count: 8,
+      radius: 80,
+      size: 56,
+      rotation: 0,
+      centerSize: 56,
+      animationDelay: 150,
+
+      // Mini-dots settings (sub-groups)
+      miniDots: {
+        enabled: true,
+        count: 4,
+        radius: 40,
+        size: 24,
+        rotation: 0,
+        delay: 100
+      },
+
+      // Dot visibility (which dots are shown)
+      dotVisibility: {
+        0: true,
+        1: true,
+        2: true,
+        3: true,
+        4: false,
+        5: false,
+        6: false,
+        7: false
+      },
+
+      // Mini-dots visibility (which dots have mini-dots enabled)
+      miniDotsVisibility: {
+        0: true,
+        1: true,
+        2: true,
+        3: true,
+        4: false,
+        5: false,
+        6: false,
+        7: false
+      },
+
+      // Individual mini-dot visibility per parent dot
+      individualMiniVisibility: {
+        0: { 0: true, 1: true, 2: true, 3: true },
+        1: { 0: true, 1: true, 2: true, 3: true },
+        2: { 0: true, 1: true, 2: true, 3: true },
+        3: { 0: true, 1: true, 2: true, 3: true }
+      },
+
+      // Mirror rotation settings per dot
+      miniDotsMirror: {
+        0: false,
+        1: false,
+        2: false,
+        3: false
+      },
+
+      // Labels for each main dot (community names or groups)
+      dotLabels: [
+        "Sierra Baja",    // Dot 1
+        "Sierra Alta",    // Dot 2
+        "Marsella",       // Dot 3
+        "Barcelona",      // Dot 4
+        "Dot 5",          // Dot 5 (hidden)
+        "Dot 6",          // Dot 6 (hidden)
+        "Dot 7",          // Dot 7 (hidden)
+        "Dot 8"           // Dot 8 (hidden)
+      ],
+
+      // Mini-dot labels per parent dot (sub-communities or phases)
+      miniDotLabels: [
+        ["SB Phase 1", "SB Phase 2", "SB Phase 3", "SB Phase 4"],  // Sierra Baja mini-dots
+        ["SA Phase 1", "SA Phase 2", "SA Phase 3", "SA Phase 4"],  // Sierra Alta mini-dots
+        ["M Phase 1", "M Phase 2", "M Phase 3", "M Phase 4"],      // Marsella mini-dots
+        ["B Phase 1", "B Phase 2", "B Phase 3", "B Phase 4"],      // Barcelona mini-dots
+        ["5.1", "5.2", "5.3", "5.4"],
+        ["6.1", "6.2", "6.3", "6.4"],
+        ["7.1", "7.2", "7.3", "7.4"],
+        ["8.1", "8.2", "8.3", "8.4"]
+      ],
+
+      // Mapping from menu positions to community data
+      dotToCommunity: {
+        0: 'sierrabaja',   // Dot 1 -> Sierra Baja
+        1: 'sierraalta',   // Dot 2 -> Sierra Alta
+        2: 'marsella',     // Dot 3 -> Marsella
+        3: 'barcelona'     // Dot 4 -> Barcelona
+      }
+    },
+
     // ----- DATA SOURCES -----
     data: {
       lotsFile: 'https://la-la.land/inverta/lots.txt',
@@ -463,6 +558,36 @@ function applyColorsToCSS(clientName) {
   console.log('✅ Colors applied to CSS variables');
 }
 
+/**
+ * Get community search menu configuration
+ * @param {string} clientName - The client identifier
+ * @returns {object} Community search menu configuration
+ */
+function getCommunitySearchMenu(clientName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.communitySearchMenu) {
+    console.error(`❌ Community search menu config not found for: ${clientName}`);
+    return null;
+  }
+  return config.communitySearchMenu;
+}
+
+/**
+ * Get community by dot index in search menu
+ * @param {string} clientName - The client identifier
+ * @param {number} dotIndex - The dot index (0-based)
+ * @returns {object} Community configuration object
+ */
+function getCommunityByDotIndex(clientName, dotIndex) {
+  const menuConfig = getCommunitySearchMenu(clientName);
+  if (!menuConfig || !menuConfig.dotToCommunity) return null;
+
+  const communityKey = menuConfig.dotToCommunity[dotIndex];
+  if (!communityKey) return null;
+
+  return getCommunityByFracc(clientName, communityKey);
+}
+
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -475,6 +600,8 @@ if (typeof module !== 'undefined' && module.exports) {
     buildShareText,
     extractLotNumber,
     getColor,
-    applyColorsToCSS
+    applyColorsToCSS,
+    getCommunitySearchMenu,
+    getCommunityByDotIndex
   };
 }
