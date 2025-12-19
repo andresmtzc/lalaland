@@ -540,6 +540,7 @@ function applySearchButtonToCSS(clientName) {
   // Apply main dots settings
   if (config.mainDots) {
     root.style.setProperty('--orbit-radius', config.mainDots.radius);
+    root.style.setProperty('--orbit-diam', `${config.mainDots.radius * 2}px`); // Calculate diameter
     root.style.setProperty('--dot', `${config.mainDots.size}px`);
     root.style.setProperty('--rotate-deg', `${config.mainDots.rotation}deg`);
   }

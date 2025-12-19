@@ -41,32 +41,43 @@ searchButton: {
 }
 ```
 
-### 4. Apply to inverta/index.html
+### 4. ✅ Already Applied!
 
-The configuration will automatically be applied via CSS variables. You need to call this function early in your page:
+The configuration is **automatically applied** when the page loads!
 
+In `inverta/index.html` (line ~63), this code runs on every page load:
 ```javascript
-// After CONFIG is loaded
-applySearchButtonToCSS(CURRENT_CLIENT);
+// Apply search button settings to CSS variables
+if (CONFIG.searchButton) {
+  applySearchButtonToCSS(CURRENT_CLIENT);
+}
 ```
 
-This should be called alongside:
-```javascript
-applyColorsToCSS(CURRENT_CLIENT);
-```
+So whenever you update the config and refresh the page, your new design is automatically loaded!
 
 ---
 
 ## What Gets Configured
 
 ### CSS (Automatic via CSS Variables)
-The following CSS variables are set automatically:
+The following CSS variables are set automatically from config:
 - `--btn` - Center button size
-- `--orbit-radius` - Main dots orbit radius
+- `--orbit-radius` - Main dots orbit radius (number)
+- `--orbit-diam` - Orbit diameter (calculated: radius × 2)
 - `--dot` - Main dot size
 - `--rotate-deg` - Rotation angle
 - `--mini-orbit-radius` - Mini-dots orbit radius
 - `--mini-dot` - Mini-dot size
+
+### Existing Functionality Preserved ✅
+**All existing button functionality still works:**
+- Location navigation (flying to communities)
+- Button animations and transitions
+- Hover effects
+- Mobile responsiveness
+- All existing CSS classes in `styles.css`
+
+The only thing that changes is the **design values** (sizes, positions) now come from the config instead of being hardcoded.
 
 ### JavaScript (Read from Config)
 Your existing JavaScript in `inverta/index.html` can read from the config:
