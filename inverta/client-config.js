@@ -309,6 +309,35 @@ const CLIENT_CONFIGS = {
         },
         individualVisibility: {},
         mirrorRotation: {}
+      },
+      // DOT POSITION TO COMMUNITY MAPPING
+      // Maps each dot position (0-7 going clockwise, starting at top) to a community OR a label
+      // Position numbering: 0=Top, 1=TopRight, 2=Right, 3=BottomRight, 4=Bottom, 5=BottomLeft, 6=Left, 7=TopLeft
+      // Set to a community ID (like 'marsella') or a label string (like 'Mediterráneo')
+      // Use null for empty positions
+      dotMapping: {
+        0: null,              // Top - empty
+        1: 'Mediterráneo',    // Top-Right - label for group
+        2: null,              // Right - empty
+        3: null,              // Bottom-Right - empty
+        4: null,              // Bottom - empty
+        5: null,              // Bottom-Left - empty
+        6: 'Punto Lomas',     // Left - label for group
+        7: null               // Top-Left - empty
+      },
+      // MINI-DOT MAPPING - Assign communities to mini-dots under each main dot
+      // Structure: { mainDotPosition: { miniDotPosition: 'communityId', ... }, ... }
+      // Mini-dot positions also go 0-7 clockwise starting at top
+      miniDotMapping: {
+        1: {  // Main dot 1 (Mediterráneo) mini-dots
+          0: 'marsella',      // Top mini-dot
+          2: 'barcelona',     // Right mini-dot
+          // Other positions: null (hidden)
+        },
+        6: {  // Main dot 6 (Punto Lomas) mini-dots
+          0: 'sierraalta',    // Top mini-dot
+          2: 'sierrabaja',    // Right mini-dot
+        }
       }
     },
 
