@@ -9210,143 +9210,158 @@ function setupCommunitySearchMenu() {
     const circleMenu = document.getElementById('communityCircleMenu');
     if (!searchBtn || !circleMenu) return;
 
-    // 1) Get config
+    // Get config
     const btnConfig = getSearchButtonConfig(CURRENT_CLIENT);
     const dotMapping = btnConfig?.dotMapping || {};
     const miniDotMapping = btnConfig?.miniDotMapping || {};
-    const N = btnConfig?.mainDots?.count || 8;
-    const miniN = btnConfig?.miniDots?.count || 4;
-    const miniRadius = btnConfig?.miniDots?.radius || 40;
+    const animDelay = btnConfig?.mainDots?.animationDelay || 150;
+    const miniAnimDelay = btnConfig?.miniDots?.animationDelay || 100;
 
     const rootStyles = getComputedStyle(document.documentElement);
-    const btnPx  = parseFloat(rootStyles.getPropertyValue('--btn')) || 56;
-    const dotPx  = parseFloat(rootStyles.getPropertyValue('--dot')) || 56;
-    const miniDotPx = parseFloat(rootStyles.getPropertyValue('--mini-dot')) || 24;
-    const diamPx = parseFloat(rootStyles.getPropertyValue('--orbit-diam')) || 160;
-    const radius = (diamPx / 2) - (btnPx / 2);
+    const count = btnConfig?.mainDots?.count || 8;
+    const miniCount = btnConfig?.miniDots?.count || 4;
+    const miniRadius = btnConfig?.miniDots?.radius || 40;
+    const radius = parseFloat(rootStyles.getPropertyValue('--orbit-radius')) || 80;
 
     circleMenu.innerHTML = '';
+    const dots = [];  // Store dot references
 
-    const dotElements = [];  // Store dot references for mini-dot management
-
-    // 2) Build main dots
-    for (let i = 0; i < N; i++) {
+    // Build ALL dots (visible and hidden) for proper positioning
+    for (let i = 0; i < count; i++) {
       const dotValue = dotMapping[i];
-      if (!dotValue) continue;  // Skip null positions
+      const shouldBeVisible = dotValue !== null && dotValue !== undefined;
 
-      // Container for this dot (holds both the dot button and mini-dots)
-      const dotContainer = document.createElement('div');
-      dotContainer.className = 'dot-container-with-mini';
-      dotContainer.style.position = 'absolute';
+      const container = document.createElement('div');
+      container.className = 'dot-container';
 
-      // Create main dot button
-      const dotBtn = document.createElement('button');
-      dotBtn.className = 'community-option';
-      dotBtn.type = 'button';
+      const el = document.createElement('button');
+      el.className = 'community-option';
+      el.type = 'button';
 
-      // Check if it's a community ID or just a label
+      // Check if it's a community ID or a label
       const community = CONFIG.communities[dotValue];
       if (community) {
-        // It's a community - navigate on click
-        dotBtn.textContent = community.displayName || community.name;
-        dotBtn.addEventListener('click', (e) => navigateToCommunity(e, community, circleMenu));
-      } else {
-        // It's a label - show mini-dots on click
-        dotBtn.textContent = dotValue;
-        dotBtn.dataset.hasMinDots = 'true';
+        el.textContent = community.displayName || community.name;
+        el.addEventListener('click', (e) => navigateToCommunity(e, community, circleMenu));
+      } else if (shouldBeVisible) {
+        el.textContent = dotValue;  // It's a label
       }
 
-      // Position the dot in the circle
-      const step = 360 / N;
-      const theta = i*step - 90;  // -90 to start at top
-      const rad = theta * Math.PI / 180;
+      container.appendChild(el);
+      circleMenu.appendChild(container);
+
+      // Position all dots (whether visible or not)
       const cx = circleMenu.clientWidth / 2;
       const cy = circleMenu.clientHeight / 2;
-      const x = cx + radius * Math.cos(rad);
-      const y = cy + radius * Math.sin(rad);
+      const angle = (2 * Math.PI * i) / count - Math.PI / 2;  // Start at top
+      const x = cx + radius * Math.cos(angle);
+      const y = cy + radius * Math.sin(angle);
+      container.style.left = x + 'px';
+      container.style.top = y + 'px';
 
-      dotContainer.style.left = x + 'px';
-      dotContainer.style.top = y + 'px';
-      dotContainer.style.transform = 'translate(-50%, -50%)';
+      const dotData = {el, container, i, miniDots: [], miniRing: null, miniDotsActive: false};
+      dots.push(dotData);
 
-      dotBtn.style.position = 'relative';
-      dotBtn.style.margin = '0';
-      dotContainer.appendChild(dotBtn);
+      // Build mini-dots if this dot has them
+      if (miniDotMapping[i] && shouldBeVisible) {
+        const ring = document.createElement('div');
+        ring.className = 'mini-dots-ring';
 
-      // 3) Build mini-dots if this dot has any
-      if (miniDotMapping[i]) {
-        const miniRing = document.createElement('div');
-        miniRing.className = 'mini-dots-ring';
-        miniRing.style.display = 'none';  // Hidden by default
-        miniRing.style.position = 'absolute';
-        miniRing.style.width = (miniRadius * 2) + 'px';
-        miniRing.style.height = (miniRadius * 2) + 'px';
-        miniRing.style.left = '50%';
-        miniRing.style.top = '50%';
-        miniRing.style.transform = 'translate(-50%, -50%)';
-        miniRing.style.pointerEvents = 'auto';
-
-        const miniMapping = miniDotMapping[i];
-        for (let j = 0; j < miniN; j++) {
-          const miniCommunityId = miniMapping[j];
+        for (let j = 0; j < miniCount; j++) {
+          const miniCommunityId = miniDotMapping[i][j];
           if (!miniCommunityId) continue;
 
           const miniCommunity = CONFIG.communities[miniCommunityId];
           if (!miniCommunity) continue;
 
-          const miniBtn = document.createElement('button');
-          miniBtn.className = 'mini-community-option';
-          miniBtn.type = 'button';
-          miniBtn.textContent = miniCommunity.displayName || miniCommunity.name;
-          miniBtn.style.position = 'absolute';
-          miniBtn.style.width = miniDotPx + 'px';
-          miniBtn.style.height = miniDotPx + 'px';
+          const miniContainer = document.createElement('div');
+          miniContainer.className = 'mini-dot-container';
 
-          // Position mini-dot in its own ring
-          const miniStep = 360 / miniN;
-          const miniTheta = j*miniStep - 90;
-          const miniRad = miniTheta * Math.PI / 180;
-          const miniX = miniRadius + miniRadius * Math.cos(miniRad);
-          const miniY = miniRadius + miniRadius * Math.sin(miniRad);
+          const miniEl = document.createElement('button');
+          miniEl.className = 'mini-dot';
+          miniEl.type = 'button';
+          miniEl.textContent = miniCommunity.displayName || miniCommunity.name;
 
-          miniBtn.style.left = miniX + 'px';
-          miniBtn.style.top = miniY + 'px';
-          miniBtn.style.transform = 'translate(-50%, -50%)';
+          miniContainer.appendChild(miniEl);
+          ring.appendChild(miniContainer);
 
-          miniBtn.addEventListener('click', (e) => navigateToCommunity(e, miniCommunity, circleMenu));
-          miniRing.appendChild(miniBtn);
+          // Position mini-dot
+          const miniAngle = (2 * Math.PI * j) / miniCount - Math.PI / 2;
+          const miniX = miniRadius + miniRadius * Math.cos(miniAngle);
+          const miniY = miniRadius + miniRadius * Math.sin(miniAngle);
+          miniContainer.style.left = miniX + 'px';
+          miniContainer.style.top = miniY + 'px';
+
+          miniEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigateToCommunity(e, miniCommunity, circleMenu);
+            // Hide mini-dots after navigation
+            dotData.miniDotsActive = false;
+            el.classList.remove('hidden');
+            ring.querySelectorAll('.mini-dot').forEach(m => m.classList.remove('visible'));
+          });
+
+          dotData.miniDots.push({el: miniEl, container: miniContainer});
         }
 
-        dotContainer.appendChild(miniRing);
+        container.appendChild(ring);
+        dotData.miniRing = ring;
 
-        // Toggle mini-dots when main dot clicked (if it's a label)
-        if (!community) {
-          dotBtn.addEventListener('click', (e) => {
+        // Toggle mini-dots on main dot click (only for labels)
+        if (!community && shouldBeVisible) {
+          el.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const isVisible = miniRing.style.display !== 'none';
-            miniRing.style.display = isVisible ? 'none' : 'block';
-            miniRing.style.pointerEvents = isVisible ? 'none' : 'auto';
+            dotData.miniDotsActive = !dotData.miniDotsActive;
+
+            if (dotData.miniDotsActive) {
+              el.classList.add('hidden');
+              dotData.miniDots.forEach(({el}, idx) => {
+                el.classList.add('visible');
+                el.style.animationDelay = (idx * miniAnimDelay) + 'ms';
+              });
+            } else {
+              el.classList.remove('hidden');
+              dotData.miniDots.forEach(({el}) => el.classList.remove('visible'));
+            }
           });
         }
       }
-
-      circleMenu.appendChild(dotContainer);
-      dotElements.push({ dot: dotBtn, container: dotContainer });
     }
 
-    // 3) Toggle open/close
+    // Toggle menu
     let menuActive = false;
     searchBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       menuActive = !menuActive;
-      circleMenu.classList.toggle('active', menuActive);
+
+      if (menuActive) {
+        circleMenu.classList.add('active');
+        // Staggered animation for visible dots
+        let visibleIndex = 0;
+        dots.forEach(({el, i}) => {
+          const dotValue = dotMapping[i];
+          if (dotValue) {
+            el.classList.add('visible');
+            el.style.animationDelay = (visibleIndex * animDelay) + 'ms';
+            visibleIndex++;
+          }
+        });
+      } else {
+        circleMenu.classList.remove('active');
+        dots.forEach(({el, miniDots, miniDotsActive}) => {
+          el.classList.remove('visible', 'hidden');
+          if (miniDotsActive) {
+            miniDots.forEach(({el}) => el.classList.remove('visible'));
+          }
+        });
+      }
     });
 
     document.addEventListener('click', () => {
       if (!menuActive) return;
       menuActive = false;
-      circleMenu.classList.remove('active');
+      searchBtn.click();  // Reuse toggle logic
     });
 
     circleMenu.addEventListener('click', (e) => e.stopPropagation());
