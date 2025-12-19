@@ -369,7 +369,7 @@
         </div>
         <div class="control">
           <label for="miniSize">Mini size: <span id="miniSizeOut">24</span> px</label>
-          <input id="miniSize" type="range" min="12" max="48" value="24" />
+          <input id="miniSize" type="range" min="12" max="120" value="24" />
         </div>
         <div class="control">
           <label for="miniRotation">Mini rotation: <span id="miniRotationOut">0</span>°</label>
@@ -385,6 +385,13 @@
         <h3>Enable Mini-Dots for Each Main Dot</h3>
         <div class="toggle-grid" id="miniToggleGrid">
           <!-- Checkboxes generated here -->
+        </div>
+      </div>
+
+      <div class="dot-toggles">
+        <h3>Show/Hide Individual Mini-Dots</h3>
+        <div id="individualMiniControls">
+          <!-- Individual mini-dot controls generated here -->
         </div>
       </div>
 
@@ -464,6 +471,7 @@
   let menuActive = false;
   let dotVisibility = {}; // Track which dots are visible
   let miniDotsVisibility = {}; // Track which dots have mini-dots enabled
+  let individualMiniVisibility = {}; // Track which individual mini-dots are visible for each dot
 
   function setCSSVar(name, value){
     document.documentElement.style.setProperty(name, value);
@@ -530,6 +538,65 @@
       miniItem.appendChild(miniCheckbox);
       miniItem.appendChild(miniLabel);
       miniToggleGrid.appendChild(miniItem);
+    }
+
+    rebuildIndividualMiniControls();
+  }
+
+  function rebuildIndividualMiniControls(){
+    const container = document.getElementById('individualMiniControls');
+    container.innerHTML = '';
+
+    if(!miniDotsEnabled) return;
+
+    for(let i=0; i<count; i++){
+      if(miniDotsVisibility[i] === false) continue; // Skip if mini-dots not enabled for this dot
+
+      // Initialize visibility for this dot's mini-dots if not exists
+      if(!individualMiniVisibility[i]){
+        individualMiniVisibility[i] = {};
+        for(let j=0; j<miniCount; j++){
+          individualMiniVisibility[i][j] = true; // Default all to visible
+        }
+      }
+
+      const dotSection = document.createElement('div');
+      dotSection.style.marginBottom = '12px';
+
+      const heading = document.createElement('div');
+      heading.style.fontSize = '11px';
+      heading.style.fontWeight = '600';
+      heading.style.color = '#9aa0a6';
+      heading.style.marginBottom = '6px';
+      heading.textContent = `Dot ${i+1} Mini-Dots:`;
+      dotSection.appendChild(heading);
+
+      const grid = document.createElement('div');
+      grid.className = 'toggle-grid';
+
+      for(let j=0; j<miniCount; j++){
+        const item = document.createElement('div');
+        item.className = 'toggle-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `mini-${i}-${j}`;
+        checkbox.checked = individualMiniVisibility[i][j] !== false;
+        checkbox.addEventListener('change', () => {
+          individualMiniVisibility[i][j] = checkbox.checked;
+        });
+
+        const label = document.createElement('label');
+        label.htmlFor = `mini-${i}-${j}`;
+        label.textContent = `${i+1}.${j+1}`;
+
+        item.appendChild(checkbox);
+        item.appendChild(label);
+        grid.appendChild(item);
+      }
+
+      dotSection.appendChild(grid);
+      container.appendChild(dotSection);
     }
   }
 
@@ -652,6 +719,7 @@
     });
 
     applyMiniAnimationDelays();
+    rebuildIndividualMiniControls();
   }
 
   function applySizes(){
@@ -723,12 +791,14 @@
     dot.miniDotsActive = !dot.miniDotsActive;
 
     if(dot.miniDotsActive){
-      // Show mini-dots
-      dot.miniDots.forEach(({el}) => {
-        el.classList.add('visible');
+      // Show only enabled mini-dots
+      dot.miniDots.forEach(({el, index}) => {
+        if(individualMiniVisibility[dotIndex] && individualMiniVisibility[dotIndex][index] !== false){
+          el.classList.add('visible');
+        }
       });
     } else {
-      // Hide mini-dots
+      // Hide all mini-dots
       dot.miniDots.forEach(({el}) => {
         el.classList.remove('visible');
       });
