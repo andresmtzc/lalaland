@@ -36,23 +36,24 @@
     root.style.setProperty('--csm-mini-dot', menuConfig.miniDots.size + 'px');
     root.style.setProperty('--csm-rotate-deg', menuConfig.rotation + 'deg');
 
-    // Build menu HTML
+    // Build menu HTML (just the rotator, use existing search button)
     container.innerHTML = `
       <div class="community-search-stage">
         <div class="csm-rotator">
           <!-- Dots will be injected here -->
         </div>
-        <button class="csm-center-btn" id="csmCenterBtn">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor">
-            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2" stroke-linecap="round" fill="none"/>
-          </svg>
-        </button>
       </div>
     `;
 
     const rotator = container.querySelector('.csm-rotator');
-    const centerBtn = container.querySelector('#csmCenterBtn');
     const stage = container.querySelector('.community-search-stage');
+
+    // Use existing search button instead of creating new one
+    const centerBtn = document.getElementById('communitySearchBtn');
+    if (!centerBtn) {
+      console.error('❌ Search button not found');
+      return;
+    }
 
     let dots = [];
     let menuActive = false;
