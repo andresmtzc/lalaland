@@ -60,6 +60,17 @@
     const centerBtn = container.querySelector('#csmCenterBtn');
     const stage = container.querySelector('.community-search-stage');
 
+    console.log('🔍 Menu elements:', {
+      rotator: !!rotator,
+      centerBtn: !!centerBtn,
+      stage: !!stage
+    });
+
+    if (!centerBtn) {
+      console.error('❌ Center button not found in container!');
+      return;
+    }
+
     let dots = [];
     let menuActive = false;
 
@@ -263,6 +274,7 @@
 
     // Toggle menu
     function toggleMenu() {
+      console.log('🎯 toggleMenu called, menuActive:', menuActive);
       if (menuActive) {
         closeMenu();
       } else {
@@ -271,7 +283,11 @@
     }
 
     // Center button click handler
-    centerBtn.addEventListener('click', toggleMenu);
+    console.log('📍 Attaching click handler to button');
+    centerBtn.addEventListener('click', (e) => {
+      console.log('🖱️ Button clicked!', e);
+      toggleMenu();
+    });
 
     // Build the menu
     buildDots();
