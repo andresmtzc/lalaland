@@ -263,6 +263,55 @@ const CLIENT_CONFIGS = {
       debugYellow: '#ffff00'           // Pure yellow - debugging
     },
 
+    // ----- SEARCH BUTTON CONFIGURATION -----
+    // Design settings for the community search button
+    // Export from search.html and paste here
+    searchButton: {
+      // Main dots settings
+      mainDots: {
+        count: 8,
+        radius: 80,
+        size: 56,
+        rotation: 0,
+        animationDelay: 150,
+        visibility: {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true,
+          "7": true
+        }
+      },
+      // Center button settings
+      centerButton: {
+        size: 56
+      },
+      // Mini-dots settings
+      miniDots: {
+        enabled: true,
+        count: 4,
+        radius: 40,
+        size: 24,
+        rotation: 0,
+        animationDelay: 100,
+        enabledForDots: {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true,
+          "6": true,
+          "7": true
+        },
+        individualVisibility: {},
+        mirrorRotation: {}
+      }
+    },
+
     // ----- MISCELLANEOUS -----
     misc: {
       // Font family for the site
@@ -463,6 +512,52 @@ function applyColorsToCSS(clientName) {
   console.log('✅ Colors applied to CSS variables');
 }
 
+/**
+ * Get search button configuration
+ * @param {string} clientName - The client identifier
+ * @returns {object} Search button configuration
+ */
+function getSearchButtonConfig(clientName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.searchButton) {
+    console.warn(`⚠️ Search button config not found for: ${clientName}`);
+    return null;
+  }
+  return config.searchButton;
+}
+
+/**
+ * Apply search button settings to CSS variables
+ * Call this function to make search button settings available as CSS variables
+ * @param {string} clientName - The client identifier
+ */
+function applySearchButtonToCSS(clientName) {
+  const config = getSearchButtonConfig(clientName);
+  if (!config) return;
+
+  const root = document.documentElement;
+
+  // Apply main dots settings
+  if (config.mainDots) {
+    root.style.setProperty('--orbit-radius', config.mainDots.radius);
+    root.style.setProperty('--dot', `${config.mainDots.size}px`);
+    root.style.setProperty('--rotate-deg', `${config.mainDots.rotation}deg`);
+  }
+
+  // Apply center button settings
+  if (config.centerButton) {
+    root.style.setProperty('--btn', `${config.centerButton.size}px`);
+  }
+
+  // Apply mini-dots settings
+  if (config.miniDots) {
+    root.style.setProperty('--mini-orbit-radius', config.miniDots.radius);
+    root.style.setProperty('--mini-dot', `${config.miniDots.size}px`);
+  }
+
+  console.log('✅ Search button settings applied to CSS variables');
+}
+
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -475,6 +570,8 @@ if (typeof module !== 'undefined' && module.exports) {
     buildShareText,
     extractLotNumber,
     getColor,
-    applyColorsToCSS
+    applyColorsToCSS,
+    getSearchButtonConfig,
+    applySearchButtonToCSS
   };
 }
