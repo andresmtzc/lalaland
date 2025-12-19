@@ -65,6 +65,20 @@
       return;
     }
 
+    // Debug button visibility
+    const btnStyles = window.getComputedStyle(centerBtn);
+    console.log('🎨 Button styles:', {
+      display: btnStyles.display,
+      visibility: btnStyles.visibility,
+      opacity: btnStyles.opacity,
+      position: btnStyles.position,
+      bottom: btnStyles.bottom,
+      left: btnStyles.left,
+      zIndex: btnStyles.zIndex,
+      width: btnStyles.width,
+      height: btnStyles.height
+    });
+
     let dots = [];
     let menuActive = false;
 
