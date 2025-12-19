@@ -36,10 +36,10 @@
     root.style.setProperty('--csm-mini-dot', menuConfig.miniDots.size + 'px');
     root.style.setProperty('--csm-rotate-deg', menuConfig.rotation + 'deg');
 
-    // Hide old search button
+    // Remove old search button completely
     const oldBtn = document.getElementById('communitySearchBtn');
     if (oldBtn) {
-      oldBtn.style.display = 'none';
+      oldBtn.remove();
     }
 
     // Build menu HTML with new center button
