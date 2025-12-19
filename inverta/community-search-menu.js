@@ -36,12 +36,6 @@
     root.style.setProperty('--csm-mini-dot', menuConfig.miniDots.size + 'px');
     root.style.setProperty('--csm-rotate-deg', menuConfig.rotation + 'deg');
 
-    // Remove old search button completely
-    const oldBtn = document.getElementById('communitySearchBtn');
-    if (oldBtn) {
-      oldBtn.remove();
-    }
-
     // Build menu HTML with new center button
     container.innerHTML = `
       <div class="community-search-stage">
