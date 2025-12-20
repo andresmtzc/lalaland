@@ -169,9 +169,14 @@
     font-weight: 400;
     font-size: 18px;
     max-width: 90%;
+    max-height: 90%;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    text-align: center;
+    line-height: 1.1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
   }
 
   .dot.editing {
@@ -275,9 +280,14 @@
     font-weight: 400;
     font-size: 11px;
     max-width: 90%;
+    max-height: 90%;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    text-align: center;
+    line-height: 1.1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
   }
 
   .mini-dot.editing {
@@ -415,6 +425,101 @@
   .save-load-btn:active {
     transform: scale(0.98);
   }
+
+  /* Modal for text input */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.active {
+    display: flex;
+  }
+
+  .modal-content {
+    background: #1a1a1a;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 24px;
+    width: min(90%, 400px);
+    max-width: 400px;
+  }
+
+  .modal-content h3 {
+    margin: 0 0 16px 0;
+    font-size: 14px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #60a5fa;
+    font-weight: 600;
+  }
+
+  .modal-content textarea {
+    width: 100%;
+    min-height: 80px;
+    background: #0a0a0a;
+    border: 1px solid #242424;
+    border-radius: 8px;
+    padding: 12px;
+    color: #eaeaea;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 16px;
+    resize: vertical;
+    margin-bottom: 16px;
+  }
+
+  .modal-content textarea:focus {
+    outline: none;
+    border-color: #60a5fa;
+  }
+
+  .modal-buttons {
+    display: flex;
+    gap: 12px;
+  }
+
+  .modal-btn {
+    flex: 1;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid #242424;
+    background: #1a1a1a;
+    color: #eaeaea;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .12s ease;
+  }
+
+  .modal-btn:hover {
+    background: #242424;
+    border-color: #60a5fa;
+  }
+
+  .modal-btn.primary {
+    background: #60a5fa;
+    border-color: #60a5fa;
+    color: #0a0a0a;
+  }
+
+  .modal-btn.primary:hover {
+    background: #4a90e2;
+    border-color: #4a90e2;
+  }
+
+  .modal-hint {
+    font-size: 11px;
+    color: #9aa0a6;
+    margin-bottom: 12px;
+  }
 </style>
 </head>
 <body>
@@ -522,8 +627,21 @@
         <h3>Instructions</h3>
         <p><strong>Main Dots:</strong> Click center to toggle animation, use checkboxes to show/hide</p>
         <p><strong>Mini-Dots:</strong> Each main dot can have its own ring of mini-dots (sub-groups)</p>
-        <p><strong>Labels:</strong> Show position numbers (#1, #2, etc.) for easy identification</p>
+        <p><strong>Labels:</strong> Click edit button (✎) to change labels. Use Shift+Enter for multi-line text</p>
         <p><strong>Design:</strong> Adjust all parameters in real-time to prototype your menu</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for text editing -->
+  <div class="modal-overlay" id="textModal">
+    <div class="modal-content">
+      <h3>Edit Label</h3>
+      <div class="modal-hint">Use Shift+Enter for line breaks</div>
+      <textarea id="modalTextarea" rows="4"></textarea>
+      <div class="modal-buttons">
+        <button class="modal-btn" id="modalCancel">Cancel</button>
+        <button class="modal-btn primary" id="modalSave">Save</button>
       </div>
     </div>
   </div>
@@ -587,8 +705,71 @@
   let dotLabels = {}; // Track custom labels for dots
   let miniDotLabels = {}; // Track custom labels for mini-dots
 
+  // Modal elements
+  const textModal = document.getElementById('textModal');
+  const modalTextarea = document.getElementById('modalTextarea');
+  const modalSave = document.getElementById('modalSave');
+  const modalCancel = document.getElementById('modalCancel');
+  let currentEditCallback = null;
+
   function setCSSVar(name, value){
     document.documentElement.style.setProperty(name, value);
+  }
+
+  // Modal functions
+  function showModal(currentText, callback) {
+    modalTextarea.value = currentText;
+    textModal.classList.add('active');
+    modalTextarea.focus();
+    modalTextarea.select();
+    currentEditCallback = callback;
+  }
+
+  function hideModal() {
+    textModal.classList.remove('active');
+    currentEditCallback = null;
+  }
+
+  modalSave.addEventListener('click', () => {
+    if (currentEditCallback) {
+      const newText = modalTextarea.value.trim();
+      if (newText !== '') {
+        currentEditCallback(newText);
+      }
+    }
+    hideModal();
+  });
+
+  modalCancel.addEventListener('click', hideModal);
+
+  textModal.addEventListener('click', (e) => {
+    if (e.target === textModal) {
+      hideModal();
+    }
+  });
+
+  // Allow Escape to close modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && textModal.classList.contains('active')) {
+      hideModal();
+    }
+  });
+
+  // Helper to convert text to HTML with line breaks
+  function textToHTML(text) {
+    return text.split('\n').map(line => {
+      return `<div>${line || '&nbsp;'}</div>`;
+    }).join('');
+  }
+
+  // Helper to convert HTML back to text
+  function htmlToText(element) {
+    // Get the text content and preserve line breaks
+    const divs = element.querySelectorAll('div');
+    if (divs.length === 0) {
+      return element.textContent;
+    }
+    return Array.from(divs).map(div => div.textContent).join('\n');
   }
 
   function updateOutputs(){
@@ -779,9 +960,10 @@
       const el = document.createElement('button');
       el.className = 'dot';
 
-      const dotText = document.createElement('span');
+      const dotText = document.createElement('div');
       dotText.className = 'dot-text';
-      dotText.textContent = dotLabels[i] || (i+1).toString();
+      const labelText = dotLabels[i] || (i+1).toString();
+      dotText.innerHTML = textToHTML(labelText);
       el.appendChild(dotText);
 
       // Apply dynamic font sizing for this dot
@@ -856,9 +1038,10 @@
         miniEl.className = 'mini-dot';
 
         const miniKey = `${dotIndex}-${j}`;
-        const miniText = document.createElement('span');
+        const miniText = document.createElement('div');
         miniText.className = 'mini-dot-text';
-        miniText.textContent = miniDotLabels[miniKey] || (j+1).toString();
+        const miniLabelText = miniDotLabels[miniKey] || (j+1).toString();
+        miniText.innerHTML = textToHTML(miniLabelText);
         miniEl.appendChild(miniText);
 
         // Apply dynamic font sizing for this mini-dot
@@ -1102,30 +1285,43 @@
     applyMiniAnimationDelays();
   };
 
-  // Dynamic font sizing based on text length
+  // Dynamic font sizing based on text length and lines
   function adjustDotFontSize(textElement, circleSize, baseFontSize) {
-    const text = textElement.textContent;
-    const length = text.length;
+    const lines = textElement.querySelectorAll('div');
+    const lineCount = lines.length || 1;
 
-    // Calculate available width (90% of circle diameter)
+    // Calculate available dimensions (90% of circle)
     const maxWidth = circleSize * 0.9;
+    const maxHeight = circleSize * 0.9;
 
-    // Estimate character width (approximate, Barlow Condensed is narrow)
-    // Start with base font size and reduce if needed
+    // Start with base font size
     let fontSize = baseFontSize;
 
-    if (length > 2) {
-      // Approximate width ratio for Barlow Condensed
-      const charWidthRatio = 0.5; // Condensed font is about 50% of font size
-      const estimatedWidth = length * fontSize * charWidthRatio;
+    // Find the longest line
+    let maxLineLength = 0;
+    lines.forEach(line => {
+      const text = line.textContent;
+      maxLineLength = Math.max(maxLineLength, text.length);
+    });
 
-      if (estimatedWidth > maxWidth) {
-        fontSize = maxWidth / (length * charWidthRatio);
-      }
+    if (maxLineLength === 0) maxLineLength = 1;
+
+    // Adjust for width (longest line)
+    const charWidthRatio = 0.5; // Barlow Condensed is narrow
+    const estimatedWidth = maxLineLength * fontSize * charWidthRatio;
+    if (estimatedWidth > maxWidth) {
+      fontSize = maxWidth / (maxLineLength * charWidthRatio);
+    }
+
+    // Adjust for height (number of lines)
+    const lineHeight = 1.1;
+    const estimatedHeight = lineCount * fontSize * lineHeight;
+    if (estimatedHeight > maxHeight) {
+      fontSize = maxHeight / (lineCount * lineHeight);
     }
 
     // Set minimum font size to remain readable
-    const minFontSize = baseFontSize * 0.4;
+    const minFontSize = baseFontSize * 0.3;
     fontSize = Math.max(fontSize, minFontSize);
 
     textElement.style.fontSize = fontSize + 'px';
@@ -1133,24 +1329,22 @@
 
   // Edit label functions
   function editDotLabel(index, textElement) {
-    const currentText = textElement.textContent;
-    const newText = prompt('Enter new label for this dot:', currentText);
-    if (newText !== null && newText.trim() !== '') {
-      dotLabels[index] = newText.trim();
-      textElement.textContent = newText.trim();
+    const currentText = htmlToText(textElement);
+    showModal(currentText, (newText) => {
+      dotLabels[index] = newText;
+      textElement.innerHTML = textToHTML(newText);
       adjustDotFontSize(textElement, dotSize, 18);
-    }
+    });
   }
 
   function editMiniDotLabel(dotIndex, miniIndex, textElement) {
-    const currentText = textElement.textContent;
-    const newText = prompt('Enter new label for this mini-dot:', currentText);
-    if (newText !== null && newText.trim() !== '') {
+    const currentText = htmlToText(textElement);
+    showModal(currentText, (newText) => {
       const miniKey = `${dotIndex}-${miniIndex}`;
-      miniDotLabels[miniKey] = newText.trim();
-      textElement.textContent = newText.trim();
+      miniDotLabels[miniKey] = newText;
+      textElement.innerHTML = textToHTML(newText);
       adjustDotFontSize(textElement, miniSize, 11);
-    }
+    });
   }
 
   // Save configuration
