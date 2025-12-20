@@ -157,6 +157,37 @@
     opacity: 0;
     transform: scale(0.4);
     transition: background .12s ease, transform .12s ease, opacity .2s ease;
+    position: relative;
+  }
+
+  .dot-text {
+    pointer-events: none;
+  }
+
+  .dot.editing {
+    cursor: text;
+  }
+
+  .dot-edit-btn {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #60a5fa;
+    border: 2px solid #fcfaf3;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #fff;
+    z-index: 10;
+  }
+
+  .dot:hover .dot-edit-btn {
+    display: flex;
   }
 
   .dot:hover {
@@ -170,18 +201,7 @@
   }
 
   .dot-label {
-    position: absolute;
-    top: -24px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 11px;
-    font-weight: 700;
-    color: #60a5fa;
-    background: #1a1a1a;
-    padding: 2px 6px;
-    border-radius: 4px;
-    border: 1px solid #2c2c2c;
-    pointer-events: none;
+    display: none; /* Hide external labels */
   }
 
   .dot.visible {
@@ -236,6 +256,37 @@
     transform: scale(0.4);
     pointer-events: auto;
     transition: background .12s ease, transform .12s ease, opacity .2s ease;
+    position: relative;
+  }
+
+  .mini-dot-text {
+    pointer-events: none;
+  }
+
+  .mini-dot.editing {
+    cursor: text;
+  }
+
+  .mini-dot-edit-btn {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fcfaf3;
+    border: 2px solid #60a5fa;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    color: #0a0a0a;
+    z-index: 10;
+  }
+
+  .mini-dot:hover .mini-dot-edit-btn {
+    display: flex;
   }
 
   .mini-dot:hover {
@@ -243,18 +294,7 @@
   }
 
   .mini-dot-label {
-    position: absolute;
-    top: -18px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 9px;
-    font-weight: 700;
-    color: #60a5fa;
-    background: #1a1a1a;
-    padding: 1px 4px;
-    border-radius: 3px;
-    border: 1px solid #2c2c2c;
-    pointer-events: none;
+    display: none; /* Hide external labels */
   }
 
   .mini-dot.visible {
@@ -325,11 +365,50 @@
     font-size: 13px;
     color: #eaeaea;
   }
+
+  .save-load-controls {
+    background: #141414;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 18px;
+    display: flex;
+    gap: 12px;
+  }
+
+  .save-load-btn {
+    flex: 1;
+    padding: 12px 24px;
+    border-radius: 8px;
+    border: 1px solid #242424;
+    background: #1a1a1a;
+    color: #eaeaea;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .12s ease;
+  }
+
+  .save-load-btn:hover {
+    background: #242424;
+    border-color: #60a5fa;
+    color: #60a5fa;
+  }
+
+  .save-load-btn:active {
+    transform: scale(0.98);
+  }
 </style>
 </head>
 <body>
   <div class="wrap">
     <div class="panel">
+
+      <div class="save-load-controls">
+        <button class="save-load-btn" id="saveBtn">💾 Save Configuration</button>
+        <button class="save-load-btn" id="loadBtn">📂 Load Configuration</button>
+        <input type="file" id="fileInput" accept=".json" style="display: none;" />
+      </div>
 
       <h2>🔘 Main Dots Settings</h2>
       <div class="controls">
@@ -488,6 +567,8 @@
   let miniDotsVisibility = {}; // Track which dots have mini-dots enabled
   let individualMiniVisibility = {}; // Track which individual mini-dots are visible for each dot
   let miniDotsMirror = {}; // Track which dots have mirrored mini-dot rotation
+  let dotLabels = {}; // Track custom labels for dots
+  let miniDotLabels = {}; // Track custom labels for mini-dots
 
   function setCSSVar(name, value){
     document.documentElement.style.setProperty(name, value);
@@ -680,7 +761,20 @@
 
       const el = document.createElement('button');
       el.className = 'dot';
-      el.textContent = (i+1).toString();
+
+      const dotText = document.createElement('span');
+      dotText.className = 'dot-text';
+      dotText.textContent = dotLabels[i] || (i+1).toString();
+      el.appendChild(dotText);
+
+      const editBtn = document.createElement('div');
+      editBtn.className = 'dot-edit-btn';
+      editBtn.textContent = '✎';
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        editDotLabel(i, dotText);
+      });
+      el.appendChild(editBtn);
 
       const label = document.createElement('div');
       label.className = 'dot-label';
@@ -690,7 +784,7 @@
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         // Only allow toggling mini-dots if the main dot is visible
-        if(menuActive && miniDotsEnabled && miniDotsVisibility[i] !== false && dotVisibility[i] !== false){
+        if(menuActive && miniDotsEnabled && miniDotsVisibility[i] !== false && dotVisibility[i] !== false && !el.classList.contains('editing')){
           toggleMiniDotsForDot(i);
         }
       });
@@ -740,7 +834,21 @@
 
         const miniEl = document.createElement('button');
         miniEl.className = 'mini-dot';
-        miniEl.textContent = (j+1).toString();
+
+        const miniKey = `${dotIndex}-${j}`;
+        const miniText = document.createElement('span');
+        miniText.className = 'mini-dot-text';
+        miniText.textContent = miniDotLabels[miniKey] || (j+1).toString();
+        miniEl.appendChild(miniText);
+
+        const miniEditBtn = document.createElement('div');
+        miniEditBtn.className = 'mini-dot-edit-btn';
+        miniEditBtn.textContent = '✎';
+        miniEditBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          editMiniDotLabel(dotIndex, j, miniText);
+        });
+        miniEl.appendChild(miniEditBtn);
 
         const miniLabel = document.createElement('div');
         miniLabel.className = 'mini-dot-label';
@@ -954,6 +1062,136 @@
     updateOutputs();
     applyMiniAnimationDelays();
   };
+
+  // Edit label functions
+  function editDotLabel(index, textElement) {
+    const currentText = textElement.textContent;
+    const newText = prompt('Enter new label for this dot:', currentText);
+    if (newText !== null && newText.trim() !== '') {
+      dotLabels[index] = newText.trim();
+      textElement.textContent = newText.trim();
+    }
+  }
+
+  function editMiniDotLabel(dotIndex, miniIndex, textElement) {
+    const currentText = textElement.textContent;
+    const newText = prompt('Enter new label for this mini-dot:', currentText);
+    if (newText !== null && newText.trim() !== '') {
+      const miniKey = `${dotIndex}-${miniIndex}`;
+      miniDotLabels[miniKey] = newText.trim();
+      textElement.textContent = newText.trim();
+    }
+  }
+
+  // Save configuration
+  function saveConfiguration() {
+    const config = {
+      count,
+      radius,
+      dotSize,
+      rotation,
+      center,
+      animDelay,
+      miniDotsEnabled,
+      miniCount,
+      miniRadius,
+      miniSize,
+      miniRotation,
+      miniDelay,
+      dotVisibility,
+      miniDotsVisibility,
+      individualMiniVisibility,
+      miniDotsMirror,
+      dotLabels,
+      miniDotLabels
+    };
+
+    const json = JSON.stringify(config, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'circle-menu-config.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // Load configuration
+  function loadConfiguration(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const config = JSON.parse(e.target.result);
+
+        // Update values
+        count = config.count || count;
+        radius = config.radius || radius;
+        dotSize = config.dotSize || dotSize;
+        rotation = config.rotation || rotation;
+        center = config.center || center;
+        animDelay = config.animDelay || animDelay;
+        miniDotsEnabled = config.miniDotsEnabled !== undefined ? config.miniDotsEnabled : miniDotsEnabled;
+        miniCount = config.miniCount || miniCount;
+        miniRadius = config.miniRadius || miniRadius;
+        miniSize = config.miniSize || miniSize;
+        miniRotation = config.miniRotation || miniRotation;
+        miniDelay = config.miniDelay || miniDelay;
+
+        // Update visibility and labels
+        dotVisibility = config.dotVisibility || {};
+        miniDotsVisibility = config.miniDotsVisibility || {};
+        individualMiniVisibility = config.individualMiniVisibility || {};
+        miniDotsMirror = config.miniDotsMirror || {};
+        dotLabels = config.dotLabels || {};
+        miniDotLabels = config.miniDotLabels || {};
+
+        // Update inputs
+        countIn.value = count;
+        radiusIn.value = radius;
+        sizeIn.value = dotSize;
+        rotationIn.value = rotation;
+        centerIn.value = center;
+        delayIn.value = animDelay;
+        miniDotsEnabledIn.checked = miniDotsEnabled;
+        miniCountIn.value = miniCount;
+        miniRadiusIn.value = miniRadius;
+        miniSizeIn.value = miniSize;
+        miniRotationIn.value = miniRotation;
+        miniDelayIn.value = miniDelay;
+
+        // Update UI
+        updateOutputs();
+        applySizes();
+        setCSSVar('--rotate-deg', rotation+'deg');
+        rebuildDots();
+
+        alert('Configuration loaded successfully!');
+      } catch (error) {
+        alert('Error loading configuration: ' + error.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // Button event listeners
+  const saveBtn = document.getElementById('saveBtn');
+  const loadBtn = document.getElementById('loadBtn');
+  const fileInput = document.getElementById('fileInput');
+
+  saveBtn.addEventListener('click', saveConfiguration);
+  loadBtn.addEventListener('click', () => {
+    fileInput.click();
+  });
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      loadConfiguration(file);
+      // Reset the input so the same file can be loaded again
+      fileInput.value = '';
+    }
+  });
 
   updateOutputs();
   rebuildDots();
