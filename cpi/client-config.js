@@ -23,7 +23,7 @@ const CLIENT_CONFIGS = {
 
     // ----- BRANDING -----
     branding: {
-      mainLogo: 'https://la-la.land/senterra/inverta.svg',
+      mainLogo: 'https://la-la.land/inverta/inverta.svg',
       mainLogoAlt: 'Logo',
       favicon: 'favicon.ico',
     },
@@ -33,9 +33,9 @@ const CLIENT_CONFIGS = {
     communityLogos: {
       'senterra': {
         // For marsella & barcelona
-        url: 'https://la-la.land/senterra/lomasmediterraneo.png', // Original for index.html
-        cardLogoUrl: 'https://la-la.land/senterra/lomasmediterraneo_black.png', // Black version for cards
-        communities: ['senttera']
+        url: 'https://la-la.land/inverta/lomasmediterraneo.png', // Original for index.html
+        cardLogoUrl: 'https://la-la.land/inverta/lomasmediterraneo_black.png', // Black version for cards
+        communities: ['senterra']
       }
     },
 
@@ -54,7 +54,7 @@ const CLIENT_CONFIGS = {
     // ----- AERIAL/SATELLITE IMAGES -----
     aerialImages: [
       {
-        url: 'https://la-la.land/cpi/cpiearth.png',
+        url: 'https://la-la.land/inverta/invertaearth.png',
         layerId: 'drone-satellite-layer-1',
         sourceId: 'drone-satellite-1',
         message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
