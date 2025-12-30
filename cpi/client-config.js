@@ -23,7 +23,7 @@ const CLIENT_CONFIGS = {
 
     // ----- BRANDING -----
     branding: {
-      mainLogo: 'https://la-la.land/inverta/inverta.svg',
+      mainLogo: 'https://la-la.land/cpi/cpi.png',
       mainLogoAlt: 'Logo',
       favicon: 'favicon.ico',
     },
