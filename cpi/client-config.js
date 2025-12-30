@@ -78,9 +78,9 @@ const CLIENT_CONFIGS = {
         fracc: 'senterra',
         center: [-99.948236, 25.147828],
         zoom: 16.4,
-        position: 2, // Position in community selector
+        position: 0, // Position in community selector
         // Alternative reference for search menu:
-        searchMenuId: 'positionFour'
+        searchMenuId: 'positionOne'
       }
 
 
