@@ -5452,7 +5452,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     <div style="display: flex; align-items: center; justify-content: center; width: 100%; position: relative;">
       <!-- Lot name on left (smaller, two rows) -->
       <div class="lot-left" style="position: absolute; left: 0; align-items: flex-end !important; text-align: right !important; transform: scale(0.75); transform-origin: left center;">
-        <div class="lote-label">MZ-L</div>
+        <div class="lote-label">LOTE</div>
         <div class="lote-number" style="text-align: right !important; margin-left: 0 !important;">${lot.number}</div>
       </div>
 
@@ -5810,7 +5810,16 @@ if (previousMapView && map) {
 });
 
 
+function cleanNumber(value) {
+  if (value === null || value === undefined) return 0;
 
+  return parseFloat(
+    value
+      .toString()
+      .replace(/,/g, '')        // remove thousand separators
+      .replace(/[^0-9.]/g, '') // remove $, spaces, etc
+  ) || 0;
+}
 
 function render() {
   modalInfo.innerHTML = '';
@@ -5829,17 +5838,21 @@ const isSold      = state === 'sold';
 // Round to nearest thousand first, then decide unit
 let calculatedPrice = lot.price;
 let priceUnit = 'MIL';
-if (!isSold && lot.priceM2 && lot.size) {
-  const totalPrice = parseFloat(lot.priceM2) * parseFloat(lot.size);
+
+const priceM2 = cleanNumber(lot.priceM2);
+const size    = cleanNumber(lot.size);
+
+if (!isSold && priceM2 > 0 && size > 0) {
+  const totalPrice = priceM2 * size;
+
+  // round to nearest thousand ONCE
   const roundedPrice = Math.round(totalPrice / 1000) * 1000;
 
-  if (roundedPrice >= 1000000) {
-    // 1 million or more: show as MDP with 2 decimals
-    calculatedPrice = (roundedPrice / 1000000).toFixed(2);
+  if (roundedPrice >= 1_000_000) {
+    calculatedPrice = (roundedPrice / 1_000_000).toFixed(2);
     priceUnit = 'MDP';
   } else {
-    // Under 1 million: show as MIL (in thousands)
-    calculatedPrice = (roundedPrice / 1000).toString();
+    calculatedPrice = Math.ceil(roundedPrice / 1000).toString();
     priceUnit = 'MIL';
   }
 }
@@ -5854,7 +5867,7 @@ const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toStrin
 
 row.innerHTML = `
   <div class="lot-left">
-    <div class="lote-label">MZ-L</div>
+    <div class="lote-label">LOTE</div>
     <div class="lote-number">${lot.number}</div>
   </div>
 

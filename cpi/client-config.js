@@ -96,9 +96,9 @@ const CLIENT_CONFIGS = {
     // ----- LOT NAMING CONVENTIONS -----
     // Prefixes used in lot IDs
     lotPrefixes: {
-      standard: 'lotcpi',  // e.g., lotinverta10-1
-      premium: 'lotcpip',  // e.g., lotinvertap10-1
-      base: 'cpi'          // Used in some contexts
+      standard: 'lotcpi1-',  // e.g., lotinverta10-1
+      premium: 'lotcpip1-',  // e.g., lotinvertap10-1
+      base: 'cpi1-'          // Used in some contexts
     },
 
     // ----- CONTACT & CTA -----
