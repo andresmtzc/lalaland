@@ -648,6 +648,7 @@
       <div class="save-load-controls">
         <button class="save-load-btn" id="saveBtn">💾 Save Configuration</button>
         <button class="save-load-btn" id="loadBtn">📂 Load Configuration</button>
+        <button class="save-load-btn" id="exportCoordsBtn">📋 Export Coords</button>
         <input type="file" id="fileInput" accept=".json" style="display: none;" />
       </div>
 
@@ -1617,15 +1618,70 @@
     reader.readAsText(file);
   }
 
+  // Export coords for client-config.js
+  function exportCoords() {
+    let output = '// ===== COORDS FOR client-config.js =====\n\n';
+
+    // Group coords (main dots)
+    output += '// ----- GROUP OVERVIEW COORDS -----\n';
+    output += '// Add to communityLogos or create new groups section:\n\n';
+
+    for (let i = 0; i < count; i++) {
+      if (dotVisibility[i] === false) continue;
+      const nav = navigation[String(i)];
+      if (!nav) continue;
+
+      const label = (dotLabels[i] || `dot${i}`).replace(/\n/g, '').toLowerCase().replace(/\s+/g, '');
+      output += `'${label}': {\n`;
+      output += `  center: [${nav.center[0]}, ${nav.center[1]}],\n`;
+      output += `  zoom: ${nav.zoom}\n`;
+      output += `},\n`;
+    }
+
+    output += '\n// ----- COMMUNITY COORDS -----\n';
+    output += '// Update in communities section:\n\n';
+
+    // Mini-dot coords (communities)
+    const miniKeyToName = {
+      '5-0': 'sierrabaja',
+      '5-1': 'sierraalta',
+      '7-0': 'marsella',
+      '7-1': 'barcelona'
+    };
+
+    for (const [miniKey, commName] of Object.entries(miniKeyToName)) {
+      const nav = navigation[miniKey];
+      if (!nav) continue;
+
+      output += `${commName}: {\n`;
+      output += `  // ... other properties ...\n`;
+      output += `  center: [${nav.center[0]}, ${nav.center[1]}],\n`;
+      output += `  zoom: ${nav.zoom},\n`;
+      output += `},\n\n`;
+    }
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(output).then(() => {
+      alert('Coords copied to clipboard!\n\nPaste into client-config.js');
+    }).catch(() => {
+      // Fallback: show in prompt
+      prompt('Copy this to client-config.js:', output);
+    });
+
+    console.log(output);
+  }
+
   // Button event listeners
   const saveBtn = document.getElementById('saveBtn');
   const loadBtn = document.getElementById('loadBtn');
+  const exportCoordsBtn = document.getElementById('exportCoordsBtn');
   const fileInput = document.getElementById('fileInput');
 
   saveBtn.addEventListener('click', saveConfiguration);
   loadBtn.addEventListener('click', () => {
     fileInput.click();
   });
+  exportCoordsBtn.addEventListener('click', exportCoords);
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
