@@ -369,15 +369,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 </button> -->
 
 
-<!-- Search Button Container -->
-<div class="search-button-container">
-  <button id="communitySearchBtn" class="map-reset-button" title="Search Communities">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" stroke="var(--color-textMedium)">
-      <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2" stroke-linecap="round" fill="none"/>
-    </svg>
-  </button>
-
-<div id="communityCircleMenu" class="community-circle-menu"></div> 
+<!-- Old Search Button removed - replaced by new search button component at bottom of file --> 
 
   <!-- GPS button - bottom right above lalaland logo -->
 <button id="gpsButton" class="gps-button" title="Enable GPS">
@@ -1763,7 +1755,7 @@ function open360ViewerInModal() {
   isDetailOpen = true;
   
   // Hide floating buttons
-  document.getElementById('communitySearchBtn')?.classList.add('hide');
+  document.getElementById('searchBtnStage')?.classList.add('hide');
   document.getElementById('lalalandInfoBtn')?.classList.add('hide');
 
   console.log('360 Viewer opened in modal');
@@ -1840,7 +1832,7 @@ function close360ViewerInModal(targetBaseIndex = null) {
   try { clampCooldown = false; } catch {}
 
   // Show floating buttons
-  document.getElementById('communitySearchBtn')?.classList.remove('hide');
+  document.getElementById('searchBtnStage')?.classList.remove('hide');
   document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
 
   // --- End copied logic ---
@@ -3275,7 +3267,7 @@ fetch(mapboxTokenUrl)
         // ===== COMMUNITY SEARCH CIRCULAR MENU =====
 // ===== COMMUNITY SEARCH CIRCULAR MENU =====
 function setupCommunitySearchMenu() {
-  const searchBtn = document.getElementById('communitySearchBtn');
+  const searchBtn = document.getElementById('searchBtnStage');
   const circleMenu = document.getElementById('communityCircleMenu');
   
   // Build communities object from CONFIG
@@ -6708,7 +6700,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     return; // Exit early - no need to reset the modal
   }
 
-  document.getElementById('communitySearchBtn')?.classList.add('hide');
+  document.getElementById('searchBtnStage')?.classList.add('hide');
   document.getElementById('lalalandInfoBtn')?.classList.add('hide');
 
   // Now show the modal
@@ -6893,7 +6885,7 @@ function closeModal() {
   if (window.skipNextRealtimeRender) window.skipNextRealtimeRender.clear();
 
   document.getElementById('authControls').classList.remove('hide-in-detail');
-  document.getElementById('communitySearchBtn')?.classList.remove('hide');
+  document.getElementById('searchBtnStage')?.classList.remove('hide');
   document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
 
   if (window.resetUnitButtons) window.resetUnitButtons();
@@ -7269,7 +7261,7 @@ const observer = new MutationObserver(() => {
   const addPinBtn = document.getElementById('addPinBtn');
 
   const hideAll = () => {
-communitySearchBtn?.classList.add('hide');
+searchBtnStage?.classList.add('hide');
     lalalandBtn?.classList.add('hide');
 
 
@@ -7280,7 +7272,7 @@ communitySearchBtn?.classList.add('hide');
   };
 
   const showAll = () => {
-    communitySearchBtn?.classList.remove('hide');
+    searchBtnStage?.classList.remove('hide');
     lalalandBtn?.classList.remove('hide');
 
   };
@@ -9173,7 +9165,7 @@ Zoom: ${zoom}
 <script>
 (function(){
 function setupCommunitySearchMenu() {
-    const searchBtn  = document.getElementById('communitySearchBtn');
+    const searchBtn  = document.getElementById('searchBtnStage');
     const circleMenu = document.getElementById('communityCircleMenu');
     if (!searchBtn || !circleMenu) return;
 
@@ -9652,7 +9644,7 @@ setTimeout(() => {
   modal.style.display = 'none';
 
   // 🟢 SHOW FLOATING BUTTONS AGAIN
-  document.getElementById('communitySearchBtn')?.classList.remove('hide');
+  document.getElementById('searchBtnStage')?.classList.remove('hide');
   document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
 
   // 🔥 Clear hover states AFTER modal is fully closed
@@ -10327,7 +10319,7 @@ function updateModalList() {
         adjustMapForModal();
         
         // Hide floating buttons
-        document.getElementById('communitySearchBtn')?.classList.add('hide');
+        document.getElementById('searchBtnStage')?.classList.add('hide');
         document.getElementById('lalalandInfoBtn')?.classList.add('hide');
     }
     
@@ -10862,8 +10854,8 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     position: fixed;
     left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    bottom: 24px;
+    transform: translateX(-50%);
     width: 300px;
     height: 300px;
     z-index: 9999;
@@ -11044,6 +11036,11 @@ window.showPaymentViewInModal = showPaymentViewInModal;
   .search-btn-center:active {
     transform: translate(-50%, -50%) scale(0.95);
   }
+
+  /* Hide class for show/hide toggle */
+  .search-btn-stage.hide {
+    display: none;
+  }
 </style>
 
 <div class="search-btn-stage" id="searchBtnStage">
@@ -11182,11 +11179,13 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       miniEl.addEventListener('click', (e) => {
         e.stopPropagation();
         if (dot.miniDotsActive) {
+          // Navigate to this mini-dot's location
+          navigateTo(miniKey);
           toggleMenu();
         }
       });
 
-      dot.miniDots.push({ el: miniEl, container: miniContainer, index: j });
+      dot.miniDots.push({ el: miniEl, container: miniContainer, index: j, key: miniKey });
     }
 
     container.appendChild(ring);
@@ -11214,6 +11213,25 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       dot.miniDots.forEach(({ el }) => {
         el.classList.remove('visible');
       });
+    }
+  }
+
+  function navigateTo(key) {
+    if (!config.navigation || !config.navigation[key]) {
+      console.log('No navigation data for:', key);
+      return;
+    }
+    const nav = config.navigation[key];
+    if (typeof map !== 'undefined' && map.flyTo) {
+      map.flyTo({
+        center: nav.center,
+        zoom: nav.zoom,
+        speed: 1.2,
+        curve: 1.5
+      });
+      console.log('Navigating to:', key, nav);
+    } else {
+      console.log('Map not available, would navigate to:', key, nav);
     }
   }
 
