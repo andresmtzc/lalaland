@@ -5524,62 +5524,62 @@ const totalPrice = size * priceM2;
 
   detailContainer.appendChild(detailRow);
 
-// Initialize PRESALE calculator
-const totalPriceNum = totalPrice;
+  // Initialize calculator
+  const totalPriceNum = totalPrice;
+  const INTEREST_RATES = {
+    24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17
+  };
 
-function updateCalculations() {
-  const downPaymentPercent = parseFloat(
-    document.getElementById('downPaymentCalc').value
-  ) / 100;
-
-  let downPaymentAmount = 0;
-  let monthlyPayment = 0;
-  let escriturasAmount = 0;
-  let label = '';
-
-  if (downPaymentPercent === 0.25) {
-    downPaymentAmount = totalPriceNum * 0.25;
-    monthlyPayment = (totalPriceNum * 0.45) / 24;
-    escriturasAmount = totalPriceNum * 0.30;
-    label = '45% en 24 mensualidades · 0% interés';
+  function calculateMonthlyPayment(principal, annualRate, months) {
+    const monthlyRate = annualRate / 12;
+    if (monthlyRate === 0) return principal / months;
+    const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
+    const denominator = Math.pow(1 + monthlyRate, months) - 1;
+    return numerator / denominator;
   }
 
-  if (downPaymentPercent === 0.50) {
-    downPaymentAmount = totalPriceNum * 0.50;
-    monthlyPayment = 0;
-    escriturasAmount = totalPriceNum * 0.50;
-    label = '50% contra escrituras';
+  function updateCalculations() {
+    const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
+    const months = parseInt(document.getElementById('installmentsCalc').value);
+    const interestRate = INTEREST_RATES[months] || 0.17;
+
+    const downPaymentAmount = totalPriceNum * downPaymentPercent;
+    const amountFinanced = totalPriceNum - downPaymentAmount;
+    const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
+
+    const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
+
+    document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
+
+    // Update financing header
+    document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
+    document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  if (downPaymentPercent === 0.85) {
-    downPaymentAmount = totalPriceNum * 0.85;
-    monthlyPayment = 0;
-    escriturasAmount = totalPriceNum * 0.15;
-    label = '15% contra escrituras';
-  }
+  // Add event listeners
+  setTimeout(() => {
+    // Check URL parameters and set values if present
+    // Support both new short params (a, m, i) and old long params for backwards compatibility
+    const urlParams = new URLSearchParams(window.location.search);
+    const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
+    const monthsParam = urlParams.get('m') || urlParams.get('months');
 
-  document.getElementById('downPaymentAmount').textContent =
-    '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2 });
+    const downPaymentSelect = document.getElementById('downPaymentCalc');
+    const installmentsSelect = document.getElementById('installmentsCalc');
 
-  document.getElementById('monthlyPayment').textContent =
-    '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2 });
+    if (downpaymentParam && downPaymentSelect) {
+      downPaymentSelect.value = downpaymentParam;
+    }
+    if (monthsParam && installmentsSelect) {
+      installmentsSelect.value = monthsParam;
+    }
 
-  document.getElementById('financingRate').textContent = '0';
-
-  document.getElementById('financingTotalPrice').textContent =
-    '$' + escriturasAmount.toLocaleString('en-US', { minimumFractionDigits: 2 });
-
-  document.getElementById('financingRate').parentElement.textContent = label;
-}
-
-setTimeout(() => {
-  document
-    .getElementById('downPaymentCalc')
-    ?.addEventListener('change', updateCalculations);
-
-  updateCalculations();
-}, 100);
-
+    downPaymentSelect?.addEventListener('change', updateCalculations);
+    installmentsSelect?.addEventListener('change', updateCalculations);
+    updateCalculations(); // Initial calculation with URL params
+  }, 100);
 
   // CTA Buttons Section
   const ctaSection = document.createElement('div');
