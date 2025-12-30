@@ -3251,22 +3251,23 @@ fetch(mapboxTokenUrl)
       console.log('✅ Map loaded successfully!');
 
       // ===== FONT PRELOAD =====
-      // Force Mapbox to load Barlow Condensed font immediately (even at low zoom)
-      // This prevents fallback to Arial when labels become visible at higher zoom
+      // Force Mapbox to load Barlow Condensed font glyphs immediately (even at low zoom)
+      // Include all characters used in lot/manzana labels (numbers, letters, dash)
+      const preloadCenter = map.getCenter();
       map.addSource('font-preload', {
         type: 'geojson',
-        data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-96.063523, 19.073323] }, properties: { text: 'font' } }] }
+        data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [preloadCenter.lng, preloadCenter.lat] }, properties: {} }] }
       });
       map.addLayer({
         id: 'font-preload',
         type: 'symbol',
         source: 'font-preload',
         layout: {
-          'text-field': ['get', 'text'],
+          'text-field': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-',
           'text-font': ['Barlow Condensed Regular', 'Arial Unicode MS Regular'],
-          'text-size': 100
+          'text-size': 1
         },
-        paint: { 'text-opacity': 1 }
+        paint: { 'text-opacity': 0.01 }
       });
 
       // Load road labels (or create empty 'road' layer if labels.json doesn't exist)
@@ -4477,11 +4478,11 @@ function animateLots(map, cb) {
   });
 
   // Add lot number labels at centroid (calculated once, no shifting on zoom)
+  // NOTE: No minzoom - using text-opacity to control visibility prevents font loading issues
   map.addLayer({
     id: "lot-labels",
     type: "symbol",
     source: "lot-labels-source", // Use separate Point source instead of polygon source
-    minzoom: 17, // Only show labels when zoomed in enough
     layout: {
       "text-field": ["get", "lotLabel"],
       "text-font": ["Barlow Condensed Regular", "Arial Unicode MS Regular"],
@@ -4505,12 +4506,13 @@ function animateLots(map, cb) {
     },
     paint: {
       "text-color": CONFIG.colors.white,
-      // Fade in based on zoom level for smooth transitions
+      // Control visibility via opacity (not minzoom) to ensure font loads properly
       "text-opacity": [
         "interpolate",
         ["linear"],
         ["zoom"],
-        17.0, 0,   // Fully transparent at zoom 17 (matches minzoom)
+        16.9, 0,   // Invisible below zoom 17
+        17.0, 0,   // Still invisible at 17
         17.5, 1    // Fully visible at zoom 17.5+
       ]
     }
@@ -4692,7 +4694,7 @@ async function loadManzanaLabels(map) {
       id: 'manzana-labels',
       type: 'symbol',
       source: 'manzana-labels-source',
-      minzoom: 15, // Show earlier than lot labels since manzanas are larger areas
+      // NOTE: No minzoom - using text-opacity to control visibility prevents font loading issues
       layout: {
         'text-field': ['get', 'manzanaLabel'],
         'text-font': ['Barlow Condensed Regular', 'Arial Unicode MS Regular'],
@@ -4717,11 +4719,13 @@ async function loadManzanaLabels(map) {
         'text-color': CONFIG.colors.white,
         'text-halo-color': CONFIG.colors.textHalo,
         'text-halo-width': 1,
+        // Control visibility via opacity (not minzoom) to ensure font loads properly
         'text-opacity': [
           'interpolate',
           ['linear'],
           ['zoom'],
-          15.0, 0,   // Fully transparent at zoom 15
+          14.9, 0,   // Invisible below zoom 15
+          15.0, 0,   // Still invisible at 15
           15.5, 1    // Fully visible at zoom 15.5+
         ]
       }
