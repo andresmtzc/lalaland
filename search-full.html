@@ -1,0 +1,1813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Community Search Button Designer (Full)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400&display=swap" rel="stylesheet">
+<!-- Mapbox -->
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
+<style>
+  :root{
+    --stage: 620px;      /* canvas size */
+    --btn: 56px;         /* center button size */
+    --orbit-radius: 80;  /* starting radius (px) */
+    --dot: 56px;         /* dot size */
+    --mini-orbit-radius: 40; /* mini-dots orbit radius */
+    --mini-dot: 24px;    /* mini-dot size */
+    --rotate-deg: 0deg;  /* rotation applied to all dots */
+    --dot-font-size: 18px;  /* main dot font size */
+    --mini-dot-font-size: 11px;  /* mini-dot font size */
+    --center-color: #ffffff;  /* center button color */
+    --dot-color: #fcfaf3;  /* main dot color */
+    --mini-dot-color: #60a5fa;  /* mini-dot color */
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: #0a0a0a;
+    color: #eaeaea;
+    font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+
+  .wrap {
+    min-height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+
+  .panel { width: min(100%, 1200px); }
+
+  h2 {
+    font-size: 14px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #60a5fa;
+    margin: 24px 0 12px 0;
+    font-weight: 600;
+  }
+
+  .controls {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    margin-bottom: 18px;
+  }
+  .control {
+    background: #141414;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 12px 14px;
+  }
+  .control label {
+    display: block;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #9aa0a6;
+    margin-bottom: 8px;
+  }
+  .control input[type="range"]{ width:100%; }
+  .control input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+
+  /* Dot visibility checkboxes */
+  .dot-toggles {
+    background: #141414;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 18px;
+  }
+  .dot-toggles h3 {
+    margin: 0 0 12px 0;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #9aa0a6;
+  }
+  .toggle-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 8px;
+  }
+  .toggle-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .toggle-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+  .toggle-item label {
+    font-size: 13px;
+    color: #eaeaea;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .stage {
+    width: var(--stage);
+    height: var(--stage);
+    position: relative;
+    margin-inline: auto;
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  .rotator {
+    position: absolute;
+    inset: 0;
+    transform-origin: 50% 50%;
+    transform: rotate(var(--rotate-deg));
+    transition: transform .12s ease;
+  }
+
+  .orbit-guide {
+    position: absolute;
+    width: calc(var(--orbit-radius) * 2px);
+    height: calc(var(--orbit-radius) * 2px);
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 1px dashed #2c2c2c;
+  }
+
+  .dot-container {
+    position: absolute;
+    transform: translate(-50%, -50%);
+  }
+
+  .dot {
+    width: var(--dot);
+    height: var(--dot);
+    border-radius: 50%;
+    background: var(--dot-color);
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a1a;
+    opacity: 0;
+    transform: scale(0.4);
+    transition: background .12s ease, transform .2s cubic-bezier(0.34, 1.56, 0.64, 1) !important, opacity .2s ease;
+    position: relative;
+  }
+
+  .dot-text {
+    pointer-events: none;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 400;
+    font-size: var(--dot-font-size);
+    max-width: 90%;
+    max-height: 90%;
+    overflow: hidden;
+    text-align: center;
+    line-height: 1.1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+  }
+
+  .dot.editing {
+    cursor: text;
+  }
+
+  .dot-edit-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #60a5fa;
+    border: 2px solid #fcfaf3;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #fff;
+    z-index: 10;
+  }
+
+  .dot:hover .dot-edit-btn,
+  .dot-edit-btn:hover {
+    display: flex;
+  }
+
+  .dot:hover {
+    transform: scale(1.05) !important;
+    transition: transform .2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+
+  .dot.hidden {
+    opacity: 0 !important;
+    transform: scale(0.4) !important;
+    pointer-events: none;
+  }
+
+  .dot-label {
+    display: none; /* Hide external labels */
+  }
+
+  .dot.visible {
+    /* Don't set static opacity/transform - let animation handle it */
+  }
+
+  /* Animation when menu is active */
+  .menu-active .dot.visible {
+    animation: circle-pop-in 0.35s cubic-bezier(0.25, 1.25, 0.5, 1) forwards;
+  }
+
+  /* Mini-dots */
+  .mini-dots-ring {
+    position: absolute;
+    width: calc(var(--mini-orbit-radius) * 2px);
+    height: calc(var(--mini-orbit-radius) * 2px);
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  .mini-orbit-guide {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px dashed #3c3c3c;
+  }
+
+  .mini-dot-container {
+    position: absolute;
+    transform: translate(-50%, -50%);
+  }
+
+  .mini-dot {
+    width: var(--mini-dot);
+    height: var(--mini-dot);
+    border-radius: 50%;
+    background: var(--mini-dot-color);
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #0a0a0a;
+    opacity: 0;
+    transform: scale(0.4);
+    pointer-events: auto;
+    transition: background .12s ease, transform .2s cubic-bezier(0.34, 1.56, 0.64, 1) !important, opacity .2s ease;
+    position: relative;
+  }
+
+  .mini-dot-text {
+    pointer-events: none;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 400;
+    font-size: var(--mini-dot-font-size);
+    max-width: 90%;
+    max-height: 90%;
+    overflow: hidden;
+    text-align: center;
+    line-height: 1.1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+  }
+
+  .mini-dot.editing {
+    cursor: text;
+  }
+
+  .mini-dot-edit-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fcfaf3;
+    border: 2px solid #60a5fa;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    color: #0a0a0a;
+    z-index: 10;
+  }
+
+  .mini-dot:hover .mini-dot-edit-btn,
+  .mini-dot-edit-btn:hover {
+    display: flex;
+  }
+
+  .mini-dot:hover {
+    transform: scale(1.05) !important;
+    transition: transform .2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  }
+
+  .mini-dot-label {
+    display: none; /* Hide external labels */
+  }
+
+  .mini-dot.visible {
+    /* Don't set static opacity/transform - let animation handle it */
+  }
+
+  .menu-active .mini-dot.visible {
+    animation: circle-pop-in 0.35s cubic-bezier(0.25, 1.25, 0.5, 1) forwards;
+  }
+
+  @keyframes circle-pop-in {
+    0% {
+      transform: scale(0.4);
+      opacity: 0;
+    }
+    60% {
+      transform: scale(1.08);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  .center-btn {
+    position: absolute;
+    width: var(--btn);
+    height: var(--btn);
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--center-color);
+    color: #0a0a0a;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    transition: transform .2s cubic-bezier(0.34, 1.56, 0.64, 1), background .12s ease;
+  }
+
+  .center-btn:hover {
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+
+  .center-btn:active {
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+
+  .info-box {
+    background: #141414;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 16px;
+    margin-top: 18px;
+  }
+  .info-box h3 {
+    margin: 0 0 8px 0;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #9aa0a6;
+  }
+  .info-box p {
+    margin: 4px 0;
+    font-size: 13px;
+    color: #eaeaea;
+  }
+
+  .save-load-controls {
+    background: #141414;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 18px;
+    display: flex;
+    gap: 12px;
+  }
+
+  .save-load-btn {
+    flex: 1;
+    padding: 12px 24px;
+    border-radius: 8px;
+    border: 1px solid #242424;
+    background: #1a1a1a;
+    color: #eaeaea;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .12s ease;
+  }
+
+  .save-load-btn:hover {
+    background: #242424;
+    border-color: #60a5fa;
+    color: #60a5fa;
+  }
+
+  .save-load-btn:active {
+    transform: scale(0.98);
+  }
+
+  /* Modal for text input */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.active {
+    display: flex;
+  }
+
+  .modal-content {
+    background: #1a1a1a;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 24px;
+    width: min(90%, 400px);
+    max-width: 400px;
+  }
+
+  .modal-content h3 {
+    margin: 0 0 16px 0;
+    font-size: 14px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #60a5fa;
+    font-weight: 600;
+  }
+
+  .modal-content textarea {
+    width: 100%;
+    min-height: 80px;
+    background: #0a0a0a;
+    border: 1px solid #242424;
+    border-radius: 8px;
+    padding: 12px;
+    color: #eaeaea;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 16px;
+    resize: vertical;
+    margin-bottom: 16px;
+  }
+
+  .modal-content textarea:focus {
+    outline: none;
+    border-color: #60a5fa;
+  }
+
+  .modal-buttons {
+    display: flex;
+    gap: 12px;
+  }
+
+  .modal-btn {
+    flex: 1;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid #242424;
+    background: #1a1a1a;
+    color: #eaeaea;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .12s ease;
+  }
+
+  .modal-btn:hover {
+    background: #242424;
+    border-color: #60a5fa;
+  }
+
+  .modal-btn.primary {
+    background: #60a5fa;
+    border-color: #60a5fa;
+    color: #0a0a0a;
+  }
+
+  .modal-btn.primary:hover {
+    background: #4a90e2;
+    border-color: #4a90e2;
+  }
+
+  .modal-hint {
+    font-size: 11px;
+    color: #9aa0a6;
+    margin-bottom: 12px;
+  }
+
+  /* Map Section */
+  .map-section {
+    background: #141414;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 18px;
+  }
+  .map-section h3 {
+    margin: 0 0 12px 0;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #60a5fa;
+  }
+  #navMap {
+    width: 100%;
+    height: 300px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+  .map-info {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: #9aa0a6;
+    margin-bottom: 12px;
+  }
+  .map-info span {
+    color: #eaeaea;
+    font-family: monospace;
+  }
+  .pick-mode-indicator {
+    display: none;
+    background: #60a5fa;
+    color: #0a0a0a;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .pick-mode-indicator.active {
+    display: block;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  /* Navigation controls per dot */
+  .nav-controls {
+    background: #141414;
+    border: 1px solid #242424;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 18px;
+  }
+  .nav-controls h3 {
+    margin: 0 0 12px 0;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #9aa0a6;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: #1a1a1a;
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .nav-item-label {
+    min-width: 100px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #eaeaea;
+  }
+  .nav-item-coords {
+    flex: 1;
+    font-size: 11px;
+    font-family: monospace;
+    color: #9aa0a6;
+  }
+  .nav-item-zoom {
+    font-size: 11px;
+    font-family: monospace;
+    color: #9aa0a6;
+    min-width: 60px;
+  }
+  .nav-pick-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #60a5fa;
+    background: transparent;
+    color: #60a5fa;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .12s ease;
+  }
+  .nav-pick-btn:hover {
+    background: #60a5fa;
+    color: #0a0a0a;
+  }
+  .nav-pick-btn.active {
+    background: #60a5fa;
+    color: #0a0a0a;
+  }
+  .nav-fly-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #3c3c3c;
+    background: transparent;
+    color: #9aa0a6;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all .12s ease;
+  }
+  .nav-fly-btn:hover {
+    border-color: #60a5fa;
+    color: #60a5fa;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+
+      <div class="save-load-controls">
+        <button class="save-load-btn" id="saveBtn">💾 Save Configuration</button>
+        <button class="save-load-btn" id="loadBtn">📂 Load Configuration</button>
+        <input type="file" id="fileInput" accept=".json" style="display: none;" />
+      </div>
+
+      <h2>🔘 Main Dots Settings</h2>
+      <div class="controls">
+        <div class="control">
+          <label for="count">Count: <span id="countOut">8</span></label>
+          <input id="count" type="range" min="0" max="12" value="8" />
+        </div>
+        <div class="control">
+          <label for="radius">Radius: <span id="radiusOut">80</span> px</label>
+          <input id="radius" type="range" min="40" max="240" value="80" />
+        </div>
+        <div class="control">
+          <label for="size">Dot size: <span id="sizeOut">56</span> px</label>
+          <input id="size" type="range" min="20" max="120" value="56" />
+        </div>
+        <div class="control">
+          <label for="fontSize">Font size: <span id="fontSizeOut">18</span> px</label>
+          <input id="fontSize" type="range" min="6" max="48" value="18" />
+        </div>
+        <div class="control">
+          <label for="dotColor">Dot color</label>
+          <input id="dotColor" type="color" value="#fcfaf3" />
+        </div>
+        <div class="control">
+          <label for="rotation">Rotation: <span id="rotationOut">0</span>°</label>
+          <input id="rotation" type="range" min="0" max="360" value="0" />
+        </div>
+        <div class="control">
+          <label for="center">Center size: <span id="centerOut">56</span> px</label>
+          <input id="center" type="range" min="40" max="120" value="56" />
+        </div>
+        <div class="control">
+          <label for="centerColor">Center color</label>
+          <input id="centerColor" type="color" value="#ffffff" />
+        </div>
+        <div class="control">
+          <label for="delay">Animation delay: <span id="delayOut">150</span> ms</label>
+          <input id="delay" type="range" min="50" max="500" value="150" step="50" />
+        </div>
+      </div>
+
+      <div class="dot-toggles">
+        <h3>Show/Hide Main Dots</h3>
+        <div class="toggle-grid" id="toggleGrid">
+          <!-- Checkboxes generated here -->
+        </div>
+      </div>
+
+      <h2>⚪ Mini-Dots Settings (Sub-Groups)</h2>
+      <div class="controls">
+        <div class="control">
+          <label>
+            <input type="checkbox" id="miniDotsEnabled" checked />
+            Enable Mini-Dots
+          </label>
+        </div>
+        <div class="control">
+          <label for="miniCount">Mini count per dot: <span id="miniCountOut">4</span></label>
+          <input id="miniCount" type="range" min="0" max="8" value="4" />
+        </div>
+        <div class="control">
+          <label for="miniRadius">Mini radius: <span id="miniRadiusOut">40</span> px</label>
+          <input id="miniRadius" type="range" min="20" max="80" value="40" />
+        </div>
+        <div class="control">
+          <label for="miniSize">Mini size: <span id="miniSizeOut">24</span> px</label>
+          <input id="miniSize" type="range" min="12" max="120" value="24" />
+        </div>
+        <div class="control">
+          <label for="miniFontSize">Mini font size: <span id="miniFontSizeOut">11</span> px</label>
+          <input id="miniFontSize" type="range" min="4" max="32" value="11" />
+        </div>
+        <div class="control">
+          <label for="miniDotColor">Mini dot color</label>
+          <input id="miniDotColor" type="color" value="#60a5fa" />
+        </div>
+        <div class="control">
+          <label for="miniRotation">Mini rotation: <span id="miniRotationOut">0</span>°</label>
+          <input id="miniRotation" type="range" min="0" max="360" value="0" />
+        </div>
+        <div class="control">
+          <label for="miniDelay">Mini delay: <span id="miniDelayOut">100</span> ms</label>
+          <input id="miniDelay" type="range" min="50" max="300" value="100" step="50" />
+        </div>
+      </div>
+
+      <div class="dot-toggles">
+        <h3>Enable Mini-Dots for Each Main Dot</h3>
+        <div class="toggle-grid" id="miniToggleGrid">
+          <!-- Checkboxes generated here -->
+        </div>
+      </div>
+
+      <div class="dot-toggles">
+        <h3>Show/Hide Individual Mini-Dots</h3>
+        <div id="individualMiniControls">
+          <!-- Individual mini-dot controls generated here -->
+        </div>
+      </div>
+
+      <h2>📍 Navigation Settings</h2>
+      <div class="map-section">
+        <h3>Map Preview</h3>
+        <div id="navMap"></div>
+        <div class="map-info">
+          Center: <span id="mapCenter">-96.038, 19.047</span>
+          Zoom: <span id="mapZoom">16.0</span>
+        </div>
+        <div class="pick-mode-indicator" id="pickModeIndicator">
+          Click on map to set location for: <span id="pickModeTarget"></span>
+        </div>
+      </div>
+
+      <div class="nav-controls">
+        <h3>Main Dots Navigation</h3>
+        <div id="mainDotsNav">
+          <!-- Generated dynamically -->
+        </div>
+      </div>
+
+      <div class="nav-controls">
+        <h3>Mini-Dots Navigation</h3>
+        <div id="miniDotsNav">
+          <!-- Generated dynamically -->
+        </div>
+      </div>
+
+      <div class="stage" id="stage" aria-label="Orbit stage">
+        <div class="rotator" id="rotator">
+          <div class="orbit-guide" id="guide"></div>
+          <!-- dots injected here -->
+        </div>
+        <button class="center-btn" id="centerBtn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor">
+            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2" stroke-linecap="round" fill="none"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="info-box">
+        <h3>Instructions</h3>
+        <p><strong>Main Dots:</strong> Click center to toggle animation, use checkboxes to show/hide</p>
+        <p><strong>Mini-Dots:</strong> Each main dot can have its own ring of mini-dots (sub-groups)</p>
+        <p><strong>Labels:</strong> Click edit button (✎) to change labels. Use Shift+Enter for multi-line text</p>
+        <p><strong>Design:</strong> Adjust all parameters in real-time to prototype your menu</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for text editing -->
+  <div class="modal-overlay" id="textModal">
+    <div class="modal-content">
+      <h3>Edit Label</h3>
+      <div class="modal-hint">Use Shift+Enter for line breaks</div>
+      <textarea id="modalTextarea" rows="4"></textarea>
+      <div class="modal-buttons">
+        <button class="modal-btn" id="modalCancel">Cancel</button>
+        <button class="modal-btn primary" id="modalSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const rotator   = document.getElementById('rotator');
+  const stage     = document.getElementById('stage');
+  const guide     = document.getElementById('guide');
+  const centerBtn = document.getElementById('centerBtn');
+  const toggleGrid = document.getElementById('toggleGrid');
+  const miniToggleGrid = document.getElementById('miniToggleGrid');
+
+  const countIn    = document.getElementById('count');
+  const radiusIn   = document.getElementById('radius');
+  const sizeIn     = document.getElementById('size');
+  const fontSizeIn = document.getElementById('fontSize');
+  const dotColorIn = document.getElementById('dotColor');
+  const rotationIn = document.getElementById('rotation');
+  const centerIn   = document.getElementById('center');
+  const centerColorIn = document.getElementById('centerColor');
+  const delayIn    = document.getElementById('delay');
+
+  const miniDotsEnabledIn = document.getElementById('miniDotsEnabled');
+  const miniCountIn    = document.getElementById('miniCount');
+  const miniRadiusIn   = document.getElementById('miniRadius');
+  const miniSizeIn     = document.getElementById('miniSize');
+  const miniFontSizeIn = document.getElementById('miniFontSize');
+  const miniDotColorIn = document.getElementById('miniDotColor');
+  const miniRotationIn = document.getElementById('miniRotation');
+  const miniDelayIn    = document.getElementById('miniDelay');
+
+  const countOut    = document.getElementById('countOut');
+  const radiusOut   = document.getElementById('radiusOut');
+  const sizeOut     = document.getElementById('sizeOut');
+  const fontSizeOut = document.getElementById('fontSizeOut');
+  const rotationOut = document.getElementById('rotationOut');
+  const centerOut   = document.getElementById('centerOut');
+  const delayOut    = document.getElementById('delayOut');
+
+  const miniCountOut    = document.getElementById('miniCountOut');
+  const miniRadiusOut   = document.getElementById('miniRadiusOut');
+  const miniSizeOut     = document.getElementById('miniSizeOut');
+  const miniFontSizeOut = document.getElementById('miniFontSizeOut');
+  const miniRotationOut = document.getElementById('miniRotationOut');
+  const miniDelayOut    = document.getElementById('miniDelayOut');
+
+  let count    = +countIn.value;
+  let radius   = +radiusIn.value;
+  let dotSize  = +sizeIn.value;
+  let fontSize = +fontSizeIn.value;
+  let dotColor = dotColorIn.value;
+  let rotation = +rotationIn.value;
+  let center   = +centerIn.value;
+  let centerColor = centerColorIn.value;
+  let animDelay = +delayIn.value;
+
+  let miniDotsEnabled = miniDotsEnabledIn.checked;
+  let miniCount = +miniCountIn.value;
+  let miniRadius = +miniRadiusIn.value;
+  let miniSize = +miniSizeIn.value;
+  let miniFontSize = +miniFontSizeIn.value;
+  let miniDotColor = miniDotColorIn.value;
+  let miniRotation = +miniRotationIn.value;
+  let miniDelay = +miniDelayIn.value;
+
+  let dots = [];
+  let menuActive = false;
+  let dotVisibility = {}; // Track which dots are visible
+  let miniDotsVisibility = {}; // Track which dots have mini-dots enabled
+  let individualMiniVisibility = {}; // Track which individual mini-dots are visible for each dot
+  let miniDotsMirror = {}; // Track which dots have mirrored mini-dot rotation
+  let dotLabels = {}; // Track custom labels for dots
+  let miniDotLabels = {}; // Track custom labels for mini-dots
+  let navigation = {}; // Track coords/zoom for each dot and mini-dot
+  let pickMode = null; // Current dot key being picked for navigation
+  let navMap = null; // Mapbox map instance
+
+  // Modal elements
+  const textModal = document.getElementById('textModal');
+  const modalTextarea = document.getElementById('modalTextarea');
+  const modalSave = document.getElementById('modalSave');
+  const modalCancel = document.getElementById('modalCancel');
+  let currentEditCallback = null;
+
+  function setCSSVar(name, value){
+    document.documentElement.style.setProperty(name, value);
+  }
+
+  // Modal functions
+  function showModal(currentText, callback) {
+    modalTextarea.value = currentText;
+    textModal.classList.add('active');
+    modalTextarea.focus();
+    modalTextarea.select();
+    currentEditCallback = callback;
+  }
+
+  function hideModal() {
+    textModal.classList.remove('active');
+    currentEditCallback = null;
+  }
+
+  modalSave.addEventListener('click', () => {
+    if (currentEditCallback) {
+      const newText = modalTextarea.value.trim();
+      if (newText !== '') {
+        currentEditCallback(newText);
+      }
+    }
+    hideModal();
+  });
+
+  modalCancel.addEventListener('click', hideModal);
+
+  textModal.addEventListener('click', (e) => {
+    if (e.target === textModal) {
+      hideModal();
+    }
+  });
+
+  // Allow Escape to close modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && textModal.classList.contains('active')) {
+      hideModal();
+    }
+  });
+
+  // Helper to convert text to HTML with line breaks
+  function textToHTML(text) {
+    return text.split('\n').map(line => {
+      return `<div>${line || '&nbsp;'}</div>`;
+    }).join('');
+  }
+
+  // Helper to convert HTML back to text
+  function htmlToText(element) {
+    // Get the text content and preserve line breaks
+    const divs = element.querySelectorAll('div');
+    if (divs.length === 0) {
+      return element.textContent;
+    }
+    return Array.from(divs).map(div => div.textContent).join('\n');
+  }
+
+  function updateOutputs(){
+    countOut.textContent    = count;
+    radiusOut.textContent   = radius;
+    sizeOut.textContent     = dotSize;
+    fontSizeOut.textContent = fontSize;
+    rotationOut.textContent = rotation;
+    centerOut.textContent   = center;
+    delayOut.textContent    = animDelay;
+
+    miniCountOut.textContent    = miniCount;
+    miniRadiusOut.textContent   = miniRadius;
+    miniSizeOut.textContent     = miniSize;
+    miniFontSizeOut.textContent = miniFontSize;
+    miniRotationOut.textContent = miniRotation;
+    miniDelayOut.textContent    = miniDelay;
+  }
+
+  function rebuildToggles(){
+    toggleGrid.innerHTML = '';
+    miniToggleGrid.innerHTML = '';
+
+    for(let i=0; i<count; i++){
+      // Main dot visibility toggle
+      const item = document.createElement('div');
+      item.className = 'toggle-item';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = `dot-${i}`;
+      checkbox.checked = dotVisibility[i] !== false;
+      checkbox.addEventListener('change', () => {
+        dotVisibility[i] = checkbox.checked;
+        updateDotVisibility(i);
+      });
+
+      const label = document.createElement('label');
+      label.htmlFor = `dot-${i}`;
+      label.textContent = `Dot ${i+1}`;
+
+      item.appendChild(checkbox);
+      item.appendChild(label);
+      toggleGrid.appendChild(item);
+
+      // Mini-dots enable toggle with mirror
+      const miniItem = document.createElement('div');
+      miniItem.style.display = 'flex';
+      miniItem.style.alignItems = 'center';
+      miniItem.style.gap = '6px';
+
+      const miniCheckbox = document.createElement('input');
+      miniCheckbox.type = 'checkbox';
+      miniCheckbox.id = `mini-${i}`;
+      miniCheckbox.checked = miniDotsVisibility[i] !== false;
+      miniCheckbox.addEventListener('change', () => {
+        miniDotsVisibility[i] = miniCheckbox.checked;
+        rebuildMiniDots();
+      });
+
+      const miniLabel = document.createElement('label');
+      miniLabel.htmlFor = `mini-${i}`;
+      miniLabel.textContent = `D${i+1}`;
+      miniLabel.style.cursor = 'pointer';
+      miniLabel.style.userSelect = 'none';
+
+      // Mirror checkbox for entire mini-ring
+      const mirrorCheckbox = document.createElement('input');
+      mirrorCheckbox.type = 'checkbox';
+      mirrorCheckbox.id = `mirror-ring-${i}`;
+      mirrorCheckbox.checked = miniDotsMirror[i] || false;
+      mirrorCheckbox.addEventListener('change', () => {
+        miniDotsMirror[i] = mirrorCheckbox.checked;
+        const dot = dots[i];
+        if(dot) positionMiniDots(dot);
+      });
+
+      const mirrorLabel = document.createElement('label');
+      mirrorLabel.htmlFor = `mirror-ring-${i}`;
+      mirrorLabel.textContent = '🔄';
+      mirrorLabel.title = 'Mirror mini-dots rotation';
+      mirrorLabel.style.cursor = 'pointer';
+      mirrorLabel.style.userSelect = 'none';
+
+      miniItem.appendChild(miniCheckbox);
+      miniItem.appendChild(miniLabel);
+      miniItem.appendChild(mirrorCheckbox);
+      miniItem.appendChild(mirrorLabel);
+      miniToggleGrid.appendChild(miniItem);
+    }
+
+    rebuildIndividualMiniControls();
+  }
+
+  function rebuildIndividualMiniControls(){
+    const container = document.getElementById('individualMiniControls');
+    container.innerHTML = '';
+
+    if(!miniDotsEnabled) return;
+
+    for(let i=0; i<count; i++){
+      if(miniDotsVisibility[i] === false) continue; // Skip if mini-dots not enabled for this dot
+
+      // Initialize visibility for this dot's mini-dots if not exists
+      if(!individualMiniVisibility[i]){
+        individualMiniVisibility[i] = {};
+        for(let j=0; j<miniCount; j++){
+          individualMiniVisibility[i][j] = true; // Default all to visible
+        }
+      }
+
+      const dotSection = document.createElement('div');
+      dotSection.style.marginBottom = '12px';
+
+      const heading = document.createElement('div');
+      heading.style.fontSize = '11px';
+      heading.style.fontWeight = '600';
+      heading.style.color = '#9aa0a6';
+      heading.style.marginBottom = '6px';
+      heading.textContent = `Dot ${i+1} Mini-Dots:`;
+      dotSection.appendChild(heading);
+
+      const grid = document.createElement('div');
+      grid.className = 'toggle-grid';
+
+      for(let j=0; j<miniCount; j++){
+        const item = document.createElement('div');
+        item.className = 'toggle-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `mini-${i}-${j}`;
+        checkbox.checked = individualMiniVisibility[i][j] !== false;
+        checkbox.addEventListener('change', () => {
+          individualMiniVisibility[i][j] = checkbox.checked;
+        });
+
+        const label = document.createElement('label');
+        label.htmlFor = `mini-${i}-${j}`;
+        label.textContent = `${i+1}.${j+1}`;
+
+        item.appendChild(checkbox);
+        item.appendChild(label);
+        grid.appendChild(item);
+      }
+
+      dotSection.appendChild(grid);
+      container.appendChild(dotSection);
+    }
+  }
+
+  function updateDotVisibility(index){
+    if(dots[index]){
+      const dot = dots[index];
+      const isVisible = dotVisibility[index] !== false;
+      if(isVisible){
+        dot.el.classList.remove('hidden');
+        if(menuActive){
+          dot.el.classList.add('visible');
+        }
+      } else {
+        dot.el.classList.add('hidden');
+        dot.el.classList.remove('visible');
+        // Also hide mini-dots when main dot is hidden
+        if(dot.miniDotsActive){
+          dot.miniDots.forEach(({el}) => {
+            el.classList.remove('visible');
+          });
+          dot.miniDotsActive = false;
+        }
+      }
+    }
+    applyAnimationDelays();
+  }
+
+  function rebuildDots(){
+    const oldVisibility = {...dotVisibility};
+    const oldMiniVisibility = {...miniDotsVisibility};
+
+    dots.forEach(d => d.container.remove());
+    dots = [];
+    dotVisibility = {};
+    miniDotsVisibility = {};
+
+    for(let i=0; i<count; i++){
+      dotVisibility[i] = oldVisibility[i] !== false;
+      miniDotsVisibility[i] = oldMiniVisibility[i] !== false;
+
+      const container = document.createElement('div');
+      container.className = 'dot-container';
+
+      const el = document.createElement('button');
+      el.className = 'dot';
+
+      const dotText = document.createElement('div');
+      dotText.className = 'dot-text';
+      const labelText = dotLabels[i] || (i+1).toString();
+      dotText.innerHTML = textToHTML(labelText);
+      el.appendChild(dotText);
+
+      const editBtn = document.createElement('div');
+      editBtn.className = 'dot-edit-btn';
+      editBtn.textContent = '✎';
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        editDotLabel(i, dotText);
+      });
+      el.appendChild(editBtn);
+
+      const label = document.createElement('div');
+      label.className = 'dot-label';
+      label.textContent = `#${i+1}`;
+
+      // Add click handler to toggle mini-dots
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Only allow toggling mini-dots if the main dot is visible
+        if(menuActive && miniDotsEnabled && miniDotsVisibility[i] !== false && dotVisibility[i] !== false && !el.classList.contains('editing')){
+          toggleMiniDotsForDot(i);
+        }
+      });
+
+      container.appendChild(label);
+      container.appendChild(el);
+      rotator.appendChild(container);
+      dots.push({el, container, i, miniDots: [], miniRing: null, miniDotsActive: false});
+    }
+
+    applySizes();
+    positionDots();
+    rebuildToggles();
+    rebuildMiniDots();
+    applyAnimationDelays();
+  }
+
+  function rebuildMiniDots(){
+    // Remove all existing mini-dot rings
+    dots.forEach(dot => {
+      if(dot.miniRing){
+        dot.miniRing.remove();
+        dot.miniRing = null;
+      }
+      dot.miniDots = [];
+      dot.miniDotsActive = false;
+    });
+
+    if(!miniDotsEnabled) return;
+
+    dots.forEach((dot, dotIndex) => {
+      // Only create mini-dots if enabled for this dot
+      if(miniDotsVisibility[dotIndex] === false) return;
+
+      const ring = document.createElement('div');
+      ring.className = 'mini-dots-ring';
+      ring.style.width = (miniRadius * 2) + 'px';
+      ring.style.height = (miniRadius * 2) + 'px';
+
+      const guide = document.createElement('div');
+      guide.className = 'mini-orbit-guide';
+      ring.appendChild(guide);
+
+      for(let j=0; j<miniCount; j++){
+        const miniContainer = document.createElement('div');
+        miniContainer.className = 'mini-dot-container';
+
+        const miniEl = document.createElement('button');
+        miniEl.className = 'mini-dot';
+
+        const miniKey = `${dotIndex}-${j}`;
+        const miniText = document.createElement('div');
+        miniText.className = 'mini-dot-text';
+        const miniLabelText = miniDotLabels[miniKey] || (j+1).toString();
+        miniText.innerHTML = textToHTML(miniLabelText);
+        miniEl.appendChild(miniText);
+
+        const miniEditBtn = document.createElement('div');
+        miniEditBtn.className = 'mini-dot-edit-btn';
+        miniEditBtn.textContent = '✎';
+        miniEditBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          editMiniDotLabel(dotIndex, j, miniText);
+        });
+        miniEl.appendChild(miniEditBtn);
+
+        // Add click handler to close mini-dots and main menu
+        miniEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          // Close everything when clicking a mini-dot
+          if(dot.miniDotsActive && !miniEl.classList.contains('editing')){
+            toggleMenu();
+          }
+        });
+
+        const miniLabel = document.createElement('div');
+        miniLabel.className = 'mini-dot-label';
+        miniLabel.textContent = `${dotIndex+1}.${j+1}`;
+
+        miniContainer.appendChild(miniLabel);
+        miniContainer.appendChild(miniEl);
+        ring.appendChild(miniContainer);
+
+        dot.miniDots.push({el: miniEl, container: miniContainer, index: j});
+      }
+
+      dot.container.appendChild(ring);
+      dot.miniRing = ring;
+      positionMiniDots(dot);
+    });
+
+    applyMiniAnimationDelays();
+    rebuildIndividualMiniControls();
+  }
+
+  function applySizes(){
+    setCSSVar('--orbit-radius', radius);
+    setCSSVar('--dot', dotSize+'px');
+    setCSSVar('--dot-font-size', fontSize+'px');
+    setCSSVar('--dot-color', dotColor);
+    setCSSVar('--btn', center+'px');
+    setCSSVar('--center-color', centerColor);
+    setCSSVar('--mini-orbit-radius', miniRadius);
+    setCSSVar('--mini-dot', miniSize+'px');
+    setCSSVar('--mini-dot-font-size', miniFontSize+'px');
+    setCSSVar('--mini-dot-color', miniDotColor);
+  }
+
+  function positionDots(){
+    const N = Math.max(1,count);
+    const cx = stage.clientWidth/2;
+    const cy = stage.clientHeight/2;
+    dots.forEach(({container,i})=>{
+      const angle = (2*Math.PI*i)/N;
+      const x = cx + radius*Math.cos(angle);
+      const y = cy + radius*Math.sin(angle);
+      container.style.left = x+'px';
+      container.style.top  = y+'px';
+    });
+  }
+
+  function positionMiniDots(dot){
+    const N = Math.max(1, miniCount);
+    const ringCenterX = miniRadius;
+    const ringCenterY = miniRadius;
+    const dotIndex = dot.i;
+
+    // Check if this entire mini-ring should be mirrored
+    const shouldMirror = miniDotsMirror[dotIndex] || false;
+    const effectiveRotation = shouldMirror ? -miniRotation : miniRotation;
+
+    dot.miniDots.forEach(({container, index})=>{
+      const baseAngle = (2*Math.PI*index)/N;
+      const angle = baseAngle + (effectiveRotation * Math.PI / 180);
+      const x = ringCenterX + miniRadius*Math.cos(angle);
+      const y = ringCenterY + miniRadius*Math.sin(angle);
+      container.style.left = x+'px';
+      container.style.top  = y+'px';
+    });
+  }
+
+  function applyAnimationDelays(){
+    let visibleIndex = 0;
+    dots.forEach(({el,i})=>{
+      if(dotVisibility[i] !== false){
+        el.style.animationDelay = (visibleIndex * animDelay) + 'ms';
+        visibleIndex++;
+      } else {
+        el.style.animationDelay = '0ms';
+      }
+    });
+  }
+
+  function applyMiniAnimationDelays(){
+    dots.forEach((dot, dotIndex) => {
+      if(dotVisibility[dotIndex] === false || miniDotsVisibility[dotIndex] === false) return;
+
+      // Set all mini-dots to 0ms delay for instant simultaneous appearance
+      dot.miniDots.forEach(({el, index}) => {
+        el.style.animationDelay = '0ms';
+      });
+    });
+  }
+
+  function toggleMiniDotsForDot(dotIndex){
+    const dot = dots[dotIndex];
+    if(!dot || !dot.miniDots.length) return;
+
+    dot.miniDotsActive = !dot.miniDotsActive;
+
+    if(dot.miniDotsActive){
+      // Hide the main dot to create transformation effect
+      dot.el.classList.add('hidden');
+
+      // Show only enabled mini-dots
+      dot.miniDots.forEach(({el, index}) => {
+        if(individualMiniVisibility[dotIndex] && individualMiniVisibility[dotIndex][index] !== false){
+          el.classList.add('visible');
+        }
+      });
+    } else {
+      // Show the main dot again
+      dot.el.classList.remove('hidden');
+
+      // Hide all mini-dots
+      dot.miniDots.forEach(({el}) => {
+        el.classList.remove('visible');
+      });
+    }
+  }
+
+  function toggleMenu(){
+    menuActive = !menuActive;
+    if(menuActive){
+      rotator.classList.add('menu-active');
+      dots.forEach(({el, i}) => {
+        if(dotVisibility[i] !== false){
+          el.classList.add('visible');
+          el.classList.remove('hidden');
+        } else {
+          el.classList.add('hidden');
+        }
+        // Don't automatically show mini-dots - wait for dot click
+      });
+    } else {
+      rotator.classList.remove('menu-active');
+      dots.forEach((dot) => {
+        dot.el.classList.remove('visible');
+        dot.el.classList.remove('hidden'); // Reset hidden state when menu closes
+        // Hide all mini-dots when menu closes
+        if(dot.miniDotsActive){
+          dot.miniDots.forEach(({el}) => {
+            el.classList.remove('visible');
+          });
+          dot.miniDotsActive = false;
+        }
+      });
+    }
+  }
+
+  centerBtn.addEventListener('click', toggleMenu);
+
+  countIn.oninput = e=>{
+    count=+e.target.value;
+    updateOutputs();
+    rebuildDots();
+  }
+
+  radiusIn.oninput= e=>{
+    radius=+e.target.value;
+    updateOutputs();
+    applySizes();
+    positionDots();
+  }
+
+  sizeIn.oninput  = e=>{
+    dotSize=+e.target.value;
+    updateOutputs();
+    applySizes();
+  }
+
+  fontSizeIn.oninput = e=>{
+    fontSize=+e.target.value;
+    updateOutputs();
+    applySizes();
+  };
+
+  dotColorIn.oninput = e=>{
+    dotColor = e.target.value;
+    applySizes();
+  };
+
+  rotationIn.oninput = e=>{
+    rotation=+e.target.value;
+    updateOutputs();
+    setCSSVar('--rotate-deg',rotation+'deg');
+  };
+
+  centerIn.oninput = e=>{
+    center=+e.target.value;
+    updateOutputs();
+    applySizes();
+  };
+
+  centerColorIn.oninput = e=>{
+    centerColor = e.target.value;
+    applySizes();
+  };
+
+  delayIn.oninput = e=>{
+    animDelay=+e.target.value;
+    updateOutputs();
+    applyAnimationDelays();
+    applyMiniAnimationDelays();
+  };
+
+  miniDotsEnabledIn.onchange = e=>{
+    miniDotsEnabled = e.target.checked;
+    rebuildMiniDots();
+  };
+
+  miniCountIn.oninput = e=>{
+    miniCount=+e.target.value;
+    updateOutputs();
+    rebuildMiniDots();
+  };
+
+  miniRadiusIn.oninput = e=>{
+    miniRadius=+e.target.value;
+    updateOutputs();
+    applySizes();
+    rebuildMiniDots();
+  };
+
+  miniSizeIn.oninput = e=>{
+    miniSize=+e.target.value;
+    updateOutputs();
+    applySizes();
+  };
+
+  miniFontSizeIn.oninput = e=>{
+    miniFontSize=+e.target.value;
+    updateOutputs();
+    applySizes();
+  };
+
+  miniDotColorIn.oninput = e=>{
+    miniDotColor = e.target.value;
+    applySizes();
+  };
+
+  miniRotationIn.oninput = e=>{
+    miniRotation=+e.target.value;
+    updateOutputs();
+    dots.forEach(dot => positionMiniDots(dot));
+  };
+
+  miniDelayIn.oninput = e=>{
+    miniDelay=+e.target.value;
+    updateOutputs();
+    applyMiniAnimationDelays();
+  };
+
+  // Edit label functions
+  function editDotLabel(index, textElement) {
+    const currentText = htmlToText(textElement);
+    showModal(currentText, (newText) => {
+      dotLabels[index] = newText;
+      textElement.innerHTML = textToHTML(newText);
+    });
+  }
+
+  function editMiniDotLabel(dotIndex, miniIndex, textElement) {
+    const currentText = htmlToText(textElement);
+    showModal(currentText, (newText) => {
+      const miniKey = `${dotIndex}-${miniIndex}`;
+      miniDotLabels[miniKey] = newText;
+      textElement.innerHTML = textToHTML(newText);
+    });
+  }
+
+  // Save configuration
+  function saveConfiguration() {
+    const config = {
+      count,
+      radius,
+      dotSize,
+      fontSize,
+      dotColor,
+      rotation,
+      center,
+      centerColor,
+      animDelay,
+      miniDotsEnabled,
+      miniCount,
+      miniRadius,
+      miniSize,
+      miniFontSize,
+      miniDotColor,
+      miniRotation,
+      miniDelay,
+      dotVisibility,
+      miniDotsVisibility,
+      individualMiniVisibility,
+      miniDotsMirror,
+      dotLabels,
+      miniDotLabels,
+      navigation
+    };
+
+    const json = JSON.stringify(config, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'circle-menu-config.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // Load configuration
+  function loadConfiguration(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const config = JSON.parse(e.target.result);
+
+        // Update values
+        count = config.count || count;
+        radius = config.radius || radius;
+        dotSize = config.dotSize || dotSize;
+        fontSize = config.fontSize || fontSize;
+        dotColor = config.dotColor || dotColor;
+        rotation = config.rotation || rotation;
+        center = config.center || center;
+        centerColor = config.centerColor || centerColor;
+        animDelay = config.animDelay || animDelay;
+        miniDotsEnabled = config.miniDotsEnabled !== undefined ? config.miniDotsEnabled : miniDotsEnabled;
+        miniCount = config.miniCount || miniCount;
+        miniRadius = config.miniRadius || miniRadius;
+        miniSize = config.miniSize || miniSize;
+        miniFontSize = config.miniFontSize || miniFontSize;
+        miniDotColor = config.miniDotColor || miniDotColor;
+        miniRotation = config.miniRotation || miniRotation;
+        miniDelay = config.miniDelay || miniDelay;
+
+        // Update visibility and labels
+        dotVisibility = config.dotVisibility || {};
+        miniDotsVisibility = config.miniDotsVisibility || {};
+        individualMiniVisibility = config.individualMiniVisibility || {};
+        miniDotsMirror = config.miniDotsMirror || {};
+        dotLabels = config.dotLabels || {};
+        miniDotLabels = config.miniDotLabels || {};
+        navigation = config.navigation || {};
+
+        // Update inputs
+        countIn.value = count;
+        radiusIn.value = radius;
+        sizeIn.value = dotSize;
+        fontSizeIn.value = fontSize;
+        dotColorIn.value = dotColor;
+        rotationIn.value = rotation;
+        centerIn.value = center;
+        centerColorIn.value = centerColor;
+        delayIn.value = animDelay;
+        miniDotsEnabledIn.checked = miniDotsEnabled;
+        miniCountIn.value = miniCount;
+        miniRadiusIn.value = miniRadius;
+        miniSizeIn.value = miniSize;
+        miniFontSizeIn.value = miniFontSize;
+        miniDotColorIn.value = miniDotColor;
+        miniRotationIn.value = miniRotation;
+        miniDelayIn.value = miniDelay;
+
+        // Update UI
+        updateOutputs();
+        applySizes();
+        setCSSVar('--rotate-deg', rotation+'deg');
+        rebuildDots();
+        rebuildNavControls();
+
+        alert('Configuration loaded successfully!');
+      } catch (error) {
+        alert('Error loading configuration: ' + error.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // Button event listeners
+  const saveBtn = document.getElementById('saveBtn');
+  const loadBtn = document.getElementById('loadBtn');
+  const fileInput = document.getElementById('fileInput');
+
+  saveBtn.addEventListener('click', saveConfiguration);
+  loadBtn.addEventListener('click', () => {
+    fileInput.click();
+  });
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      loadConfiguration(file);
+      // Reset the input so the same file can be loaded again
+      fileInput.value = '';
+    }
+  });
+
+  updateOutputs();
+  rebuildDots();
+  setCSSVar('--rotate-deg', rotation+'deg');
+  window.addEventListener('resize', ()=>{
+    positionDots();
+    dots.forEach(dot => positionMiniDots(dot));
+  });
+
+  // ===== MAP AND NAVIGATION =====
+
+  // Fetch mapbox token and initialize map
+  fetch('https://la-la.land/mapbox.txt')
+    .then(r => r.text())
+    .then(token => {
+      mapboxgl.accessToken = token.trim();
+      navMap = new mapboxgl.Map({
+        container: 'navMap',
+        style: 'mapbox://styles/mapbox/dark-v11',
+        center: [-96.038, 19.047],
+        zoom: 14
+      });
+
+      navMap.on('move', updateMapInfo);
+      navMap.on('zoom', updateMapInfo);
+
+      navMap.on('click', (e) => {
+        if (pickMode) {
+          const lng = e.lngLat.lng.toFixed(6);
+          const lat = e.lngLat.lat.toFixed(6);
+          const zoom = navMap.getZoom().toFixed(1);
+
+          navigation[pickMode] = {
+            center: [parseFloat(lng), parseFloat(lat)],
+            zoom: parseFloat(zoom)
+          };
+
+          exitPickMode();
+          rebuildNavControls();
+        }
+      });
+
+      rebuildNavControls();
+    })
+    .catch(err => {
+      console.error('Failed to load mapbox token:', err);
+      document.getElementById('navMap').innerHTML = '<p style="color:#f66;padding:20px;">Failed to load map. Check console.</p>';
+    });
+
+  function updateMapInfo() {
+    if (!navMap) return;
+    const center = navMap.getCenter();
+    const zoom = navMap.getZoom();
+    document.getElementById('mapCenter').textContent = `${center.lng.toFixed(4)}, ${center.lat.toFixed(4)}`;
+    document.getElementById('mapZoom').textContent = zoom.toFixed(1);
+  }
+
+  function enterPickMode(key, label) {
+    pickMode = key;
+    document.getElementById('pickModeIndicator').classList.add('active');
+    document.getElementById('pickModeTarget').textContent = label;
+    document.querySelectorAll('.nav-pick-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.nav-pick-btn[data-key="${key}"]`)?.classList.add('active');
+  }
+
+  function exitPickMode() {
+    pickMode = null;
+    document.getElementById('pickModeIndicator').classList.remove('active');
+    document.querySelectorAll('.nav-pick-btn').forEach(btn => btn.classList.remove('active'));
+  }
+
+  function flyToNav(key) {
+    if (!navMap || !navigation[key]) return;
+    navMap.flyTo({
+      center: navigation[key].center,
+      zoom: navigation[key].zoom,
+      speed: 1.2
+    });
+  }
+
+  function rebuildNavControls() {
+    const mainDotsNav = document.getElementById('mainDotsNav');
+    const miniDotsNav = document.getElementById('miniDotsNav');
+
+    mainDotsNav.innerHTML = '';
+    miniDotsNav.innerHTML = '';
+
+    // Main dots
+    for (let i = 0; i < count; i++) {
+      if (dotVisibility[i] === false) continue;
+
+      const label = dotLabels[i] || `Dot ${i + 1}`;
+      const key = String(i);
+      const nav = navigation[key];
+
+      const item = document.createElement('div');
+      item.className = 'nav-item';
+      item.innerHTML = `
+        <div class="nav-item-label">${label.replace(/\n/g, ' ')}</div>
+        <div class="nav-item-coords">${nav ? `[${nav.center[0].toFixed(4)}, ${nav.center[1].toFixed(4)}]` : 'Not set'}</div>
+        <div class="nav-item-zoom">${nav ? `z${nav.zoom}` : ''}</div>
+        <button class="nav-pick-btn" data-key="${key}">📍 Pick</button>
+        <button class="nav-fly-btn" data-key="${key}" ${!nav ? 'disabled style="opacity:0.4"' : ''}>Go</button>
+      `;
+
+      item.querySelector('.nav-pick-btn').addEventListener('click', () => enterPickMode(key, label.replace(/\n/g, ' ')));
+      item.querySelector('.nav-fly-btn').addEventListener('click', () => flyToNav(key));
+
+      mainDotsNav.appendChild(item);
+    }
+
+    // Mini dots
+    for (let i = 0; i < count; i++) {
+      if (dotVisibility[i] === false) continue;
+      if (miniDotsVisibility[i] === false) continue;
+      if (!miniDotsEnabled) continue;
+
+      for (let j = 0; j < miniCount; j++) {
+        if (individualMiniVisibility[i] && individualMiniVisibility[i][j] === false) continue;
+
+        const miniKey = `${i}-${j}`;
+        const parentLabel = dotLabels[i] || `Dot ${i + 1}`;
+        const miniLabel = miniDotLabels[miniKey] || `${i + 1}.${j + 1}`;
+        const nav = navigation[miniKey];
+
+        const item = document.createElement('div');
+        item.className = 'nav-item';
+        item.innerHTML = `
+          <div class="nav-item-label">${miniLabel.replace(/\n/g, ' ')}</div>
+          <div class="nav-item-coords">${nav ? `[${nav.center[0].toFixed(4)}, ${nav.center[1].toFixed(4)}]` : 'Not set'}</div>
+          <div class="nav-item-zoom">${nav ? `z${nav.zoom}` : ''}</div>
+          <button class="nav-pick-btn" data-key="${miniKey}">📍 Pick</button>
+          <button class="nav-fly-btn" data-key="${miniKey}" ${!nav ? 'disabled style="opacity:0.4"' : ''}>Go</button>
+        `;
+
+        item.querySelector('.nav-pick-btn').addEventListener('click', () => enterPickMode(miniKey, `${parentLabel.replace(/\n/g, ' ')} → ${miniLabel.replace(/\n/g, ' ')}`));
+        item.querySelector('.nav-fly-btn').addEventListener('click', () => flyToNav(miniKey));
+
+        miniDotsNav.appendChild(item);
+      }
+    }
+  }
+
+  // Update nav controls when dots change
+  const origRebuildDots = rebuildDots;
+  rebuildDots = function() {
+    origRebuildDots();
+    rebuildNavControls();
+  };
+})();
+</script>
+</body>
+</html>
