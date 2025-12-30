@@ -35,17 +35,13 @@ const CLIENT_CONFIGS = {
         // For marsella & barcelona
         url: 'https://la-la.land/inverta/lomasmediterraneo.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/inverta/lomasmediterraneo_black.png', // Black version for cards
-        communities: ['marsella', 'barcelona'],
-        center: [-96.036711, 19.0485],
-        zoom: 15
+        communities: ['marsella', 'barcelona']
       },
       'puntolomas': {
         // For sierraalta & sierrabaja
         url: 'https://la-la.land/inverta/puntolomas.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/inverta/puntolomas_black.png', // Black version for cards
-        communities: ['sierraalta', 'sierrabaja'],
-        center: [-96.090537, 19.073336],
-        zoom: 15.2
+        communities: ['sierraalta', 'sierrabaja']
       }
     },
 
@@ -98,9 +94,10 @@ const CLIENT_CONFIGS = {
         name: 'Barcelona',
         displayName: 'Barcelona',
         fracc: 'barcelona',
-        center: [-96.035362, 19.046467],
+        center: [-96.035272, 19.046439],
         zoom: 16.2,
-        position: 2,
+        position: 2, // Position in community selector
+        // Alternative reference for search menu:
         searchMenuId: 'positionFour'
       },
 
@@ -109,8 +106,8 @@ const CLIENT_CONFIGS = {
         name: 'Marsella',
         displayName: 'Marsella',
         fracc: 'marsella',
-        center: [-96.038468, 19.047346],
-        zoom: 16.3,
+        center: [-96.038183, 19.047528],
+        zoom: 16.4,
         position: 1,
         searchMenuId: 'positionThree'
       },
@@ -120,8 +117,8 @@ const CLIENT_CONFIGS = {
         name: 'Sierra Alta',
         displayName: 'Sierra Alta',
         fracc: 'sierraalta',
-        center: [-96.090324, 19.072938],
-        zoom: 15.6,
+        center: [-96.090267, 19.072525],
+        zoom: 15.9,
         position: 7,
         searchMenuId: 'positionTwo'
       },
@@ -131,8 +128,8 @@ const CLIENT_CONFIGS = {
         name: 'Sierra Baja',
         displayName: 'Sierra Baja',
         fracc: 'sierrabaja',
-        center: [-96.091763, 19.074588],
-        zoom: 16.8,
+        center: [-96.091717, 19.074769],
+        zoom: 16.7,
         position: 6,
         searchMenuId: 'positionOne'
       }
