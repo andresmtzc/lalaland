@@ -567,25 +567,6 @@
     color: #eaeaea;
     font-family: monospace;
   }
-  .pick-mode-indicator {
-    display: none;
-    background: #60a5fa;
-    color: #0a0a0a;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    text-align: center;
-    margin-bottom: 12px;
-  }
-  .pick-mode-indicator.active {
-    display: block;
-    animation: pulse 1.5s infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
 
   /* Navigation controls per dot */
   .nav-controls {
@@ -641,10 +622,6 @@
     transition: all .12s ease;
   }
   .nav-pick-btn:hover {
-    background: #60a5fa;
-    color: #0a0a0a;
-  }
-  .nav-pick-btn.active {
     background: #60a5fa;
     color: #0a0a0a;
   }
@@ -793,9 +770,6 @@
           Center: <span id="mapCenter">-96.038, 19.047</span>
           Zoom: <span id="mapZoom">16.0</span>
         </div>
-        <div class="pick-mode-indicator" id="pickModeIndicator">
-          Click on map to set location for: <span id="pickModeTarget"></span>
-        </div>
       </div>
 
       <div class="nav-controls">
@@ -906,7 +880,6 @@
   let dotLabels = {}; // Track custom labels for dots
   let miniDotLabels = {}; // Track custom labels for mini-dots
   let navigation = {}; // Track coords/zoom for each dot and mini-dot
-  let pickMode = null; // Current dot key being picked for navigation
   let navMap = null; // Mapbox map instance
 
   // Modal elements
@@ -1187,11 +1160,12 @@
       label.className = 'dot-label';
       label.textContent = `#${i+1}`;
 
-      // Add click handler to toggle mini-dots
+      // Add click handler to navigate and toggle mini-dots
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         // Only allow toggling mini-dots if the main dot is visible
         if(menuActive && miniDotsEnabled && miniDotsVisibility[i] !== false && dotVisibility[i] !== false && !el.classList.contains('editing')){
+          flyToNav(String(i)); // Navigate map to this dot's coords
           toggleMiniDotsForDot(i);
         }
       });
@@ -1258,11 +1232,11 @@
         });
         miniEl.appendChild(miniEditBtn);
 
-        // Add click handler to close mini-dots and main menu
+        // Add click handler to navigate and close mini-dots
         miniEl.addEventListener('click', (e) => {
           e.stopPropagation();
-          // Close everything when clicking a mini-dot
           if(dot.miniDotsActive && !miniEl.classList.contains('editing')){
+            flyToNav(miniKey); // Navigate map to this mini-dot's coords
             toggleMenu();
           }
         });
@@ -1686,22 +1660,6 @@
       navMap.on('move', updateMapInfo);
       navMap.on('zoom', updateMapInfo);
 
-      navMap.on('click', (e) => {
-        if (pickMode) {
-          const lng = e.lngLat.lng.toFixed(6);
-          const lat = e.lngLat.lat.toFixed(6);
-          const zoom = navMap.getZoom().toFixed(1);
-
-          navigation[pickMode] = {
-            center: [parseFloat(lng), parseFloat(lat)],
-            zoom: parseFloat(zoom)
-          };
-
-          exitPickMode();
-          rebuildNavControls();
-        }
-      });
-
       rebuildNavControls();
     })
     .catch(err => {
@@ -1717,18 +1675,18 @@
     document.getElementById('mapZoom').textContent = zoom.toFixed(1);
   }
 
-  function enterPickMode(key, label) {
-    pickMode = key;
-    document.getElementById('pickModeIndicator').classList.add('active');
-    document.getElementById('pickModeTarget').textContent = label;
-    document.querySelectorAll('.nav-pick-btn').forEach(btn => btn.classList.remove('active'));
-    document.querySelector(`.nav-pick-btn[data-key="${key}"]`)?.classList.add('active');
-  }
+  function pickCurrentPosition(key) {
+    if (!navMap) return;
+    const center = navMap.getCenter();
+    const zoom = navMap.getZoom();
 
-  function exitPickMode() {
-    pickMode = null;
-    document.getElementById('pickModeIndicator').classList.remove('active');
-    document.querySelectorAll('.nav-pick-btn').forEach(btn => btn.classList.remove('active'));
+    navigation[key] = {
+      center: [parseFloat(center.lng.toFixed(6)), parseFloat(center.lat.toFixed(6))],
+      zoom: parseFloat(zoom.toFixed(1))
+    };
+
+    console.log('Picked position for', key, navigation[key]);
+    rebuildNavControls();
   }
 
   function flyToNav(key) {
@@ -1765,7 +1723,7 @@
         <button class="nav-fly-btn" data-key="${key}" ${!nav ? 'disabled style="opacity:0.4"' : ''}>Go</button>
       `;
 
-      item.querySelector('.nav-pick-btn').addEventListener('click', () => enterPickMode(key, label.replace(/\n/g, ' ')));
+      item.querySelector('.nav-pick-btn').addEventListener('click', () => pickCurrentPosition(key));
       item.querySelector('.nav-fly-btn').addEventListener('click', () => flyToNav(key));
 
       mainDotsNav.appendChild(item);
@@ -1795,7 +1753,7 @@
           <button class="nav-fly-btn" data-key="${miniKey}" ${!nav ? 'disabled style="opacity:0.4"' : ''}>Go</button>
         `;
 
-        item.querySelector('.nav-pick-btn').addEventListener('click', () => enterPickMode(miniKey, `${parentLabel.replace(/\n/g, ' ')} → ${miniLabel.replace(/\n/g, ' ')}`));
+        item.querySelector('.nav-pick-btn').addEventListener('click', () => pickCurrentPosition(miniKey));
         item.querySelector('.nav-fly-btn').addEventListener('click', () => flyToNav(miniKey));
 
         miniDotsNav.appendChild(item);
