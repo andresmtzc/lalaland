@@ -3250,33 +3250,27 @@ fetch(mapboxTokenUrl)
     map.on('load', async () => {
       console.log('✅ Map loaded successfully!');
 
-      // Override fonts for all label layers to use Barlow Condensed
-      // This must happen BEFORE any labels render to prevent font conflicts
-      const style = map.getStyle();
-      console.log('Style object keys:', Object.keys(style));
-      console.log('Number of layers:', style.layers ? style.layers.length : 0);
-      console.log('Style imports:', style.imports);
+      // Override fonts for ALL label layers (including imported styles) to use Barlow Condensed
+      // Mapbox v3 styles use imports, so style.layers is empty - we need internal API
+      try {
+        const internalLayers = map.style._order || [];
+        console.log('Total layers (including imports):', internalLayers.length);
 
-      // Log all symbol layers to understand the structure
-      if (style && style.layers) {
-        const symbolLayers = style.layers.filter(l => l.type === 'symbol');
-        console.log('Symbol layers found:', symbolLayers.length);
-        symbolLayers.forEach(layer => {
-          console.log(`  Layer: ${layer.id}, has layout:`, !!layer.layout, 'has text-font:', !!(layer.layout && layer.layout['text-font']));
-        });
-
-        // Try to override ALL symbol layers, even if text-font not explicitly set
-        style.layers.forEach(layer => {
-          if (layer.type === 'symbol') {
-            try {
-              map.setLayoutProperty(layer.id, 'text-font', ['Barlow Condensed Regular', 'Arial Unicode MS Regular']);
-              console.log(`✅ Overrode font for: ${layer.id}`);
-            } catch (e) {
-              console.warn(`Could not override font for ${layer.id}:`, e.message);
+        let overrideCount = 0;
+        internalLayers.forEach(layerId => {
+          try {
+            const layer = map.style._layers[layerId];
+            if (layer && layer.type === 'symbol') {
+              map.setLayoutProperty(layerId, 'text-font', ['Barlow Condensed Regular', 'Arial Unicode MS Regular']);
+              overrideCount++;
             }
+          } catch (e) {
+            // Some layers may not support text-font
           }
         });
-        console.log('Style glyphs URL:', style.glyphs);
+        console.log(`✅ Overrode fonts for ${overrideCount} symbol layers`);
+      } catch (e) {
+        console.warn('Could not access internal layers:', e);
       }
 
       // Load road labels (or create empty 'road' layer if labels.json doesn't exist)
