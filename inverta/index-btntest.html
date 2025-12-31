@@ -3254,7 +3254,7 @@ fetch(mapboxTokenUrl)
       map.once('idle', () => {
         console.log('🔄 Map idle - overriding fonts in merged layers...');
 
-        // For v3 styles with imports, layers are in _mergedLayers, not _layers
+        // For v3 styles with imports, layers are in _mergedLayers
         const mergedLayers = map.style._mergedLayers || {};
         const layerIds = Object.keys(mergedLayers);
         console.log('Merged layers found:', layerIds.length);
@@ -3264,15 +3264,27 @@ fetch(mapboxTokenUrl)
           const layer = mergedLayers[id];
           if (layer && layer.type === 'symbol') {
             try {
-              map.setLayoutProperty(id, 'text-font', ['Barlow Condensed Regular', 'Arial Unicode MS Regular']);
-              console.log(`✅ Overrode font for: ${id}`);
+              // Try internal style method instead of public API
+              if (layer.setLayoutProperty) {
+                layer.setLayoutProperty('text-font', ['Barlow Condensed Regular', 'Arial Unicode MS Regular']);
+              } else if (layer._transitionablePaint || layer._transitioningPaint) {
+                // Direct layer manipulation for StyleLayer objects
+                layer.layout.set('text-font', ['Barlow Condensed Regular', 'Arial Unicode MS Regular']);
+              }
               count++;
+              console.log(`✅ Modified layer: ${id}`);
             } catch (e) {
-              console.warn(`Failed to override ${id}:`, e.message);
+              // If internal methods fail, try triggering a style update
+              console.warn(`Could not modify ${id}:`, e.message);
             }
           }
         });
-        console.log(`✅ Overrode fonts for ${count} symbol layers`);
+
+        // Force style recalculation
+        map.style._changed = true;
+        map.triggerRepaint();
+
+        console.log(`✅ Modified ${count} symbol layers`);
       });
 
       // Load road labels (or create empty 'road' layer if labels.json doesn't exist)
