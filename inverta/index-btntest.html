@@ -3250,49 +3250,57 @@ fetch(mapboxTokenUrl)
     map.on('load', async () => {
       console.log('✅ Map loaded successfully!');
 
-            // Override fonts for ALL label layers (including imported styles) to use Barlow Condensed
+      // Wait for idle then check for imported layers
 
-      // Mapbox v3 styles use imports, so style.layers is empty - we need internal API
+      map.once('idle', () => {
 
-      try {
-
-        const internalLayers = map.style._order || [];
-
-        console.log('Total layers (including imports):', internalLayers.length);
+        console.log('🔄 Map idle - checking layers...');
 
  
 
-        let overrideCount = 0;
+        // Log the full map.style object structure
 
-        internalLayers.forEach(layerId => {
+        console.log('map.style keys:', Object.keys(map.style));
 
-          try {
+        console.log('map.style._order:', map.style._order);
 
-            const layer = map.style._layers[layerId];
+        console.log('map.style._layers:', map.style._layers ? Object.keys(map.style._layers) : 'undefined');
 
-            if (layer && layer.type === 'symbol') {
+ 
 
-              map.setLayoutProperty(layerId, 'text-font', ['Barlow Condensed Regular', 'Arial Unicode MS Regular']);
+        // Try to find symbol layers
 
-              overrideCount++;
+        let count = 0;
+
+        if (map.style._layers) {
+
+          Object.entries(map.style._layers).forEach(([id, layer]) => {
+
+            if (layer.type === 'symbol') {
+
+              console.log(`Found symbol layer: ${id}`);
+
+              try {
+
+                map.setLayoutProperty(id, 'text-font', ['Barlow Condensed Regular', 'Arial Unicode MS Regular']);
+
+                count++;
+
+              } catch (e) {
+
+                console.warn(`Failed to override ${id}:`, e.message);
+
+              }
 
             }
 
-          } catch (e) {
+          });
 
-            // Some layers may not support text-font
+        }
 
-          }
+        console.log(`✅ Overrode ${count} symbol layers`);
 
-        });
-
-        console.log(`✅ Overrode fonts for ${overrideCount} symbol layers`);
-
-      } catch (e) {
-
-        console.warn('Could not access internal layers:', e);
-      
-      }
+      });
 
       // Load road labels (or create empty 'road' layer if labels.json doesn't exist)
       await loadRoad(map, async () => {
