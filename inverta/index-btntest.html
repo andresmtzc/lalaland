@@ -3250,70 +3250,63 @@ fetch(mapboxTokenUrl)
     map.on('load', async () => {
       console.log('✅ Map loaded successfully!');
 
-      // Wait for idle then override fonts in imported layers
+      // Add custom road and place labels with Barlow Condensed
+      // (Note: Road/Place labels should be disabled in Mapbox Studio style)
       map.once('idle', () => {
-        console.log('🔄 Map idle - overriding fonts in merged layers...');
- // For v3 styles with imports, layers are in _mergedLayers
+        console.log('🔄 Adding custom labels with Barlow Condensed...');
 
-        const mergedLayers = map.style._mergedLayers || {};
-
-        const layerIds = Object.keys(mergedLayers);
-
-        console.log('Merged layers found:', layerIds.length);
-
- 
-
-        let count = 0;
-
-        layerIds.forEach(id => {
-
-          const layer = mergedLayers[id];
-
-          if (layer && layer.type === 'symbol') {
-
-            try {
-
-              // Try internal style method instead of public API
-
-              if (layer.setLayoutProperty) {
-
-                layer.setLayoutProperty('text-font', ['Barlow Condensed Regular', 'Arial Unicode MS Regular']);
-
-              } else if (layer._transitionablePaint || layer._transitioningPaint) {
-
-                // Direct layer manipulation for StyleLayer objects
-
-                layer.layout.set('text-font', ['Barlow Condensed Regular', 'Arial Unicode MS Regular']);
-
-              }
-
-              count++;
-
-              console.log(`✅ Modified layer: ${id}`);
-
-            } catch (e) {
-
-              // If internal methods fail, try triggering a style update
-
-              console.warn(`Could not modify ${id}:`, e.message);
-
+        // Road labels
+        if (!map.getLayer('custom-road-labels')) {
+          map.addLayer({
+            id: 'custom-road-labels',
+            type: 'symbol',
+            source: 'composite',
+            'source-layer': 'road',
+            filter: ['has', 'name'],
+            layout: {
+              'text-field': ['get', 'name'],
+              'text-font': ['Barlow Condensed Regular', 'Arial Unicode MS Regular'],
+              'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 18, 14],
+              'symbol-placement': 'line',
+              'text-rotation-alignment': 'map',
+              'text-max-angle': 30
+            },
+            paint: {
+              'text-color': '#333',
+              'text-halo-color': '#fff',
+              'text-halo-width': 1
             }
+          });
+          console.log('✅ Added custom road labels');
+        }
 
-          }
-
-        });
-
- 
-
-        // Force style recalculation
-
-        map.style._changed = true;
+        // Place/City labels
+        if (!map.getLayer('custom-place-labels')) {
+          map.addLayer({
+            id: 'custom-place-labels',
+            type: 'symbol',
+            source: 'composite',
+            'source-layer': 'place_label',
+            layout: {
+              'text-field': ['get', 'name'],
+              'text-font': ['Barlow Condensed Regular', 'Arial Unicode MS Regular'],
+              'text-size': ['interpolate', ['linear'], ['zoom'],
+                6, 12,
+                10, 16,
+                14, 20
+              ],
+              'text-anchor': 'center'
+            },
+            paint: {
+              'text-color': '#333',
+              'text-halo-color': '#fff',
+              'text-halo-width': 1.5
+            }
+          });
+          console.log('✅ Added custom place labels');
+        }
 
         map.triggerRepaint();
-
- 
-
-        console.log(`✅ Modified ${count} symbol layers`);
       });
 
       // Load road labels (or create empty 'road' layer if labels.json doesn't exist)
