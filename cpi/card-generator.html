@@ -311,8 +311,8 @@
       </div>
       <div id="debugPanel" style="display: none; background: #fffacd; padding: 15px; border-radius: 6px; margin-bottom: 15px; font-family: monospace; font-size: 12px;">
         <strong>Debug Info:</strong><br>
-        Zoom: <input type="number" id="debugZoom" step="0.1" value="19.82" style="width: 100px;">
-        Lat Shift: <input type="number" id="debugLatShift" step="0.00005" value="0.00025" style="width: 100px;">
+        Zoom: <input type="number" id="debugZoom" step="0.1" value="18.70" style="width: 100px;">
+        Lat Shift: <input type="number" id="debugLatShift" step="0.00005" value="0.000500" style="width: 100px;">
         <button id="applyDebug" style="margin-left: 10px; padding: 4px 8px; font-size: 12px;">Apply</button>
         <br>
         <div id="debugInfo" style="margin-top: 10px;"></div>
@@ -417,8 +417,8 @@
     let previewMapInstance = null;
     let mapboxTokenReady = null;
     let debugMode = false;
-    let currentDebugZoom = 19.82;
-    let currentDebugLatShift = 0.00025;
+    let currentDebugZoom = 18.70;
+    let currentDebugLatShift = 0.000500;
 
     // Load Mapbox token
     mapboxTokenReady = fetch('https://la-la.land/mapbox.txt')
@@ -430,6 +430,18 @@
       .catch(e => {
         console.error('Failed to load Mapbox token:', e);
       });
+
+    // Clean number - remove commas, $, and other non-numeric characters
+    function cleanNumber(value) {
+      if (value === null || value === undefined) return 0;
+
+      return parseFloat(
+        value
+          .toString()
+          .replace(/,/g, '')        // remove thousand separators
+          .replace(/[^0-9.]/g, '') // remove $, spaces, etc
+      ) || 0;
+    }
 
     // Parse lots.txt format
     function parseLots(txt) {
@@ -444,7 +456,7 @@
         } else {
           const match = line.match(/lat:\s*([\d.-]+),\s*lng:\s*([\d.-]+)/);
           if (match && currentLot) {
-            currentLot.coords.push([parseFloat(match[2]), parseFloat(match[1])]);
+            currentLot.coords.push([cleanNumber(match[2]), cleanNumber(match[1])]);
           }
         }
       });
@@ -545,7 +557,11 @@
 
     // Extract lot number from lot_name
     function extractLotNumber(lotName) {
-      return lotName.replace(/^lot/i, '');
+      // Remove "lotcpi", "lot", and any leading digits followed by hyphen (e.g., "1-")
+      return lotName
+        .replace(/^lotcpi/i, '')  // Remove "lotcpi" prefix
+        .replace(/^lot/i, '')      // Remove "lot" prefix
+        .replace(/^\d+-/, '');     // Remove leading digits followed by hyphen (e.g., "1-")
     }
 
     // Merge Supabase data with polygon data
@@ -562,8 +578,8 @@
           return null;
         }
 
-        const size = parseFloat(lot.rSize);
-        const priceM2 = parseFloat(lot.price_m2);
+        const size = cleanNumber(lot.rSize);
+        const priceM2 = cleanNumber(lot.price_m2);
         const totalPrice = size * priceM2;
         const monthlyPayment = getDesdeMonthlyPayment(totalPrice);
 
@@ -606,8 +622,8 @@
           <img src="https://la-la.land/cpi/cpi.png" alt="CPI" class="card-logo" crossorigin="anonymous">
           ${communityLogoUrl ? `<img src="${communityLogoUrl}" alt="${lot.community}" class="card-community-logo" crossorigin="anonymous">` : ''}
           <div class="lot-left">
-            <div class="lote-label">MZ-L</div>
-            <div class="lote-number">${lot.lotNumber.replace(/^[a-z]+/i, '')}</div>
+            <div class="lote-label">LOTE</div>
+            <div class="lote-number">${lot.lotNumber}</div>
           </div>
           <div class="card-community">${lot.community}</div>
           <div class="card-lot-info">
@@ -1158,8 +1174,8 @@
           <img src="https://la-la.land/cpi/cpi.png" alt="CPI" class="card-logo" crossorigin="anonymous">
           ${communityLogoUrl ? `<img src="${communityLogoUrl}" alt="${lot.community}" class="card-community-logo" crossorigin="anonymous">` : ''}
           <div class="lot-left">
-            <div class="lote-label">MZ-L</div>
-            <div class="lote-number">${lot.lotNumber.replace(/^[a-z]+/i, '')}</div>
+            <div class="lote-label">LOTE</div>
+            <div class="lote-number">${lot.lotNumber}</div>
           </div>
           <div class="card-community">${lot.community}</div>
           <div class="card-lot-info">
@@ -1205,8 +1221,8 @@
 
     // Apply debug values
     document.getElementById('applyDebug').addEventListener('click', () => {
-      currentDebugZoom = parseFloat(document.getElementById('debugZoom').value);
-      currentDebugLatShift = parseFloat(document.getElementById('debugLatShift').value);
+      currentDebugZoom = cleanNumber(document.getElementById('debugZoom').value);
+      currentDebugLatShift = cleanNumber(document.getElementById('debugLatShift').value);
 
       // Refresh preview with new values
       const lotSelect = document.getElementById('lotSelect');
