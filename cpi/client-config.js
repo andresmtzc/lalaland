@@ -46,7 +46,7 @@ const CLIENT_CONFIGS = {
 
       // Initial map view (can be overridden by default community)
       initialView: {
-        center: [-99.9467, 25.1467], // Senterra center
+        center: [-99.9474, 25.1468], // Senterra center
         zoom: 14.4
       }
     },
@@ -76,7 +76,7 @@ const CLIENT_CONFIGS = {
         name: 'Senterra',
         displayName: 'Senterra',
         fracc: 'senterra',
-        center: [-99.948236, 25.147828],
+        center: [-99.9474, 25.1468],
         zoom: 14.4,
         position: 0, // Position in community selector
         // Alternative reference for search menu:
