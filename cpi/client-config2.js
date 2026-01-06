@@ -222,6 +222,9 @@ const CLIENT_CONFIGS = {
       // Font family for Mapbox map labels (usually requires "Regular" suffix)
       mapboxFont: 'Barlow Condensed Regular',
 
+      // Skip list modal and go directly to detail view when clicking a lot
+      skipListModal: true,
+
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
       ctaColor: '#ff8400' // DEPRECATED: Use colors.primary instead
