@@ -399,6 +399,54 @@
       font-family: monospace;
     }
 
+    /* IMAGE CONTAINER */
+    .image-box {
+      position: absolute;
+      cursor: move;
+      user-select: none;
+      min-width: 50px;
+      min-height: 50px;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+
+    .image-box.selected {
+      outline: 2px dashed #4ecdc4;
+      outline-offset: 2px;
+    }
+
+    .image-box .resize-handle {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      background: #4ecdc4;
+      border-radius: 2px;
+      display: none;
+    }
+
+    .image-box.selected .resize-handle { display: block; }
+
+    .image-box .resize-handle.se { right: -6px; bottom: -6px; cursor: se-resize; }
+    .image-box .resize-handle.sw { left: -6px; bottom: -6px; cursor: sw-resize; }
+    .image-box .resize-handle.ne { right: -6px; top: -6px; cursor: ne-resize; }
+    .image-box .resize-handle.nw { left: -6px; top: -6px; cursor: nw-resize; }
+
+    .image-box .image-label {
+      position: absolute;
+      top: -20px;
+      left: 0;
+      font-size: 10px;
+      color: #4ecdc4;
+      background: rgba(0,0,0,0.7);
+      padding: 2px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+      display: none;
+    }
+
+    .image-box.selected .image-label { display: block; }
+
     /* INSTRUCTIONS */
     .instructions {
       padding: 12px;
@@ -432,8 +480,9 @@
     <div class="section">
       <div class="section-title">Add Elements</div>
       <div class="row">
-        <button class="btn-primary" onclick="addTextBox()">+ Text Box</button>
+        <button class="btn-primary" onclick="addTextBox()">+ Text</button>
         <button class="btn-primary" onclick="addTable()">+ Table</button>
+        <button class="btn-primary" onclick="addImage()">+ Image</button>
       </div>
     </div>
 
@@ -445,6 +494,11 @@
     <div class="section">
       <div class="section-title">Tables (Page <span id="tablePageNum">1</span>)</div>
       <div class="element-list" id="tableList"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Images (Page <span id="imagePageNum">1</span>)</div>
+      <div class="element-list" id="imageList"></div>
     </div>
 
     <div class="section">
@@ -494,6 +548,11 @@
       <label style="margin: 0; color: #aaa;">Zoom:</label>
       <input type="range" id="zoomSlider" min="25" max="100" value="50" oninput="setZoom(this.value)">
       <span id="zoomValue">50%</span>
+    </div>
+
+    <div class="zoom-control">
+      <label style="margin: 0; color: #aaa;">Preview Lot:</label>
+      <input type="text" id="previewLot" value="001" style="width: 60px; text-align: center;" oninput="updatePreviewImages()">
     </div>
 
     <div class="toolbar-actions">
@@ -675,6 +734,56 @@
       </div>
     </div>
 
+    <!-- Image Properties -->
+    <div id="imageProps" style="display: none;">
+      <div class="section">
+        <div class="section-title">Image</div>
+
+        <label>Image Type</label>
+        <select id="prop_imageType" onchange="updateSelectedImage()">
+          <option value="static">Static Image</option>
+          <option value="{{lot.landscape}}">{{lot.landscape}}</option>
+          <option value="{{lot.map}}">{{lot.map}}</option>
+        </select>
+
+        <div id="staticImageUrlGroup">
+          <label>Image URL</label>
+          <input type="text" id="prop_imageUrl" placeholder="https://..." oninput="updateSelectedImage()">
+        </div>
+
+        <div class="row">
+          <div>
+            <label>X Position</label>
+            <input type="number" id="prop_imageX" oninput="updateSelectedImage()">
+          </div>
+          <div>
+            <label>Y Position</label>
+            <input type="number" id="prop_imageY" oninput="updateSelectedImage()">
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Width</label>
+            <input type="number" id="prop_imageWidth" oninput="updateSelectedImage()">
+          </div>
+          <div>
+            <label>Height</label>
+            <input type="number" id="prop_imageHeight" oninput="updateSelectedImage()">
+          </div>
+        </div>
+
+        <label>Aspect Ratio</label>
+        <div class="style-row">
+          <button class="style-btn active" id="prop_lockAspect" onclick="toggleAspectLock()">🔒 Locked</button>
+        </div>
+        <p style="font-size: 9px; color: #aaa; margin: 4px 0 0 0;">Hold Shift while resizing to freely adjust</p>
+
+        <label style="margin-top: 12px;"></label>
+        <button class="btn-danger" onclick="deleteSelected()" style="width: 100%;">Delete Image</button>
+      </div>
+    </div>
+
     <!-- No Selection -->
     <div id="noSelectionProps">
       <div class="section">
@@ -705,7 +814,7 @@ const template = {
 
 // Initialize empty pages
 for (let i = 1; i <= totalPages; i++) {
-  template.pages[i] = { textBoxes: [], tables: [] };
+  template.pages[i] = { textBoxes: [], tables: [], images: [] };
 }
 
 // ===== INIT =====
@@ -738,9 +847,16 @@ function renderPage() {
     page.appendChild(el);
   });
 
+  // Render images
+  pageData.images.forEach(img => {
+    const el = createImageElement(img);
+    page.appendChild(el);
+  });
+
   document.getElementById('pageIndicator').textContent = `Page ${currentPage} / ${totalPages}`;
   document.getElementById('textBoxPageNum').textContent = currentPage;
   document.getElementById('tablePageNum').textContent = currentPage;
+  document.getElementById('imagePageNum').textContent = currentPage;
 
   updateElementLists();
   clearSelection();
@@ -1308,6 +1424,323 @@ function getTableData(id) {
   return template.pages[currentPage].tables.find(t => t.id === id);
 }
 
+// ===== IMAGE =====
+function addImage() {
+  const id = 'img_' + (++elementIdCounter);
+  const image = {
+    id,
+    type: 'static', // 'static', '{{lot.landscape}}', '{{lot.map}}'
+    url: '', // Only used for static images
+    x: 100,
+    y: 100,
+    width: 300,
+    height: 200,
+    aspectRatio: 1.5, // width / height
+    lockAspect: true
+  };
+
+  template.pages[currentPage].images.push(image);
+  renderPage();
+
+  setTimeout(() => {
+    const el = document.getElementById(id);
+    if (el) selectElement(el, 'image');
+  }, 10);
+}
+
+function createImageElement(data) {
+  const div = document.createElement('div');
+  div.className = 'image-box';
+  div.id = data.id;
+  div.dataset.type = 'image';
+
+  div.style.left = data.x + 'px';
+  div.style.top = data.y + 'px';
+  div.style.width = data.width + 'px';
+  div.style.height = data.height + 'px';
+
+  // Set background image based on type
+  const previewUrl = getImagePreviewUrl(data);
+  if (previewUrl) {
+    div.style.backgroundImage = `url("${previewUrl}")`;
+  } else {
+    div.style.backgroundColor = '#333';
+  }
+
+  // Label showing image type
+  const label = document.createElement('div');
+  label.className = 'image-label';
+  label.textContent = data.type === 'static' ? 'Static' : data.type;
+  div.appendChild(label);
+
+  // Resize handles (all 4 corners)
+  ['se', 'sw', 'ne', 'nw'].forEach(pos => {
+    const handle = document.createElement('div');
+    handle.className = `resize-handle ${pos}`;
+    handle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      startImageResize(e, div, data, pos);
+    });
+    div.appendChild(handle);
+  });
+
+  // Events
+  div.addEventListener('mousedown', (e) => {
+    if (e.target.classList.contains('resize-handle')) return;
+    selectElement(div, 'image');
+    startDrag(e, div, data);
+  });
+
+  return div;
+}
+
+function getImagePreviewUrl(data) {
+  const lotNum = document.getElementById('previewLot')?.value || '001';
+
+  if (data.type === '{{lot.landscape}}') {
+    return `/cpi/pdf/lotcpi1-${lotNum}_landscape.jpg`;
+  } else if (data.type === '{{lot.map}}') {
+    return `/cpi/pdf/lotcpi1-${lotNum}_map.jpg`;
+  } else if (data.type === 'static' && data.url) {
+    return data.url;
+  }
+  return null;
+}
+
+function updatePreviewImages() {
+  // Re-render all images on current page to update their preview URLs
+  const pageData = template.pages[currentPage];
+  pageData.images.forEach(img => {
+    const el = document.getElementById(img.id);
+    if (el) {
+      const previewUrl = getImagePreviewUrl(img);
+      if (previewUrl) {
+        el.style.backgroundImage = `url("${previewUrl}")`;
+      } else {
+        el.style.backgroundImage = 'none';
+        el.style.backgroundColor = '#333';
+      }
+    }
+  });
+}
+
+function updateSelectedImage() {
+  if (!selectedElement || selectedElement.dataset.type !== 'image') return;
+
+  const data = getImageData(selectedElement.id);
+  if (!data) return;
+
+  const imageType = document.getElementById('prop_imageType').value;
+  data.type = imageType;
+  data.url = document.getElementById('prop_imageUrl').value;
+  data.x = parseInt(document.getElementById('prop_imageX').value) || 0;
+  data.y = parseInt(document.getElementById('prop_imageY').value) || 0;
+  data.width = parseInt(document.getElementById('prop_imageWidth').value) || 100;
+  data.height = parseInt(document.getElementById('prop_imageHeight').value) || 100;
+
+  // Update aspect ratio when dimensions change
+  if (data.width > 0 && data.height > 0) {
+    data.aspectRatio = data.width / data.height;
+  }
+
+  // Show/hide static URL input
+  document.getElementById('staticImageUrlGroup').style.display =
+    imageType === 'static' ? 'block' : 'none';
+
+  // Update label
+  const label = selectedElement.querySelector('.image-label');
+  if (label) {
+    label.textContent = imageType === 'static' ? 'Static' : imageType;
+  }
+
+  applyImageStyles(selectedElement, data);
+}
+
+function applyImageStyles(el, data) {
+  el.style.left = data.x + 'px';
+  el.style.top = data.y + 'px';
+  el.style.width = data.width + 'px';
+  el.style.height = data.height + 'px';
+
+  const previewUrl = getImagePreviewUrl(data);
+  if (previewUrl) {
+    el.style.backgroundImage = `url("${previewUrl}")`;
+    el.style.backgroundColor = 'transparent';
+  } else {
+    el.style.backgroundImage = 'none';
+    el.style.backgroundColor = '#333';
+  }
+}
+
+function loadImageProps(id) {
+  const data = getImageData(id);
+  if (!data) return;
+
+  document.getElementById('prop_imageType').value = data.type;
+  document.getElementById('prop_imageUrl').value = data.url || '';
+  document.getElementById('prop_imageX').value = data.x;
+  document.getElementById('prop_imageY').value = data.y;
+  document.getElementById('prop_imageWidth').value = data.width;
+  document.getElementById('prop_imageHeight').value = data.height;
+
+  // Show/hide static URL input
+  document.getElementById('staticImageUrlGroup').style.display =
+    data.type === 'static' ? 'block' : 'none';
+
+  // Update aspect lock button
+  const lockBtn = document.getElementById('prop_lockAspect');
+  lockBtn.classList.toggle('active', data.lockAspect !== false);
+  lockBtn.textContent = data.lockAspect !== false ? '🔒 Locked' : '🔓 Unlocked';
+}
+
+function toggleAspectLock() {
+  if (!selectedElement || selectedElement.dataset.type !== 'image') return;
+
+  const data = getImageData(selectedElement.id);
+  if (!data) return;
+
+  data.lockAspect = !data.lockAspect;
+
+  const lockBtn = document.getElementById('prop_lockAspect');
+  lockBtn.classList.toggle('active', data.lockAspect);
+  lockBtn.textContent = data.lockAspect ? '🔒 Locked' : '🔓 Unlocked';
+}
+
+function getImageData(id) {
+  return template.pages[currentPage].images.find(img => img.id === id);
+}
+
+// ===== IMAGE RESIZE =====
+let imageResizeData = null;
+
+function startImageResize(e, el, data, corner) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  selectElement(el, 'image');
+
+  const page = document.getElementById('pdfPage');
+  const scale = page.getBoundingClientRect().width / 1224;
+
+  imageResizeData = {
+    el,
+    data,
+    corner,
+    startX: e.clientX,
+    startY: e.clientY,
+    origX: data.x,
+    origY: data.y,
+    origW: data.width,
+    origH: data.height,
+    aspectRatio: data.aspectRatio || (data.width / data.height),
+    scale
+  };
+
+  document.addEventListener('mousemove', onImageResize);
+  document.addEventListener('mouseup', stopImageResize);
+}
+
+function onImageResize(e) {
+  if (!imageResizeData) return;
+
+  const { el, data, corner, startX, startY, origX, origY, origW, origH, aspectRatio, scale } = imageResizeData;
+
+  const dx = (e.clientX - startX) / scale;
+  const dy = (e.clientY - startY) / scale;
+
+  let newW = origW;
+  let newH = origH;
+  let newX = origX;
+  let newY = origY;
+
+  // Determine how resize affects dimensions based on corner
+  const lockAspect = data.lockAspect !== false && !e.shiftKey;
+
+  if (corner === 'se') {
+    newW = Math.max(50, origW + dx);
+    newH = Math.max(50, origH + dy);
+    if (lockAspect) {
+      // Use the larger delta to determine scaling
+      const scaleW = newW / origW;
+      const scaleH = newH / origH;
+      if (scaleW > scaleH) {
+        newH = newW / aspectRatio;
+      } else {
+        newW = newH * aspectRatio;
+      }
+    }
+  } else if (corner === 'sw') {
+    newW = Math.max(50, origW - dx);
+    newH = Math.max(50, origH + dy);
+    if (lockAspect) {
+      const scaleW = newW / origW;
+      const scaleH = newH / origH;
+      if (scaleW > scaleH) {
+        newH = newW / aspectRatio;
+      } else {
+        newW = newH * aspectRatio;
+      }
+    }
+    newX = origX + (origW - newW);
+  } else if (corner === 'ne') {
+    newW = Math.max(50, origW + dx);
+    newH = Math.max(50, origH - dy);
+    if (lockAspect) {
+      const scaleW = newW / origW;
+      const scaleH = newH / origH;
+      if (scaleW > scaleH) {
+        newH = newW / aspectRatio;
+      } else {
+        newW = newH * aspectRatio;
+      }
+    }
+    newY = origY + (origH - newH);
+  } else if (corner === 'nw') {
+    newW = Math.max(50, origW - dx);
+    newH = Math.max(50, origH - dy);
+    if (lockAspect) {
+      const scaleW = newW / origW;
+      const scaleH = newH / origH;
+      if (scaleW > scaleH) {
+        newH = newW / aspectRatio;
+      } else {
+        newW = newH * aspectRatio;
+      }
+    }
+    newX = origX + (origW - newW);
+    newY = origY + (origH - newH);
+  }
+
+  data.x = Math.round(newX);
+  data.y = Math.round(newY);
+  data.width = Math.round(newW);
+  data.height = Math.round(newH);
+
+  el.style.left = data.x + 'px';
+  el.style.top = data.y + 'px';
+  el.style.width = data.width + 'px';
+  el.style.height = data.height + 'px';
+
+  // Update props panel
+  document.getElementById('prop_imageX').value = data.x;
+  document.getElementById('prop_imageY').value = data.y;
+  document.getElementById('prop_imageWidth').value = data.width;
+  document.getElementById('prop_imageHeight').value = data.height;
+}
+
+function stopImageResize() {
+  if (imageResizeData) {
+    // Update aspect ratio after resize
+    const data = imageResizeData.data;
+    if (data.width > 0 && data.height > 0) {
+      data.aspectRatio = data.width / data.height;
+    }
+  }
+  imageResizeData = null;
+  document.removeEventListener('mousemove', onImageResize);
+  document.removeEventListener('mouseup', stopImageResize);
+}
+
 // ===== SELECTION =====
 function selectElement(el, type, preserveCells = false) {
   // Clear previous selection but optionally preserve cell selections
@@ -1328,11 +1761,18 @@ function selectElement(el, type, preserveCells = false) {
   if (type === 'textbox') {
     document.getElementById('textBoxProps').style.display = 'block';
     document.getElementById('tableProps').style.display = 'none';
+    document.getElementById('imageProps').style.display = 'none';
     loadTextBoxProps(el.id);
   } else if (type === 'table') {
     document.getElementById('textBoxProps').style.display = 'none';
     document.getElementById('tableProps').style.display = 'block';
+    document.getElementById('imageProps').style.display = 'none';
     loadTableProps(el.id);
+  } else if (type === 'image') {
+    document.getElementById('textBoxProps').style.display = 'none';
+    document.getElementById('tableProps').style.display = 'none';
+    document.getElementById('imageProps').style.display = 'block';
+    loadImageProps(el.id);
   }
 
   updateElementLists();
@@ -1347,6 +1787,7 @@ function clearSelection() {
   document.getElementById('noSelectionProps').style.display = 'block';
   document.getElementById('textBoxProps').style.display = 'none';
   document.getElementById('tableProps').style.display = 'none';
+  document.getElementById('imageProps').style.display = 'none';
 
   updateElementLists();
 }
@@ -1408,6 +1849,16 @@ function updateElementLists() {
       <button class="delete-btn btn-small" onclick="event.stopPropagation(); deleteElementById('${t.id}', 'table')">✕</button>
     </div>
   `).join('');
+
+  // Images
+  const imageList = document.getElementById('imageList');
+  imageList.innerHTML = pageData.images.map(img => `
+    <div class="element-item ${selectedElement?.id === img.id ? 'selected' : ''}"
+         onclick="selectElementById('${img.id}', 'image')">
+      <span>${img.type === 'static' ? 'Static Image' : img.type}</span>
+      <button class="delete-btn btn-small" onclick="event.stopPropagation(); deleteElementById('${img.id}', 'image')">✕</button>
+    </div>
+  `).join('');
 }
 
 function selectElementById(id, type) {
@@ -1422,6 +1873,8 @@ function deleteElementById(id, type) {
     pageData.textBoxes = pageData.textBoxes.filter(tb => tb.id !== id);
   } else if (type === 'table') {
     pageData.tables = pageData.tables.filter(t => t.id !== id);
+  } else if (type === 'image') {
+    pageData.images = pageData.images.filter(img => img.id !== id);
   }
 
   renderPage();
@@ -1473,9 +1926,12 @@ function onDrag(e) {
   if (dragData.data.id?.startsWith('tb_')) {
     document.getElementById('prop_x').value = dragData.data.x;
     document.getElementById('prop_y').value = dragData.data.y;
-  } else {
+  } else if (dragData.data.id?.startsWith('table_')) {
     document.getElementById('prop_tableX').value = dragData.data.x;
     document.getElementById('prop_tableY').value = dragData.data.y;
+  } else if (dragData.data.id?.startsWith('img_')) {
+    document.getElementById('prop_imageX').value = dragData.data.x;
+    document.getElementById('prop_imageY').value = dragData.data.y;
   }
 }
 
@@ -1580,14 +2036,20 @@ function handleFileLoad(event) {
 
       // Find max element ID to continue from
       Object.values(template.pages).forEach(page => {
-        page.textBoxes.forEach(tb => {
+        page.textBoxes?.forEach(tb => {
           const num = parseInt(tb.id.replace('tb_', ''));
           if (num > elementIdCounter) elementIdCounter = num;
         });
-        page.tables.forEach(t => {
+        page.tables?.forEach(t => {
           const num = parseInt(t.id.replace('table_', ''));
           if (num > elementIdCounter) elementIdCounter = num;
         });
+        page.images?.forEach(img => {
+          const num = parseInt(img.id.replace('img_', ''));
+          if (num > elementIdCounter) elementIdCounter = num;
+        });
+        // Ensure images array exists
+        if (!page.images) page.images = [];
       });
 
       renderPage();
