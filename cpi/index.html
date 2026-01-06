@@ -3769,8 +3769,24 @@ map.on('click', 'lots-final-click', (e) => {
   } else {
     // Check if we should skip list modal and go directly to detail view
     if (CONFIG.misc && CONFIG.misc.skipListModal) {
+      // 🔥 FIX: Save the correct hoveredId before openModal
+      // MutationObserver in CYCLE AVAILABILITY block can override it with stale selectedLotName
+      const savedHoveredIdBeforeOpen = window.hoveredId;
+
       // Open modal first to ensure proper initialization
       openModal(lot);
+
+      // 🔥 FIX: Restore the correct hover state that click handler set
+      if (savedHoveredIdBeforeOpen !== null && savedHoveredIdBeforeOpen !== window.hoveredId) {
+        if (window.hoveredId !== null && map?.getSource('lots-final')) {
+          map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
+        }
+        if (map?.getSource('lots-final')) {
+          map.setFeatureState({ source: 'lots-final', id: savedHoveredIdBeforeOpen }, { hover: true });
+        }
+        window.hoveredId = savedHoveredIdBeforeOpen;
+      }
+
       // Then immediately show detail view (calculate baseIndex AFTER openModal filters baseLots)
       requestAnimationFrame(() => {
         const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
@@ -7182,6 +7198,11 @@ if (map && map.getSource('lots-final') && window.hoveredId !== null) {
   window.hoveredId = null;
 }
 
+// 🔥 FIX: Clear stale selection state to prevent MutationObserver from restoring wrong lot
+if (typeof window.clearCycleSelectionState === 'function') {
+  window.clearCycleSelectionState();
+}
+
 setTimeout(() => {
   modal.style.display = 'none';
 }, 50);
@@ -8187,6 +8208,11 @@ PS.openPinInModal = async function (pin) {
 
   const $modalInfo = document.getElementById('modalInfo');
   const $lotModal  = document.getElementById('lotModal');
+
+  // 🔥 FIX: Expose function to clear stale selection state when modal closes
+  window.clearCycleSelectionState = function() {
+    selectedLotName = null;
+  };
 
   // --- utils ---
   const normalize = v => (v || '').toString().trim().toLowerCase();
@@ -9750,6 +9776,11 @@ if (map && map.getSource('lots-final') && window.hoveredId !== null) {
   try {
     map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
   } catch {}
+}
+
+// 🔥 FIX: Clear stale selection state to prevent MutationObserver from restoring wrong lot
+if (typeof window.clearCycleSelectionState === 'function') {
+  window.clearCycleSelectionState();
 }
 
 setTimeout(() => {
