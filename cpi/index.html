@@ -5736,10 +5736,10 @@ document.getElementById('authControls').classList.add('hide-in-detail');
         console.error('Payment view not available or lot data missing');
       }
     } else if (e.target.id === 'descargarPdfBtn') {
-      // Generate and download multi-page PDF with dynamic text on page 3
+      // Generate and download multi-page PDF using template
       e.stopPropagation();
 
-      // Prompt user for dynamic text
+      // Prompt user for dynamic text (for page 3)
       const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
       if (!dynamicText) return; // User cancelled
 
@@ -5762,7 +5762,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       progressOverlay.innerHTML = `
         <div style="background: white; padding: 32px 48px; border-radius: 12px; text-align: center; font-family: Arial, sans-serif;">
           <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Generando PDF...</div>
-          <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Página 1 de 8</div>
+          <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Cargando plantilla...</div>
           <div style="width: 200px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
             <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: ${CONFIG.colors?.primary || '#007bff'}; transition: width 0.3s;"></div>
           </div>
@@ -5773,14 +5773,72 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       const progressText = document.getElementById('pdf-progress-text');
       const progressBar = document.getElementById('pdf-progress-bar');
 
+      // Calculate lot values for placeholders
+      function getLotValues(lot, dynamicText) {
+        const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
+        const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+        const totalPrice = size * priceM2;
+
+        // Format currency helper
+        const formatCurrency = (num) => '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const formatNumber = (num) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        // Discount calculations
+        const discount5 = totalPrice * 0.05;
+        const discount12 = totalPrice * 0.12;
+        const priceWith5Discount = totalPrice * 0.95;
+        const priceWith12Discount = totalPrice * 0.88;
+
+        // 25% plan: no discount, 25% down, 45% in 24 months, 30% contra escritura
+        const downpayment25 = totalPrice * 0.25;
+        const monthly25 = (totalPrice * 0.45) / 24;
+        const contraEscritura30 = totalPrice * 0.30;
+
+        // 50% plan: 5% discount, 50% down, 50% contra escritura
+        const downpayment50 = priceWith5Discount * 0.50;
+        const contraEscritura50 = priceWith5Discount * 0.50;
+
+        // 85% plan: 12% discount, 85% down, 15% contra escritura
+        const downpayment85 = priceWith12Discount * 0.85;
+        const contraEscritura15 = priceWith12Discount * 0.15;
+
+        return {
+          'dynamicText': dynamicText,
+          'lot.number': lot.number || '',
+          'lot.size': formatNumber(size) + ' m²',
+          'lot.pricePerM2': formatCurrency(priceM2),
+          'lot.totalPrice': formatCurrency(totalPrice),
+          'lot.downpayment25': formatCurrency(downpayment25),
+          'lot.downpayment50': formatCurrency(downpayment50),
+          'lot.downpayment85': formatCurrency(downpayment85),
+          'lot.monthly25': formatCurrency(monthly25),
+          'lot.discount0': formatCurrency(0),
+          'lot.discount5': formatCurrency(discount5),
+          'lot.discount12': formatCurrency(discount12),
+          'lot.priceWith5Discount': formatCurrency(priceWith5Discount),
+          'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
+          'lot.contraEscritura30': formatCurrency(contraEscritura30),
+          'lot.contraEscritura50': formatCurrency(contraEscritura50),
+          'lot.contraEscritura15': formatCurrency(contraEscritura15)
+        };
+      }
+
+      // Replace placeholders in text
+      function replacePlaceholders(text, values) {
+        if (!text) return '';
+        return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+          return values[key.trim()] !== undefined ? values[key.trim()] : match;
+        });
+      }
+
       // Create hidden container for rendering pages
       const pdfContainer = document.createElement('div');
       pdfContainer.id = 'pdf-generation-container';
       pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
       document.body.appendChild(pdfContainer);
 
-      // Function to create a single page element
-      function createPage(pageNum, withText = false) {
+      // Function to create a page with template elements
+      function createPage(pageNum, template, lotValues) {
         const pdfPage = document.createElement('div');
         pdfPage.style.cssText = `
           width: 1224px;
@@ -5792,32 +5850,107 @@ document.getElementById('authControls').classList.add('hide-in-detail');
           background-position: top left;
         `;
 
-        if (withText) {
-          const textElement = document.createElement('div');
-          textElement.textContent = dynamicText;
-          textElement.style.cssText = `
-            position: absolute;
-            top: 440px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 36px;
-            font-family: "STIX Two Text", serif;
-            font-style: italic;
-            color: #746753;
-            white-space: pre;
-            text-align: center;
-          `;
-          pdfPage.appendChild(textElement);
+        // Get page data from template
+        const pageIndex = parseInt(pageNum, 10);
+        const pageData = template?.pages?.[pageIndex];
+
+        if (pageData) {
+          // Render text boxes
+          if (pageData.textBoxes) {
+            pageData.textBoxes.forEach(tb => {
+              const textEl = document.createElement('div');
+              textEl.textContent = replacePlaceholders(tb.content, lotValues);
+              textEl.style.cssText = `
+                position: absolute;
+                left: ${tb.x}px;
+                top: ${tb.y}px;
+                ${tb.width ? `width: ${tb.width}px;` : ''}
+                ${tb.height ? `height: ${tb.height}px;` : ''}
+                font-size: ${tb.fontSize || 24}px;
+                font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+                color: ${tb.color || '#000000'};
+                font-weight: ${tb.bold ? '700' : '400'};
+                font-style: ${tb.italic ? 'italic' : 'normal'};
+                text-decoration: ${tb.underline ? 'underline' : 'none'};
+                text-align: ${tb.textAlign || 'left'};
+                white-space: pre-wrap;
+              `;
+              pdfPage.appendChild(textEl);
+            });
+          }
+
+          // Render tables
+          if (pageData.tables) {
+            pageData.tables.forEach(tableData => {
+              const tableContainer = document.createElement('div');
+              tableContainer.style.cssText = `
+                position: absolute;
+                left: ${tableData.x}px;
+                top: ${tableData.y}px;
+              `;
+
+              const table = document.createElement('table');
+              table.style.cssText = 'border-collapse: collapse;';
+
+              for (let r = 0; r < tableData.rows; r++) {
+                const tr = document.createElement('tr');
+                for (let c = 0; c < tableData.cols; c++) {
+                  const cellData = tableData.cells?.[r]?.[c];
+                  if (!cellData || cellData.hidden) continue;
+
+                  const td = document.createElement('td');
+                  td.textContent = replacePlaceholders(cellData.content || '', lotValues);
+
+                  const pH = cellData.paddingH ?? cellData.padding ?? 8;
+                  const pV = cellData.paddingV ?? cellData.padding ?? 4;
+
+                  td.style.cssText = `
+                    background-color: ${cellData.bgColor || '#ffffff'};
+                    color: ${cellData.textColor || '#000000'};
+                    font-family: "${cellData.fontFamily || 'Arial'}", sans-serif;
+                    font-size: ${cellData.fontSize || 14}px;
+                    border: ${cellData.borderWidth || 1}px solid ${cellData.borderColor || '#000000'};
+                    padding: ${pV}px ${pH}px;
+                    text-align: ${cellData.textAlign || 'left'};
+                  `;
+
+                  if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
+                  if (cellData.rowSpan > 1) td.rowSpan = cellData.rowSpan;
+
+                  tr.appendChild(td);
+                }
+                table.appendChild(tr);
+              }
+
+              tableContainer.appendChild(table);
+              pdfPage.appendChild(tableContainer);
+            });
+          }
         }
 
         return pdfPage;
       }
 
-      // Generate PDF page by page using worker API
+      // Generate PDF
       async function generateMultiPagePDF() {
-        // Step 1: Preload ALL images in parallel
+        // Step 1: Fetch template
+        progressText.textContent = 'Cargando plantilla...';
+        let template = { pages: {} };
+        try {
+          const response = await fetch('https://la-la.land/cpi/pdf/pdf-template.json');
+          if (response.ok) {
+            template = await response.json();
+          }
+        } catch (err) {
+          console.warn('Could not load PDF template, using defaults:', err);
+        }
+
+        // Calculate lot values
+        const lotValues = getLotValues(lot, dynamicText);
+
+        // Step 2: Preload ALL images in parallel
         progressText.textContent = 'Cargando imágenes...';
-        progressBar.style.width = '0%';
+        progressBar.style.width = '10%';
 
         const imagePromises = [];
         for (let i = 1; i <= 8; i++) {
@@ -5825,20 +5958,16 @@ document.getElementById('authControls').classList.add('hide-in-detail');
           imagePromises.push(new Promise(resolve => {
             const img = new Image();
             img.crossOrigin = 'anonymous';
-            img.onload = () => {
-              // Update progress as each image loads
-              progressBar.style.width = `${(imagePromises.filter((_, idx) => idx < i).length / 8) * 50}%`;
-              resolve();
-            };
+            img.onload = resolve;
             img.onerror = resolve;
             img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
           }));
         }
         await Promise.all(imagePromises);
+        progressBar.style.width = '40%';
 
-        // Step 2: Generate PDF pages sequentially (required by jsPDF)
+        // Step 3: Generate PDF pages sequentially (required by jsPDF)
         progressText.textContent = 'Generando PDF...';
-        progressBar.style.width = '50%';
 
         const worker = html2pdf().set({
           margin: 0,
@@ -5849,23 +5978,19 @@ document.getElementById('authControls').classList.add('hide-in-detail');
         });
 
         for (let i = 1; i <= 8; i++) {
-          // Update progress (50-100% for rendering)
           progressText.textContent = `Renderizando página ${i} de 8`;
-          progressBar.style.width = `${50 + (i / 8) * 50}%`;
+          progressBar.style.width = `${40 + (i / 8) * 55}%`;
 
           const pageNum = String(i).padStart(3, '0');
-          const isPage3 = (i === 3);
 
-          // Create and add page to container
-          const page = createPage(pageNum, isPage3);
+          // Create page with template elements
+          const page = createPage(pageNum, template, lotValues);
           pdfContainer.innerHTML = '';
           pdfContainer.appendChild(page);
 
           if (i === 1) {
-            // First page - initialize
             await worker.from(page).toContainer().toCanvas().toPdf();
           } else {
-            // Add subsequent pages
             await worker.get('pdf').then(pdf => {
               pdf.addPage([1224, 1584], 'portrait');
             });
