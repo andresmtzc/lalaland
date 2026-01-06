@@ -46,7 +46,7 @@ const CLIENT_CONFIGS = {
 
       // Initial map view (can be overridden by default community)
       initialView: {
-        center: [-99.944337, 25.14729], // Senterra center
+        center: [-99.9467, 25.1467], // Senterra center
         zoom: 14.4
       }
     },
