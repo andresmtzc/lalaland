@@ -229,7 +229,7 @@ const CLIENT_CONFIGS = {
       soldLotsClickable: false,
 
       // Minimum zoom level to show lot dimensions (lower = show at farther zoom)
-      minZoomForDimensions: 18.0,
+      minZoomForDimensions: 17.9,
 
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
