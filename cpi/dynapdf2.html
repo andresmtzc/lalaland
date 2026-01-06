@@ -626,6 +626,14 @@
           <input type="text" id="prop_cellColorHex" value="#000000" oninput="syncCellColorFromHex()">
         </div>
 
+        <label>Font Family</label>
+        <select id="prop_cellFontFamily" onchange="updateSelectedCells()">
+          <option value="Arial">Arial</option>
+          <option value="STIX Two Text">STIX Two Text</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Times New Roman">Times New Roman</option>
+        </select>
+
         <label>Font Size</label>
         <input type="number" id="prop_cellFontSize" value="14" min="6" max="72" oninput="updateSelectedCells()">
 
@@ -639,7 +647,16 @@
         <input type="number" id="prop_cellBorderWidth" value="1" min="0" max="5" oninput="updateSelectedCells()">
 
         <label>Padding</label>
-        <input type="number" id="prop_cellPadding" value="4" min="0" max="20" oninput="updateSelectedCells()">
+        <div class="row">
+          <div>
+            <label style="margin-top: 0; font-size: 9px;">Horizontal</label>
+            <input type="number" id="prop_cellPaddingH" value="8" min="0" max="40" oninput="updateSelectedCells()">
+          </div>
+          <div>
+            <label style="margin-top: 0; font-size: 9px;">Vertical</label>
+            <input type="number" id="prop_cellPaddingV" value="4" min="0" max="40" oninput="updateSelectedCells()">
+          </div>
+        </div>
 
         <label>Text Align</label>
         <div class="style-row">
@@ -991,10 +1008,14 @@ function createTableElement(data) {
       // Apply cell styles
       td.style.backgroundColor = cellData.bgColor || '#ffffff';
       td.style.color = cellData.textColor || '#000000';
+      td.style.fontFamily = cellData.fontFamily || 'Arial';
       td.style.fontSize = (cellData.fontSize || 14) + 'px';
       td.style.borderColor = cellData.borderColor || '#000000';
       td.style.borderWidth = (cellData.borderWidth || 1) + 'px';
-      td.style.padding = (cellData.padding || 4) + 'px';
+      // Support both old padding and new paddingH/V
+      const pH = cellData.paddingH ?? cellData.padding ?? 8;
+      const pV = cellData.paddingV ?? cellData.padding ?? 4;
+      td.style.padding = `${pV}px ${pH}px`;
       td.style.textAlign = cellData.textAlign || 'left';
 
       if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
@@ -1021,6 +1042,9 @@ function createTableElement(data) {
           selectedCells = [{ row: r, col: c, element: td }];
           td.classList.add('cell-selected');
         }
+
+        // Load cell properties into panel
+        loadCellProps(cellData);
 
         // Select table without clearing cell selection
         if (!isTableSelected) {
@@ -1099,10 +1123,12 @@ function createDefaultCell() {
     content: '',
     bgColor: '#ffffff',
     textColor: '#000000',
+    fontFamily: 'Arial',
     fontSize: 14,
     borderColor: '#000000',
     borderWidth: 1,
-    padding: 4,
+    paddingH: 8,
+    paddingV: 4,
     textAlign: 'left',
     colSpan: 1,
     rowSpan: 1
@@ -1117,10 +1143,12 @@ function updateSelectedCells() {
 
   const bgColor = document.getElementById('prop_cellBg').value;
   const textColor = document.getElementById('prop_cellColor').value;
+  const fontFamily = document.getElementById('prop_cellFontFamily').value;
   const fontSize = parseInt(document.getElementById('prop_cellFontSize').value) || 14;
   const borderColor = document.getElementById('prop_cellBorder').value;
   const borderWidth = parseInt(document.getElementById('prop_cellBorderWidth').value) || 1;
-  const padding = parseInt(document.getElementById('prop_cellPadding').value) || 4;
+  const paddingH = parseInt(document.getElementById('prop_cellPaddingH').value) || 8;
+  const paddingV = parseInt(document.getElementById('prop_cellPaddingV').value) || 4;
 
   // Update hex displays
   document.getElementById('prop_cellBgHex').value = bgColor.toUpperCase();
@@ -1132,20 +1160,46 @@ function updateSelectedCells() {
     if (cellData) {
       cellData.bgColor = bgColor;
       cellData.textColor = textColor;
+      cellData.fontFamily = fontFamily;
       cellData.fontSize = fontSize;
       cellData.borderColor = borderColor;
       cellData.borderWidth = borderWidth;
-      cellData.padding = padding;
+      cellData.paddingH = paddingH;
+      cellData.paddingV = paddingV;
 
       // Apply to element
       element.style.backgroundColor = bgColor;
       element.style.color = textColor;
+      element.style.fontFamily = fontFamily;
       element.style.fontSize = fontSize + 'px';
       element.style.borderColor = borderColor;
       element.style.borderWidth = borderWidth + 'px';
-      element.style.padding = padding + 'px';
+      element.style.padding = `${paddingV}px ${paddingH}px`;
     }
   });
+}
+
+// Load cell properties into the panel when a cell is selected
+function loadCellProps(cellData) {
+  if (!cellData) return;
+
+  document.getElementById('prop_cellBg').value = cellData.bgColor || '#ffffff';
+  document.getElementById('prop_cellBgHex').value = (cellData.bgColor || '#ffffff').toUpperCase();
+  document.getElementById('prop_cellColor').value = cellData.textColor || '#000000';
+  document.getElementById('prop_cellColorHex').value = (cellData.textColor || '#000000').toUpperCase();
+  document.getElementById('prop_cellFontFamily').value = cellData.fontFamily || 'Arial';
+  document.getElementById('prop_cellFontSize').value = cellData.fontSize || 14;
+  document.getElementById('prop_cellBorder').value = cellData.borderColor || '#000000';
+  document.getElementById('prop_cellBorderHex').value = (cellData.borderColor || '#000000').toUpperCase();
+  document.getElementById('prop_cellBorderWidth').value = cellData.borderWidth ?? 1;
+  document.getElementById('prop_cellPaddingH').value = cellData.paddingH ?? cellData.padding ?? 8;
+  document.getElementById('prop_cellPaddingV').value = cellData.paddingV ?? cellData.padding ?? 4;
+
+  // Update alignment buttons
+  const align = cellData.textAlign || 'left';
+  document.getElementById('prop_cellAlignLeft').classList.toggle('active', align === 'left');
+  document.getElementById('prop_cellAlignCenter').classList.toggle('active', align === 'center');
+  document.getElementById('prop_cellAlignRight').classList.toggle('active', align === 'right');
 }
 
 function setCellAlign(align) {
@@ -1554,6 +1608,14 @@ function exportPDF() {
   const selected = document.querySelector('.selected');
   if (selected) selected.classList.remove('selected');
 
+  // Remove cell selection styling
+  const selectedCellEls = document.querySelectorAll('.cell-selected');
+  selectedCellEls.forEach(c => c.classList.remove('cell-selected'));
+
+  // Hide all drag handles
+  const dragHandles = document.querySelectorAll('.table-drag-handle');
+  dragHandles.forEach(h => h.style.display = 'none');
+
   const page = document.getElementById('pdfPage');
   const origTransform = page.style.transform;
   page.style.transform = 'none';
@@ -1562,11 +1624,15 @@ function exportPDF() {
     margin: 0,
     filename: `page-${currentPage}.pdf`,
     image: { type: 'jpeg', quality: 1 },
-    html2canvas: { scale: 1, useCORS: true },
+    html2canvas: { scale: 1, useCORS: true, backgroundColor: null },
     jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
   }).from(page).save().then(() => {
     page.style.transform = origTransform;
     if (selected) selected.classList.add('selected');
+    // Restore cell selections
+    selectedCells.forEach(({ element }) => element.classList.add('cell-selected'));
+    // Restore drag handles (they show/hide via CSS based on .selected)
+    dragHandles.forEach(h => h.style.display = '');
   });
 }
 
