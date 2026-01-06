@@ -39,6 +39,14 @@
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 <link rel="stylesheet" href="https://la-la.land/styles.css">
 
+<!-- STIX Two Text font for PDF generation -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:wght@400;700&display=swap" rel="stylesheet">
+
+<!-- html2pdf for PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
 <!-- ===== LOAD CLIENT CONFIGURATION ===== -->
 <script src="client-config.js"></script>
 <script>
@@ -5693,7 +5701,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   buttonsRow.style.position = 'relative';
   buttonsRow.innerHTML = `
     <button class="cta-button first" id="separarBtn" translate="no" disabled style="opacity: 0.4; cursor: not-allowed;">APARTAR</button>
-    <button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>
+    <button class="cta-button first" id="descargarPdfBtn" translate="no">DESCARGAR PDF</button>
     <button class="cta-button second" id="chatearBtn" translate="no">CHATEAR</button>
   `;
 
@@ -5727,24 +5735,60 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       } else {
         console.error('Payment view not available or lot data missing');
       }
-    } else if (e.target.id === 'visitarBtn') {
-      // Open driving directions to this lot
+    } else if (e.target.id === 'descargarPdfBtn') {
+      // Generate and download PDF with dynamic text
       e.stopPropagation();
 
-      // Use the lotMapData already calculated in showDetailViewForLot
-      if (lotMapData && lotMapData.center) {
-        const [lng, lat] = lotMapData.center;
+      // Prompt user for dynamic text
+      const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
+      if (!dynamicText) return; // User cancelled
 
-        // Open in Google Maps or Apple Maps depending on device
-        const isApple = /iPad|iPhone|Macintosh/.test(navigator.userAgent);
-        const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving&dir_action=navigate`;
-        const appleMapsUrl = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
-        const url = isApple ? appleMapsUrl : googleMapsUrl;
-        window.open(url, '_blank');
-      } else {
-        window.showToaster?.('No se pudo obtener la ubicación del lote');
-        console.error('lotMapData:', lotMapData);
-      }
+      // Create hidden PDF container
+      const pdfContainer = document.createElement('div');
+      pdfContainer.id = 'pdf-generation-container';
+      pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+
+      // Create PDF page with exact dimensions from dynapdf.html
+      const pdfPage = document.createElement('div');
+      pdfPage.style.cssText = `
+        width: 1224px;
+        height: 1584px;
+        position: relative;
+        background-image: url("https://la-la.land/cpi/pdf/page.003.png");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: top left;
+      `;
+
+      // Create dynamic text element with settings from dynapdf.html
+      const textElement = document.createElement('div');
+      textElement.textContent = dynamicText;
+      textElement.style.cssText = `
+        position: absolute;
+        top: 440px;
+        left: 312px;
+        font-size: 36px;
+        font-family: "STIX Two Text", serif;
+        color: #746753;
+        white-space: pre;
+        text-align: center;
+      `;
+
+      pdfPage.appendChild(textElement);
+      pdfContainer.appendChild(pdfPage);
+      document.body.appendChild(pdfContainer);
+
+      // Generate PDF with html2pdf
+      html2pdf().set({
+        margin: 0,
+        filename: 'CPI-documento.pdf',
+        image: { type: 'jpeg', quality: 1 },
+        html2canvas: { scale: 1, useCORS: true },
+        jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
+      }).from(pdfPage).save().then(() => {
+        // Clean up after download
+        document.body.removeChild(pdfContainer);
+      });
     } else if (e.target.id === 'chatearBtn') {
       // Add your "Chatear" functionality here
       console.log('Chatear button clicked');
