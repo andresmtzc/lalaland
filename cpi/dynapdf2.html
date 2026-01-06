@@ -286,16 +286,40 @@
 
     .text-box .resize-handle.se { right: -5px; bottom: -5px; cursor: se-resize; }
 
-    /* TABLE */
-    .pdf-table {
+    /* TABLE CONTAINER */
+    .table-container {
       position: absolute;
-      cursor: move;
-      border-collapse: collapse;
     }
 
-    .pdf-table.selected {
+    .table-container.selected {
       outline: 2px dashed #e94560;
       outline-offset: 2px;
+    }
+
+    .table-drag-handle {
+      height: 16px;
+      background: #e94560;
+      cursor: move;
+      border-radius: 3px 3px 0 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .table-container.selected .table-drag-handle {
+      display: flex;
+    }
+
+    .table-drag-handle::before {
+      content: '⋮⋮';
+      color: white;
+      font-size: 10px;
+      letter-spacing: 2px;
+    }
+
+    /* TABLE */
+    .pdf-table {
+      border-collapse: collapse;
     }
 
     .pdf-table td {
@@ -304,6 +328,7 @@
       min-width: 40px;
       min-height: 24px;
       position: relative;
+      cursor: text;
     }
 
     .pdf-table td.cell-selected {
@@ -448,7 +473,8 @@
       <kbd>Click</kbd> to select element<br>
       <kbd>Shift+Click</kbd> cells to multi-select<br>
       <kbd>Delete</kbd> to remove selected<br>
-      <kbd>Drag</kbd> to move elements
+      <kbd>Drag</kbd> text boxes to move<br>
+      <kbd>Drag handle</kbd> (pink bar) to move tables
     </div>
   </div>
 </div>
@@ -926,13 +952,28 @@ function addTable() {
 }
 
 function createTableElement(data) {
+  // Create container for table + drag handle
+  const container = document.createElement('div');
+  container.className = 'table-container';
+  container.id = data.id;
+  container.dataset.type = 'table';
+
+  container.style.left = data.x + 'px';
+  container.style.top = data.y + 'px';
+
+  // Drag handle
+  const dragHandle = document.createElement('div');
+  dragHandle.className = 'table-drag-handle';
+  dragHandle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    selectElement(container, 'table');
+    startDrag(e, container, data);
+  });
+  container.appendChild(dragHandle);
+
+  // Table element
   const table = document.createElement('table');
   table.className = 'pdf-table';
-  table.id = data.id;
-  table.dataset.type = 'table';
-
-  table.style.left = data.x + 'px';
-  table.style.top = data.y + 'px';
 
   // Build table cells
   for (let r = 0; r < data.rows; r++) {
@@ -962,7 +1003,12 @@ function createTableElement(data) {
       // Cell selection with shift
       td.addEventListener('mousedown', (e) => {
         e.stopPropagation();
-        if (e.shiftKey) {
+
+        // Check if this table is already selected
+        const isTableSelected = selectedElement === container;
+
+        if (e.shiftKey && isTableSelected) {
+          // Add/remove from multi-selection
           td.classList.toggle('cell-selected');
           if (td.classList.contains('cell-selected')) {
             selectedCells.push({ row: r, col: c, element: td });
@@ -970,12 +1016,16 @@ function createTableElement(data) {
             selectedCells = selectedCells.filter(sc => !(sc.row === r && sc.col === c));
           }
         } else {
-          // Clear other selections
+          // New selection - clear others first
           document.querySelectorAll('.cell-selected').forEach(c => c.classList.remove('cell-selected'));
           selectedCells = [{ row: r, col: c, element: td }];
           td.classList.add('cell-selected');
         }
-        selectElement(table, 'table');
+
+        // Select table without clearing cell selection
+        if (!isTableSelected) {
+          selectElement(container, 'table', true); // preserveCells = true
+        }
       });
 
       // Save cell content on blur
@@ -990,15 +1040,8 @@ function createTableElement(data) {
     table.appendChild(tr);
   }
 
-  // Table drag (on border)
-  table.addEventListener('mousedown', (e) => {
-    if (e.target === table) {
-      selectElement(table, 'table');
-      startDrag(e, table, data);
-    }
-  });
-
-  return table;
+  container.appendChild(table);
+  return container;
 }
 
 function updateSelectedTable() {
@@ -1210,8 +1253,15 @@ function getTableData(id) {
 }
 
 // ===== SELECTION =====
-function selectElement(el, type) {
-  clearSelection();
+function selectElement(el, type, preserveCells = false) {
+  // Clear previous selection but optionally preserve cell selections
+  if (preserveCells) {
+    // Only clear element selection, not cell selections
+    document.querySelectorAll('.selected').forEach(e => e.classList.remove('selected'));
+    selectedElement = null;
+  } else {
+    clearSelection();
+  }
 
   selectedElement = el;
   el.classList.add('selected');
