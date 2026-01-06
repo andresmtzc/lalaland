@@ -46,7 +46,7 @@ const CLIENT_CONFIGS = {
 
       // Initial map view (can be overridden by default community)
       initialView: {
-        center: [-99.948236, 25.147828], // Senterra center
+        center: [-99.944337, 25.14729], // Senterra center
         zoom: 14.4
       }
     },
@@ -133,7 +133,7 @@ const CLIENT_CONFIGS = {
     // All colors used throughout the site for easy customization
     colors: {
       // Primary brand colors
-      primary: '#9ea516',        // Orange - main CTA and accent color
+      primary: '#8f5e38',        // Orange - main CTA and accent color
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
@@ -146,7 +146,7 @@ const CLIENT_CONFIGS = {
 
       // Neutral colors
       black: '#000',             // Pure black - rare use cases
-      white: '#fff',             // White - backgrounds, strokes
+      white: '#84827a',             // White - backgrounds, strokes
       offWhite: '#fffdf8',       // Off-white - subtle backgrounds
       creamLight: '#f2efe4',     // Light cream - backgrounds
       grayLightest: '#ddd',      // Lightest gray - subtle borders
