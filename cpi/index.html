@@ -3751,6 +3751,7 @@ map.on('click', 'lots-final-click', (e) => {
     map.setFeatureState({ source: 'lots-final', id: idx }, { hover: true });
     window.hoveredId = idx;
     currentLotIndex = idx;
+    window.currentLotIndex = idx; // 🔥 FIX: Also set on window for getSelectedLot() in CYCLE AVAILABILITY
 
     // Force map to repaint to update lot outlines
     map.triggerRepaint();
@@ -3769,24 +3770,8 @@ map.on('click', 'lots-final-click', (e) => {
   } else {
     // Check if we should skip list modal and go directly to detail view
     if (CONFIG.misc && CONFIG.misc.skipListModal) {
-      // 🔥 FIX: Save the correct hoveredId before openModal
-      // MutationObserver in CYCLE AVAILABILITY block can override it with stale selectedLotName
-      const savedHoveredIdBeforeOpen = window.hoveredId;
-
       // Open modal first to ensure proper initialization
       openModal(lot);
-
-      // 🔥 FIX: Restore the correct hover state that click handler set
-      if (savedHoveredIdBeforeOpen !== null && savedHoveredIdBeforeOpen !== window.hoveredId) {
-        if (window.hoveredId !== null && map?.getSource('lots-final')) {
-          map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
-        }
-        if (map?.getSource('lots-final')) {
-          map.setFeatureState({ source: 'lots-final', id: savedHoveredIdBeforeOpen }, { hover: true });
-        }
-        window.hoveredId = savedHoveredIdBeforeOpen;
-      }
-
       // Then immediately show detail view (calculate baseIndex AFTER openModal filters baseLots)
       requestAnimationFrame(() => {
         const baseIndex = baseLots.findIndex(l => l.number === extractLotNumber(lot.name));
@@ -5350,6 +5335,7 @@ function setupLotClickHandlers() {
         if (lotMapIndex !== -1 && lotData[lotMapIndex].center && map) {
           const [lng, lat] = lotData[lotMapIndex].center;
           currentLotIndex = lotMapIndex;
+          window.currentLotIndex = lotMapIndex;
 
           // Animate map to new lot
           await new Promise(resolve => {
@@ -5408,6 +5394,7 @@ function setupLotClickHandlers() {
 
           const [lng, lat] = lotData[lotMapIndex].center;
           currentLotIndex = lotMapIndex;
+          window.currentLotIndex = lotMapIndex;
 
           // 1. First start the map animation
           await new Promise(resolve => {
@@ -6816,8 +6803,9 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
         map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
         window.hoveredId = mapIndex;
         currentLotIndex = mapIndex;
+        window.currentLotIndex = mapIndex;
       }
-      
+
       // Add side length labels if zoom is high enough
       const currentZoom = map.getZoom();
       if (currentZoom >= 18.8) {
@@ -6980,6 +6968,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
           map.setFeatureState({ source: 'lots-final', id: mapIndex }, { hover: true });
           window.hoveredId = mapIndex;
           currentLotIndex = mapIndex;
+          window.currentLotIndex = mapIndex;
         }
 
         // Ensure UI is ready
@@ -7196,11 +7185,6 @@ if (map && map.getSource('lots-final') && window.hoveredId !== null) {
     console.log('⚠️ closeModal: Error clearing hover state:', e);
   }
   window.hoveredId = null;
-}
-
-// 🔥 FIX: Clear stale selection state to prevent MutationObserver from restoring wrong lot
-if (typeof window.clearCycleSelectionState === 'function') {
-  window.clearCycleSelectionState();
 }
 
 setTimeout(() => {
@@ -8208,11 +8192,6 @@ PS.openPinInModal = async function (pin) {
 
   const $modalInfo = document.getElementById('modalInfo');
   const $lotModal  = document.getElementById('lotModal');
-
-  // 🔥 FIX: Expose function to clear stale selection state when modal closes
-  window.clearCycleSelectionState = function() {
-    selectedLotName = null;
-  };
 
   // --- utils ---
   const normalize = v => (v || '').toString().trim().toLowerCase();
@@ -9619,6 +9598,7 @@ function getCurrentFraccZoom() {
                       const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                       if (lotMapIndex !== -1) {
                         currentLotIndex = lotMapIndex;
+                        window.currentLotIndex = lotMapIndex;
                         if (window.hoveredId !== null) {
                           map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
                         }
@@ -9778,11 +9758,6 @@ if (map && map.getSource('lots-final') && window.hoveredId !== null) {
   } catch {}
 }
 
-// 🔥 FIX: Clear stale selection state to prevent MutationObserver from restoring wrong lot
-if (typeof window.clearCycleSelectionState === 'function') {
-  window.clearCycleSelectionState();
-}
-
 setTimeout(() => {
   modal.style.display = 'none';
 
@@ -9865,6 +9840,7 @@ setTimeout(() => {
                   const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                   if (lotMapIndex !== -1) {
                     currentLotIndex = lotMapIndex;
+                    window.currentLotIndex = lotMapIndex;
                     if (window.hoveredId !== null) {
                       map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
                     }
@@ -9902,6 +9878,7 @@ setTimeout(() => {
                     const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                     if (lotMapIndex !== -1) {
                       currentLotIndex = lotMapIndex;
+                      window.currentLotIndex = lotMapIndex;
                       if (window.hoveredId !== null) {
                         map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
                       }
