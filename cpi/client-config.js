@@ -146,7 +146,7 @@ const CLIENT_CONFIGS = {
 
       // Neutral colors
       black: '#000',             // Pure black - rare use cases
-      white: '#fff',             // White - backgrounds, strokes
+      white: '#84827a',             // White - backgrounds, strokes
       offWhite: '#fffdf8',       // Off-white - subtle backgrounds
       creamLight: '#f2efe4',     // Light cream - backgrounds
       grayLightest: '#ddd',      // Lightest gray - subtle borders
