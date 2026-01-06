@@ -5743,15 +5743,14 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
       if (!dynamicText) return; // User cancelled
 
-      // Create hidden PDF container
+      // Create hidden container for rendering pages
       const pdfContainer = document.createElement('div');
       pdfContainer.id = 'pdf-generation-container';
       pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+      document.body.appendChild(pdfContainer);
 
-      // Create 8 pages (001-008)
-      for (let i = 1; i <= 8; i++) {
-        const pageNum = String(i).padStart(3, '0'); // 001, 002, etc.
-
+      // Function to create a single page element
+      function createPage(pageNum, withText = false) {
         const pdfPage = document.createElement('div');
         pdfPage.style.cssText = `
           width: 1224px;
@@ -5761,11 +5760,9 @@ document.getElementById('authControls').classList.add('hide-in-detail');
           background-size: cover;
           background-repeat: no-repeat;
           background-position: top left;
-          page-break-after: always;
         `;
 
-        // Add dynamic text only to page 003
-        if (i === 3) {
+        if (withText) {
           const textElement = document.createElement('div');
           textElement.textContent = dynamicText;
           textElement.style.cssText = `
@@ -5782,23 +5779,57 @@ document.getElementById('authControls').classList.add('hide-in-detail');
           pdfPage.appendChild(textElement);
         }
 
-        pdfContainer.appendChild(pdfPage);
+        return pdfPage;
       }
 
-      document.body.appendChild(pdfContainer);
+      // Generate PDF page by page using worker API
+      async function generateMultiPagePDF() {
+        const worker = html2pdf().set({
+          margin: 0,
+          filename: 'CPI-documento.pdf',
+          image: { type: 'jpeg', quality: 1 },
+          html2canvas: { scale: 1, useCORS: true },
+          jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
+        });
 
-      // Generate multi-page PDF with html2pdf
-      html2pdf().set({
-        margin: 0,
-        filename: 'CPI-documento.pdf',
-        image: { type: 'jpeg', quality: 1 },
-        html2canvas: { scale: 1, useCORS: true },
-        jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] }
-      }).from(pdfContainer).save().then(() => {
-        // Clean up after download
+        for (let i = 1; i <= 8; i++) {
+          const pageNum = String(i).padStart(3, '0');
+          const isPage3 = (i === 3);
+
+          // Create and add page to container
+          const page = createPage(pageNum, isPage3);
+          pdfContainer.innerHTML = '';
+          pdfContainer.appendChild(page);
+
+          // Wait for background image to load
+          await new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = resolve;
+            img.onerror = resolve;
+            img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
+          });
+
+          if (i === 1) {
+            // First page - initialize
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          } else {
+            // Add subsequent pages
+            await worker.get('pdf').then(pdf => {
+              pdf.addPage([1224, 1584], 'portrait');
+            });
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          }
+        }
+
+        // Save the final PDF
+        await worker.save();
+
+        // Clean up
         document.body.removeChild(pdfContainer);
-      });
+      }
+
+      generateMultiPagePDF();
     } else if (e.target.id === 'chatearBtn') {
       // Add your "Chatear" functionality here
       console.log('Chatear button clicked');
