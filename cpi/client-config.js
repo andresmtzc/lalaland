@@ -228,6 +228,9 @@ const CLIENT_CONFIGS = {
       // Allow clicking on sold lots (independent of skipListModal)
       soldLotsClickable: false,
 
+      // Minimum zoom level to show lot dimensions (lower = show at farther zoom)
+      minZoomForDimensions: 18.0,
+
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
       ctaColor: '#ff8400' // DEPRECATED: Use colors.primary instead
