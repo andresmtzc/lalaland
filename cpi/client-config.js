@@ -223,7 +223,7 @@ const CLIENT_CONFIGS = {
       mapboxFont: 'Barlow Condensed Regular',
 
       // Skip list modal and go directly to detail view when clicking a lot
-      skipListModal: true,
+      skipListModal: false,
 
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
