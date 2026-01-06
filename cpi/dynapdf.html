@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dynamic PDF Generator</title>
+
+  <!-- STIX Two Text -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+
+  <!-- html2pdf -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #eee;
+      font-family: Arial, sans-serif;
+      display: flex;
+      gap: 20px;
+    }
+
+    .controls {
+      width: 340px;
+      background: #fff;
+      padding: 16px;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    label {
+      font-size: 12px;
+      font-weight: bold;
+      display: block;
+      margin-top: 12px;
+    }
+
+    textarea,
+    select,
+    input[type="number"],
+    input[type="color"],
+    input[type="text"] {
+      width: 100%;
+      margin-top: 4px;
+      box-sizing: border-box;
+    }
+
+    textarea {
+      height: 80px;
+      resize: none;
+    }
+
+    .style-buttons {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .style-buttons button,
+    .style-buttons input {
+      flex: 1;
+      padding: 6px;
+      font-size: 12px;
+    }
+
+    .style-buttons button {
+      cursor: pointer;
+    }
+
+    .style-buttons button.active {
+      background: #007bff;
+      color: #fff;
+    }
+
+    .color-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 6px;
+    }
+
+    .color-row input[type="text"] {
+      flex: 1;
+      font-family: monospace;
+    }
+
+    button.export {
+      margin-top: 16px;
+      width: 100%;
+      padding: 10px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .preview-wrapper {
+      flex: 1;
+      overflow: auto;
+    }
+
+    /* PDF PAGE */
+    #pdf-page {
+      width: 1224px;
+      height: 1584px;
+      position: relative;
+      background-image: url("https://la-la.land/cpi/pdf/page.003.png");
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: top left;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    }
+
+    /* TEXT BOX */
+    #dynamic-text {
+      position: absolute;
+      top: 300px;
+      left: 150px;
+      width: 600px;              /* ✅ fixed box */
+      font-size: 36px;
+      font-family: "STIX Two Text", serif;
+      color: #000;
+      cursor: move;
+      user-select: none;
+      white-space: pre;
+      text-align: center;        /* ✅ always centered */
+    }
+
+    #dynamic-text.selected {
+      outline: 2px dashed #007bff;
+      outline-offset: 4px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="controls">
+  <h3>Text Controls</h3>
+
+  <label>Text</label>
+  <textarea id="textInput"></textarea>
+
+  <label>Font Size (px)</label>
+  <input type="number" id="fontSize" min="6" max="200" step="2" value="36">
+
+  <label>Font Family</label>
+  <select id="fontFamily">
+    <option value="STIX Two Text">STIX Two Text</option>
+    <option value="Arial">Arial</option>
+    <option value="Georgia">Georgia</option>
+    <option value="Times New Roman">Times New Roman</option>
+  </select>
+
+  <label>Style</label>
+  <div class="style-buttons">
+    <button id="boldBtn">B</button>
+    <button id="italicBtn">I</button>
+    <button id="underlineBtn">U</button>
+  </div>
+
+  <label>Color</label>
+  <div class="color-row">
+    <input type="color" id="colorPicker" value="#000000">
+    <input type="text" id="hexInput" value="#000000">
+  </div>
+
+  <label>Position (px)</label>
+  <div class="style-buttons">
+    <input type="number" id="posX" placeholder="X">
+    <input type="number" id="posY" placeholder="Y">
+  </div>
+
+  <label>Align</label>
+  <div class="style-buttons">
+    <button id="centerXBtn">Center X</button>
+    <button id="centerYBtn">Center Y</button>
+  </div>
+
+  <button class="export" onclick="exportPDF()">Export PDF</button>
+</div>
+
+<div class="preview-wrapper">
+  <div id="pdf-page">
+    <div id="dynamic-text" class="selected"></div>
+  </div>
+</div>
+
+<script>
+const textInput = document.getElementById("textInput");
+const dynamicText = document.getElementById("dynamic-text");
+const fontSizeInput = document.getElementById("fontSize");
+const fontFamily = document.getElementById("fontFamily");
+const boldBtn = document.getElementById("boldBtn");
+const italicBtn = document.getElementById("italicBtn");
+const underlineBtn = document.getElementById("underlineBtn");
+const colorPicker = document.getElementById("colorPicker");
+const hexInput = document.getElementById("hexInput");
+const centerXBtn = document.getElementById("centerXBtn");
+const centerYBtn = document.getElementById("centerYBtn");
+const posX = document.getElementById("posX");
+const posY = document.getElementById("posY");
+
+/* TEXT INPUT */
+textInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) e.preventDefault();
+});
+textInput.addEventListener("input", () => {
+  dynamicText.textContent = textInput.value;
+});
+
+/* FONT */
+fontSizeInput.oninput = () =>
+  dynamicText.style.fontSize = fontSizeInput.value + "px";
+
+fontFamily.onchange = () =>
+  dynamicText.style.fontFamily = fontFamily.value;
+
+/* STYLE */
+boldBtn.onclick = () => toggle(boldBtn, "fontWeight", "700", "400");
+italicBtn.onclick = () => toggle(italicBtn, "fontStyle", "italic", "normal");
+underlineBtn.onclick = () => toggle(underlineBtn, "textDecoration", "underline", "none");
+
+function toggle(btn, prop, on, off) {
+  const active = btn.classList.toggle("active");
+  dynamicText.style[prop] = active ? on : off;
+}
+
+/* COLOR */
+colorPicker.oninput = () => {
+  dynamicText.style.color = colorPicker.value;
+  hexInput.value = colorPicker.value.toUpperCase();
+};
+
+hexInput.oninput = () => {
+  if (/^#([0-9A-F]{3}){1,2}$/i.test(hexInput.value)) {
+    dynamicText.style.color = hexInput.value;
+    colorPicker.value = hexInput.value;
+  }
+};
+
+/* POSITION NUMBERS */
+posX.oninput = () => dynamicText.style.left = posX.value + "px";
+posY.oninput = () => dynamicText.style.top = posY.value + "px";
+
+/* CENTER BOX */
+centerXBtn.onclick = () => {
+  dynamicText.style.left = ((1224 - dynamicText.offsetWidth) / 2) + "px";
+  posX.value = parseInt(dynamicText.style.left);
+};
+
+centerYBtn.onclick = () => {
+  dynamicText.style.top = ((1584 - dynamicText.offsetHeight) / 2) + "px";
+  posY.value = parseInt(dynamicText.style.top);
+};
+
+/* DRAG */
+let dragging = false, ox = 0, oy = 0;
+dynamicText.onmousedown = e => {
+  dragging = true;
+  ox = e.clientX - dynamicText.offsetLeft;
+  oy = e.clientY - dynamicText.offsetTop;
+};
+document.onmousemove = e => {
+  if (!dragging) return;
+  dynamicText.style.left = (e.clientX - ox) + "px";
+  dynamicText.style.top = (e.clientY - oy) + "px";
+  posX.value = dynamicText.offsetLeft;
+  posY.value = dynamicText.offsetTop;
+};
+document.onmouseup = () => dragging = false;
+
+/* EXPORT — UNTOUCHED */
+function exportPDF() {
+  html2pdf().set({
+    margin: 0,
+    filename: "export.pdf",
+    image: { type: "jpeg", quality: 1 },
+    html2canvas: { scale: 1, useCORS: true },
+    jsPDF: { unit: "px", format: [1224, 1584], orientation: "portrait" }
+  }).from(document.getElementById("pdf-page")).save();
+}
+</script>
+
+</body>
+</html>
