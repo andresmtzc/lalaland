@@ -268,8 +268,11 @@ const CLIENT_CONFIGS = {
 
     // ----- MISCELLANEOUS -----
     misc: {
-      // Font family for the site
+      // Font family for the site (used in CSS and inline styles)
       fontFamily: 'Barlow Condensed',
+
+      // Font family for Mapbox map labels (usually requires "Regular" suffix)
+      mapboxFont: 'Barlow Condensed Regular',
 
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
