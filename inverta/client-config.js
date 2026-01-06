@@ -277,6 +277,9 @@ const CLIENT_CONFIGS = {
       // Skip list modal and go directly to detail view when clicking a lot
       skipListModal: false,
 
+      // Allow clicking on sold lots (independent of skipListModal)
+      soldLotsClickable: true,
+
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
       ctaColor: '#ff8400' // DEPRECATED: Use colors.primary instead
