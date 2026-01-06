@@ -5815,6 +5815,31 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
       // Generate PDF page by page using worker API
       async function generateMultiPagePDF() {
+        // Step 1: Preload ALL images in parallel
+        progressText.textContent = 'Cargando imágenes...';
+        progressBar.style.width = '0%';
+
+        const imagePromises = [];
+        for (let i = 1; i <= 8; i++) {
+          const pageNum = String(i).padStart(3, '0');
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              // Update progress as each image loads
+              progressBar.style.width = `${(imagePromises.filter((_, idx) => idx < i).length / 8) * 50}%`;
+              resolve();
+            };
+            img.onerror = resolve;
+            img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
+          }));
+        }
+        await Promise.all(imagePromises);
+
+        // Step 2: Generate PDF pages sequentially (required by jsPDF)
+        progressText.textContent = 'Generando PDF...';
+        progressBar.style.width = '50%';
+
         const worker = html2pdf().set({
           margin: 0,
           filename: 'CPI-documento.pdf',
@@ -5824,9 +5849,9 @@ document.getElementById('authControls').classList.add('hide-in-detail');
         });
 
         for (let i = 1; i <= 8; i++) {
-          // Update progress
-          progressText.textContent = `Página ${i} de 8`;
-          progressBar.style.width = `${(i / 8) * 100}%`;
+          // Update progress (50-100% for rendering)
+          progressText.textContent = `Renderizando página ${i} de 8`;
+          progressBar.style.width = `${50 + (i / 8) * 50}%`;
 
           const pageNum = String(i).padStart(3, '0');
           const isPage3 = (i === 3);
@@ -5835,15 +5860,6 @@ document.getElementById('authControls').classList.add('hide-in-detail');
           const page = createPage(pageNum, isPage3);
           pdfContainer.innerHTML = '';
           pdfContainer.appendChild(page);
-
-          // Wait for background image to load
-          await new Promise(resolve => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = resolve;
-            img.onerror = resolve;
-            img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
-          });
 
           if (i === 1) {
             // First page - initialize
@@ -5859,6 +5875,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
         // Save the final PDF
         progressText.textContent = 'Descargando...';
+        progressBar.style.width = '100%';
         await worker.save();
 
         // Clean up
