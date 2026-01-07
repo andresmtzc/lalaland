@@ -67,6 +67,18 @@ const CLIENT_CONFIGS = {
       }
     ],
 
+    // ----- GENERATOR PAGES IMAGE -----
+    // Used by map-generator.html and dimensions-generator.html instead of aerialImages
+    generatorImage: {
+      url: 'https://la-la.land/cpi/plan.png',
+      bounds: [
+        [-99.957455, 25.153182],
+        [-99.937867, 25.153182],
+        [-99.937867, 25.142425],
+        [-99.957455, 25.142425]
+      ]
+    },
+
     // ----- COMMUNITIES/DEVELOPMENTS -----
     // Each community has center coordinates, zoom level, and display info
     communities: {
