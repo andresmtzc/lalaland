@@ -5926,6 +5926,36 @@ document.getElementById('authControls').classList.add('hide-in-detail');
               pdfPage.appendChild(tableContainer);
             });
           }
+
+          // Render images
+          if (pageData.images) {
+            pageData.images.forEach(imgData => {
+              const imgEl = document.createElement('div');
+
+              // Determine image URL based on type
+              let imageUrl = '';
+              if (imgData.type === '{{lot.landscape}}') {
+                imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_landscape.jpg`;
+              } else if (imgData.type === '{{lot.map}}') {
+                imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_map.jpg`;
+              } else if (imgData.type === 'static' && imgData.url) {
+                imageUrl = imgData.url;
+              }
+
+              imgEl.style.cssText = `
+                position: absolute;
+                left: ${imgData.x}px;
+                top: ${imgData.y}px;
+                width: ${imgData.width}px;
+                height: ${imgData.height}px;
+                background-image: url("${imageUrl}");
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+              `;
+              pdfPage.appendChild(imgEl);
+            });
+          }
         }
 
         return pdfPage;
@@ -5953,6 +5983,8 @@ document.getElementById('authControls').classList.add('hide-in-detail');
         progressBar.style.width = '10%';
 
         const imagePromises = [];
+
+        // Preload page backgrounds
         for (let i = 1; i <= 8; i++) {
           const pageNum = String(i).padStart(3, '0');
           imagePromises.push(new Promise(resolve => {
@@ -5963,6 +5995,36 @@ document.getElementById('authControls').classList.add('hide-in-detail');
             img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
           }));
         }
+
+        // Preload lot-specific images (landscape and map)
+        const lotNum = lotValues['lot.number'];
+        if (lotNum) {
+          ['landscape', 'map'].forEach(type => {
+            imagePromises.push(new Promise(resolve => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = resolve;
+              img.onerror = resolve;
+              img.src = `/cpi/pdf/lotcpi1-${lotNum}_${type}.jpg`;
+            }));
+          });
+
+          // Preload any static images from the template
+          Object.values(template.pages || {}).forEach(pageData => {
+            (pageData.images || []).forEach(imgData => {
+              if (imgData.type === 'static' && imgData.url) {
+                imagePromises.push(new Promise(resolve => {
+                  const img = new Image();
+                  img.crossOrigin = 'anonymous';
+                  img.onload = resolve;
+                  img.onerror = resolve;
+                  img.src = imgData.url;
+                }));
+              }
+            });
+          });
+        }
+
         await Promise.all(imagePromises);
         progressBar.style.width = '40%';
 
