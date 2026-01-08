@@ -674,6 +674,16 @@
       </div>
 
       <div class="section">
+        <div class="section-title">Column Widths (px)</div>
+        <div id="colWidthsContainer" style="display: flex; flex-direction: column; gap: 4px;"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Row Heights (px)</div>
+        <div id="rowHeightsContainer" style="display: flex; flex-direction: column; gap: 4px;"></div>
+      </div>
+
+      <div class="section">
         <div class="section-title">Cell Properties</div>
         <p style="font-size: 10px; color: #aaa; margin: 0 0 8px 0;">Select cells with Shift+Click</p>
 
@@ -1135,13 +1145,19 @@ function addTable() {
     cells.push(row);
   }
 
+  // Default column widths and row heights (in px)
+  const colWidths = Array(cols).fill(100);  // 100px per column default
+  const rowHeights = Array(rows).fill(30);  // 30px per row default
+
   const table = {
     id,
     x: 100,
     y: 100,
     rows,
     cols,
-    cells
+    cells,
+    colWidths,
+    rowHeights
   };
 
   template.pages[currentPage].tables.push(table);
@@ -1176,10 +1192,19 @@ function createTableElement(data) {
   // Table element
   const table = document.createElement('table');
   table.className = 'pdf-table';
+  table.style.tableLayout = 'fixed';  // Enforce exact column widths
+  table.style.borderCollapse = 'collapse';
+
+  // Calculate total table width from column widths
+  const colWidths = data.colWidths || Array(data.cols).fill(100);
+  const rowHeights = data.rowHeights || Array(data.rows).fill(30);
+  const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
+  table.style.width = totalWidth + 'px';
 
   // Build table cells
   for (let r = 0; r < data.rows; r++) {
     const tr = document.createElement('tr');
+    tr.style.height = rowHeights[r] + 'px';
     for (let c = 0; c < data.cols; c++) {
       const cellData = data.cells[r]?.[c];
       if (!cellData || cellData.hidden) continue;
@@ -1189,6 +1214,12 @@ function createTableElement(data) {
       td.dataset.col = c;
       td.contentEditable = true;
       td.textContent = cellData.content || '';
+
+      // Apply explicit column width and row height
+      td.style.width = colWidths[c] + 'px';
+      td.style.height = rowHeights[r] + 'px';
+      td.style.boxSizing = 'border-box';
+      td.style.overflow = 'hidden';
 
       // Apply cell styles
       td.style.backgroundColor = cellData.bgColor || '#ffffff';
@@ -1309,6 +1340,20 @@ function resizeTable() {
     }
     row.length = newCols;
   });
+
+  // Resize colWidths array
+  if (!data.colWidths) data.colWidths = [];
+  while (data.colWidths.length < newCols) {
+    data.colWidths.push(100);  // Default 100px for new columns
+  }
+  data.colWidths.length = newCols;
+
+  // Resize rowHeights array
+  if (!data.rowHeights) data.rowHeights = [];
+  while (data.rowHeights.length < newRows) {
+    data.rowHeights.push(30);  // Default 30px for new rows
+  }
+  data.rowHeights.length = newRows;
 
   data.rows = newRows;
   data.cols = newCols;
@@ -1553,6 +1598,10 @@ function insertColumn(direction) {
     row.splice(insertAt, 0, createDefaultCell());
   });
 
+  // Add column width entry
+  if (!data.colWidths) data.colWidths = Array(data.cols).fill(100);
+  data.colWidths.splice(insertAt, 0, 100);  // Default 100px for new column
+
   data.cols++;
 
   // Re-render and re-select
@@ -1584,6 +1633,11 @@ function insertRow(direction) {
 
   // Insert the new row
   data.cells.splice(insertAt, 0, newRow);
+
+  // Add row height entry
+  if (!data.rowHeights) data.rowHeights = Array(data.rows).fill(30);
+  data.rowHeights.splice(insertAt, 0, 30);  // Default 30px for new row
+
   data.rows++;
 
   // Re-render and re-select
@@ -2058,6 +2112,79 @@ function loadTableProps(id) {
   document.getElementById('prop_cols').value = data.cols;
   document.getElementById('prop_tableX').value = data.x;
   document.getElementById('prop_tableY').value = data.y;
+
+  // Render column width inputs
+  renderColWidthInputs(data);
+  // Render row height inputs
+  renderRowHeightInputs(data);
+}
+
+function renderColWidthInputs(data) {
+  const container = document.getElementById('colWidthsContainer');
+  const colWidths = data.colWidths || Array(data.cols).fill(100);
+
+  container.innerHTML = colWidths.map((w, i) => `
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <span style="font-size: 10px; width: 35px;">Col ${i + 1}:</span>
+      <input type="number" value="${w}" min="20" max="500"
+             style="flex: 1; padding: 4px;"
+             onchange="updateColWidth(${i}, this.value)">
+    </div>
+  `).join('');
+}
+
+function renderRowHeightInputs(data) {
+  const container = document.getElementById('rowHeightsContainer');
+  const rowHeights = data.rowHeights || Array(data.rows).fill(30);
+
+  container.innerHTML = rowHeights.map((h, i) => `
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <span style="font-size: 10px; width: 35px;">Row ${i + 1}:</span>
+      <input type="number" value="${h}" min="15" max="200"
+             style="flex: 1; padding: 4px;"
+             onchange="updateRowHeight(${i}, this.value)">
+    </div>
+  `).join('');
+}
+
+function updateColWidth(colIndex, value) {
+  if (!selectedElement || selectedElement.dataset.type !== 'table') return;
+  const data = getTableData(selectedElement.id);
+  if (!data) return;
+
+  // Initialize if not exists
+  if (!data.colWidths) {
+    data.colWidths = Array(data.cols).fill(100);
+  }
+
+  data.colWidths[colIndex] = parseInt(value) || 100;
+  renderPage();
+
+  // Re-select the table
+  setTimeout(() => {
+    const el = document.getElementById(selectedElement.id);
+    if (el) selectElement(el, 'table');
+  }, 10);
+}
+
+function updateRowHeight(rowIndex, value) {
+  if (!selectedElement || selectedElement.dataset.type !== 'table') return;
+  const data = getTableData(selectedElement.id);
+  if (!data) return;
+
+  // Initialize if not exists
+  if (!data.rowHeights) {
+    data.rowHeights = Array(data.rows).fill(30);
+  }
+
+  data.rowHeights[rowIndex] = parseInt(value) || 30;
+  renderPage();
+
+  // Re-select the table
+  setTimeout(() => {
+    const el = document.getElementById(selectedElement.id);
+    if (el) selectElement(el, 'table');
+  }, 10);
 }
 
 // ===== ELEMENT LISTS =====
