@@ -699,6 +699,13 @@
         <label>Font Size</label>
         <input type="number" id="prop_cellFontSize" value="14" min="6" max="72" oninput="updateSelectedCells()">
 
+        <label>Text Style</label>
+        <div class="style-row">
+          <button class="style-btn" id="prop_cellBold" onclick="toggleCellStyle('bold')"><b>B</b></button>
+          <button class="style-btn" id="prop_cellItalic" onclick="toggleCellStyle('italic')"><i>I</i></button>
+          <button class="style-btn" id="prop_cellUnderline" onclick="toggleCellStyle('underline')"><u>U</u></button>
+        </div>
+
         <label>Border Color</label>
         <div class="color-row">
           <input type="color" id="prop_cellBorder" value="#000000" oninput="updateSelectedCells()">
@@ -707,6 +714,20 @@
 
         <label>Border Width</label>
         <input type="number" id="prop_cellBorderWidth" value="1" min="0" max="5" oninput="updateSelectedCells()">
+
+        <label>Border Style</label>
+        <select id="prop_cellBorderStyle" onchange="updateSelectedCells()">
+          <option value="solid">Solid</option>
+          <option value="dashed">Dashed</option>
+          <option value="none">None</option>
+        </select>
+
+        <label>Border Position</label>
+        <select id="prop_cellBorderPosition" onchange="updateSelectedCells()">
+          <option value="all">All Sides</option>
+          <option value="top">Top Only</option>
+          <option value="bottom">Bottom Only</option>
+        </select>
 
         <label>Padding</label>
         <div class="row">
@@ -1129,8 +1150,26 @@ function createTableElement(data) {
       td.style.color = cellData.textColor || '#000000';
       td.style.fontFamily = cellData.fontFamily || 'Arial';
       td.style.fontSize = (cellData.fontSize || 14) + 'px';
-      td.style.borderColor = cellData.borderColor || '#000000';
-      td.style.borderWidth = (cellData.borderWidth || 1) + 'px';
+      td.style.fontWeight = cellData.bold ? '700' : '400';
+      td.style.fontStyle = cellData.italic ? 'italic' : 'normal';
+      td.style.textDecoration = cellData.underline ? 'underline' : 'none';
+
+      // Apply border based on position and style
+      const borderWidth = cellData.borderWidth || 1;
+      const borderStyle = cellData.borderStyle || 'solid';
+      const borderColor = cellData.borderColor || '#000000';
+      const borderPosition = cellData.borderPosition || 'all';
+
+      if (borderPosition === 'bottom') {
+        td.style.border = 'none';
+        td.style.borderBottom = `${borderWidth}px ${borderStyle} ${borderColor}`;
+      } else if (borderPosition === 'top') {
+        td.style.border = 'none';
+        td.style.borderTop = `${borderWidth}px ${borderStyle} ${borderColor}`;
+      } else {
+        td.style.border = `${borderWidth}px ${borderStyle} ${borderColor}`;
+      }
+
       // Support both old padding and new paddingH/V
       const pH = cellData.paddingH ?? cellData.padding ?? 8;
       const pV = cellData.paddingV ?? cellData.padding ?? 4;
@@ -1244,8 +1283,13 @@ function createDefaultCell() {
     textColor: '#000000',
     fontFamily: 'Arial',
     fontSize: 14,
+    bold: false,
+    italic: false,
+    underline: false,
     borderColor: '#000000',
     borderWidth: 1,
+    borderStyle: 'solid',
+    borderPosition: 'all',
     paddingH: 8,
     paddingV: 4,
     textAlign: 'left',
@@ -1266,6 +1310,8 @@ function updateSelectedCells() {
   const fontSize = parseInt(document.getElementById('prop_cellFontSize').value) || 14;
   const borderColor = document.getElementById('prop_cellBorder').value;
   const borderWidth = parseInt(document.getElementById('prop_cellBorderWidth').value) || 1;
+  const borderStyle = document.getElementById('prop_cellBorderStyle').value;
+  const borderPosition = document.getElementById('prop_cellBorderPosition').value;
   const paddingH = parseInt(document.getElementById('prop_cellPaddingH').value) || 8;
   const paddingV = parseInt(document.getElementById('prop_cellPaddingV').value) || 4;
 
@@ -1283,6 +1329,8 @@ function updateSelectedCells() {
       cellData.fontSize = fontSize;
       cellData.borderColor = borderColor;
       cellData.borderWidth = borderWidth;
+      cellData.borderStyle = borderStyle;
+      cellData.borderPosition = borderPosition;
       cellData.paddingH = paddingH;
       cellData.paddingV = paddingV;
 
@@ -1291,9 +1339,21 @@ function updateSelectedCells() {
       element.style.color = textColor;
       element.style.fontFamily = fontFamily;
       element.style.fontSize = fontSize + 'px';
-      element.style.borderColor = borderColor;
-      element.style.borderWidth = borderWidth + 'px';
+      element.style.fontWeight = cellData.bold ? '700' : '400';
+      element.style.fontStyle = cellData.italic ? 'italic' : 'normal';
+      element.style.textDecoration = cellData.underline ? 'underline' : 'none';
       element.style.padding = `${paddingV}px ${paddingH}px`;
+
+      // Apply border based on position
+      if (borderPosition === 'bottom') {
+        element.style.border = 'none';
+        element.style.borderBottom = `${borderWidth}px ${borderStyle} ${borderColor}`;
+      } else if (borderPosition === 'top') {
+        element.style.border = 'none';
+        element.style.borderTop = `${borderWidth}px ${borderStyle} ${borderColor}`;
+      } else {
+        element.style.border = `${borderWidth}px ${borderStyle} ${borderColor}`;
+      }
     }
   });
 }
@@ -1311,8 +1371,15 @@ function loadCellProps(cellData) {
   document.getElementById('prop_cellBorder').value = cellData.borderColor || '#000000';
   document.getElementById('prop_cellBorderHex').value = (cellData.borderColor || '#000000').toUpperCase();
   document.getElementById('prop_cellBorderWidth').value = cellData.borderWidth ?? 1;
+  document.getElementById('prop_cellBorderStyle').value = cellData.borderStyle || 'solid';
+  document.getElementById('prop_cellBorderPosition').value = cellData.borderPosition || 'all';
   document.getElementById('prop_cellPaddingH').value = cellData.paddingH ?? cellData.padding ?? 8;
   document.getElementById('prop_cellPaddingV').value = cellData.paddingV ?? cellData.padding ?? 4;
+
+  // Update text style buttons
+  document.getElementById('prop_cellBold').classList.toggle('active', cellData.bold === true);
+  document.getElementById('prop_cellItalic').classList.toggle('active', cellData.italic === true);
+  document.getElementById('prop_cellUnderline').classList.toggle('active', cellData.underline === true);
 
   // Update alignment buttons
   const align = cellData.textAlign || 'left';
@@ -1336,6 +1403,34 @@ function setCellAlign(align) {
     if (cellData) {
       cellData.textAlign = align;
       element.style.textAlign = align;
+    }
+  });
+}
+
+function toggleCellStyle(style) {
+  if (!selectedElement || selectedElement.dataset.type !== 'table') return;
+
+  const data = getTableData(selectedElement.id);
+  if (!data) return;
+
+  // Toggle the button active state
+  const btn = document.getElementById('prop_cell' + style.charAt(0).toUpperCase() + style.slice(1));
+  const isActive = btn.classList.contains('active');
+  btn.classList.toggle('active');
+
+  selectedCells.forEach(({ row, col, element }) => {
+    const cellData = data.cells[row]?.[col];
+    if (cellData) {
+      cellData[style] = !isActive;
+
+      // Apply to element
+      if (style === 'bold') {
+        element.style.fontWeight = !isActive ? '700' : '400';
+      } else if (style === 'italic') {
+        element.style.fontStyle = !isActive ? 'italic' : 'normal';
+      } else if (style === 'underline') {
+        element.style.textDecoration = !isActive ? 'underline' : 'none';
+      }
     }
   });
 }
