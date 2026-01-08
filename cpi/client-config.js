@@ -57,7 +57,7 @@ const CLIENT_CONFIGS = {
         url: 'https://la-la.land/cpi/cpiearth.png',
         layerId: 'drone-satellite-layer-1',
         sourceId: 'drone-satellite-1',
-        message: "Cargamos la imágen aérea más actual — (abril 2025)",
+        message: "Cargamos la imágen aérea más actual — (enero 2026)",
         bounds: [
 [-99.957219, 25.155959],
 [-99.939253, 25.155959],
