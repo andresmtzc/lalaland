@@ -557,6 +557,7 @@
     </div>
 
     <div class="toolbar-actions">
+      <button class="btn-secondary" onclick="undo()" title="Undo (Ctrl+Z)">↶ Undo</button>
       <button class="btn-secondary" onclick="loadTemplate()">Load JSON</button>
       <button class="btn-primary" onclick="saveTemplate()">Save JSON</button>
       <button class="btn-primary" onclick="exportPDF()">Export PDF</button>
@@ -841,6 +842,10 @@ let selectedElement = null;
 let selectedCells = [];
 let elementIdCounter = 0;
 
+// Undo history
+const undoHistory = [];
+const MAX_UNDO_HISTORY = 50;
+
 // Template data: pages[pageNum] = { textBoxes: [], tables: [] }
 const template = {
   pages: {}
@@ -856,6 +861,34 @@ function init() {
   renderPage();
   updateElementLists();
   setZoom(50);
+}
+
+// ===== UNDO =====
+function saveState() {
+  // Deep clone the current template state
+  const state = JSON.stringify(template);
+  undoHistory.push(state);
+
+  // Limit history size
+  if (undoHistory.length > MAX_UNDO_HISTORY) {
+    undoHistory.shift();
+  }
+}
+
+function undo() {
+  if (undoHistory.length === 0) return;
+
+  // Pop the last state
+  const previousState = undoHistory.pop();
+  const restored = JSON.parse(previousState);
+
+  // Restore the template
+  template.pages = restored.pages;
+
+  // Re-render
+  clearSelection();
+  renderPage();
+  updateElementLists();
 }
 
 // ===== PAGE NAVIGATION =====
@@ -1478,6 +1511,8 @@ function insertColumn(direction) {
   const data = getTableData(selectedElement.id);
   if (!data) return;
 
+  saveState();
+
   // Get the column index from the first selected cell
   const colIndex = selectedCells[0].col;
   const insertAt = direction === 'left' ? colIndex : colIndex + 1;
@@ -1503,6 +1538,8 @@ function insertRow(direction) {
 
   const data = getTableData(selectedElement.id);
   if (!data) return;
+
+  saveState();
 
   // Get the row index from the first selected cell
   const rowIndex = selectedCells[0].row;
@@ -1531,6 +1568,8 @@ function mergeCells() {
 
   const data = getTableData(selectedElement.id);
   if (!data) return;
+
+  saveState();
 
   // Find bounds
   const rows = selectedCells.map(c => c.row);
@@ -1562,6 +1601,8 @@ function unmergeCells() {
 
   const data = getTableData(selectedElement.id);
   if (!data) return;
+
+  saveState();
 
   selectedCells.forEach(({ row, col }) => {
     const cell = data.cells[row]?.[col];
@@ -2045,6 +2086,7 @@ function deleteElementById(id, type) {
 
 function deleteSelected() {
   if (!selectedElement) return;
+  saveState();
   deleteElementById(selectedElement.id, selectedElement.dataset.type);
 }
 
@@ -2286,6 +2328,13 @@ function exportPDF() {
 
 // ===== KEYBOARD SHORTCUTS =====
 document.addEventListener('keydown', (e) => {
+  // Ctrl+Z for undo
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault();
+    undo();
+    return;
+  }
+
   if (e.key === 'Delete' || e.key === 'Backspace') {
     // Don't delete if editing text
     if (document.activeElement.tagName === 'TEXTAREA' ||
