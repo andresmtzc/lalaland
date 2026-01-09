@@ -507,6 +507,23 @@
     
     
     <div class="control-group">
+        <div class="slider-label"><span>Image Overlay:</span></div>
+        <input type="text" id="overlay-url" placeholder="Image URL" style="width:100%;box-sizing:border-box;padding:6px;margin:4px 0;border:1px solid #ddd;border-radius:4px;font-size:12px;">
+        <textarea id="overlay-bounds" placeholder="Bounds: [[lng,lat],[lng,lat],[lng,lat],[lng,lat]]" style="width:100%;box-sizing:border-box;padding:6px;margin:4px 0;border:1px solid #ddd;border-radius:4px;font-size:11px;height:50px;resize:none;">[[-99.957219,25.155959],[-99.939253,25.155959],[-99.939253,25.139696],[-99.957219,25.139696]]</textarea>
+        <div style="display:flex;gap:5px;margin:4px 0;">
+            <button onclick="addImageOverlay()" style="flex:1;">Add Overlay</button>
+            <button onclick="removeImageOverlay()" style="flex:1;">Remove</button>
+        </div>
+        <div class="slider-container" id="overlay-opacity-container" style="display:none;">
+            <div class="slider-label">
+                <span>Overlay Opacity:</span>
+                <span id="overlay-opacity-value">80%</span>
+            </div>
+            <input type="range" min="0" max="100" value="80" class="slider" id="overlay-opacity-slider" oninput="updateOverlayOpacity(this.value)">
+        </div>
+    </div>
+
+    <div class="control-group">
         <div class="export-buttons">
             <button onclick="exportCurrentTrack()">Export Current</button>
             <button onclick="exportAllTracksAsZip()">Export All (ZIP)</button>
@@ -2046,6 +2063,85 @@ function handlePointDrag(e) {
         updateTracksList();
         updateAllTracksVisualization(false);
         setStatus('All tracks cleared');
+    }
+
+    // Image overlay functions
+    const OVERLAY_SOURCE_ID = 'image-overlay-source';
+    const OVERLAY_LAYER_ID = 'image-overlay-layer';
+
+    function addImageOverlay() {
+        const urlInput = document.getElementById('overlay-url');
+        const boundsInput = document.getElementById('overlay-bounds');
+        const url = urlInput.value.trim();
+        const boundsText = boundsInput.value.trim();
+
+        if (!url) {
+            setStatus('Please enter an image URL');
+            return;
+        }
+
+        let bounds;
+        try {
+            bounds = JSON.parse(boundsText);
+            if (!Array.isArray(bounds) || bounds.length !== 4) {
+                throw new Error('Need 4 coordinates');
+            }
+        } catch (e) {
+            setStatus('Invalid bounds format. Use: [[lng,lat],[lng,lat],[lng,lat],[lng,lat]]');
+            return;
+        }
+
+        // Remove existing overlay if any
+        removeImageOverlay();
+
+        // Add the image source
+        map.addSource(OVERLAY_SOURCE_ID, {
+            type: 'image',
+            url: url,
+            coordinates: bounds
+        });
+
+        // Add the layer behind GPX tracks (use 'beforeId' to place it under tracks)
+        const firstTrackLayer = map.getLayer('gpx-tracks-line') ? 'gpx-tracks-line' : undefined;
+        map.addLayer({
+            id: OVERLAY_LAYER_ID,
+            type: 'raster',
+            source: OVERLAY_SOURCE_ID,
+            paint: {
+                'raster-opacity': 0.8
+            }
+        }, firstTrackLayer);
+
+        // Show opacity slider
+        document.getElementById('overlay-opacity-container').style.display = 'block';
+
+        // Fit map to the overlay bounds
+        const lngs = bounds.map(b => b[0]);
+        const lats = bounds.map(b => b[1]);
+        map.fitBounds([
+            [Math.min(...lngs), Math.min(...lats)],
+            [Math.max(...lngs), Math.max(...lats)]
+        ], { padding: 50 });
+
+        setStatus('Image overlay added');
+    }
+
+    function removeImageOverlay() {
+        if (map.getLayer(OVERLAY_LAYER_ID)) {
+            map.removeLayer(OVERLAY_LAYER_ID);
+        }
+        if (map.getSource(OVERLAY_SOURCE_ID)) {
+            map.removeSource(OVERLAY_SOURCE_ID);
+        }
+        document.getElementById('overlay-opacity-container').style.display = 'none';
+        setStatus('Image overlay removed');
+    }
+
+    function updateOverlayOpacity(value) {
+        document.getElementById('overlay-opacity-value').textContent = value + '%';
+        if (map.getLayer(OVERLAY_LAYER_ID)) {
+            map.setPaintProperty(OVERLAY_LAYER_ID, 'raster-opacity', value / 100);
+        }
     }
 
     // Reset state
