@@ -674,23 +674,33 @@
       </div>
 
       <div class="section">
+        <div class="section-title">Column Widths (px)</div>
+        <div id="colWidthsContainer" style="display: flex; flex-direction: column; gap: 4px;"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Row Heights (px)</div>
+        <div id="rowHeightsContainer" style="display: flex; flex-direction: column; gap: 4px;"></div>
+      </div>
+
+      <div class="section">
         <div class="section-title">Cell Properties</div>
         <p style="font-size: 10px; color: #aaa; margin: 0 0 8px 0;">Select cells with Shift+Click</p>
 
         <label>Cell Background</label>
         <div class="color-row">
-          <input type="color" id="prop_cellBg" value="#ffffff" oninput="updateSelectedCells()">
+          <input type="color" id="prop_cellBg" value="#ffffff" oninput="updateCellProp('bgColor')">
           <input type="text" id="prop_cellBgHex" value="#ffffff" oninput="syncCellBgFromHex()">
         </div>
 
         <label>Cell Text Color</label>
         <div class="color-row">
-          <input type="color" id="prop_cellColor" value="#000000" oninput="updateSelectedCells()">
+          <input type="color" id="prop_cellColor" value="#000000" oninput="updateCellProp('textColor')">
           <input type="text" id="prop_cellColorHex" value="#000000" oninput="syncCellColorFromHex()">
         </div>
 
         <label>Font Family</label>
-        <select id="prop_cellFontFamily" onchange="updateSelectedCells()">
+        <select id="prop_cellFontFamily" onchange="updateCellProp('fontFamily')">
           <option value="Arial">Arial</option>
           <option value="STIX Two Text">STIX Two Text</option>
           <option value="Georgia">Georgia</option>
@@ -698,7 +708,7 @@
         </select>
 
         <label>Font Size</label>
-        <input type="number" id="prop_cellFontSize" value="14" min="6" max="72" oninput="updateSelectedCells()">
+        <input type="number" id="prop_cellFontSize" value="14" min="6" max="72" oninput="updateCellProp('fontSize')">
 
         <label>Text Style</label>
         <div class="style-row">
@@ -709,22 +719,22 @@
 
         <label>Border Color</label>
         <div class="color-row">
-          <input type="color" id="prop_cellBorder" value="#000000" oninput="updateSelectedCells()">
+          <input type="color" id="prop_cellBorder" value="#000000" oninput="updateCellProp('borderColor')">
           <input type="text" id="prop_cellBorderHex" value="#000000" oninput="syncCellBorderFromHex()">
         </div>
 
         <label>Border Width</label>
-        <input type="number" id="prop_cellBorderWidth" value="1" min="0" max="5" oninput="updateSelectedCells()">
+        <input type="number" id="prop_cellBorderWidth" value="1" min="0" max="5" oninput="updateCellProp('borderWidth')">
 
         <label>Border Style</label>
-        <select id="prop_cellBorderStyle" onchange="updateSelectedCells()">
+        <select id="prop_cellBorderStyle" onchange="updateCellProp('borderStyle')">
           <option value="solid">Solid</option>
           <option value="dashed">Dashed</option>
           <option value="none">None</option>
         </select>
 
         <label>Border Position</label>
-        <select id="prop_cellBorderPosition" onchange="updateSelectedCells()">
+        <select id="prop_cellBorderPosition" onchange="updateCellProp('borderPosition')">
           <option value="all">All Sides</option>
           <option value="top">Top Only</option>
           <option value="bottom">Bottom Only</option>
@@ -734,11 +744,11 @@
         <div class="row">
           <div>
             <label style="margin-top: 0; font-size: 9px;">Horizontal</label>
-            <input type="number" id="prop_cellPaddingH" value="8" min="0" max="40" oninput="updateSelectedCells()">
+            <input type="number" id="prop_cellPaddingH" value="8" min="0" max="40" oninput="updateCellProp('paddingH')">
           </div>
           <div>
             <label style="margin-top: 0; font-size: 9px;">Vertical</label>
-            <input type="number" id="prop_cellPaddingV" value="4" min="0" max="40" oninput="updateSelectedCells()">
+            <input type="number" id="prop_cellPaddingV" value="4" min="0" max="40" oninput="updateCellProp('paddingV')">
           </div>
         </div>
 
@@ -1135,13 +1145,19 @@ function addTable() {
     cells.push(row);
   }
 
+  // Default column widths and row heights (in px)
+  const colWidths = Array(cols).fill(100);  // 100px per column default
+  const rowHeights = Array(rows).fill(30);  // 30px per row default
+
   const table = {
     id,
     x: 100,
     y: 100,
     rows,
     cols,
-    cells
+    cells,
+    colWidths,
+    rowHeights
   };
 
   template.pages[currentPage].tables.push(table);
@@ -1176,10 +1192,19 @@ function createTableElement(data) {
   // Table element
   const table = document.createElement('table');
   table.className = 'pdf-table';
+  table.style.tableLayout = 'fixed';  // Enforce exact column widths
+  table.style.borderCollapse = 'collapse';
+
+  // Calculate total table width from column widths
+  const colWidths = data.colWidths || Array(data.cols).fill(100);
+  const rowHeights = data.rowHeights || Array(data.rows).fill(30);
+  const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
+  table.style.width = totalWidth + 'px';
 
   // Build table cells
   for (let r = 0; r < data.rows; r++) {
     const tr = document.createElement('tr');
+    tr.style.height = rowHeights[r] + 'px';
     for (let c = 0; c < data.cols; c++) {
       const cellData = data.cells[r]?.[c];
       if (!cellData || cellData.hidden) continue;
@@ -1189,6 +1214,12 @@ function createTableElement(data) {
       td.dataset.col = c;
       td.contentEditable = true;
       td.textContent = cellData.content || '';
+
+      // Apply explicit column width and row height
+      td.style.width = colWidths[c] + 'px';
+      td.style.height = rowHeights[r] + 'px';
+      td.style.boxSizing = 'border-box';
+      td.style.overflow = 'hidden';
 
       // Apply cell styles
       td.style.backgroundColor = cellData.bgColor || '#ffffff';
@@ -1310,6 +1341,20 @@ function resizeTable() {
     row.length = newCols;
   });
 
+  // Resize colWidths array
+  if (!data.colWidths) data.colWidths = [];
+  while (data.colWidths.length < newCols) {
+    data.colWidths.push(100);  // Default 100px for new columns
+  }
+  data.colWidths.length = newCols;
+
+  // Resize rowHeights array
+  if (!data.rowHeights) data.rowHeights = [];
+  while (data.rowHeights.length < newRows) {
+    data.rowHeights.push(30);  // Default 30px for new rows
+  }
+  data.rowHeights.length = newRows;
+
   data.rows = newRows;
   data.cols = newCols;
 
@@ -1343,64 +1388,95 @@ function createDefaultCell() {
   };
 }
 
-function updateSelectedCells() {
+// Update only a specific cell property (preserves other properties)
+function updateCellProp(propName) {
   if (!selectedElement || selectedElement.dataset.type !== 'table') return;
 
   const data = getTableData(selectedElement.id);
   if (!data) return;
 
-  const bgColor = document.getElementById('prop_cellBg').value;
-  const textColor = document.getElementById('prop_cellColor').value;
-  const fontFamily = document.getElementById('prop_cellFontFamily').value;
-  const fontSize = parseInt(document.getElementById('prop_cellFontSize').value) || 14;
-  const borderColor = document.getElementById('prop_cellBorder').value;
-  const borderWidth = parseInt(document.getElementById('prop_cellBorderWidth').value) || 1;
-  const borderStyle = document.getElementById('prop_cellBorderStyle').value;
-  const borderPosition = document.getElementById('prop_cellBorderPosition').value;
-  const paddingH = parseInt(document.getElementById('prop_cellPaddingH').value) || 8;
-  const paddingV = parseInt(document.getElementById('prop_cellPaddingV').value) || 4;
-
-  // Update hex displays
-  document.getElementById('prop_cellBgHex').value = bgColor.toUpperCase();
-  document.getElementById('prop_cellColorHex').value = textColor.toUpperCase();
-  document.getElementById('prop_cellBorderHex').value = borderColor.toUpperCase();
+  // Get the new value based on property name
+  let newValue;
+  switch (propName) {
+    case 'bgColor':
+      newValue = document.getElementById('prop_cellBg').value;
+      document.getElementById('prop_cellBgHex').value = newValue.toUpperCase();
+      break;
+    case 'textColor':
+      newValue = document.getElementById('prop_cellColor').value;
+      document.getElementById('prop_cellColorHex').value = newValue.toUpperCase();
+      break;
+    case 'fontFamily':
+      newValue = document.getElementById('prop_cellFontFamily').value;
+      break;
+    case 'fontSize':
+      newValue = parseInt(document.getElementById('prop_cellFontSize').value) || 14;
+      break;
+    case 'borderColor':
+      newValue = document.getElementById('prop_cellBorder').value;
+      document.getElementById('prop_cellBorderHex').value = newValue.toUpperCase();
+      break;
+    case 'borderWidth':
+      newValue = parseInt(document.getElementById('prop_cellBorderWidth').value) || 1;
+      break;
+    case 'borderStyle':
+      newValue = document.getElementById('prop_cellBorderStyle').value;
+      break;
+    case 'borderPosition':
+      newValue = document.getElementById('prop_cellBorderPosition').value;
+      break;
+    case 'paddingH':
+      newValue = parseInt(document.getElementById('prop_cellPaddingH').value) || 8;
+      break;
+    case 'paddingV':
+      newValue = parseInt(document.getElementById('prop_cellPaddingV').value) || 4;
+      break;
+    default:
+      return;
+  }
 
   selectedCells.forEach(({ row, col, element }) => {
     const cellData = data.cells[row]?.[col];
     if (cellData) {
-      cellData.bgColor = bgColor;
-      cellData.textColor = textColor;
-      cellData.fontFamily = fontFamily;
-      cellData.fontSize = fontSize;
-      cellData.borderColor = borderColor;
-      cellData.borderWidth = borderWidth;
-      cellData.borderStyle = borderStyle;
-      cellData.borderPosition = borderPosition;
-      cellData.paddingH = paddingH;
-      cellData.paddingV = paddingV;
+      // Update only the specific property
+      cellData[propName] = newValue;
 
-      // Apply to element
-      element.style.backgroundColor = bgColor;
-      element.style.color = textColor;
-      element.style.fontFamily = fontFamily;
-      element.style.fontSize = fontSize + 'px';
-      element.style.fontWeight = cellData.bold ? '700' : '400';
-      element.style.fontStyle = cellData.italic ? 'italic' : 'normal';
-      element.style.textDecoration = cellData.underline ? 'underline' : 'none';
-      element.style.padding = `${paddingV}px ${paddingH}px`;
-
-      // Apply border based on position
-      if (borderPosition === 'bottom') {
-        element.style.border = 'none';
-        element.style.borderBottom = `${borderWidth}px ${borderStyle} ${borderColor}`;
-      } else if (borderPosition === 'top') {
-        element.style.border = 'none';
-        element.style.borderTop = `${borderWidth}px ${borderStyle} ${borderColor}`;
-      } else {
-        element.style.border = `${borderWidth}px ${borderStyle} ${borderColor}`;
-      }
+      // Apply visual update to element
+      applyStylesToCell(element, cellData);
     }
   });
+}
+
+// Apply all styles from cellData to element
+function applyStylesToCell(element, cellData) {
+  element.style.backgroundColor = cellData.bgColor || '#ffffff';
+  element.style.color = cellData.textColor || '#000000';
+  element.style.fontFamily = cellData.fontFamily || 'Arial';
+  element.style.fontSize = (cellData.fontSize || 14) + 'px';
+  element.style.fontWeight = cellData.bold ? '700' : '400';
+  element.style.fontStyle = cellData.italic ? 'italic' : 'normal';
+  element.style.textDecoration = cellData.underline ? 'underline' : 'none';
+
+  const paddingH = cellData.paddingH ?? 8;
+  const paddingV = cellData.paddingV ?? 4;
+  element.style.padding = `${paddingV}px ${paddingH}px`;
+
+  const borderWidth = cellData.borderWidth || 1;
+  const borderStyle = cellData.borderStyle || 'solid';
+  const borderColor = cellData.borderColor || '#000000';
+  const borderPosition = cellData.borderPosition || 'all';
+
+  if (borderPosition === 'bottom') {
+    element.style.border = 'none';
+    element.style.borderBottom = `${borderWidth}px ${borderStyle} ${borderColor}`;
+  } else if (borderPosition === 'top') {
+    element.style.border = 'none';
+    element.style.borderTop = `${borderWidth}px ${borderStyle} ${borderColor}`;
+  } else {
+    element.style.border = `${borderWidth}px ${borderStyle} ${borderColor}`;
+  }
+
+  element.style.textAlign = cellData.textAlign || 'left';
 }
 
 // Load cell properties into the panel when a cell is selected
@@ -1484,7 +1560,7 @@ function syncCellBgFromHex() {
   const hex = document.getElementById('prop_cellBgHex').value;
   if (/^#([0-9A-F]{3}){1,2}$/i.test(hex)) {
     document.getElementById('prop_cellBg').value = hex;
-    updateSelectedCells();
+    updateCellProp('bgColor');
   }
 }
 
@@ -1492,7 +1568,7 @@ function syncCellColorFromHex() {
   const hex = document.getElementById('prop_cellColorHex').value;
   if (/^#([0-9A-F]{3}){1,2}$/i.test(hex)) {
     document.getElementById('prop_cellColor').value = hex;
-    updateSelectedCells();
+    updateCellProp('textColor');
   }
 }
 
@@ -1500,7 +1576,7 @@ function syncCellBorderFromHex() {
   const hex = document.getElementById('prop_cellBorderHex').value;
   if (/^#([0-9A-F]{3}){1,2}$/i.test(hex)) {
     document.getElementById('prop_cellBorder').value = hex;
-    updateSelectedCells();
+    updateCellProp('borderColor');
   }
 }
 
@@ -1521,6 +1597,10 @@ function insertColumn(direction) {
   data.cells.forEach(row => {
     row.splice(insertAt, 0, createDefaultCell());
   });
+
+  // Add column width entry
+  if (!data.colWidths) data.colWidths = Array(data.cols).fill(100);
+  data.colWidths.splice(insertAt, 0, 100);  // Default 100px for new column
 
   data.cols++;
 
@@ -1553,6 +1633,11 @@ function insertRow(direction) {
 
   // Insert the new row
   data.cells.splice(insertAt, 0, newRow);
+
+  // Add row height entry
+  if (!data.rowHeights) data.rowHeights = Array(data.rows).fill(30);
+  data.rowHeights.splice(insertAt, 0, 30);  // Default 30px for new row
+
   data.rows++;
 
   // Re-render and re-select
@@ -2027,6 +2112,79 @@ function loadTableProps(id) {
   document.getElementById('prop_cols').value = data.cols;
   document.getElementById('prop_tableX').value = data.x;
   document.getElementById('prop_tableY').value = data.y;
+
+  // Render column width inputs
+  renderColWidthInputs(data);
+  // Render row height inputs
+  renderRowHeightInputs(data);
+}
+
+function renderColWidthInputs(data) {
+  const container = document.getElementById('colWidthsContainer');
+  const colWidths = data.colWidths || Array(data.cols).fill(100);
+
+  container.innerHTML = colWidths.map((w, i) => `
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <span style="font-size: 10px; width: 35px;">Col ${i + 1}:</span>
+      <input type="number" value="${w}" min="20" max="500"
+             style="flex: 1; padding: 4px;"
+             onchange="updateColWidth(${i}, this.value)">
+    </div>
+  `).join('');
+}
+
+function renderRowHeightInputs(data) {
+  const container = document.getElementById('rowHeightsContainer');
+  const rowHeights = data.rowHeights || Array(data.rows).fill(30);
+
+  container.innerHTML = rowHeights.map((h, i) => `
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <span style="font-size: 10px; width: 35px;">Row ${i + 1}:</span>
+      <input type="number" value="${h}" min="15" max="200"
+             style="flex: 1; padding: 4px;"
+             onchange="updateRowHeight(${i}, this.value)">
+    </div>
+  `).join('');
+}
+
+function updateColWidth(colIndex, value) {
+  if (!selectedElement || selectedElement.dataset.type !== 'table') return;
+  const data = getTableData(selectedElement.id);
+  if (!data) return;
+
+  // Initialize if not exists
+  if (!data.colWidths) {
+    data.colWidths = Array(data.cols).fill(100);
+  }
+
+  data.colWidths[colIndex] = parseInt(value) || 100;
+  renderPage();
+
+  // Re-select the table
+  setTimeout(() => {
+    const el = document.getElementById(selectedElement.id);
+    if (el) selectElement(el, 'table');
+  }, 10);
+}
+
+function updateRowHeight(rowIndex, value) {
+  if (!selectedElement || selectedElement.dataset.type !== 'table') return;
+  const data = getTableData(selectedElement.id);
+  if (!data) return;
+
+  // Initialize if not exists
+  if (!data.rowHeights) {
+    data.rowHeights = Array(data.rows).fill(30);
+  }
+
+  data.rowHeights[rowIndex] = parseInt(value) || 30;
+  renderPage();
+
+  // Re-select the table
+  setTimeout(() => {
+    const el = document.getElementById(selectedElement.id);
+    if (el) selectElement(el, 'table');
+  }, 10);
 }
 
 // ===== ELEMENT LISTS =====
