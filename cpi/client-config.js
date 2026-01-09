@@ -76,8 +76,8 @@ const CLIENT_CONFIGS = {
         name: 'Senterra',
         displayName: 'Senterra',
         fracc: 'senterra',
-        center: [-99.9480, 25.1467],
-        zoom: 14.4,
+        center: [-99.9490, 25.1474],
+        zoom: 14.1,
         position: 0, // Position in community selector
         // Alternative reference for search menu:
         searchMenuId: 'positionOne'
