@@ -1638,35 +1638,37 @@ async function createImagesFromFramesFolder() {
     return; 
   }
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
-  if (!gpxName) { 
-    showToaster('GPX name missing'); 
-    return; 
+  if (!gpxName) {
+    showToaster('GPX name missing');
+    return;
   }
-
-  const requiredStartLC = (gpxName + '-').toLowerCase();
-
+  // case-insensitive prefix match: "<gpx>-" or "<gpx>_"
+  const gpxNameLC = gpxName.toLowerCase();
+  const prefixHyphen = gpxNameLC + '-';
+  const prefixUnderscore = gpxNameLC + '_';
   let list;
   try {
     const res = await fetch(FRAMES_BASE + 'index.json', { cache: 'no-store' });
-    if (!res.ok) { 
-      showToaster('Could not fetch frames index'); 
-      return; 
+    if (!res.ok) {
+      showToaster('Could not fetch frames index');
+      return;
     }
     const data = await res.json();
     list = Array.isArray(data) ? data : Array.isArray(data.files) ? data.files : [];
-  } catch(e) { 
-    showToaster('Error reading frames manifest'); 
-    return; 
+  } catch(e) {
+    showToaster('Error reading frames manifest');
+    return;
   }
-
   const files = list.map(x => String(x).split('/').pop()).filter(Boolean);
   const matches = files
-    .filter(n => n.toLowerCase().startsWith(requiredStartLC))
+    .filter(n => {
+      const nameLC = n.toLowerCase();
+      return nameLC.startsWith(prefixHyphen) || nameLC.startsWith(prefixUnderscore);
+    })
     .filter(n => /\.(?:jpe?g|png)$/i.test(n))
-    .sort((a, b) => a.localeCompare(b));
-
-  if (!matches.length) { 
-    showToaster(`No frames for "${gpxName}"`); 
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  if (!matches.length) {
+    showToaster(`No frames for "${gpxName}"`);
     return; 
   }
 
