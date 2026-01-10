@@ -492,7 +492,7 @@
             <button class="small-btn" onclick="removeMarble()" title="Remove last marble">-</button>
             <button class="small-btn" onclick="initializeMarbles()" title="Rebuild all marbles">Rebuild</button>
             <button class="small-btn" onclick="lockSelectedMarble()" title="Lock selected marble">🔒 Lock</button>
-       
+
 <button onclick="repairImageAssignment()" class="small-btn">1:1</button>
         </div>
     </div>
@@ -502,6 +502,13 @@
     </div>
     <div class="slider-label">
         <input type="range" min="1" max="50" value="10" class="slider" id="marble-spacing-slider">
+    </div>
+    <div style="margin-top:10px;">
+        <div class="slider-label"><span>Local Frames:</span> <small id="local-frames-count">0 loaded</small></div>
+        <div class="file-input-container" style="margin-top:5px;">
+            <div class="file-input-button" style="font-size:12px;padding:8px;">Select Folder</div>
+            <input type="file" id="local-frames-input" webkitdirectory multiple accept="image/*">
+        </div>
     </div>
 </div>
     
@@ -640,7 +647,14 @@ function initializeApp() {
     map.on('load', async () => {
         console.log('Map loaded successfully');
         document.getElementById('gpx-file').addEventListener('change', handleGPXUpload);
-        
+
+        // Setup local frames folder picker
+        document.getElementById('local-frames-input').addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                loadLocalFrames(e.target.files);
+            }
+        });
+
         // Setup density slider
         const densitySlider = document.getElementById('density-slider');
         densitySlider.addEventListener('input', handleDensityChange);
@@ -3178,10 +3192,56 @@ async function createImagesFromFramesFolder() {
   setStatus?.(`Loaded ${currentImages.length} image(s) for "${gpxName}" from ${FRAMES_BASE}`);
   updateImageCount?.();
 }
- 
 
+// Load frames from a local folder selected by user
+function loadLocalFrames(files) {
+    const track = getCurrentTrack();
+    if (!track) {
+        setStatus('Please select a GPX track first');
+        return;
+    }
 
+    // Filter for image files only
+    const imageFiles = Array.from(files).filter(file =>
+        file.type.startsWith('image/') ||
+        /\.(jpg|jpeg|png|webp)$/i.test(file.name)
+    );
 
+    if (imageFiles.length === 0) {
+        setStatus('No image files found in folder');
+        return;
+    }
+
+    // Sort by filename (IMG_0001, IMG_0002, etc.)
+    imageFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+    // Revoke old object URLs to free memory
+    currentImages.forEach(img => {
+        if (img.url && img.url.startsWith('blob:')) {
+            URL.revokeObjectURL(img.url);
+        }
+    });
+
+    // Create object URLs for each image
+    currentImages = imageFiles.map((file, i) => ({
+        url: URL.createObjectURL(file),
+        index: i,
+        filename: file.name,
+        timestamp: file.name,
+        sequence: i
+    }));
+
+    currentImageIndex = -1;
+
+    // Update UI
+    document.getElementById('local-frames-count').textContent = `${currentImages.length} loaded`;
+    updateImageCount();
+
+    // Auto-create marbles distributed along track
+    initializeMarbles();
+
+    setStatus(`Loaded ${currentImages.length} local frames - marbles created`);
+}
 
     function clear360Images() {
         currentImages = [];
