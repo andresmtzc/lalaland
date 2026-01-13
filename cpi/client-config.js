@@ -90,7 +90,7 @@ const CLIENT_CONFIGS = {
     // ----- DATA SOURCES -----
     data: {
       lotsFile: 'https://la-la.land/cpi/lots.txt',
-      framesBase: 'https://la-la.land/cpi/frames/'
+      framesBase: 'https://andresmtzc.github.io/geepeeX/senterra/frames/'
     },
 
     // ----- LOT NAMING CONVENTIONS -----
