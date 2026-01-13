@@ -744,6 +744,7 @@ function setupViewerEventListeners(){
   }, { passive: false });
 
   canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault(); // Prevent pull-to-refresh and scroll
     if (e.touches.length == 1 && sphere) {
       const dx = e.touches[0].clientX - touchStartX;
       const dy = e.touches[0].clientY - touchStartY;
@@ -776,7 +777,7 @@ function setupViewerEventListeners(){
         updateViewCone();
       }
     }
-  });
+  }, { passive: false });
 
   canvas.addEventListener('touchend', (e) => {
     e.preventDefault(); // Prevent double-tap zoom
@@ -1312,6 +1313,11 @@ document.getElementById('branchImageBtn').addEventListener('click', async () => 
     return;
   }
 
+  // Get old marble position for map panning
+  const track = getCurrentTrack();
+  const oldMarble = track?.marbles.find(m => m.id === selectedMarbleId);
+  const oldPos = oldMarble?.position;
+
   // Jump to first married partner
   const target = marriedPartners[0];
   const targetTrack = target.track;
@@ -1323,7 +1329,9 @@ document.getElementById('branchImageBtn').addEventListener('click', async () => 
   }
   selectMarble(targetMarble.id);
   if (targetMarble.assignedImage != null) showMarbleImage(targetMarble.id);
-  else map.flyTo({ center: targetMarble.position, zoom: map.getZoom(), duration: 800 });
+
+  // Pan map to follow marble
+  panMapToFollowMarble(oldPos, targetMarble.position);
 
   console.log(`Jumped to married partner on ${targetTrack.name}`);
 });
@@ -1493,20 +1501,47 @@ function preloadOne(index) {
   });
 }
 
+// Pan map to follow marble navigation (relative pan by delta between positions)
+function panMapToFollowMarble(oldPos, newPos) {
+  if (!oldPos || !newPos) return;
+  const center = map.getCenter();
+  const deltaLng = newPos[0] - oldPos[0];
+  const deltaLat = newPos[1] - oldPos[1];
+  map.easeTo({
+    center: [center.lng + deltaLng, center.lat + deltaLat],
+    duration: 500,
+    easing: t => 1 - Math.pow(1 - t, 3) // ease-out cubic
+  });
+}
+
+// Get marble position by image index
+function getMarblePositionByImageIndex(imageIndex) {
+  const track = getCurrentTrack();
+  if (!track) return null;
+  const marble = track.marbles.find(m => m.assignedImage === imageIndex);
+  return marble ? marble.position : null;
+}
+
 function nextImage() {
   if (currentImageIndex < currentImages.length - 1) {
+    const oldPos = getMarblePositionByImageIndex(currentImageIndex);
     currentImageIndex++;
     showImageByIndex(currentImageIndex);
     updateNavigationRing(true);
+    const newPos = getMarblePositionByImageIndex(currentImageIndex);
+    panMapToFollowMarble(oldPos, newPos);
   }
   updateViewerUI();
 }
 
 function previousImage() {
   if (currentImageIndex > 0) {
+    const oldPos = getMarblePositionByImageIndex(currentImageIndex);
     currentImageIndex--;
     showImageByIndex(currentImageIndex);
     updateNavigationRing(true);
+    const newPos = getMarblePositionByImageIndex(currentImageIndex);
+    panMapToFollowMarble(oldPos, newPos);
   }
   updateViewerUI();
 }
