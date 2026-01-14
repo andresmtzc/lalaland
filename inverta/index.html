@@ -8870,7 +8870,11 @@ try {
     NS.gpsWatchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, accuracy, heading } = pos.coords;
-        NS.lastUserLngLat = [longitude, latitude];
+        const newLngLat = [longitude, latitude];
+
+        // Store previous position for delta panning
+        const prevLngLat = NS.lastUserLngLat;
+        NS.lastUserLngLat = newLngLat;
 
         if (!NS._notifiedStart) {
           NS._notifiedStart = true;
@@ -8886,14 +8890,34 @@ try {
         updateUserLocation(longitude, latitude, accuracy);
 
         if (!NS.hasInitialFly) {
+          // First position - center on user
           NS.hasInitialFly = true;
           map.flyTo({
-            center: [longitude, latitude],
+            center: newLngLat,
             zoom: 17,
             speed: 1.2,
             curve: 1.5
           });
           safeToaster('GPS active - tracking your location', 3000);
+        } else if (prevLngLat) {
+          // Subsequent positions - delta pan if moved enough
+          const distance = turf.distance(
+            turf.point(prevLngLat),
+            turf.point(newLngLat),
+            { units: 'meters' }
+          );
+
+          // Only pan if moved more than 3 meters (avoid jitter)
+          if (distance > 3) {
+            const center = map.getCenter();
+            const deltaLng = newLngLat[0] - prevLngLat[0];
+            const deltaLat = newLngLat[1] - prevLngLat[1];
+            map.easeTo({
+              center: [center.lng + deltaLng, center.lat + deltaLat],
+              duration: 500,
+              easing: t => 1 - Math.pow(1 - t, 3)
+            });
+          }
         }
       },
       (err) => {
@@ -8939,6 +8963,7 @@ try {
     NS.lastUserLngLat = null;
     NS.userHeading = null;
     NS.lastSmoothedHeading = null;
+    NS.hasInitialFly = false; // Reset so next GPS start re-centers
 
     safeToaster(reason || 'GPS stopped');
     NS._notifiedStart = false;
