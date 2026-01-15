@@ -16,8 +16,8 @@ const SUPABASE_POLL_INTERVAL = 10000; // 10 seconds
 
 // Supabase client
 const supabase = createClient(
-  "https://jmoxbhodpvnlmtihcwvt.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imptb3hiaG9kcHZubG10aWhjd3Z0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxODM1MDgsImV4cCI6MjA2Nzc1OTUwOH0.-jP1akHIo9R4a2lD15byC5dESSGfeFHu8qlbmHteeJo"
+    "https://jmoxbhodpvnlmtihcwvt.supabase.co",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imptb3hiaG9kcHZubG10aWhjd3Z0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxODM1MDgsImV4cCI6MjA2Nzc1OTUwOH0.-jP1akHIo9R4a2lD15byC5dESSGfeFHu8qlbmHteeJo"
 );
 
 // ============================================================================
@@ -37,7 +37,7 @@ const messageHistory = new Map();
 async function loadGroupsFromSupabase() {
     try {
         console.log('📡 Loading groups from Supabase...');
-        
+
         const { data: completedRequests, error } = await supabase
             .from('group_requests')
             .select('*')
@@ -52,20 +52,19 @@ async function loadGroupsFromSupabase() {
             sellerGroup: req.seller_group_id,
             buyerName: req.buyer_name,
             agentName: req.agent_name,
-            buyerNumber: req.buyer_number,  // Store from Supabase!
-            agentNumber: req.agent_number    // Store from Supabase!
+            buyerNumber: req.buyer_number,
+            agentNumber: req.agent_number
         }));
 
         console.log(`✅ Loaded ${groupPairs.length} group pairs from Supabase`);
-        
+
         // Also save to JSON as backup
         saveGroups();
-        
+
     } catch (err) {
         console.error('❌ Error loading groups from Supabase:', err);
         console.log('📁 Attempting to load from groups.json backup...');
-        
-        // Fallback to JSON file
+
         try {
             if (fs.existsSync('groups.json')) {
                 const data = fs.readFileSync('groups.json', 'utf8');
@@ -115,8 +114,7 @@ function extractTextFromMsg(msg) {
 
 function extractCleanPhoneNumber(phoneField) {
     if (!phoneField) return 'Unknown';
-    
-    // Handle @s.whatsapp.net format
+
     if (phoneField.includes('@s.whatsapp.net')) {
         const numberPart = phoneField.split('@')[0];
         const cleanNumber = numberPart.replace(/\D/g, '');
@@ -125,14 +123,11 @@ function extractCleanPhoneNumber(phoneField) {
         }
         return `+${numberPart}`;
     }
-    
-    // Handle @lid format - extract phone from the LID
+
     if (phoneField.includes('@lid')) {
-        // LID format is typically: deviceId@lid
-        // We need to get the actual phone number from group metadata differently
-        return phoneField; // Return as-is, we'll handle it differently
+        return phoneField;
     }
-    
+
     return 'Invalid Format';
 }
 
@@ -159,20 +154,20 @@ function addToHistory(conversationId, senderType, text, isMedia = false) {
     if (!messageHistory.has(conversationId)) {
         messageHistory.set(conversationId, []);
     }
-    
+
     const history = messageHistory.get(conversationId);
     const message = {
         sender: senderType,
         text: isMedia ? '[Media]' : text,
         timestamp: new Date()
     };
-    
+
     history.push(message);
-    
+
     if (history.length > 15) {
         history.shift();
     }
-    
+
     if (DEBUG) {
         console.log(`💾 Added to history (${conversationId}): ${senderType} - ${isMedia ? '[Media]' : text}`);
         console.log(`   Total messages in history: ${history.length}`);
@@ -183,7 +178,6 @@ function addToHistory(conversationId, senderType, text, isMedia = false) {
 // PARTICIPANT FUNCTIONS
 // ============================================================================
 
-// Get agent phone number - just return from the pair data!
 function getAgentNumber(pair) {
     if (pair.agentNumber) {
         if (DEBUG) console.log(`✅ Agent number from Supabase: ${pair.agentNumber}`);
@@ -193,7 +187,6 @@ function getAgentNumber(pair) {
     return 'Unknown Agent';
 }
 
-// Get buyer phone number - just return from the pair data!
 function getBuyerNumber(pair) {
     if (pair.buyerNumber) {
         if (DEBUG) console.log(`✅ Buyer number from Supabase: ${pair.buyerNumber}`);
@@ -209,78 +202,146 @@ function getBuyerNumber(pair) {
 
 function formatAlertMessage(buyerNumber, sellerNumber, recentMessages) {
     let alert = `⚠️ *UNRESPONSIVE AGENT ALERT* ⚠️\n\n`;
-    alert += `🔴 Agent hasn't responded in ${RESPONSE_TIMEOUT/3600000} hours\n\n`;
+    alert += `🔴 Agent hasn't responded in ${RESPONSE_TIMEOUT / 3600000} hours\n\n`;
     alert += `🏢 *Agent:* ${sellerNumber}\n`;
     alert += `🛒 *Buyer:* ${buyerNumber}\n\n`;
     alert += `📝 *Recent conversation context:*\n`;
     alert += `${'─'.repeat(40)}\n\n`;
-    
+
     if (recentMessages.length === 0) {
         alert += `No recent messages found\n\n`;
     } else {
         recentMessages.forEach((msg, idx) => {
-            const timeStr = msg.timestamp.toLocaleString('en-US', { 
-    hour: '2-digit', 
-    minute: '2-digit',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'America/Mexico_City'
-});
+            const timeStr = msg.timestamp.toLocaleString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                month: 'short',
+                day: 'numeric',
+                timeZone: 'America/Mexico_City'
+            });
             const sender = msg.sender === 'buyer' ? '🛒 Buyer' : '🏢 Agent';
             alert += `${sender} (${timeStr}):\n"${msg.text}"\n\n`;
         });
     }
-    
+
     alert += `${'─'.repeat(40)}`;
-    
+
     return alert;
 }
 
 // ============================================================================
-// GROUP CREATION FUNCTIONS
+// GROUP CREATION FUNCTIONS (WITH RATE-LIMIT ERROR RECOVERY)
 // ============================================================================
 
 async function createGroups(buyerName, buyerNumber, agentName, agentNumber) {
     const buyerJid = buyerNumber.replace(/\D/g, '') + '@s.whatsapp.net';
     const agentJid = agentNumber.replace(/\D/g, '') + '@s.whatsapp.net';
-    
+
     const sellerGroupName = `Agente: ${agentName} | Cliente: ${buyerName}`;
     const buyerGroupName = `Cliente: ${buyerName} | Agente: ${agentName}`;
-    
+
     console.log(`🔄 Creating groups for ${buyerName} ↔ ${agentName}`);
-    
-    // Download images
+
+    // Download images first (before any WhatsApp calls)
     const buyerGroupImage = await downloadImage('https://la-la.land/InvertaCliente.png');
     const sellerGroupImage = await downloadImage('https://la-la.land/InvertaAgente.png');
-    
-    // Create seller group
-    const sellerGroup = await sock.groupCreate(sellerGroupName, [agentJid]);
+
+    let sellerGroup, buyerGroup;
+
+    // ========================================
+    // CREATE SELLER GROUP (with error recovery)
+    // ========================================
+    console.log('📱 Creating seller group...');
+    try {
+        sellerGroup = await sock.groupCreate(sellerGroupName, [agentJid]);
+    } catch (err) {
+        if (err.message?.includes('rate-overlimit')) {
+            console.log('⚠️ Got rate-overlimit error, checking if group was created anyway...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            // Check recent groups to find if it was actually created
+            const groups = await sock.groupFetchAllParticipating();
+            const found = Object.values(groups).find(g => g.subject === sellerGroupName);
+
+            if (found) {
+                console.log('✅ Seller group was actually created despite error!');
+                sellerGroup = { id: found.id };
+            } else {
+                throw err; // Actually failed
+            }
+        } else {
+            throw err;
+        }
+    }
+
+    console.log('✅ Seller group created:', sellerGroup.id);
+
+    // Set seller group image
     if (sellerGroupImage) {
-        await sock.updateProfilePicture(sellerGroup.id, sellerGroupImage);
+        try {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            await sock.updateProfilePicture(sellerGroup.id, sellerGroupImage);
+            console.log('🖼️ Seller group image set');
+        } catch (err) {
+            console.log('⚠️ Could not set seller group image:', err.message);
+        }
     }
-    
-    // Wait to avoid rate limits
+
+    // Wait between group creations
+    console.log('⏳ Waiting 60 seconds before creating buyer group...');
     await new Promise(resolve => setTimeout(resolve, 60000));
-    
-    // Create buyer group
-    const buyerGroup = await sock.groupCreate(buyerGroupName, [buyerJid]);
-    if (buyerGroupImage) {
-        await sock.updateProfilePicture(buyerGroup.id, buyerGroupImage);
+
+    // ========================================
+    // CREATE BUYER GROUP (with error recovery)
+    // ========================================
+    console.log('📱 Creating buyer group...');
+    try {
+        buyerGroup = await sock.groupCreate(buyerGroupName, [buyerJid]);
+    } catch (err) {
+        if (err.message?.includes('rate-overlimit')) {
+            console.log('⚠️ Got rate-overlimit error, checking if group was created anyway...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            const groups = await sock.groupFetchAllParticipating();
+            const found = Object.values(groups).find(g => g.subject === buyerGroupName);
+
+            if (found) {
+                console.log('✅ Buyer group was actually created despite error!');
+                buyerGroup = { id: found.id };
+            } else {
+                throw err; // Actually failed
+            }
+        } else {
+            throw err;
+        }
     }
-    
+
+    console.log('✅ Buyer group created:', buyerGroup.id);
+
+    // Set buyer group image
+    if (buyerGroupImage) {
+        try {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            await sock.updateProfilePicture(buyerGroup.id, buyerGroupImage);
+            console.log('🖼️ Buyer group image set');
+        } catch (err) {
+            console.log('⚠️ Could not set buyer group image:', err.message);
+        }
+    }
+
     // Add to group pairs and save
     groupPairs.push({
         buyerGroup: buyerGroup.id,
         sellerGroup: sellerGroup.id,
         buyerName,
         agentName,
-        buyerNumber,  // Store the numbers!
+        buyerNumber,
         agentNumber
     });
     saveGroups();
-    
+
     console.log(`✅ Groups created and added to monitoring list`);
-    
+
     return { buyerGroup, sellerGroup };
 }
 
@@ -309,7 +370,7 @@ async function checkPendingRequests() {
 
 async function processRequest(request) {
     console.log(`🔄 Processing request ${request.id}: ${request.buyer_name} ↔ ${request.agent_name}`);
-    
+
     try {
         // Mark as processing
         await supabase
@@ -330,7 +391,7 @@ async function processRequest(request) {
             .from('group_requests')
             .update({
                 status: 'completed',
-                completed_at: new Date(),
+                completed_at: new Date().toISOString(),
                 buyer_group_id: result.buyerGroup.id,
                 seller_group_id: result.sellerGroup.id
             })
@@ -340,7 +401,7 @@ async function processRequest(request) {
 
     } catch (err) {
         console.error(`❌ Error processing request ${request.id}:`, err);
-        
+
         await supabase
             .from('group_requests')
             .update({
@@ -394,14 +455,14 @@ function setupMessageHandlers(sock) {
 
             try {
                 if (!msg.message) continue;
-                
+
                 // Handle delete messages
                 if (msg.message.protocolMessage?.type === 0) {
                     const deletedMsgId = msg.message.protocolMessage.key?.id;
                     if (deletedMsgId) {
                         const mapKey = `${groupId}_${deletedMsgId}`;
                         const forwardedInfo = messageMap.get(mapKey);
-                        
+
                         if (forwardedInfo) {
                             await sock.sendMessage(forwardedInfo.targetGroup, {
                                 delete: {
@@ -410,15 +471,15 @@ function setupMessageHandlers(sock) {
                                     id: forwardedInfo.forwardedMsgId
                                 }
                             });
-                            
+
                             messageMap.delete(mapKey);
-                            
+
                             if (DEBUG) console.log('✓ Deleted forwarded message');
                         }
                     }
                     continue;
                 }
-                
+
                 if (msg.message.protocolMessage) continue;
 
                 const extractedText = extractTextFromMsg(msg);
@@ -429,12 +490,12 @@ function setupMessageHandlers(sock) {
                 if (isSellerMessage) {
                     const hasText = !!extractedText;
                     const hasMedia = !!(msgContent.imageMessage || msgContent.videoMessage || msgContent.documentMessage);
-                    
+
                     if (DEBUG) {
                         console.log(`🔔 Agent message detected in ${pair.sellerGroup}`);
                         console.log(`   Has text: ${hasText}, Has media: ${hasMedia}`);
                     }
-                    
+
                     if (hasText) {
                         addToHistory(pair.buyerGroup, 'agent', extractedText);
                     } else if (hasMedia) {
@@ -442,12 +503,12 @@ function setupMessageHandlers(sock) {
                     } else {
                         addToHistory(pair.buyerGroup, 'agent', '[Other Message]');
                     }
-                    
+
                     if (pendingAlerts.has(pair.sellerGroup)) {
                         const alertInfo = pendingAlerts.get(pair.sellerGroup);
                         clearTimeout(alertInfo.timer);
                         pendingAlerts.delete(pair.sellerGroup);
-                        
+
                         console.log(`✅ Timer CANCELLED for ${pair.sellerGroup} - Agent responded`);
                     }
                 }
@@ -459,46 +520,46 @@ function setupMessageHandlers(sock) {
                     } else {
                         addToHistory(pair.buyerGroup, 'buyer', '[Media]', true);
                     }
-                    
+
                     if (!pendingAlerts.has(pair.sellerGroup)) {
                         const agentNumber = getAgentNumber(pair);
                         const buyerNumber = getBuyerNumber(pair);
-                        
+
                         if (DEBUG) {
                             console.log(`📞 NUMBERS FROM SUPABASE:`);
                             console.log(`   🏢 Agent: ${agentNumber}`);
                             console.log(`   🛒 Buyer: ${buyerNumber}`);
                         }
-                        
+
                         const timer = setTimeout(async () => {
                             console.log(`🔔 TIMER FIRED for ${pair.sellerGroup}`);
-                            
+
                             const history = messageHistory.get(pair.buyerGroup) || [];
                             const recentMessages = history.slice(-MESSAGE_CONTEXT_COUNT);
-                            
+
                             const alertInfo = pendingAlerts.get(pair.sellerGroup);
                             const storedBuyerNumber = alertInfo?.buyerNumber || 'Unknown';
                             const storedSellerNumber = alertInfo?.sellerNumber || 'Unknown Agent';
-                            
+
                             const alertMsg = formatAlertMessage(storedBuyerNumber, storedSellerNumber, recentMessages);
-                            
+
                             try {
                                 await sock.sendMessage(ALERT_NUMBER, { text: alertMsg });
                                 console.log(`⚠️ Alert sent for unresponsive agent`);
                             } catch (err) {
                                 console.error('Error sending alert:', err);
                             }
-                            
+
                             pendingAlerts.delete(pair.sellerGroup);
                         }, RESPONSE_TIMEOUT);
-                        
+
                         pendingAlerts.set(pair.sellerGroup, {
                             timer,
                             lastBuyerMessageTime: Date.now(),
                             buyerNumber: buyerNumber,
                             sellerNumber: agentNumber
                         });
-                        
+
                         console.log(`⏰ Timer STARTED for ${pair.sellerGroup}`);
                     }
                 }
@@ -619,11 +680,11 @@ function setupMessageHandlers(sock) {
                             id: forwardedInfo.forwardedMsgId
                         }
                     });
-                    
-                    const newMsg = await sock.sendMessage(forwardedInfo.targetGroup, { 
-                        text: prefix + editedText 
+
+                    const newMsg = await sock.sendMessage(forwardedInfo.targetGroup, {
+                        text: prefix + editedText
                     });
-                    
+
                     if (newMsg?.key?.id) {
                         messageMap.set(mapKey, {
                             targetGroup: forwardedInfo.targetGroup,
@@ -631,7 +692,7 @@ function setupMessageHandlers(sock) {
                             isSellerMessage: forwardedInfo.isSellerMessage
                         });
                     }
-                    
+
                     if (DEBUG) console.log('✓ Message deleted and resent with edits');
                 }
 
@@ -652,7 +713,7 @@ async function startBot() {
 
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     sock = makeWASocket({ auth: state });
-    
+
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
@@ -664,7 +725,7 @@ async function startBot() {
             console.log('✅ WhatsApp connected!');
             console.log(`📊 Monitoring ${groupPairs.length} group pairs`);
             console.log('🔍 Starting Supabase polling for new group requests...');
-            
+
             // Start Supabase polling
             startPolling();
         }
