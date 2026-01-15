@@ -131,6 +131,7 @@
     <script>
         let supabaseClient = null;
         let progressInterval;
+        let loadPairsTimeout; // For debouncing
         
         function updatePreview() {
             const buyerName = document.getElementById('buyerName').value || '[Buyer Name]';
@@ -187,6 +188,12 @@
             document.getElementById('progressContainer').style.display = 'none';
         }
         
+        // Debounced version of loadPairs to prevent rate limiting
+        function debouncedLoadPairs() {
+            clearTimeout(loadPairsTimeout);
+            loadPairsTimeout = setTimeout(loadPairs, 300); // Wait 300ms before loading
+        }
+        
         // Initialize Supabase dynamically
         function initializeSupabase() {
             return new Promise((resolve, reject) => {
@@ -209,34 +216,36 @@
                             document.getElementById('connectionStatus').className = 'connection-status connected';
                             document.getElementById('connectionStatus').textContent = '✅ Connected';
                             
+                            // Initial load (no debounce needed for first load)
                             loadPairs();
                             
                             // Real-time subscription
-const subscription = supabaseClient
-    .channel('schema-db-changes')
-    .on(
-        'postgres_changes',
-        {
-            event: '*',
-            schema: 'public',
-            table: 'group_requests'
-        },
-        (payload) => {
-            console.log('🔄 Real-time update received!', payload);
-            loadPairs();
-            
-            if (payload.eventType === 'UPDATE' && payload.new.status === 'completed') {
-                completeProgressAnimation();
-                showMessage(`✅ Groups created for ${payload.new.buyer_name} ↔ ${payload.new.agent_name}`, 'success');
-            }
-            
-            // 👇 NEW ERROR HANDLING 👇
-            if (payload.eventType === 'UPDATE' && payload.new.status === 'error') {
-                stopProgressAnimation();
-                showMessage(`❌ Failed to create groups for ${payload.new.buyer_name}: ${payload.new.error_message}`, 'error');
-            }
-        }
-    )
+                            const subscription = supabaseClient
+                                .channel('schema-db-changes')
+                                .on(
+                                    'postgres_changes',
+                                    {
+                                        event: '*',
+                                        schema: 'public',
+                                        table: 'group_requests'
+                                    },
+                                    (payload) => {
+                                        console.log('🔄 Real-time update received!', payload);
+                                        
+                                        // Use debounced version to prevent rate limiting
+                                        debouncedLoadPairs();
+                                        
+                                        if (payload.eventType === 'UPDATE' && payload.new.status === 'completed') {
+                                            completeProgressAnimation();
+                                            showMessage(`✅ Groups created for ${payload.new.buyer_name} ↔ ${payload.new.agent_name}`, 'success');
+                                        }
+                                        
+                                        if (payload.eventType === 'UPDATE' && payload.new.status === 'error') {
+                                            stopProgressAnimation();
+                                            showMessage(`❌ Failed to create groups for ${payload.new.buyer_name}: ${payload.new.error_message}`, 'error');
+                                        }
+                                    }
+                                )
                                 .subscribe((status) => {
                                     if (status === 'SUBSCRIBED') {
                                         console.log('🎯 Real-time subscription active!');
