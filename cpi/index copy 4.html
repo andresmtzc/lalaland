@@ -40,11 +40,19 @@
 <link rel="stylesheet" href="https://la-la.land/styles.css">
 <link rel="stylesheet" href="https://la-la.land/street-view-nav.css">
 
+<!-- STIX Two Text font for PDF generation -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:wght@400;700&display=swap" rel="stylesheet">
+
+<!-- html2pdf for PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
 <!-- ===== LOAD CLIENT CONFIGURATION ===== -->
 <script src="client-config.js"></script>
 <script>
 // ===== CLIENT CONFIG =====
-const CURRENT_CLIENT = 'inverta';
+const CURRENT_CLIENT = 'cpi';
 const CONFIG = getClientConfig(CURRENT_CLIENT);
 
 // Validate config loaded
@@ -80,15 +88,6 @@ window.clientAccessCache = window.clientAccessCache || {};
       document.body.classList.add('fonts-loaded'); // Fallback if fonts fail
     });
   </script>
-
-  <script>
-    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group identify setPersonProperties setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags resetGroups onFeatureFlags addFeatureFlagsHandler onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
-    posthog.init('phc_gVIOdluBMP7Mshnq3isBacO9uSRCXbk9JxiKEZNFp0a', {
-        api_host: 'https://us.i.posthog.com',
-        defaults: '2025-11-30'
-    })
-</script>
-
 </head>
  
 <body>
@@ -155,7 +154,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <div class="logoinv-wrapper">
    <a href="#" onclick="event.preventDefault(); window.location.reload(true);" title="Reload Site">
-  <img id="mainClientLogo" src="" alt=""></a>
+  <img id="mainClientLogo" style="height: 50px;" src="" alt=""></a>
 </div>
 <script>
   // Set main logo from config
@@ -173,8 +172,8 @@ window.clientAccessCache = window.clientAccessCache || {};
 </script>
 
 <!-- Conditional community logo -->
-<div class="community-logo-wrapper" id="communityLogo">
-  <img id="communityLogoImg" src="" alt="Community Logo">
+<div class="community-logo-wrapper" id="communityLogo" style="top:100px; left:45px;">
+  <img id="communityLogoImg" src="" alt="Community Logo" style="height:45px;">
 </div>
 <script>
   // Set initial community logo from config (for default community)
@@ -513,27 +512,32 @@ function updateViewCone() {
 
   const currentIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
 
-  let pathBearing;
-  if (lastHopBearingDeg !== null) {
-    pathBearing = lastHopBearingDeg;
-  } else if (track._lastPathBearing !== undefined) {
-    pathBearing = track._lastPathBearing;
-  } else if (currentIndex < track.marbles.length - 1) {
+  // 1. GET PATH DIRECTION (base bearing)
+  let pathBearing = track._lastPathBearing || 0; // keep last good direction as fallback
+
+  if (currentIndex < track.marbles.length - 1) {
     const nextMarble = track.marbles[currentIndex + 1];
     const dx = nextMarble.position[0] - marble.position[0];
     const dy = nextMarble.position[1] - marble.position[1];
     pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
   } else if (currentIndex > 0) {
     const prevMarble = track.marbles[currentIndex - 1];
-    const dx = marble.position[0] - prevMarble.position[0];
+    const dx = marble.position[0] - prevMarble.position[0]; // invert vector so it still points forward
     const dy = marble.position[1] - prevMarble.position[1];
     pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
-  } else {
-    pathBearing = 0;
+  }
+
+  // smooth continuity near endpoints (avoid 180° flip)
+  if (track._lastPathBearing !== undefined) {
+    const diff = pathBearing - track._lastPathBearing;
+    if (Math.abs(diff) > 180) {
+      // wrap around direction instead of flipping
+      pathBearing += diff > 0 ? -360 : 360;
+    }
   }
   track._lastPathBearing = pathBearing;
 
-  // Apply user yaw offset
+  // 2. GET USER OFFSET (convert yaw to degrees and apply to path)
   const userYawDeg = THREE.MathUtils.radToDeg(currentYaw);
   const finalHeading = (pathBearing + userYawDeg + 360) % 360;
 
@@ -1651,7 +1655,7 @@ async function createImagesFromFramesFolder() {
     return; 
   }
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
-    if (!gpxName) {
+  if (!gpxName) {
     showToaster('GPX name missing');
     return;
   }
@@ -3217,8 +3221,7 @@ function toggleRoadLabels() {
     if (style.layers && Array.isArray(style.layers)) {
       style.layers.forEach(layer => {
         // Skip our custom labels layers
-        if (layer.id === 'lot-labels' || layer.id === 'manzana-labels' ||
-            layer.id === 'custom-road-labels' || layer.id === 'custom-place-labels') return;
+        if (layer.id === 'lot-labels' || layer.id === 'manzana-labels') return;
 
         if (layer.id.includes('label') ||
             layer.id.includes('shield') ||
@@ -3465,9 +3468,9 @@ function setupCommunitySearchMenu() {
 
 // ===== 🟢 ADD MARBLE LAYERS HERE =====
         // 🟢 MARBLES SOURCE
-        map.addSource('marbles', { 
-          type: 'geojson', 
-          data: { type:'FeatureCollection', features: [] } 
+        map.addSource('marbles', {
+          type: 'geojson',
+          data: { type:'FeatureCollection', features: [] }
         });
 
         // VISIBLE marbles layer (fades in/out based on zoom)
@@ -5599,7 +5602,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     <div style="display: flex; align-items: center; justify-content: center; width: 100%; position: relative;">
       <!-- Lot name on left (smaller, two rows) -->
       <div class="lot-left" style="position: absolute; left: 0; align-items: flex-end !important; text-align: right !important; transform: scale(0.75); transform-origin: left center;">
-        <div class="lote-label">MZ-L</div>
+        <div class="lote-label">LOTE</div>
         <div class="lote-number" style="text-align: right !important; margin-left: 0 !important;">${lot.number}</div>
       </div>
 
@@ -5612,11 +5615,11 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     </div>
 
     <!-- Big total price with more space above -->
-    <div style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
+    <div id="bigTotalPrice" style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
       $${totalPriceFormatted}<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>
     </div>
     <div style="font-size: 13px; color: ${CONFIG.colors.textLight}; text-align: right; width: 100%; margin-top: -8px;">
-      Precio de contado
+      Precio de preventa
     </div>
     <div style="width: 100%; height: 1px; background: ${CONFIG.colors.grayLight}; margin: 0px;"></div>
 
@@ -5624,45 +5627,35 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     <div style="margin-top: 6px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; position: relative;">
       <!-- Row 1: Down payment % + Enganche amount -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="downPaymentCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            <option value="20">20%</option>
-            <option value="25">25%</option>
-            <option value="30">30%</option>
-            <option value="35">35%</option>
-            <option value="40">40%</option>
-            <option value="45">45%</option>
-            <option value="50">50%</option>
+        <div style="width: 110px;">
+          <select id="downPaymentCalc" style="width: 110px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
+            <option value="25">25/45/30</option>
+            <option value="50">50/50</option>
+            <option value="85">85/15</option>
           </select>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * 0.20).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * 0.25).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       </div>
 
-      <!-- Row 2: Months + Monthly payment -->
+      <!-- Row 2: Monthly payment (or final payment for 50%/85%) -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="installmentsCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            <option value="24">24</option>
-            <option value="36">36</option>
-            <option value="48">48</option>
-            <option value="60">60</option>
-            <option value="72" selected>72</option>
-          </select>
+        <div style="width: 110px; text-align: center; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight};">
+          <span id="discountDisplay">0%</span>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$10,315.50</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
+          <span id="paymentLabel">24 Meses</span>: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$${(totalPrice * 0.45 / 24).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span><span id="paymentSuffix" style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
         </div>
       </div>
 
-      <!-- Tasa and Precio financiado on same line -->
+      <!-- Descuento label and Contra escrituras on same line -->
       <div style="width: 100%; display: flex; justify-content: space-between; margin-top: -4px; font-size: 13px; color: ${CONFIG.colors.textLight};">
-        <div style="width: 80px; text-align: center;">
-          <span>Tasa <span id="financingRate">17</span>%</span>
+        <div style="width: 110px; text-align: center;" class="descuento-label">
+          <span>Descuento</span>
         </div>
-        <div style="text-align: right;">
-          <span>Financiado: <span id="financingTotalPrice">$742,716.00</span></span>
+        <div style="text-align: right;" id="financingInfo">
+          <span>Contra escrituras: <span id="financingTotalPrice">$${(totalPrice * 0.30).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
         </div>
       </div>
     </div>
@@ -5671,61 +5664,65 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   detailContainer.appendChild(detailRow);
 
-  // Initialize calculator
+  // Initialize presale payment calculator
   const totalPriceNum = totalPrice;
-  const INTEREST_RATES = {
-    24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17
-  };
 
-  function calculateMonthlyPayment(principal, annualRate, months) {
-    const monthlyRate = annualRate / 12;
-    if (monthlyRate === 0) return principal / months;
-    const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-    const denominator = Math.pow(1 + monthlyRate, months) - 1;
-    return numerator / denominator;
-  }
-
-  function updateCalculations() {
+  function updatePresaleCalculations() {
     const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
-    const months = parseInt(document.getElementById('installmentsCalc').value);
-    const interestRate = INTEREST_RATES[months] || 0.17;
+    const discountDisplay = document.getElementById('discountDisplay');
+    const paymentLabel = document.getElementById('paymentLabel');
+    const monthlyPayment = document.getElementById('monthlyPayment');
+    const paymentSuffix = document.getElementById('paymentSuffix');
+    const financingInfo = document.getElementById('financingInfo');
+    const bigTotalPrice = document.getElementById('bigTotalPrice');
 
-    const downPaymentAmount = totalPriceNum * downPaymentPercent;
-    const amountFinanced = totalPriceNum - downPaymentAmount;
-    const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
+    if (downPaymentPercent === 0.25) {
+      // 25/45/30: 25% enganche, 45% in 24 months, 30% on deeds - no discount
+      discountDisplay.textContent = '0%';
+      paymentLabel.textContent = '24 Meses';
+      const monthly = (totalPriceNum * 0.45) / 24;
+      monthlyPayment.textContent = '$' + monthly.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      paymentSuffix.textContent = '/MES';
+      financingInfo.style.visibility = 'visible';
+      financingInfo.innerHTML = `<span>Contra escrituras: <span id="financingTotalPrice">$${(totalPriceNum * 0.30).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>`;
+      // Big price shows full price
+      bigTotalPrice.innerHTML = '$' + totalPriceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+    } else if (downPaymentPercent === 0.50) {
+      // 50/50: 50% enganche, 50% pago final - 5% discount
+      const discountedPrice = totalPriceNum * 0.95;
+      discountDisplay.textContent = '5%';
+      paymentLabel.textContent = 'Pago final';
+      const finalPayment = discountedPrice * 0.50;
+      monthlyPayment.textContent = '$' + finalPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      paymentSuffix.textContent = '';
+      financingInfo.style.visibility = 'hidden';
+      // Big price shows discounted price
+      bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+    } else if (downPaymentPercent === 0.85) {
+      // 85/15: 85% enganche, 15% pago final - 12% discount
+      const discountedPrice = totalPriceNum * 0.88;
+      discountDisplay.textContent = '12%';
+      paymentLabel.textContent = 'Pago final';
+      const finalPayment = discountedPrice * 0.15;
+      monthlyPayment.textContent = '$' + finalPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      paymentSuffix.textContent = '';
+      financingInfo.style.visibility = 'hidden';
+      // Big price shows discounted price
+      bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+    }
 
-    const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
-
+    // Update enganche amount (based on discounted price for 50/50 and 85/15)
+    const downPaymentAmount = downPaymentPercent === 0.50 ? (totalPriceNum * 0.95 * 0.50) :
+                              downPaymentPercent === 0.85 ? (totalPriceNum * 0.88 * 0.85) :
+                              (totalPriceNum * downPaymentPercent);
     document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
-
-    // Update financing header
-    document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
-    document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  // Add event listeners
+  // Add event listener
   setTimeout(() => {
-    // Check URL parameters and set values if present
-    // Support both new short params (a, m, i) and old long params for backwards compatibility
-    const urlParams = new URLSearchParams(window.location.search);
-    const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
-    const monthsParam = urlParams.get('m') || urlParams.get('months');
-
     const downPaymentSelect = document.getElementById('downPaymentCalc');
-    const installmentsSelect = document.getElementById('installmentsCalc');
-
-    if (downpaymentParam && downPaymentSelect) {
-      downPaymentSelect.value = downpaymentParam;
-    }
-    if (monthsParam && installmentsSelect) {
-      installmentsSelect.value = monthsParam;
-    }
-
-    downPaymentSelect?.addEventListener('change', updateCalculations);
-    installmentsSelect?.addEventListener('change', updateCalculations);
-    updateCalculations(); // Initial calculation with URL params
+    downPaymentSelect?.addEventListener('change', updatePresaleCalculations);
+    updatePresaleCalculations(); // Initial calculation
   }, 100);
 
   // CTA Buttons Section
@@ -5745,9 +5742,14 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'cta-buttons-row';
   buttonsRow.style.position = 'relative';
+  // Show COTIZAR when authenticated, CÓMO LLEGAR when not
+  const isAuthenticated = window.isUserAuthenticated === true;
   buttonsRow.innerHTML = `
-    <button class="cta-button first" id="separarBtn" translate="no">APARTAR</button>
-    <button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>
+    <button class="cta-button first" id="separarBtn" translate="no" disabled style="opacity: 0.4; cursor: not-allowed;">APARTAR</button>
+    ${isAuthenticated
+      ? `<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>`
+      : `<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>`
+    }
     <button class="cta-button second" id="chatearBtn" translate="no">CHATEAR</button>
   `;
 
@@ -5769,6 +5771,11 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   // Use event delegation instead of direct event listeners
   detailContainer.addEventListener('click', function(e) {
     if (e.target.id === 'separarBtn') {
+      // Check if button is disabled
+      if (e.target.disabled) {
+        e.stopPropagation();
+        return;
+      }
       // Show payment view in the same modal
       e.stopPropagation();
       if (window.showPaymentViewInModal && lot) {
@@ -5776,8 +5783,389 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       } else {
         console.error('Payment view not available or lot data missing');
       }
+    } else if (e.target.id === 'descargarPdfBtn') {
+      // Generate and download multi-page PDF using template
+      e.stopPropagation();
+
+      // Prompt user for dynamic text (for page 3)
+      const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
+      if (!dynamicText) return; // User cancelled
+
+      // Create progress overlay
+      const progressOverlay = document.createElement('div');
+      progressOverlay.id = 'pdf-progress-overlay';
+      progressOverlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+      `;
+      progressOverlay.innerHTML = `
+        <div style="background: white; padding: 32px 48px; border-radius: 12px; text-align: center; font-family: Arial, sans-serif;">
+          <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Generando PDF...</div>
+          <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Cargando plantilla...</div>
+          <div style="width: 200px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
+            <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: ${CONFIG.colors?.primary || '#007bff'}; transition: width 0.3s;"></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(progressOverlay);
+
+      const progressText = document.getElementById('pdf-progress-text');
+      const progressBar = document.getElementById('pdf-progress-bar');
+
+      // Calculate lot values for placeholders
+      function getLotValues(lot, dynamicText) {
+        const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
+        const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+        const totalPrice = size * priceM2;
+
+        // Calculate category based on priceM2 tier
+        // Get unique priceM2 values from all lots, sorted descending (highest first)
+        const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+        const uniquePrices = [...new Set(allLotsData.map(l =>
+          parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+        ))].filter(p => p > 0).sort((a, b) => b - a);
+
+        // Determine category: AAA+ (highest), AAA (2nd), AA (3rd), A (lowest)
+        const categories = ['AAA+', 'AAA', 'AA', 'A'];
+        // Find price tier index (use tolerance for floating point comparison)
+        const priceIndex = uniquePrices.findIndex(p => Math.abs(p - priceM2) < 0.01);
+        const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+        // Format currency helper
+        const formatCurrency = (num) => '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const formatNumber = (num) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        // Discount calculations
+        const discount5 = totalPrice * 0.05;
+        const discount12 = totalPrice * 0.12;
+        const priceWith5Discount = totalPrice * 0.95;
+        const priceWith12Discount = totalPrice * 0.88;
+
+        // 25% plan: no discount, 25% down, 45% in 24 months, 30% contra escritura
+        const downpayment25 = totalPrice * 0.25;
+        const monthly25 = (totalPrice * 0.45) / 24;
+        const contraEscritura30 = totalPrice * 0.30;
+
+        // 50% plan: 5% discount, 50% down, 50% contra escritura
+        const downpayment50 = priceWith5Discount * 0.50;
+        const contraEscritura50 = priceWith5Discount * 0.50;
+
+        // 85% plan: 12% discount, 85% down, 15% contra escritura
+        const downpayment85 = priceWith12Discount * 0.85;
+        const contraEscritura15 = priceWith12Discount * 0.15;
+
+        return {
+          'dynamicText': dynamicText,
+          'lot.number': lot.number || '',
+          'lot.category': category || 'A',
+          'lot.size': formatNumber(size) + ' m²',
+          'lot.pricePerM2': formatCurrency(priceM2),
+          'lot.totalPrice': formatCurrency(totalPrice),
+          'lot.downpayment25': formatCurrency(downpayment25),
+          'lot.downpayment50': formatCurrency(downpayment50),
+          'lot.downpayment85': formatCurrency(downpayment85),
+          'lot.monthly25': formatCurrency(monthly25),
+          'lot.discount0': formatCurrency(0),
+          'lot.discount5': formatCurrency(discount5),
+          'lot.discount12': formatCurrency(discount12),
+          'lot.priceWith5Discount': formatCurrency(priceWith5Discount),
+          'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
+          'lot.contraEscritura30': formatCurrency(contraEscritura30),
+          'lot.contraEscritura50': formatCurrency(contraEscritura50),
+          'lot.contraEscritura15': formatCurrency(contraEscritura15)
+        };
+      }
+
+      // Replace placeholders in text
+      function replacePlaceholders(text, values) {
+        if (!text) return '';
+        return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+          return values[key.trim()] !== undefined ? values[key.trim()] : match;
+        });
+      }
+
+      // Create hidden container for rendering pages
+      const pdfContainer = document.createElement('div');
+      pdfContainer.id = 'pdf-generation-container';
+      pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+      document.body.appendChild(pdfContainer);
+
+      // Function to create a page with template elements
+      function createPage(pageNum, template, lotValues) {
+        const pdfPage = document.createElement('div');
+        pdfPage.style.cssText = `
+          width: 1224px;
+          height: 1584px;
+          position: relative;
+          background-image: url("https://la-la.land/cpi/pdf/page.${pageNum}.png");
+          background-size: cover;
+          background-repeat: no-repeat;
+          background-position: top left;
+        `;
+
+        // Get page data from template
+        const pageIndex = parseInt(pageNum, 10);
+        const pageData = template?.pages?.[pageIndex];
+
+        if (pageData) {
+          // Render text boxes
+          if (pageData.textBoxes) {
+            pageData.textBoxes.forEach(tb => {
+              const textEl = document.createElement('div');
+              textEl.textContent = replacePlaceholders(tb.content, lotValues);
+              textEl.style.cssText = `
+                position: absolute;
+                left: ${tb.x}px;
+                top: ${tb.y}px;
+                ${tb.width ? `width: ${tb.width}px;` : ''}
+                ${tb.height ? `height: ${tb.height}px;` : ''}
+                font-size: ${tb.fontSize || 24}px;
+                font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+                color: ${tb.color || '#000000'};
+                font-weight: ${tb.bold ? '700' : '400'};
+                font-style: ${tb.italic ? 'italic' : 'normal'};
+                text-decoration: ${tb.underline ? 'underline' : 'none'};
+                text-align: ${tb.textAlign || 'left'};
+                white-space: pre-wrap;
+              `;
+              pdfPage.appendChild(textEl);
+            });
+          }
+
+          // Render tables
+          if (pageData.tables) {
+            pageData.tables.forEach(tableData => {
+              // Get column widths and row heights (with defaults)
+              const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
+              const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
+              const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
+
+              const tableContainer = document.createElement('div');
+              tableContainer.style.cssText = `
+                position: absolute;
+                left: ${tableData.x}px;
+                top: ${tableData.y}px;
+              `;
+
+              const table = document.createElement('table');
+              table.style.cssText = `
+                border-collapse: collapse;
+                table-layout: fixed;
+                width: ${totalWidth}px;
+              `;
+
+              for (let r = 0; r < tableData.rows; r++) {
+                const tr = document.createElement('tr');
+                tr.style.height = rowHeights[r] + 'px';
+
+                for (let c = 0; c < tableData.cols; c++) {
+                  const cellData = tableData.cells?.[r]?.[c];
+                  if (!cellData || cellData.hidden) continue;
+
+                  const td = document.createElement('td');
+                  td.textContent = replacePlaceholders(cellData.content || '', lotValues);
+
+                  // Border properties
+                  const borderWidth = cellData.borderWidth || 1;
+                  const borderStyle = cellData.borderStyle || 'solid';
+                  const borderColor = cellData.borderColor || '#000000';
+                  const borderPosition = cellData.borderPosition || 'all';
+
+                  let borderCss = '';
+                  if (borderPosition === 'bottom') {
+                    borderCss = `border: none; border-bottom: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                  } else if (borderPosition === 'top') {
+                    borderCss = `border: none; border-top: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                  } else {
+                    borderCss = `border: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                  }
+
+                  td.style.cssText = `
+                    width: ${colWidths[c]}px;
+                    height: ${rowHeights[r]}px;
+                    box-sizing: border-box;
+                    overflow: hidden;
+                    background-color: ${cellData.bgColor || '#ffffff'};
+                    color: ${cellData.textColor || '#000000'};
+                    font-family: "${cellData.fontFamily || 'Arial'}", sans-serif;
+                    font-size: ${cellData.fontSize || 14}px;
+                    font-weight: ${cellData.bold ? '700' : '400'};
+                    font-style: ${cellData.italic ? 'italic' : 'normal'};
+                    text-decoration: ${cellData.underline ? 'underline' : 'none'};
+                    ${borderCss}
+                    padding: 0;
+                    text-align: ${cellData.textAlign || 'left'};
+                    vertical-align: middle;
+                  `;
+
+                  if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
+                  if (cellData.rowSpan > 1) td.rowSpan = cellData.rowSpan;
+
+                  tr.appendChild(td);
+                }
+                table.appendChild(tr);
+              }
+
+              tableContainer.appendChild(table);
+              pdfPage.appendChild(tableContainer);
+            });
+          }
+
+          // Render images
+          if (pageData.images) {
+            pageData.images.forEach(imgData => {
+              const imgEl = document.createElement('div');
+
+              // Determine image URL based on type
+              let imageUrl = '';
+              if (imgData.type === '{{lot.landscape}}') {
+                imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_landscape.jpg`;
+              } else if (imgData.type === '{{lot.map}}') {
+                imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_map.jpg`;
+              } else if (imgData.type === 'static' && imgData.url) {
+                imageUrl = imgData.url;
+              }
+
+              imgEl.style.cssText = `
+                position: absolute;
+                left: ${imgData.x}px;
+                top: ${imgData.y}px;
+                width: ${imgData.width}px;
+                height: ${imgData.height}px;
+                background-image: url("${imageUrl}");
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+              `;
+              pdfPage.appendChild(imgEl);
+            });
+          }
+        }
+
+        return pdfPage;
+      }
+
+      // Generate PDF
+      async function generateMultiPagePDF() {
+        // Step 1: Fetch template
+        progressText.textContent = 'Cargando plantilla...';
+        let template = { pages: {} };
+        try {
+          const response = await fetch('/cpi/pdf/pdf-template.json');
+          if (response.ok) {
+            template = await response.json();
+          }
+        } catch (err) {
+          console.warn('Could not load PDF template, using defaults:', err);
+        }
+
+        // Calculate lot values
+        const lotValues = getLotValues(lot, dynamicText);
+
+        // Step 2: Preload ALL images in parallel
+        progressText.textContent = 'Cargando imágenes...';
+        progressBar.style.width = '10%';
+
+        const imagePromises = [];
+
+        // Preload page backgrounds
+        for (let i = 1; i <= 8; i++) {
+          const pageNum = String(i).padStart(3, '0');
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = resolve;
+            img.onerror = resolve;
+            img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
+          }));
+        }
+
+        // Preload lot-specific images (landscape and map)
+        const lotNum = lotValues['lot.number'];
+        if (lotNum) {
+          ['landscape', 'map'].forEach(type => {
+            imagePromises.push(new Promise(resolve => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = resolve;
+              img.onerror = resolve;
+              img.src = `/cpi/pdf/lotcpi1-${lotNum}_${type}.jpg`;
+            }));
+          });
+
+          // Preload any static images from the template
+          Object.values(template.pages || {}).forEach(pageData => {
+            (pageData.images || []).forEach(imgData => {
+              if (imgData.type === 'static' && imgData.url) {
+                imagePromises.push(new Promise(resolve => {
+                  const img = new Image();
+                  img.crossOrigin = 'anonymous';
+                  img.onload = resolve;
+                  img.onerror = resolve;
+                  img.src = imgData.url;
+                }));
+              }
+            });
+          });
+        }
+
+        await Promise.all(imagePromises);
+        progressBar.style.width = '40%';
+
+        // Step 3: Generate PDF pages sequentially (required by jsPDF)
+        progressText.textContent = 'Generando PDF...';
+
+        const worker = html2pdf().set({
+          margin: 0,
+          filename: 'CPI-documento.pdf',
+          image: { type: 'jpeg', quality: 1 },
+          html2canvas: { scale: 1, useCORS: true },
+          jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
+        });
+
+        for (let i = 1; i <= 8; i++) {
+          progressText.textContent = `Renderizando página ${i} de 8`;
+          progressBar.style.width = `${40 + (i / 8) * 55}%`;
+
+          const pageNum = String(i).padStart(3, '0');
+
+          // Create page with template elements
+          const page = createPage(pageNum, template, lotValues);
+          pdfContainer.innerHTML = '';
+          pdfContainer.appendChild(page);
+
+          if (i === 1) {
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          } else {
+            await worker.get('pdf').then(pdf => {
+              pdf.addPage([1224, 1584], 'portrait');
+            });
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          }
+        }
+
+        // Save the final PDF
+        progressText.textContent = 'Descargando...';
+        progressBar.style.width = '100%';
+        await worker.save();
+
+        // Clean up
+        document.body.removeChild(pdfContainer);
+        document.body.removeChild(progressOverlay);
+      }
+
+      generateMultiPagePDF();
     } else if (e.target.id === 'visitarBtn') {
-      // Open driving directions to this lot
+      // Open driving directions to this lot (shown when not authenticated)
       e.stopPropagation();
 
       // Use the lotMapData already calculated in showDetailViewForLot
@@ -6010,7 +6398,7 @@ const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toStrin
 
 row.innerHTML = `
   <div class="lot-left">
-    <div class="lote-label">MZ-L</div>
+    <div class="lote-label">LOTE</div>
     <div class="lote-number">${lot.number}</div>
   </div>
 
@@ -10057,8 +10445,19 @@ function shareCurrentLot() {
   }
   
   // Get financing calculator values
-  const downPaymentPercent = document.getElementById('downPaymentCalc')?.value || '20';
-  const installments = document.getElementById('installmentsCalc')?.value || '72';
+  const downPaymentPercent = document.getElementById('downPaymentCalc')?.value || '25';
+
+  // Calculate installments based on down payment (presale structure)
+  let installments;
+  if (downPaymentPercent === '25') {
+    installments = '24'; // 25% down = 24 months
+  } else if (downPaymentPercent === '50') {
+    installments = '1'; // 50% down = 1 payment
+  } else if (downPaymentPercent === '85') {
+    installments = '1'; // 85% down = 1 payment
+  } else {
+    installments = '24'; // default
+  }
 
   // Get community from modal dataset (current selected fracc), fallback to lot data, then default
   const modal = document.getElementById('lotModal');
@@ -10242,7 +10641,7 @@ function setupChatButton() {
     chatButton.addEventListener('click', function(e) {
       e.preventDefault();
       e.stopPropagation();
-      window.open('https://wa.me/5212292233911', '_blank');
+      window.open('https://wa.me/5218128600017', '_blank');
     });
   }
 }
@@ -11074,7 +11473,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     setCSSVar('--rotate-deg', config.rotation + 'deg');
   }
 
-  function buildDots() {
+function buildDots() {
   rotator.innerHTML = '';
   dots = [];
   const count = config.count;
@@ -11251,7 +11650,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
         console.log('Updated logo for dot', dotIndex, '→', communityId, logoUrl);
       }
     }
-  } 
+  }
 
   function toggleMenu() {
     menuActive = !menuActive;
