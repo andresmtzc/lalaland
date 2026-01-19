@@ -2313,6 +2313,23 @@ ctaobserver.observe(ctaToaster, {
       return;
     }
   }
+
+  // Load saved lots for this lead
+  if (window.currentLead) {
+    try {
+      const { data: savedLots } = await window.supabaseClient
+        .from('lead_saved_lots')
+        .select('lot_name')
+        .eq('lead_id', window.currentLead.id)
+        .eq('client', CURRENT_CLIENT);
+
+      window.leadSavedLots = new Set(savedLots?.map(s => s.lot_name) || []);
+      console.log('✅ Loaded', window.leadSavedLots.size, 'saved lots for lead');
+    } catch (err) {
+      console.error('Error loading saved lots:', err);
+      window.leadSavedLots = new Set();
+    }
+  }
 })();
 </script>
 
@@ -6604,6 +6621,12 @@ row.innerHTML = `
               <path d="M23 4L23 10 17 10M1 20L1 14 7 14M3.51 9a9 9 0 0114.85-3.36L23 10M20.49 15a9 9 0 01-14.85 3.36L1 14"/>
             </svg>
           </button>
+        ` : window.currentLead ? `
+          <button class="row-action-btn heart-btn ${window.leadSavedLots?.has(lot.name) ? 'saved' : ''}" title="Guardar" data-lot-name="${lot.name}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="${window.leadSavedLots?.has(lot.name) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+          </button>
         ` : ''}
       </div>
 
@@ -6746,6 +6769,56 @@ function setupRowActionButtons() {
         if (typeof window.cycleSelectedLotAvailability === 'function') {
           window.cycleSelectedLotAvailability();
         }
+        return;
+      }
+
+      // Handle heart button clicks (save lot for leads)
+      const heartBtn = e.target.closest('.row-action-btn.heart-btn');
+      if (heartBtn) {
+        e.stopPropagation();
+        const lotName = heartBtn.dataset.lotName;
+
+        if (!window.currentLead || !window.supabaseClient) {
+          console.error('Lead not authenticated');
+          return;
+        }
+
+        const isSaved = window.leadSavedLots?.has(lotName);
+
+        try {
+          if (isSaved) {
+            // Remove from saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lotName)
+              .eq('client', CURRENT_CLIENT);
+
+            window.leadSavedLots.delete(lotName);
+            heartBtn.classList.remove('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'none');
+            showToaster('Removed from favorites');
+          } else {
+            // Add to saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .insert({
+                lead_id: window.currentLead.id,
+                lot_name: lotName,
+                client: CURRENT_CLIENT
+              });
+
+            window.leadSavedLots.add(lotName);
+            heartBtn.classList.add('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'currentColor');
+            showToaster('Saved to favorites');
+          }
+        } catch (err) {
+          console.error('Error saving lot:', err);
+          showToaster('Error saving');
+        }
+        return;
       }
     });
   }
