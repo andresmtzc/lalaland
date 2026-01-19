@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generate Share Pages</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      padding: 15px 30px;
+      font-size: 16px;
+      background: #ff8400;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 10px 0;
+    }
+    button:hover {
+      background: #e67600;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f0f0f0;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Generate Share Pages for All Lots</h1>
+  <p>This will generate individual HTML pages for each lot with proper Open Graph meta tags for WhatsApp/social media sharing.</p>
+
+  <button id="generateBtn">Generate All Share Pages</button>
+  <div class="status" id="status">Ready. Click the button to generate.</div>
+
+  <script>
+    // LOAD SUPABASE
+    window.supabaseReady = new Promise((resolve, reject) => {
+      const supabaseScript = document.createElement('script');
+      supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+
+      supabaseScript.onload = () => {
+        fetch('https://la-la.land/sb_config.json')
+          .then(r => r.json())
+          .then(cfg => {
+            window.supabaseClient = supabase.createClient(cfg.url, cfg.key, {
+              auth: {
+                storageKey: `sb-${CURRENT_CLIENT}-auth`
+              }
+            });
+            console.log(`✅ Supabase client initialized (storageKey: sb-${CURRENT_CLIENT}-auth)`);
+            resolve();
+          })
+          .catch(e => {
+            console.error('Failed to load Supabase config:', e);
+            reject(e);
+          });
+      };
+
+      document.head.appendChild(supabaseScript);
+    });
+
+    const CURRENT_CLIENT = 'inverta';
+
+    async function fetchAvailableLots() {
+      await window.supabaseReady;
+
+      // Fetch all lots using pagination to bypass Supabase's 1000-row hard limit
+      const BATCH_SIZE = 1000;
+      let allLots = [];
+      let start = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data: batch, error } = await window.supabaseClient
+          .from('lots')
+          .select('lot_name, rSize, price_m2, fraccionamiento, availability')
+          .eq('client_id', CURRENT_CLIENT)
+          .order('lot_name', { ascending: true })
+          .range(start, start + BATCH_SIZE - 1);
+
+        if (error) {
+          console.error('Error fetching lot batch from Supabase:', error);
+          return [];
+        }
+
+        if (batch && batch.length > 0) {
+          allLots = [...allLots, ...batch];
+          start += BATCH_SIZE;
+          // If we got less than a full batch, we're done
+          hasMore = batch.length === BATCH_SIZE;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`✅ Fetched ${allLots.length} total lots from Supabase`);
+
+      // Filter for available lots
+      const availableLots = (allLots || []).filter(lot => {
+        const availability = (lot.availability || '').toString().toLowerCase();
+        return availability === 'available' || availability === 'featured';
+      });
+
+      console.log(`✅ Found ${availableLots.length} available/featured lots`);
+
+      return availableLots;
+    }
+
+    function extractLotNumber(lotName) {
+      // Remove any prefix: (lot)(inverta)(optional letter like p, c, x, etc.)
+      // Handles: lotinverta, lotinvertap, lotinvertac, invertap, inverta, etc.
+      return lotName.replace(/^(lot)?(inverta[a-z]?)/i, '');
+    }
+
+    // Global cache-busting version (YYMMDD format - clean and unique for 100 years)
+    const now = new Date();
+    const CACHE_VERSION = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+
+    function createSharePageHTML(lot) {
+      const lotNumber = extractLotNumber(lot.lot_name);
+      const community = lot.fraccionamiento || 'Marsella';
+      const communitySlug = community.toLowerCase().replace(/\s+/g, '-');
+      const size = parseFloat(lot.rSize);
+      const priceM2 = parseFloat(lot.price_m2);
+      const totalPrice = size * priceM2;
+
+      // Image filename format: lotinverta10-11.jpg
+      const imageFileName = lot.lot_name.toLowerCase().startsWith('lot')
+        ? lot.lot_name
+        : `lot${lot.lot_name}`;
+      // Add cache-busting version to force WhatsApp/social media to refetch new images
+      const cardImageUrl = `https://la-la.land/inverta/cards/${imageFileName}.jpg?v=${CACHE_VERSION}`;
+      const pageUrl = `https://la-la.land/inverta/lot/${communitySlug}-${lotNumber}.html`;
+
+      const sizeFormatted = size.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      const priceM2Formatted = priceM2.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      const totalPriceFormatted = totalPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+      // Open Graph metadata (MARSELLA in caps, description with line breaks)
+      const communityUpper = community.toUpperCase();
+      const ogTitle = `Inverta - ${communityUpper}`;
+      const ogDescription = `MZ-L ${lotNumber}
+• ${sizeFormatted}m²
+• $${priceM2Formatted}/m²
+• $${totalPriceFormatted} MXN`;
+
+      // Default financing parameters
+      const downpaymentPercent = 20;
+      const months = 72;
+      const interestRate = 17;
+
+      return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${ogTitle}</title>
+
+  <!-- Open Graph Meta Tags for WhatsApp/Social Media -->
+  <meta property="og:title" content="${ogTitle}">
+  <meta property="og:description" content="${ogDescription}">
+  <meta property="og:image" content="${cardImageUrl}">
+  <meta property="og:image:width" content="600">
+  <meta property="og:image:height" content="750">
+  <meta property="og:url" content="${pageUrl}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Inverta">
+
+  <!-- Twitter Card Meta Tags -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${ogTitle}">
+  <meta name="twitter:description" content="${ogDescription}">
+  <meta name="twitter:image" content="${cardImageUrl}">
+
+  <style>
+    body {
+      background: #1a1a1a;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .loader {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255, 132, 0, 0.2);
+      border-top: 4px solid #ff8400;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .loading-text {
+      margin-top: 20px;
+      font-size: 14px;
+      color: #999;
+    }
+  </style>
+</head>
+<body>
+  <div class="loader"></div>
+  <div class="loading-text">Cargando lote...</div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.10.0/dist/umd/supabase.js"><\/script>
+  <script>
+(async function(){
+  const CURRENT_CLIENT = 'inverta';
+  const TOPIC_URL = "https://ntfy.sh/lalaland-webapp-clicks-track";
+  const LOT_NAME = "${lot.lot_name}";
+  const LOT_NUMBER = "${lotNumber}";
+  const DOWNPAYMENT = ${downpaymentPercent};
+  const MONTHS = ${months};
+  const INTEREST = ${interestRate};
+
+  // Parse URL parameters to allow overrides
+  const params = new URLSearchParams(location.search);
+  const downpayment = params.get("a") || DOWNPAYMENT;
+  const installmentMonths = params.get("m") || MONTHS;
+  const interestRate = params.get("i") || INTEREST;
+
+  // Build destination URL with lot deeplink (using short params: a=anticipo, m=mensualidades, i=intereses)
+  const dest = \`https://la-la.land/inverta/index.html?lot=\${LOT_NAME}&a=\${downpayment}&m=\${installmentMonths}&i=\${interestRate}\`;
+
+  // ===== Device & browser detection =====
+  function parseUA(ua) {
+    const low = ua.toLowerCase();
+    let device = "Desktop";
+    if (/iphone/.test(low)) device = "iPhone";
+    else if (/ipad/.test(low)) device = "iPad";
+    else if (/android/.test(low)) device = "Android";
+    let browser = "Unknown";
+    if (low.includes("edg/")) browser = "Edge";
+    else if (/chrome/.test(low)) browser = "Chrome";
+    else if (/safari/.test(low) && !/chrome/.test(low)) browser = "Safari";
+    else if (/firefox/.test(low)) browser = "Firefox";
+    if (low.includes("instagram")) browser += " (IG in-app)";
+    if (low.includes("whatsapp")) browser += " (WhatsApp)";
+    if (low.includes("fb") || low.includes("facebook")) browser += " (FB in-app)";
+    return { device, browser };
+  }
+
+  const ua = navigator.userAgent;
+  const { device, browser } = parseUA(ua);
+  const screenSize = \`\${screen.width}x\${screen.height}\`;
+  const lang = navigator.language || "unknown";
+  const isMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
+  const title = \`Inverta Lot Click → \${LOT_NUMBER}\`;
+  const click_id = (crypto.randomUUID ? crypto.randomUUID()
+                   : Date.now().toString(36) + Math.random().toString(36).slice(2,8));
+
+  // ===== Get current time in Mexico City Time (CST) =====
+  function getMexicoCityTime() {
+    const options = {
+      timeZone: 'America/Mexico_City',
+      hour12: false,
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+    };
+    const formatter = new Intl.DateTimeFormat('en-US', options);
+    return formatter.format(new Date());
+  }
+
+  const clickTime = getMexicoCityTime();
+  const startTime = new Date();
+
+  // ===== Calculate event duration =====
+  function calculateEventDuration() {
+    const endTime = new Date();
+    return (endTime - startTime) / 1000; // Duration in seconds
+  }
+
+  // ===== Fetch Supabase configuration =====
+  let supabase = null;
+  try {
+    const configResponse = await fetch('https://la-la.land/sb_config.json');
+    if (!configResponse.ok) {
+      throw new Error(\`HTTP error! status: \${configResponse.status}\`);
+    }
+    const config = await configResponse.json();
+
+    if (!config.url || !config.key) {
+      throw new Error('Missing Supabase credentials in config file');
+    }
+
+    supabase = window.supabase.createClient(config.url, config.key, {
+      auth: {
+        storageKey: \`sb-\${CURRENT_CLIENT}-auth\`
+      }
+    });
+    console.log(\`Supabase client initialized successfully (storageKey: sb-\${CURRENT_CLIENT}-auth)\`);
+  } catch (error) {
+    console.error('Failed to initialize Supabase:', error);
+    // Continue without Supabase - we'll still send to ntfy
+  }
+
+  // Function to insert notification into Supabase
+  async function sendToSupabase(notificationData) {
+    if (!supabase) {
+      console.log('Supabase not available, skipping database insert');
+      return false;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('igtrack')
+        .insert([notificationData]);
+
+      if (error) {
+        console.error('Error inserting notification into Supabase:', error);
+        return false;
+      } else {
+        console.log('Notification successfully inserted:', data);
+        return true;
+      }
+    } catch (error) {
+      console.error('Exception in sendToSupabase:', error);
+      return false;
+    }
+  }
+
+  // ===== Send helpers =====
+  function beaconText(lines){
+    try {
+      const blob = new Blob([lines.join("\\n")], { type: "text/plain" });
+      navigator.sendBeacon(TOPIC_URL, blob);
+    } catch(_) {}
+  }
+
+  function fetchText(lines, hdrs){
+    try {
+      fetch(TOPIC_URL, {
+        method: "POST",
+        keepalive: true,
+        headers: Object.assign({
+          "Content-Type": "text/plain",
+          "Title": title,
+          "Priority": "high"
+        }, hdrs || {}),
+        body: lines.join(" ")
+      }).catch(()=>{});
+    } catch(_) {}
+  }
+
+  // ===== 1) Collect geo data with timeout (300ms) =====
+  const geoTimeout = new Promise((_,rej)=>setTimeout(()=>rej(new Error("geo-timeout")), 300));
+  const geoRace = (function(){
+    const f = (u)=>fetch(u, { cache:"no-store", mode:"cors" }).then(r=>r.ok?r.json():Promise.reject());
+    const p1 = f("https://get.geojs.io/v1/ip/geo.json");
+    const p2 = f("https://ipwho.is/");
+    const p3 = f("https://ipapi.co/json/");
+    return Promise.race([p1, p2, p3, geoTimeout]).then(g=>{
+      const city = g.city || g.city_name || "unknown";
+      const country = g.country_name || g.country || g.country_code || "unknown";
+      return { city, country };
+    });
+  })();
+
+  // ===== 2) Wait for geo, then send notification =====
+  geoRace.then(async ({city, country})=>{
+    const eventDuration = calculateEventDuration();
+
+    const geoLines = [
+      title,
+      \`click_id=\${click_id}\`,
+      \`lot=\${LOT_NAME}\`,
+      \`lot_number=\${LOT_NUMBER}\`,
+      \`downpayment=\${downpayment}%\`,
+      \`months=\${installmentMonths}\`,
+      \`interest=\${interestRate}%\`,
+      \`lang=\${lang}\`,
+      \`screen=\${screenSize}\`,
+      \`mobile=\${isMobile}\`,
+      \`device=\${device}\`,
+      \`browser=\${browser}\`,
+      \`city=\${city}\`,
+      \`country=\${country}\`,
+      \`click_time=\${clickTime}\`,
+      \`event_duration=\${eventDuration}\`
+    ];
+
+    // Send to Supabase and ntfy
+    await sendToSupabase({
+      click_id,
+      link: LOT_NAME,
+      lot: LOT_NAME,
+      lot_number: LOT_NUMBER,
+      downpayment: \`\${downpayment}%\`,
+      months: installmentMonths,
+      interest: \`\${interestRate}%\`,
+      lang,
+      screen: screenSize,
+      mobile: isMobile,
+      device,
+      browser,
+      city,
+      country,
+      click_time: clickTime,
+      event_duration: eventDuration,
+      title: title
+    });
+
+    beaconText(geoLines);
+    fetchText(geoLines);
+  }).catch(async ()=>{
+    // If geo fails (timeout or no response), just send basic info without geo
+    const eventDuration = calculateEventDuration();
+
+    const basicLines = [
+      title,
+      \`click_id=\${click_id}\`,
+      \`lot=\${LOT_NAME}\`,
+      \`lot_number=\${LOT_NUMBER}\`,
+      \`downpayment=\${downpayment}%\`,
+      \`months=\${installmentMonths}\`,
+      \`interest=\${interestRate}%\`,
+      \`lang=\${lang}\`,
+      \`screen=\${screenSize}\`,
+      \`mobile=\${isMobile}\`,
+      \`device=\${device}\`,
+      \`browser=\${browser}\`,
+      \`click_time=\${clickTime}\`,
+      \`event_duration=\${eventDuration}\`
+    ];
+
+    // Send to Supabase and ntfy
+    await sendToSupabase({
+      click_id,
+      link: LOT_NAME,
+      lot: LOT_NAME,
+      lot_number: LOT_NUMBER,
+      downpayment: \`\${downpayment}%\`,
+      months: installmentMonths,
+      interest: \`\${interestRate}%\`,
+      lang,
+      screen: screenSize,
+      mobile: isMobile,
+      device,
+      browser,
+      click_time: clickTime,
+      event_duration: eventDuration,
+      title: title
+    });
+
+    beaconText(basicLines);
+    fetchText(basicLines);
+  }).finally(()=>{
+    // Redirect after everything is done
+    setTimeout(() => {
+      location.replace(dest);
+    }, 100);
+  });
+})();
+  <\/script>
+</body>
+</html>`;
+    }
+
+    async function generateAllPages() {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = 'Loading lots from Supabase...';
+
+      const lots = await fetchAvailableLots();
+
+      if (lots.length === 0) {
+        statusEl.textContent = '❌ No lots found';
+        return;
+      }
+
+      statusEl.textContent = `Generating ${lots.length} HTML pages...`;
+
+      const zip = new JSZip();
+      const lotFolder = zip.folder('lot');
+
+      lots.forEach((lot, index) => {
+        const html = createSharePageHTML(lot);
+        const cleanLotNumber = extractLotNumber(lot.lot_name);
+        const community = lot.fraccionamiento || 'Marsella';
+        const communitySlug = community.toLowerCase().replace(/\s+/g, '-');
+        lotFolder.file(`${communitySlug}-${cleanLotNumber}.html`, html);
+
+        if ((index + 1) % 50 === 0) {
+          statusEl.textContent = `Generated ${index + 1}/${lots.length} pages...`;
+        }
+      });
+
+      statusEl.textContent = 'Creating ZIP file...';
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, 'inverta-share-pages.zip');
+      statusEl.textContent = `✅ Generated ${lots.length} share pages! Download started.`;
+    }
+
+    document.getElementById('generateBtn').addEventListener('click', async () => {
+      document.getElementById('generateBtn').disabled = true;
+      try {
+        await generateAllPages();
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('status').textContent = '❌ Error: ' + error.message;
+      } finally {
+        document.getElementById('generateBtn').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
