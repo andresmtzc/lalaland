@@ -2126,6 +2126,20 @@ ctaobserver.observe(ctaToaster, {
         // If lot just became sold, add X mark
         if (wasAvailable && nowSold && typeof addSoldXs === 'function') {
           addSoldXs(map, [lot], 300);
+
+          // Auto-remove sold lots from lead's saved lots
+          if (window.currentLead && window.leadSavedLots?.has(lot.name)) {
+            window.leadSavedLots.delete(lot.name);
+            // Remove from database
+            window.supabaseClient?.from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lot.name)
+              .eq('client', CURRENT_CLIENT)
+              .then(() => console.log('🗑️ Auto-removed sold lot from favorites:', lot.name));
+            // Refresh map layer
+            if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          }
         }
       }
 
@@ -3557,6 +3571,11 @@ fetch(mapboxTokenUrl)
           await loadManzanaLabels(map);
           addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
+
+    // Add saved lots layer for leads
+    if (window.currentLead && window.leadSavedLots) {
+      addSavedLotsLayer(map);
+    }
     
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
 
@@ -5261,7 +5280,132 @@ function startPolygonPulse(map, onComplete) {
 
   requestAnimationFrame(frame);
 }
-</script> 
+
+// ===== SAVED LOTS LAYER (for leads) =====
+function savedPolygonFeature(lot) {
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: lot.polygon?.coordinates || [[]]
+    },
+    properties: {
+      name: lot.name,
+      phase: Math.random() * Math.PI * 2,
+      opacity: 0.5
+    }
+  };
+}
+
+function addSavedLotsLayer(map) {
+  if (!window.currentLead || !window.leadSavedLots || window.leadSavedLots.size === 0) {
+    return;
+  }
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  if (savedLots.length === 0) return;
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  if (map.getSource('saved-lots')) {
+    map.getSource('saved-lots').setData({
+      type: 'FeatureCollection',
+      features
+    });
+    return;
+  }
+
+  map.addSource('saved-lots', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features
+    }
+  });
+
+  // Red fill with pulsating opacity
+  map.addLayer({
+    id: 'saved-lots-layer',
+    type: 'fill',
+    source: 'saved-lots',
+    paint: {
+      'fill-color': '#ff4757',
+      'fill-opacity': ['get', 'opacity']
+    }
+  }, 'lots-final-available');
+
+  // Red outline
+  map.addLayer({
+    id: 'saved-lots-outline',
+    type: 'line',
+    source: 'saved-lots',
+    paint: {
+      'line-color': '#ff4757',
+      'line-width': 2,
+      'line-opacity': 1
+    }
+  }, 'lots-final-click');
+
+  // Start animation
+  startSavedLotsPulse(map);
+}
+
+function refreshSavedLotsLayer() {
+  if (!window.map) return;
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots?.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  const source = window.map.getSource('saved-lots');
+  if (source) {
+    source.setData({
+      type: 'FeatureCollection',
+      features
+    });
+  } else if (savedLots.length > 0) {
+    addSavedLotsLayer(window.map);
+  }
+}
+
+function startSavedLotsPulse(map) {
+  let t = 0;
+
+  function frame() {
+    t += 0.05;
+
+    const source = map.getSource('saved-lots');
+    if (!source || !source._data) return;
+
+    const updated = {
+      ...source._data,
+      features: source._data.features.map(f => {
+        const phase = f.properties?.phase ?? 0;
+        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            opacity
+          }
+        };
+      })
+    };
+
+    source.setData(updated);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+}
+</script>
 
 
 
@@ -6578,7 +6722,9 @@ const calculatedPriceFormatted = calculatedPrice.toString().replace(/\B(?=(\d{3}
 // Format price per m2 from Supabase
 const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '');
 
+    const isSaved = window.currentLead && window.leadSavedLots?.has(lot.name);
     if (isFeatured) row.classList.add('info-row--featured');
+    if (isSaved && !isSold) row.classList.add('info-row--saved');
 
 row.innerHTML = `
   <div class="lot-left">
@@ -6652,6 +6798,22 @@ row.innerHTML = `
       const label = document.createElement('div');
       label.classList.add('featured-label');
       label.textContent = 'SELECCIÓN LA-LA LAND';
+      row.appendChild(label);
+    }
+
+    // Add saved lot styling (similar to featured but with heart)
+    if (isSaved && !isSold && !isFeatured) {
+      const left = document.createElement('div');
+      left.classList.add('border-left', 'border-left--saved');
+      row.appendChild(left);
+
+      const top = document.createElement('div');
+      top.classList.add('border-top', 'border-top--saved');
+      row.appendChild(top);
+
+      const label = document.createElement('div');
+      label.classList.add('saved-label');
+      label.innerHTML = '❤️ GUARDADO';
       row.appendChild(label);
     }
 
@@ -6815,6 +6977,10 @@ function setupRowActionButtons() {
             heartBtn.querySelector('svg').setAttribute('fill', 'currentColor');
             showToaster('Saved to favorites');
           }
+
+          // Refresh map layer and list
+          if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          if (typeof render === 'function') render();
         } catch (err) {
           console.error('Error saving lot:', err);
           showToaster('Error saving');
@@ -7054,6 +7220,18 @@ function highlightCenter(isClamping = false) {
           void row.offsetWidth;
           row.classList.add('animate-featured');
           animatedFeaturedLots.add(featureIndex);
+        } else {
+          row.classList.add('animate-featured');
+        }
+      }
+
+      // Animate saved lots (same as featured)
+      if (row.classList.contains('info-row--saved')) {
+        const savedIndex = row.dataset.index;
+        if (!animatedFeaturedLots.has('saved-' + savedIndex)) {
+          void row.offsetWidth;
+          row.classList.add('animate-featured');
+          animatedFeaturedLots.add('saved-' + savedIndex);
         } else {
           row.classList.add('animate-featured');
         }
