@@ -331,6 +331,47 @@
       return wait;
     }
 
+    // Client-side rate limiting (max 3 different numbers per day per browser)
+    const MAX_NUMBERS_PER_DAY = 3;
+
+    function getClientRateLimitData() {
+      try {
+        const data = JSON.parse(localStorage.getItem('linkRequestLimit') || '{}');
+        const today = new Date().toDateString();
+        if (data.date !== today) {
+          return { date: today, numbers: [] };
+        }
+        return data;
+      } catch {
+        return { date: new Date().toDateString(), numbers: [] };
+      }
+    }
+
+    function saveClientRateLimitData(data) {
+      localStorage.setItem('linkRequestLimit', JSON.stringify(data));
+    }
+
+    function checkClientRateLimit(phone) {
+      const data = getClientRateLimitData();
+      // If this phone was already used today, allow it (per-phone limit handles it)
+      if (data.numbers.includes(phone)) {
+        return { allowed: true };
+      }
+      // If max different numbers reached, block
+      if (data.numbers.length >= MAX_NUMBERS_PER_DAY) {
+        return { allowed: false, reason: 'Límite de solicitudes alcanzado. Intenta mañana.' };
+      }
+      return { allowed: true };
+    }
+
+    function recordClientRequest(phone) {
+      const data = getClientRateLimitData();
+      if (!data.numbers.includes(phone)) {
+        data.numbers.push(phone);
+        saveClientRateLimitData(data);
+      }
+    }
+
     // Format seconds to readable time
     function formatWaitTime(seconds) {
       if (seconds >= 60) {
@@ -399,6 +440,16 @@
       // Validate exactly 10 digits
       if (phone.length !== 10) {
         alert('Por favor ingresa un número de WhatsApp válido (10 dígitos)');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Obtener Acceso';
+        return;
+      }
+
+      // Check client-side rate limit (max different numbers per day)
+      const clientLimit = checkClientRateLimit(phone);
+      if (!clientLimit.allowed) {
+        rateLimitMsg.textContent = clientLimit.reason;
+        rateLimitMsg.style.display = 'block';
         submitBtn.disabled = false;
         submitBtn.textContent = 'Obtener Acceso';
         return;
@@ -502,6 +553,9 @@
           .single();
 
         if (linkError) throw linkError;
+
+        // Record this phone in client-side rate limit
+        recordClientRequest(phone);
 
         // Update button to show waiting status
         submitBtn.textContent = 'Enviando WhatsApp...';
