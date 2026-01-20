@@ -14,7 +14,7 @@ const ALERT_NUMBER = '5212291703721@s.whatsapp.net';
 const MESSAGE_CONTEXT_COUNT = 5;
 const SUPABASE_POLL_INTERVAL = 10000; // 10 seconds
 const LINK_POLL_INTERVAL = 3000; // 3 seconds for faster link delivery
-const MAX_LINKS_PER_MINUTE = 10; // Global rate limit
+const MAX_LINKS_PER_MINUTE = 3; // Global rate limit (conservative to avoid WhatsApp spam detection)
 
 // Supabase client
 const supabase = createClient(
