@@ -13,6 +13,8 @@ const RESPONSE_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
 const ALERT_NUMBER = '5212291703721@s.whatsapp.net';
 const MESSAGE_CONTEXT_COUNT = 5;
 const SUPABASE_POLL_INTERVAL = 10000; // 10 seconds
+const LINK_POLL_INTERVAL = 3000; // 3 seconds for faster link delivery
+const MAX_LINKS_PER_MINUTE = 3; // Global rate limit (conservative to avoid WhatsApp spam detection)
 
 // Supabase client
 const supabase = createClient(
@@ -29,6 +31,7 @@ let groupPairs = [];
 const messageMap = new Map();
 const pendingAlerts = new Map();
 const messageHistory = new Map();
+const linksSentTimestamps = []; // Track timestamps for global rate limiting
 
 // ============================================================================
 // FILE OPERATIONS
@@ -418,6 +421,117 @@ function startPolling() {
 }
 
 // ============================================================================
+// LINK REQUEST POLLING (for registro.html WhatsApp link delivery)
+// ============================================================================
+
+async function checkPendingLinkRequests() {
+    try {
+        const { data: requests, error } = await supabase
+            .from('link_requests')
+            .select('*')
+            .eq('status', 'pending')
+            .order('created_at', { ascending: true })
+            .limit(1);
+
+        if (error) throw error;
+
+        if (requests && requests.length > 0) {
+            await processLinkRequest(requests[0]);
+        }
+    } catch (err) {
+        console.error('Error checking link requests:', err);
+    }
+}
+
+async function processLinkRequest(request) {
+    console.log(`📨 Processing link request ${request.id} for ${request.phone}`);
+
+    try {
+        // Global rate limit check (max N per minute)
+        const oneMinuteAgo = Date.now() - 60000;
+        const recentLinks = linksSentTimestamps.filter(t => t > oneMinuteAgo);
+        if (recentLinks.length >= MAX_LINKS_PER_MINUTE) {
+            console.log(`⚠️ Global rate limit reached (${MAX_LINKS_PER_MINUTE}/min), delaying...`);
+            return; // Will retry on next poll
+        }
+
+        // Mark as processing
+        await supabase
+            .from('link_requests')
+            .update({ status: 'processing' })
+            .eq('id', request.id);
+
+        // Per-phone rate limit check (verify against leads table)
+        const phone10 = request.phone.replace(/^521/, ''); // Remove country code
+        const { data: lead } = await supabase
+            .from('leads')
+            .select('last_link_requested_at, link_request_count')
+            .eq('phone', phone10)
+            .single();
+
+        if (lead && lead.link_request_count > 0 && lead.last_link_requested_at) {
+            const lastRequest = new Date(lead.last_link_requested_at);
+            const secondsSince = (Date.now() - lastRequest.getTime()) / 1000;
+            const waitTime = Math.min(60 * Math.pow(2, lead.link_request_count - 1), 900);
+
+            if (secondsSince < waitTime) {
+                console.log(`⚠️ Per-phone rate limit for ${phone10}: ${Math.ceil(waitTime - secondsSince)}s remaining`);
+                await supabase
+                    .from('link_requests')
+                    .update({ status: 'error', error_message: 'Rate limit: intenta más tarde' })
+                    .eq('id', request.id);
+                return;
+            }
+        }
+
+        // Build the map link
+        const mapLink = `https://la-la.land/${request.client}/index-m.html?token=${request.token}`;
+
+        // Build WhatsApp message
+        const message = `¡Hola${request.name ? ' ' + request.name.split(' ')[0] : ''}! 👋\n\nAquí está tu acceso al mapa de ${request.client.toUpperCase()}:\n\n${mapLink}\n\nExplora disponibilidad y precios. ¡Te contactamos pronto!`;
+
+        // Send WhatsApp message
+        const jid = request.phone + '@s.whatsapp.net';
+
+        await sock.sendMessage(jid, { text: message });
+
+        console.log(`✅ Link sent to ${request.phone}`);
+
+        // Track for global rate limiting
+        linksSentTimestamps.push(Date.now());
+        // Clean up old timestamps (older than 1 minute)
+        while (linksSentTimestamps.length > 0 && linksSentTimestamps[0] < Date.now() - 60000) {
+            linksSentTimestamps.shift();
+        }
+
+        // Mark as completed
+        await supabase
+            .from('link_requests')
+            .update({
+                status: 'completed',
+                completed_at: new Date().toISOString()
+            })
+            .eq('id', request.id);
+
+    } catch (err) {
+        console.error(`❌ Error processing link request ${request.id}:`, err);
+
+        await supabase
+            .from('link_requests')
+            .update({
+                status: 'error',
+                error_message: err.message || 'Error al enviar mensaje'
+            })
+            .eq('id', request.id);
+    }
+}
+
+function startLinkPolling() {
+    setInterval(checkPendingLinkRequests, LINK_POLL_INTERVAL);
+    console.log('📨 Started polling Supabase for link requests...');
+}
+
+// ============================================================================
 // MESSAGE HANDLING
 // ============================================================================
 
@@ -728,6 +842,7 @@ async function startBot() {
 
             // Start Supabase polling
             startPolling();
+            startLinkPolling();
         }
         if (update.connection === 'close') {
             console.log('Connection closed. Reconnecting...', update.lastDisconnect?.error);

@@ -88,6 +88,11 @@
       margin-bottom: 6px;
     }
 
+    label .hint {
+      font-weight: 400;
+      color: #8a8880;
+    }
+
     input {
       width: 100%;
       padding: 14px 16px;
@@ -169,22 +174,49 @@
       margin-bottom: 20px;
     }
 
-    /* For testing - shows the token link */
-    .debug-link {
-      background: #f0f0f0;
-      padding: 12px;
-      border-radius: 8px;
-      margin-top: 20px;
-      word-break: break-all;
-    }
-
-    .debug-link a {
-      color: #8f5e38;
-      font-size: 14px;
-    }
-
     .form-container.hidden {
       display: none;
+    }
+
+    .rate-limit-message {
+      background: #f8d7da;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .error-container {
+      display: none;
+      text-align: center;
+    }
+
+    .error-container.show {
+      display: block;
+    }
+
+    .error-icon {
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+
+    .error-title {
+      color: #721c24;
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .retry-btn {
+      margin-top: 20px;
+      background: #6c757d;
+    }
+
+    .retry-btn:hover {
+      background: #5a6268;
     }
   </style>
 </head>
@@ -199,6 +231,7 @@
       <p class="subtitle">Ingresa tus datos para explorar disponibilidad y precios</p>
 
       <div class="error-message" id="errorMessage" style="display: none;"></div>
+      <div class="rate-limit-message" id="rateLimitMessage" style="display: none;"></div>
 
       <form id="registroForm">
         <div class="form-group">
@@ -212,8 +245,8 @@
         </div>
 
         <div class="form-group">
-          <label for="phone">WhatsApp</label>
-          <input type="tel" id="phone" name="phone" placeholder="81 1234 5678" required>
+          <label for="phone">WhatsApp <span class="hint">(10 dígitos)</span></label>
+          <input type="tel" id="phone" name="phone" placeholder="81 1234 5678" maxlength="14" required>
         </div>
 
         <button type="submit" id="submitBtn">Obtener Acceso</button>
@@ -229,14 +262,17 @@
       <h2 class="success-title">¡Listo!</h2>
       <p class="success-message">
         Te enviamos el link por WhatsApp.<br>
-        Mientras alguien de CPI te contacta, puedes explorar disponibilidad y precios.
+        Revisa tu teléfono para acceder al mapa.
       </p>
+    </div>
 
-      <!-- Debug: Show link for testing (remove in production) -->
-      <div class="debug-link" id="debugLink" style="display: none;">
-        <strong>Link de prueba:</strong><br>
-        <a href="#" id="tokenLink" target="_blank"></a>
-      </div>
+    <div class="error-container" id="errorContainer">
+      <div class="error-icon">⚠️</div>
+      <h2 class="error-title">Error al enviar</h2>
+      <p class="success-message" id="errorDetailMessage">
+        No pudimos enviar el mensaje. Por favor intenta de nuevo.
+      </p>
+      <button class="retry-btn" onclick="location.reload()">Intentar de nuevo</button>
     </div>
   </div>
 
@@ -268,9 +304,82 @@
       return token;
     }
 
-    // Normalize phone number
+    // Normalize phone number - only digits
     function normalizePhone(phone) {
       return phone.replace(/\D/g, '');
+    }
+
+    // Format phone for display as user types
+    document.getElementById('phone').addEventListener('input', (e) => {
+      let digits = e.target.value.replace(/\D/g, '');
+      if (digits.length > 10) digits = digits.slice(0, 10);
+
+      // Format: XX XXXX XXXX
+      let formatted = '';
+      if (digits.length > 0) formatted = digits.slice(0, 2);
+      if (digits.length > 2) formatted += ' ' + digits.slice(2, 6);
+      if (digits.length > 6) formatted += ' ' + digits.slice(6, 10);
+
+      e.target.value = formatted;
+    });
+
+    // Calculate rate limit wait time (exponential backoff)
+    function getRateLimitWaitTime(requestCount) {
+      // 60s, 120s, 240s, 480s, max 900s (15 min)
+      const baseWait = 60;
+      const wait = Math.min(baseWait * Math.pow(2, requestCount - 1), 900);
+      return wait;
+    }
+
+    // Client-side rate limiting (max 3 different numbers per day per browser)
+    const MAX_NUMBERS_PER_DAY = 3;
+
+    function getClientRateLimitData() {
+      try {
+        const data = JSON.parse(localStorage.getItem('linkRequestLimit') || '{}');
+        const today = new Date().toDateString();
+        if (data.date !== today) {
+          return { date: today, numbers: [] };
+        }
+        return data;
+      } catch {
+        return { date: new Date().toDateString(), numbers: [] };
+      }
+    }
+
+    function saveClientRateLimitData(data) {
+      localStorage.setItem('linkRequestLimit', JSON.stringify(data));
+    }
+
+    function checkClientRateLimit(phone) {
+      const data = getClientRateLimitData();
+      // If this phone was already used today, allow it (per-phone limit handles it)
+      if (data.numbers.includes(phone)) {
+        return { allowed: true };
+      }
+      // If max different numbers reached, block
+      if (data.numbers.length >= MAX_NUMBERS_PER_DAY) {
+        return { allowed: false, reason: 'Límite de solicitudes alcanzado. Intenta mañana.' };
+      }
+      return { allowed: true };
+    }
+
+    function recordClientRequest(phone) {
+      const data = getClientRateLimitData();
+      if (!data.numbers.includes(phone)) {
+        data.numbers.push(phone);
+        saveClientRateLimitData(data);
+      }
+    }
+
+    // Format seconds to readable time
+    function formatWaitTime(seconds) {
+      if (seconds >= 60) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return secs > 0 ? `${mins} min ${secs} seg` : `${mins} min`;
+      }
+      return `${seconds} segundos`;
     }
 
     // Check URL params for error
@@ -287,11 +396,40 @@
       document.getElementById('errorMessage').style.display = 'block';
     }
 
+    // Poll for link request status
+    async function pollLinkRequestStatus(requestId, maxAttempts = 30) {
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+
+        const { data, error } = await supabaseClient
+          .from('link_requests')
+          .select('status, error_message')
+          .eq('id', requestId)
+          .single();
+
+        if (error) {
+          console.error('Error polling status:', error);
+          continue;
+        }
+
+        if (data.status === 'completed') {
+          return { success: true };
+        } else if (data.status === 'error') {
+          return { success: false, error: data.error_message };
+        }
+        // Still pending/processing, continue polling
+      }
+      return { success: false, error: 'Timeout - el bot no respondió' };
+    }
+
     // Form submission
     document.getElementById('registroForm').addEventListener('submit', async (e) => {
       e.preventDefault();
 
       const submitBtn = document.getElementById('submitBtn');
+      const rateLimitMsg = document.getElementById('rateLimitMessage');
+      rateLimitMsg.style.display = 'none';
+
       submitBtn.disabled = true;
       submitBtn.textContent = 'Procesando...';
 
@@ -299,8 +437,19 @@
       const lastName = document.getElementById('lastName').value.trim();
       const phone = normalizePhone(document.getElementById('phone').value);
 
-      if (phone.length < 10) {
-        alert('Por favor ingresa un número de WhatsApp válido');
+      // Validate exactly 10 digits
+      if (phone.length !== 10) {
+        alert('Por favor ingresa un número de WhatsApp válido (10 dígitos)');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Obtener Acceso';
+        return;
+      }
+
+      // Check client-side rate limit (max different numbers per day)
+      const clientLimit = checkClientRateLimit(phone);
+      if (!clientLimit.allowed) {
+        rateLimitMsg.textContent = clientLimit.reason;
+        rateLimitMsg.style.display = 'block';
         submitBtn.disabled = false;
         submitBtn.textContent = 'Obtener Acceso';
         return;
@@ -314,29 +463,65 @@
       }
 
       try {
-        // Check if lead exists
+        // Check if lead exists and rate limiting
         let { data: existingLead } = await supabaseClient
           .from('leads')
-          .select('id')
+          .select('id, last_link_requested_at, link_request_count')
           .eq('phone', phone)
           .single();
 
         let leadId;
 
         if (existingLead) {
-          // Lead exists, use their ID
           leadId = existingLead.id;
 
-          // Update their info
+          // Check rate limiting
+          if (existingLead.last_link_requested_at && existingLead.link_request_count > 0) {
+            const lastRequest = new Date(existingLead.last_link_requested_at);
+            const now = new Date();
+            const secondsSinceLastRequest = (now - lastRequest) / 1000;
+            const waitTime = getRateLimitWaitTime(existingLead.link_request_count);
+
+            // Reset count if more than 24 hours
+            if (secondsSinceLastRequest > 86400) {
+              // Reset - will update below
+            } else if (secondsSinceLastRequest < waitTime) {
+              const remainingWait = Math.ceil(waitTime - secondsSinceLastRequest);
+              rateLimitMsg.textContent = `Por favor espera ${formatWaitTime(remainingWait)} antes de solicitar otro link.`;
+              rateLimitMsg.style.display = 'block';
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Obtener Acceso';
+              return;
+            }
+          }
+
+          // Update lead info and rate limit tracking
+          const newCount = (existingLead.link_request_count || 0) + 1;
+          // Reset count if more than 24 hours since last request
+          const lastReq = existingLead.last_link_requested_at ? new Date(existingLead.last_link_requested_at) : null;
+          const resetCount = lastReq && ((new Date() - lastReq) / 1000 > 86400);
+
           await supabaseClient
             .from('leads')
-            .update({ name, last_name: lastName, last_seen_at: new Date().toISOString() })
+            .update({
+              name,
+              last_name: lastName,
+              last_seen_at: new Date().toISOString(),
+              last_link_requested_at: new Date().toISOString(),
+              link_request_count: resetCount ? 1 : newCount
+            })
             .eq('id', leadId);
         } else {
           // Create new lead
           const { data: newLead, error: leadError } = await supabaseClient
             .from('leads')
-            .insert({ phone, name, last_name: lastName })
+            .insert({
+              phone,
+              name,
+              last_name: lastName,
+              last_link_requested_at: new Date().toISOString(),
+              link_request_count: 1
+            })
             .select('id')
             .single();
 
@@ -353,20 +538,42 @@
 
         if (tokenError) throw tokenError;
 
-        // Build the map link
-        const mapLink = `${window.location.origin}/${CURRENT_CLIENT}/index-m.html?token=${token}`;
+        // Create link request for bot to process
+        const whatsappPhone = '521' + phone; // Mexico format
+        const { data: linkRequest, error: linkError } = await supabaseClient
+          .from('link_requests')
+          .insert({
+            phone: whatsappPhone,
+            name: `${name} ${lastName}`.trim(),
+            token,
+            client: CURRENT_CLIENT,
+            status: 'pending'
+          })
+          .select('id')
+          .single();
 
-        // Show success
-        document.getElementById('formContainer').classList.add('hidden');
-        document.getElementById('successContainer').classList.add('show');
+        if (linkError) throw linkError;
 
-        // Debug: Show link for testing (remove in production)
-        document.getElementById('debugLink').style.display = 'block';
-        document.getElementById('tokenLink').href = mapLink;
-        document.getElementById('tokenLink').textContent = mapLink;
+        // Record this phone in client-side rate limit
+        recordClientRequest(phone);
 
-        // TODO: Send WhatsApp with mapLink
-        console.log('Would send WhatsApp to', phone, 'with link:', mapLink);
+        // Update button to show waiting status
+        submitBtn.textContent = 'Enviando WhatsApp...';
+
+        // Poll for bot to complete
+        const result = await pollLinkRequestStatus(linkRequest.id);
+
+        if (result.success) {
+          // Show success
+          document.getElementById('formContainer').classList.add('hidden');
+          document.getElementById('successContainer').classList.add('show');
+        } else {
+          // Show error
+          document.getElementById('formContainer').classList.add('hidden');
+          document.getElementById('errorDetailMessage').textContent =
+            result.error || 'No pudimos enviar el mensaje. Por favor intenta de nuevo.';
+          document.getElementById('errorContainer').classList.add('show');
+        }
 
       } catch (error) {
         console.error('Error:', error);
