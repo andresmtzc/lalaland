@@ -451,10 +451,10 @@
       }
 
       try {
-        // Check if lead exists
+        // Check if lead exists and get rate limit info
         let { data: existingLead } = await supabaseClient
           .from('leads')
-          .select('id')
+          .select('id, last_link_requested_at, link_request_count')
           .eq('phone', phone)
           .single();
 
@@ -463,16 +463,53 @@
         if (existingLead) {
           leadId = existingLead.id;
 
-          // Update last seen
+          // Server-side rate limiting with exponential backoff
+          if (existingLead.last_link_requested_at && existingLead.link_request_count > 0) {
+            const lastRequest = new Date(existingLead.last_link_requested_at);
+            const secondsSince = (Date.now() - lastRequest.getTime()) / 1000;
+
+            // Reset after 24 hours
+            if (secondsSince < 86400) {
+              // Exponential backoff: 60s, 120s, 240s, 480s, max 900s (15min)
+              const waitTime = Math.min(60 * Math.pow(2, existingLead.link_request_count - 1), 900);
+
+              if (secondsSince < waitTime) {
+                const remaining = Math.ceil(waitTime - secondsSince);
+                const mins = Math.floor(remaining / 60);
+                const secs = remaining % 60;
+                const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                rateLimitMsg.textContent = `Por favor espera ${timeStr} antes de solicitar otro link.`;
+                rateLimitMsg.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Obtener Acceso';
+                return;
+              }
+            }
+          }
+
+          // Update lead with new rate limit tracking
+          const newCount = existingLead.last_link_requested_at &&
+            (Date.now() - new Date(existingLead.last_link_requested_at).getTime()) / 1000 < 86400
+            ? (existingLead.link_request_count || 0) + 1
+            : 1; // Reset if > 24h
+
           await supabaseClient
             .from('leads')
-            .update({ last_seen_at: new Date().toISOString() })
+            .update({
+              last_seen_at: new Date().toISOString(),
+              last_link_requested_at: new Date().toISOString(),
+              link_request_count: newCount
+            })
             .eq('id', leadId);
         } else {
-          // Create new lead
+          // Create new lead with rate limit tracking
           const { data: newLead, error: leadError } = await supabaseClient
             .from('leads')
-            .insert({ phone })
+            .insert({
+              phone,
+              last_link_requested_at: new Date().toISOString(),
+              link_request_count: 1
+            })
             .select('id')
             .single();
 
