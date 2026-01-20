@@ -464,8 +464,12 @@ async function processLinkRequest(request) {
             .select();
 
         // If no rows updated, another process already claimed this request
-        if (claimError || !claimed || claimed.length === 0) {
-            console.log(`⚠️ Request ${request.id} already claimed or doesn't exist`);
+        if (claimError) {
+            console.log(`❌ Claim error for ${request.id}:`, claimError);
+            return;
+        }
+        if (!claimed || claimed.length === 0) {
+            console.log(`⚠️ Request ${request.id} - update returned empty. Status in DB might not be 'pending' or RLS blocking UPDATE`);
             return;
         }
 
