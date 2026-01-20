@@ -14,6 +14,7 @@ const ALERT_NUMBER = '5212291703721@s.whatsapp.net';
 const MESSAGE_CONTEXT_COUNT = 5;
 const SUPABASE_POLL_INTERVAL = 10000; // 10 seconds
 const LINK_POLL_INTERVAL = 3000; // 3 seconds for faster link delivery
+const MAX_LINKS_PER_MINUTE = 10; // Global rate limit
 
 // Supabase client
 const supabase = createClient(
@@ -30,6 +31,7 @@ let groupPairs = [];
 const messageMap = new Map();
 const pendingAlerts = new Map();
 const messageHistory = new Map();
+const linksSentTimestamps = []; // Track timestamps for global rate limiting
 
 // ============================================================================
 // FILE OPERATIONS
@@ -445,11 +447,42 @@ async function processLinkRequest(request) {
     console.log(`📨 Processing link request ${request.id} for ${request.phone}`);
 
     try {
+        // Global rate limit check (max N per minute)
+        const oneMinuteAgo = Date.now() - 60000;
+        const recentLinks = linksSentTimestamps.filter(t => t > oneMinuteAgo);
+        if (recentLinks.length >= MAX_LINKS_PER_MINUTE) {
+            console.log(`⚠️ Global rate limit reached (${MAX_LINKS_PER_MINUTE}/min), delaying...`);
+            return; // Will retry on next poll
+        }
+
         // Mark as processing
         await supabase
             .from('link_requests')
             .update({ status: 'processing' })
             .eq('id', request.id);
+
+        // Per-phone rate limit check (verify against leads table)
+        const phone10 = request.phone.replace(/^521/, ''); // Remove country code
+        const { data: lead } = await supabase
+            .from('leads')
+            .select('last_link_requested_at, link_request_count')
+            .eq('phone', phone10)
+            .single();
+
+        if (lead && lead.link_request_count > 0 && lead.last_link_requested_at) {
+            const lastRequest = new Date(lead.last_link_requested_at);
+            const secondsSince = (Date.now() - lastRequest.getTime()) / 1000;
+            const waitTime = Math.min(60 * Math.pow(2, lead.link_request_count - 1), 900);
+
+            if (secondsSince < waitTime) {
+                console.log(`⚠️ Per-phone rate limit for ${phone10}: ${Math.ceil(waitTime - secondsSince)}s remaining`);
+                await supabase
+                    .from('link_requests')
+                    .update({ status: 'error', error_message: 'Rate limit: intenta más tarde' })
+                    .eq('id', request.id);
+                return;
+            }
+        }
 
         // Build the map link
         const mapLink = `https://la-la.land/${request.client}/index-m.html?token=${request.token}`;
@@ -463,6 +496,13 @@ async function processLinkRequest(request) {
         await sock.sendMessage(jid, { text: message });
 
         console.log(`✅ Link sent to ${request.phone}`);
+
+        // Track for global rate limiting
+        linksSentTimestamps.push(Date.now());
+        // Clean up old timestamps (older than 1 minute)
+        while (linksSentTimestamps.length > 0 && linksSentTimestamps[0] < Date.now() - 60000) {
+            linksSentTimestamps.shift();
+        }
 
         // Mark as completed
         await supabase
