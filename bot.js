@@ -13,6 +13,7 @@ const RESPONSE_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
 const ALERT_NUMBER = '5212291703721@s.whatsapp.net';
 const MESSAGE_CONTEXT_COUNT = 5;
 const SUPABASE_POLL_INTERVAL = 10000; // 10 seconds
+const LINK_POLL_INTERVAL = 3000; // 3 seconds for faster link delivery
 
 // Supabase client
 const supabase = createClient(
@@ -418,6 +419,79 @@ function startPolling() {
 }
 
 // ============================================================================
+// LINK REQUEST POLLING (for registro.html WhatsApp link delivery)
+// ============================================================================
+
+async function checkPendingLinkRequests() {
+    try {
+        const { data: requests, error } = await supabase
+            .from('link_requests')
+            .select('*')
+            .eq('status', 'pending')
+            .order('created_at', { ascending: true })
+            .limit(1);
+
+        if (error) throw error;
+
+        if (requests && requests.length > 0) {
+            await processLinkRequest(requests[0]);
+        }
+    } catch (err) {
+        console.error('Error checking link requests:', err);
+    }
+}
+
+async function processLinkRequest(request) {
+    console.log(`📨 Processing link request ${request.id} for ${request.phone}`);
+
+    try {
+        // Mark as processing
+        await supabase
+            .from('link_requests')
+            .update({ status: 'processing' })
+            .eq('id', request.id);
+
+        // Build the map link
+        const mapLink = `https://la-la.land/${request.client}/index-m.html?token=${request.token}`;
+
+        // Build WhatsApp message
+        const message = `¡Hola${request.name ? ' ' + request.name.split(' ')[0] : ''}! 👋\n\nAquí está tu acceso al mapa de ${request.client.toUpperCase()}:\n\n${mapLink}\n\nExplora disponibilidad y precios. ¡Te contactamos pronto!`;
+
+        // Send WhatsApp message
+        const jid = request.phone + '@s.whatsapp.net';
+
+        await sock.sendMessage(jid, { text: message });
+
+        console.log(`✅ Link sent to ${request.phone}`);
+
+        // Mark as completed
+        await supabase
+            .from('link_requests')
+            .update({
+                status: 'completed',
+                completed_at: new Date().toISOString()
+            })
+            .eq('id', request.id);
+
+    } catch (err) {
+        console.error(`❌ Error processing link request ${request.id}:`, err);
+
+        await supabase
+            .from('link_requests')
+            .update({
+                status: 'error',
+                error_message: err.message || 'Error al enviar mensaje'
+            })
+            .eq('id', request.id);
+    }
+}
+
+function startLinkPolling() {
+    setInterval(checkPendingLinkRequests, LINK_POLL_INTERVAL);
+    console.log('📨 Started polling Supabase for link requests...');
+}
+
+// ============================================================================
 // MESSAGE HANDLING
 // ============================================================================
 
@@ -728,6 +802,7 @@ async function startBot() {
 
             // Start Supabase polling
             startPolling();
+            startLinkPolling();
         }
         if (update.connection === 'close') {
             console.log('Connection closed. Reconnecting...', update.lastDisconnect?.error);
