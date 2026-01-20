@@ -174,6 +174,19 @@ window.clientAccessCache = window.clientAccessCache || {};
   Hola, <span id="lead-name"></span>
 </div>
 
+<!-- Name Modal (shown when lead has no name) -->
+<div id="nameModal" class="name-modal">
+  <div class="name-modal-content">
+    <h2>¡Bienvenido!</h2>
+    <p>¿Cómo te llamas?</p>
+    <form id="nameForm">
+      <input type="text" id="leadNameInput" placeholder="Nombre" required>
+      <input type="text" id="leadLastNameInput" placeholder="Apellido" required>
+      <button type="submit">Continuar</button>
+    </form>
+  </div>
+</div>
+
 <!-- Dashboard button - bottom left above mapbox logo, only visible when authenticated -->
 <button id="dashboard-btn" class="dashboard-button" title="Dashboard">
   <!-- Eye Closed Icon (with slash - shown when dashboard is NOT visible) -->
@@ -2277,10 +2290,10 @@ ctaobserver.observe(ctaToaster, {
 
       console.log('✅ Lead authenticated via token:', window.currentLead.phone);
 
-      // Update lead greeting
-      const leadNameEl = document.getElementById('lead-name');
-      if (leadNameEl) {
-        leadNameEl.textContent = `${window.currentLead.name || ''} ${window.currentLead.lastName || ''}`.trim() || 'Usuario';
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
       }
 
       // Clean URL (remove /m/token, keep just /client/)
@@ -2327,10 +2340,10 @@ ctaobserver.observe(ctaToaster, {
 
       console.log('✅ Lead authenticated via session:', window.currentLead.phone);
 
-      // Update lead greeting
-      const leadNameEl = document.getElementById('lead-name');
-      if (leadNameEl) {
-        leadNameEl.textContent = `${window.currentLead.name || ''} ${window.currentLead.lastName || ''}`.trim() || 'Usuario';
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
       }
 
     } catch (err) {
@@ -2338,6 +2351,75 @@ ctaobserver.observe(ctaToaster, {
       window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
       return;
     }
+  }
+
+  // Helper function to update lead greeting
+  function updateLeadGreeting() {
+    const leadNameEl = document.getElementById('lead-name');
+    if (leadNameEl && window.currentLead) {
+      const fullName = `${window.currentLead.name || ''} ${window.currentLead.lastName || ''}`.trim();
+      leadNameEl.textContent = fullName || 'Usuario';
+    }
+  }
+
+  // Show name modal
+  function showNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.add('show');
+    }
+  }
+
+  // Hide name modal
+  function hideNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.remove('show');
+    }
+  }
+
+  // Handle name form submission
+  const nameForm = document.getElementById('nameForm');
+  if (nameForm) {
+    nameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nameInput = document.getElementById('leadNameInput');
+      const lastNameInput = document.getElementById('leadLastNameInput');
+      const submitBtn = nameForm.querySelector('button');
+
+      const name = nameInput.value.trim();
+      const lastName = lastNameInput.value.trim();
+
+      if (!name || !lastName) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Guardando...';
+
+      try {
+        // Update lead in Supabase
+        await window.supabaseClient
+          .from('leads')
+          .update({ name, last_name: lastName })
+          .eq('id', window.currentLead.id);
+
+        // Update local state
+        window.currentLead.name = name;
+        window.currentLead.lastName = lastName;
+
+        // Update greeting
+        updateLeadGreeting();
+
+        // Hide modal
+        hideNameModal();
+
+      } catch (err) {
+        console.error('Error saving name:', err);
+        alert('Error al guardar. Intenta de nuevo.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continuar';
+      }
+    });
   }
 
   // Load saved lots for this lead
