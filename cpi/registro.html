@@ -451,7 +451,7 @@
       }
 
       try {
-        // Check if lead exists and rate limiting
+        // Check if lead exists and get rate limit info
         let { data: existingLead } = await supabaseClient
           .from('leads')
           .select('id, last_link_requested_at, link_request_count')
@@ -463,42 +463,46 @@
         if (existingLead) {
           leadId = existingLead.id;
 
-          // Check rate limiting
+          // Server-side rate limiting with exponential backoff
           if (existingLead.last_link_requested_at && existingLead.link_request_count > 0) {
             const lastRequest = new Date(existingLead.last_link_requested_at);
-            const now = new Date();
-            const secondsSinceLastRequest = (now - lastRequest) / 1000;
-            const waitTime = getRateLimitWaitTime(existingLead.link_request_count);
+            const secondsSince = (Date.now() - lastRequest.getTime()) / 1000;
 
-            // Reset count if more than 24 hours
-            if (secondsSinceLastRequest > 86400) {
-              // Reset - will update below
-            } else if (secondsSinceLastRequest < waitTime) {
-              const remainingWait = Math.ceil(waitTime - secondsSinceLastRequest);
-              rateLimitMsg.textContent = `Por favor espera ${formatWaitTime(remainingWait)} antes de solicitar otro link.`;
-              rateLimitMsg.style.display = 'block';
-              submitBtn.disabled = false;
-              submitBtn.textContent = 'Obtener Acceso';
-              return;
+            // Reset after 24 hours
+            if (secondsSince < 86400) {
+              // Exponential backoff: 60s, 120s, 240s, 480s, max 900s (15min)
+              const waitTime = Math.min(60 * Math.pow(2, existingLead.link_request_count - 1), 900);
+
+              if (secondsSince < waitTime) {
+                const remaining = Math.ceil(waitTime - secondsSince);
+                const mins = Math.floor(remaining / 60);
+                const secs = remaining % 60;
+                const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                rateLimitMsg.textContent = `Por favor espera ${timeStr} antes de solicitar otro link.`;
+                rateLimitMsg.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Obtener Acceso';
+                return;
+              }
             }
           }
 
-          // Update lead info and rate limit tracking
-          const newCount = (existingLead.link_request_count || 0) + 1;
-          // Reset count if more than 24 hours since last request
-          const lastReq = existingLead.last_link_requested_at ? new Date(existingLead.last_link_requested_at) : null;
-          const resetCount = lastReq && ((new Date() - lastReq) / 1000 > 86400);
+          // Update lead with new rate limit tracking
+          const newCount = existingLead.last_link_requested_at &&
+            (Date.now() - new Date(existingLead.last_link_requested_at).getTime()) / 1000 < 86400
+            ? (existingLead.link_request_count || 0) + 1
+            : 1; // Reset if > 24h
 
           await supabaseClient
             .from('leads')
             .update({
               last_seen_at: new Date().toISOString(),
               last_link_requested_at: new Date().toISOString(),
-              link_request_count: resetCount ? 1 : newCount
+              link_request_count: newCount
             })
             .eq('id', leadId);
         } else {
-          // Create new lead
+          // Create new lead with rate limit tracking
           const { data: newLead, error: leadError } = await supabaseClient
             .from('leads')
             .insert({
