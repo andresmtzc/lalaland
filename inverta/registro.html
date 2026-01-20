@@ -451,10 +451,10 @@
       }
 
       try {
-        // Check if lead exists and rate limiting
+        // Check if lead exists
         let { data: existingLead } = await supabaseClient
           .from('leads')
-          .select('id, last_link_requested_at, link_request_count')
+          .select('id')
           .eq('phone', phone)
           .single();
 
@@ -463,49 +463,16 @@
         if (existingLead) {
           leadId = existingLead.id;
 
-          // Check rate limiting
-          if (existingLead.last_link_requested_at && existingLead.link_request_count > 0) {
-            const lastRequest = new Date(existingLead.last_link_requested_at);
-            const now = new Date();
-            const secondsSinceLastRequest = (now - lastRequest) / 1000;
-            const waitTime = getRateLimitWaitTime(existingLead.link_request_count);
-
-            // Reset count if more than 24 hours
-            if (secondsSinceLastRequest > 86400) {
-              // Reset - will update below
-            } else if (secondsSinceLastRequest < waitTime) {
-              const remainingWait = Math.ceil(waitTime - secondsSinceLastRequest);
-              rateLimitMsg.textContent = `Por favor espera ${formatWaitTime(remainingWait)} antes de solicitar otro link.`;
-              rateLimitMsg.style.display = 'block';
-              submitBtn.disabled = false;
-              submitBtn.textContent = 'Obtener Acceso';
-              return;
-            }
-          }
-
-          // Update lead info and rate limit tracking
-          const newCount = (existingLead.link_request_count || 0) + 1;
-          // Reset count if more than 24 hours since last request
-          const lastReq = existingLead.last_link_requested_at ? new Date(existingLead.last_link_requested_at) : null;
-          const resetCount = lastReq && ((new Date() - lastReq) / 1000 > 86400);
-
+          // Update last seen
           await supabaseClient
             .from('leads')
-            .update({
-              last_seen_at: new Date().toISOString(),
-              last_link_requested_at: new Date().toISOString(),
-              link_request_count: resetCount ? 1 : newCount
-            })
+            .update({ last_seen_at: new Date().toISOString() })
             .eq('id', leadId);
         } else {
           // Create new lead
           const { data: newLead, error: leadError } = await supabaseClient
             .from('leads')
-            .insert({
-              phone,
-              last_link_requested_at: new Date().toISOString(),
-              link_request_count: 1
-            })
+            .insert({ phone })
             .select('id')
             .single();
 
