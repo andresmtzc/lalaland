@@ -461,27 +461,32 @@ async function processLinkRequest(request) {
             .update({ status: 'processing' })
             .eq('id', request.id);
 
-        // Per-phone rate limit check (verify against leads table)
-        const phone10 = request.phone.replace(/^521/, ''); // Remove country code
-        const { data: lead } = await supabase
-            .from('leads')
-            .select('last_link_requested_at, link_request_count')
-            .eq('phone', phone10)
-            .single();
+        // Per-phone rate limit check (verify against leads table) - non-blocking
+        try {
+            const phone10 = request.phone.replace(/^521/, ''); // Remove country code
+            const { data: lead, error: leadError } = await supabase
+                .from('leads')
+                .select('last_link_requested_at, link_request_count')
+                .eq('phone', phone10)
+                .single();
 
-        if (lead && lead.link_request_count > 0 && lead.last_link_requested_at) {
-            const lastRequest = new Date(lead.last_link_requested_at);
-            const secondsSince = (Date.now() - lastRequest.getTime()) / 1000;
-            const waitTime = Math.min(60 * Math.pow(2, lead.link_request_count - 1), 900);
+            if (!leadError && lead && lead.link_request_count > 0 && lead.last_link_requested_at) {
+                const lastRequest = new Date(lead.last_link_requested_at);
+                const secondsSince = (Date.now() - lastRequest.getTime()) / 1000;
+                const waitTime = Math.min(60 * Math.pow(2, lead.link_request_count - 1), 900);
 
-            if (secondsSince < waitTime) {
-                console.log(`⚠️ Per-phone rate limit for ${phone10}: ${Math.ceil(waitTime - secondsSince)}s remaining`);
-                await supabase
-                    .from('link_requests')
-                    .update({ status: 'error', error_message: 'Rate limit: intenta más tarde' })
-                    .eq('id', request.id);
-                return;
+                if (secondsSince < waitTime) {
+                    console.log(`⚠️ Per-phone rate limit for ${phone10}: ${Math.ceil(waitTime - secondsSince)}s remaining`);
+                    await supabase
+                        .from('link_requests')
+                        .update({ status: 'error', error_message: 'Rate limit: intenta más tarde' })
+                        .eq('id', request.id);
+                    return;
+                }
             }
+        } catch (rateLimitErr) {
+            // If rate limit check fails, log and continue (don't block user)
+            console.log('⚠️ Rate limit check failed, continuing anyway:', rateLimitErr.message);
         }
 
         // Build the map link
