@@ -17,7 +17,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://jmoxbhodpvnlmtihcwvt.s
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 const SESSION_FILE = path.join(__dirname, 'instagram_session.json');
-const CHECK_INTERVAL = 10000; // Check for new comments every 10 seconds
+const CHECK_INTERVAL = 30000; // Check for new comments every 30 seconds (slower to avoid Instagram detection)
 
 // Keyword to client mapping
 const KEYWORD_TO_CLIENT = {
@@ -128,6 +128,8 @@ async function checkRecentComments() {
     // Check last 10 posts for comments
     for (const item of items.slice(0, 10)) {
       await checkMediaComments(item.pk, item.code);
+      // Small delay between posts to look more human
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   } catch (error) {
     console.error('❌ Error checking comments:', error.message);
