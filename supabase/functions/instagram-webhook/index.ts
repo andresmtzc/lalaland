@@ -13,9 +13,9 @@ const corsHeaders = {
 
 // Keyword to client mapping
 const KEYWORD_TO_CLIENT: Record<string, string> = {
-  'PIETRA': 'agora',
-  'AQUA': 'agora',
-  'CAÑADAS': 'agora',
+  'PIETRA': 'inverta',
+  'AQUA': 'inverta',
+  'CAÑADAS': 'inverta',
 }
 
 // Base URL for registration forms
