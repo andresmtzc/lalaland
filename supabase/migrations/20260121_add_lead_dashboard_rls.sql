@@ -1,8 +1,13 @@
 -- Lead Dashboard RLS Policies
 -- Allows authenticated editors to view lead data for their clients
 
+-- Drop policies if they exist (to allow re-running migration)
+DROP POLICY IF EXISTS "Editors can view lead_tokens for their clients" ON public.lead_tokens;
+DROP POLICY IF EXISTS "Editors can view lead_saved_lots for their clients" ON public.lead_saved_lots;
+DROP POLICY IF EXISTS "Editors can view leads for their clients" ON public.leads;
+
 -- Policy: Authenticated editors can view lead_tokens for their client's leads
-CREATE POLICY IF NOT EXISTS "Editors can view lead_tokens for their clients"
+CREATE POLICY "Editors can view lead_tokens for their clients"
     ON public.lead_tokens
     FOR SELECT
     TO authenticated
@@ -16,7 +21,7 @@ CREATE POLICY IF NOT EXISTS "Editors can view lead_tokens for their clients"
     );
 
 -- Policy: Authenticated editors can view lead_saved_lots for their clients
-CREATE POLICY IF NOT EXISTS "Editors can view lead_saved_lots for their clients"
+CREATE POLICY "Editors can view lead_saved_lots for their clients"
     ON public.lead_saved_lots
     FOR SELECT
     TO authenticated
@@ -30,7 +35,7 @@ CREATE POLICY IF NOT EXISTS "Editors can view lead_saved_lots for their clients"
     );
 
 -- Policy: Authenticated editors can view leads for their clients
-CREATE POLICY IF NOT EXISTS "Editors can view leads for their clients"
+CREATE POLICY "Editors can view leads for their clients"
     ON public.leads
     FOR SELECT
     TO authenticated
