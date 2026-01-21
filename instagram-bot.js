@@ -123,6 +123,8 @@ async function checkRecentComments() {
     const userFeed = ig.feed.user(ig.state.cookieUserId);
     const items = await userFeed.items();
 
+    console.log(`🔍 Checking ${items.length} recent posts for comments...`);
+
     // Check last 10 posts for comments
     for (const item of items.slice(0, 10)) {
       await checkMediaComments(item.pk, item.code);
@@ -140,12 +142,13 @@ async function checkMediaComments(mediaPk, mediaCode) {
     const commentsFeed = ig.feed.mediaComments(mediaPk);
     const comments = await commentsFeed.items();
 
+    console.log(`   📝 Post ${mediaCode}: ${comments.length} comments found`);
+
     for (const comment of comments) {
       await processComment(comment, mediaPk, mediaCode);
     }
   } catch (error) {
-    // Silently ignore errors for individual posts
-    // (some posts might not allow comments, etc.)
+    console.log(`   ⚠️  Post ${mediaCode}: ${error.message}`);
   }
 }
 
