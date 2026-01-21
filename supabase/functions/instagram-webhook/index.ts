@@ -133,8 +133,8 @@ async function processWebhook(payload: any) {
   }
 
   for (const entry of payload.entry || []) {
+    // Handle comments (from changes array)
     for (const change of entry.changes || []) {
-      // Handle comments
       if (change.field === 'comments') {
         const commentData = change.value
 
@@ -193,23 +193,39 @@ async function processWebhook(payload: any) {
           console.log(`⏭️ No matching keyword in comment: "${commentText}"`)
         }
       }
+    }
 
-      // Handle incoming DMs
-      if (change.field === 'messages') {
-        const messageData = change.value
-        const senderId = messageData.from?.id
-        const senderUsername = messageData.from?.username
-        const messageText = messageData.text || ''
+    // Handle incoming DMs (from messaging array - different structure!)
+    for (const messaging of entry.messaging || []) {
+      const senderId = messaging.sender?.id
+      const messageText = messaging.message?.text || ''
 
-        console.log(`📩 DM from @${senderUsername}: "${messageText}"`)
+      console.log(`📩 DM from ${senderId}: "${messageText}"`)
 
-        // Respond with registration link (we'll use 'inverta' for now, can customize later)
-        const formLink = `${BASE_URL}/inverta/registro.html`
+      // Look up if this user commented a keyword
+      const { data: collabRequest } = await supabase
+        .from('collab_requests')
+        .select('*')
+        .eq('instagram_user_id', senderId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (collabRequest) {
+        // User has a keyword entry - send them the link!
+        const formLink = collabRequest.form_link
         const dmResponse = `¡Hola! Muchas gracias por tu interés. Regístrate aquí:\n${formLink}\nY muy pronto recibirás más información via Whatsapp.`
 
         await sendDM(senderId, dmResponse)
 
-        console.log(`✅ Auto-responded to DM from @${senderUsername}`)
+        console.log(`✅ Sent registration link to ${senderId} (keyword: ${collabRequest.keyword})`)
+      } else {
+        // No keyword found - send instructions
+        const dmResponse = `¡Hola! Para recibir el link de registro, comenta PIETRA, AQUA o CAÑADAS en nuestras publicaciones 📩`
+
+        await sendDM(senderId, dmResponse)
+
+        console.log(`✅ Sent instructions to ${senderId} (no keyword found)`)
       }
     }
   }
