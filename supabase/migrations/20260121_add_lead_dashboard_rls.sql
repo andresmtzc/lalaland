@@ -47,9 +47,25 @@ CREATE POLICY "Editors can view leads for their clients"
         )
     );
 
--- Grant SELECT permissions
+-- Policy: Allow anonymous users to insert their own lead sessions
+CREATE POLICY "Anyone can insert lead sessions"
+    ON public.lead_sessions
+    FOR INSERT
+    TO anon, authenticated
+    WITH CHECK (true);
+
+-- Policy: Allow anonymous users to update their own lead sessions (for ending session)
+CREATE POLICY "Anyone can update lead sessions"
+    ON public.lead_sessions
+    FOR UPDATE
+    TO anon, authenticated
+    USING (true)
+    WITH CHECK (true);
+
+-- Grant permissions
 GRANT SELECT ON public.lead_tokens TO authenticated;
 GRANT SELECT ON public.lead_saved_lots TO authenticated;
+GRANT INSERT, UPDATE ON public.lead_sessions TO anon, authenticated;
 GRANT SELECT ON public.leads TO authenticated;
 
 COMMENT ON POLICY "Editors can view lead_tokens for their clients" ON public.lead_tokens
