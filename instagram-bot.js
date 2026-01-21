@@ -42,7 +42,7 @@ if (!SUPABASE_SERVICE_KEY) {
 const ig = new IgApiClient();
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-console.log('🤖 Instagram Collab Bot (Hybrid Mode) starting...');
+console.log('🤖 Instagram Collab Bot (Comment Reply Mode) starting...');
 console.log(`📱 Account: @${INSTAGRAM_USERNAME}`);
 
 // ========================================
@@ -150,6 +150,8 @@ async function processRequest(request) {
     keyword,
     form_link,
     comment_text,
+    comment_id,
+    post_id,
   } = request;
 
   console.log(`\n📨 Processing request ${id}`);
@@ -158,11 +160,10 @@ async function processRequest(request) {
   console.log(`   Comment: "${comment_text}"`);
 
   try {
-    // Build the DM message
-    const message = DM_MESSAGE_TEMPLATE.replace('{FORM_LINK}', form_link);
+    // Reply to comment instead of sending DM
+    const replyText = `@${instagram_username} ¡Hola! Envíame un mensaje directo (DM) y te envío el link de registro 📩`;
 
-    // Send DM
-    await sendDM(instagram_user_id, instagram_username, message);
+    await replyToComment(comment_id, post_id, replyText);
 
     // Mark as completed
     const { error: updateError } = await supabase
@@ -188,7 +189,7 @@ async function processRequest(request) {
       .from('collab_requests')
       .update({
         status: 'error',
-        error_message: error.message || 'Failed to send DM',
+        error_message: error.message || 'Failed to reply to comment',
         completed_at: new Date().toISOString(),
       })
       .eq('id', id);
@@ -202,31 +203,33 @@ async function processRequest(request) {
 }
 
 /**
- * Send Instagram DM
+ * Reply to Instagram comment
+ */
+async function replyToComment(commentId, postId, replyText) {
+  try {
+    await ig.media.comment({
+      mediaId: postId,
+      text: replyText,
+    });
+
+    console.log(`✅ Replied to comment ${commentId}`);
+  } catch (error) {
+    console.error(`❌ Failed to reply to comment:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Send Instagram DM (for when users message first)
  */
 async function sendDM(userId, username, message) {
   try {
-    // Split message into parts to avoid URL auto-detection
-    // Send greeting first, then link separately
-    const parts = message.split('https://');
+    const recipientUsers = [userId.toString()];
 
-    const thread = ig.entity.directThread([userId.toString()]);
-
-    if (parts.length > 1) {
-      // Send greeting first
-      await thread.broadcastText(parts[0]);
-      console.log(`   📤 Sent greeting to @${username}`);
-
-      // Wait a moment
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Send link on second message
-      await thread.broadcastText('https://' + parts[1]);
-      console.log(`   📤 Sent link to @${username}`);
-    } else {
-      // No link in message, send as-is
-      await thread.broadcastText(message);
-    }
+    const thread = await ig.directThread.broadcastText({
+      recipients: recipientUsers,
+      text: message
+    });
 
     console.log(`✅ DM sent to @${username}`);
   } catch (error) {
@@ -281,7 +284,8 @@ process.on('SIGTERM', async () => {
     await login();
     startPolling();
     console.log('✅ Instagram Collab Bot is running');
-    console.log('   Webhook detects comments → Bot sends DMs');
+    console.log('   Webhook detects comments → Bot replies publicly');
+    console.log('   User sends DM → Bot responds with link');
     console.log('   Press Ctrl+C to stop\n');
   } catch (error) {
     console.error('❌ Failed to start bot:', error);
