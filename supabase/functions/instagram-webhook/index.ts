@@ -156,7 +156,11 @@ async function processWebhook(payload: any) {
 
           console.log(`✅ Keyword "${keyword}" detected → Client: ${clientId}`)
 
-          // Insert into collab_requests table
+          // Reply to comment via Graph API
+          const replyText = `@${instagramUsername} ¡Hola! Envíame un mensaje directo (DM) y te envío el link de registro 📩`
+          await replyToComment(commentId, replyText)
+
+          // Insert into collab_requests table for tracking
           const { data, error } = await supabase
             .from('collab_requests')
             .insert({
@@ -168,7 +172,8 @@ async function processWebhook(payload: any) {
               keyword: keyword,
               client_id: clientId,
               form_link: formLink,
-              status: 'pending',
+              status: 'completed',
+              completed_at: new Date().toISOString(),
               post_type: commentData.media?.media_product_type || 'POST',
             })
             .select()
@@ -182,13 +187,47 @@ async function processWebhook(payload: any) {
               console.error('❌ Error inserting collab_request:', error)
             }
           } else {
-            console.log(`✅ Collab request created: ${data.id}`)
+            console.log(`✅ Collab request created and replied: ${data.id}`)
           }
         } else {
           console.log(`⏭️ No matching keyword in comment: "${commentText}"`)
         }
       }
     }
+  }
+}
+
+async function replyToComment(commentId: string, replyText: string) {
+  const accessToken = Deno.env.get('INSTAGRAM_ACCESS_TOKEN')
+
+  if (!accessToken) {
+    console.error('❌ INSTAGRAM_ACCESS_TOKEN not configured')
+    return
+  }
+
+  try {
+    const url = `https://graph.facebook.com/v21.0/${commentId}/replies`
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: replyText,
+        access_token: accessToken,
+      }),
+    })
+
+    const data = await response.json()
+
+    if (response.ok) {
+      console.log(`✅ Replied to comment ${commentId}:`, data)
+    } else {
+      console.error(`❌ Failed to reply to comment:`, data)
+    }
+  } catch (error) {
+    console.error(`❌ Error replying to comment:`, error)
   }
 }
 
