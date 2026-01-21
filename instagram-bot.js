@@ -1,5 +1,5 @@
-// Instagram Collab Bot - Using instagram-private-api (Unofficial)
-// Works like WhatsApp Baileys - direct Instagram connection, no Facebook BS
+// Instagram Collab Bot - Hybrid Approach
+// Webhook detects comments → Bot polls Supabase → Sends DMs
 // Run with: node instagram-bot.js
 
 const { IgApiClient } = require('instagram-private-api');
@@ -17,22 +17,13 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://jmoxbhodpvnlmtihcwvt.s
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 const SESSION_FILE = path.join(__dirname, 'instagram_session.json');
-const CHECK_INTERVAL = 30000; // Check for new comments every 30 seconds (slower to avoid Instagram detection)
-
-// Keyword to client mapping
-const KEYWORD_TO_CLIENT = {
-  'PIETRA': 'inverta',
-  'AQUA': 'inverta',
-  'CAÑADAS': 'inverta',
-};
+const POLL_INTERVAL = 3000; // Poll Supabase every 3 seconds
+const RATE_LIMIT_DELAY = 2000; // 2 seconds between DMs
 
 // DM message template
 const DM_MESSAGE_TEMPLATE = `¡Hola! Muchas gracias por tu interés. Regístrate aquí:
 {FORM_LINK}
 Y muy pronto recibirás más información via Whatsapp.`;
-
-// Track processed comments (in-memory)
-const processedComments = new Set();
 
 // ========================================
 // VALIDATION
@@ -43,10 +34,15 @@ if (!INSTAGRAM_USERNAME || !INSTAGRAM_PASSWORD) {
   process.exit(1);
 }
 
-const ig = new IgApiClient();
-const supabase = SUPABASE_SERVICE_KEY ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY) : null;
+if (!SUPABASE_SERVICE_KEY) {
+  console.error('❌ SUPABASE_SERVICE_KEY environment variable is required');
+  process.exit(1);
+}
 
-console.log('🤖 Instagram Collab Bot (Unofficial API) starting...');
+const ig = new IgApiClient();
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+console.log('🤖 Instagram Collab Bot (Hybrid Mode) starting...');
 console.log(`📱 Account: @${INSTAGRAM_USERNAME}`);
 
 // ========================================
@@ -106,153 +102,117 @@ async function login() {
   const auth = await ig.account.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD);
   console.log(`✅ Logged in as @${auth.username} (ID: ${auth.pk})`);
 
-  // await ig.simulate.postLoginFlow(); // Skip - Instagram API changed, endpoint returns 404
+  // Skip postLoginFlow - Instagram API changed
   await saveSession();
 }
 
 // ========================================
-// COMMENT MONITORING
+// SUPABASE POLLING & DM SENDING
 // ========================================
 
 /**
- * Check recent media for new comments with keywords
+ * Poll Supabase for pending collab requests
  */
-async function checkRecentComments() {
+async function checkPendingRequests() {
   try {
-    // Get user's own media feed
-    const userFeed = ig.feed.user(ig.state.cookieUserId);
-    const items = await userFeed.items();
+    // Atomic claim pattern: Update status to 'processing' and return the claimed row
+    const { data: claimedRequests, error } = await supabase
+      .from('collab_requests')
+      .update({ status: 'processing' })
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .select();
 
-    console.log(`🔍 Checking ${items.length} recent posts for comments...`);
+    if (error) {
+      console.error('❌ Error querying collab_requests:', error);
+      return;
+    }
 
-    // Check last 10 posts for comments
-    for (const item of items.slice(0, 10)) {
-      await checkMediaComments(item.pk, item.code);
-      // Small delay between posts to look more human
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    if (claimedRequests && claimedRequests.length > 0) {
+      for (const request of claimedRequests) {
+        await processRequest(request);
+      }
     }
   } catch (error) {
-    console.error('❌ Error checking comments:', error.message);
+    console.error('❌ Error in checkPendingRequests:', error);
   }
 }
 
 /**
- * Check comments on a specific media item
+ * Process a single collab request
  */
-async function checkMediaComments(mediaPk, mediaCode) {
+async function processRequest(request) {
+  const {
+    id,
+    instagram_user_id,
+    instagram_username,
+    keyword,
+    form_link,
+    comment_text,
+  } = request;
+
+  console.log(`\n📨 Processing request ${id}`);
+  console.log(`   User: @${instagram_username} (${instagram_user_id})`);
+  console.log(`   Keyword: ${keyword}`);
+  console.log(`   Comment: "${comment_text}"`);
+
   try {
-    const commentsFeed = ig.feed.mediaComments(mediaPk);
-    const comments = await commentsFeed.items();
-
-    console.log(`   📝 Post ${mediaCode}: ${comments.length} comments found`);
-
-    for (const comment of comments) {
-      await processComment(comment, mediaPk, mediaCode);
-    }
-  } catch (error) {
-    console.log(`   ⚠️  Post ${mediaCode}: ${error.message}`);
-  }
-}
-
-/**
- * Process a single comment
- */
-async function processComment(comment, mediaPk, mediaCode) {
-  const commentId = comment.pk;
-  const commentText = comment.text || '';
-  const username = comment.user.username;
-  const userId = comment.user.pk;
-
-  // Skip if already processed
-  if (processedComments.has(commentId)) {
-    return;
-  }
-
-  // Check for keywords
-  const keyword = findKeyword(commentText);
-
-  if (keyword) {
-    console.log(`\n💬 Keyword detected!`);
-    console.log(`   Post: https://instagram.com/p/${mediaCode}`);
-    console.log(`   User: @${username} (${userId})`);
-    console.log(`   Comment: "${commentText}"`);
-    console.log(`   Keyword: ${keyword}`);
-
-    // Mark as processed
-    processedComments.add(commentId);
-
-    // Get client and form link
-    const clientId = KEYWORD_TO_CLIENT[keyword];
-    const formLink = `https://la-la.land/${clientId}/registro.html`;
-
-    // Log to Supabase (optional)
-    if (supabase) {
-      await logToSupabase(commentId, userId, username, mediaPk, commentText, keyword, clientId, formLink);
-    }
+    // Build the DM message
+    const message = DM_MESSAGE_TEMPLATE.replace('{FORM_LINK}', form_link);
 
     // Send DM
-    await sendDM(userId, username, formLink);
-  }
-}
+    await sendDM(instagram_user_id, instagram_username, message);
 
-/**
- * Find keyword in comment text
- */
-function findKeyword(text) {
-  const keywords = Object.keys(KEYWORD_TO_CLIENT);
+    // Mark as completed
+    const { error: updateError } = await supabase
+      .from('collab_requests')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', id);
 
-  for (const keyword of keywords) {
-    // Match whole word only (not partial)
-    const regex = new RegExp(`\\b${keyword}\\b`);
-    if (regex.test(text)) {
-      return keyword;
+    if (updateError) {
+      console.error(`❌ Failed to update request ${id}:`, updateError);
+    } else {
+      console.log(`✅ Request ${id} completed successfully`);
     }
-  }
 
-  return null;
+    // Rate limit delay
+    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
+
+  } catch (error) {
+    // Mark as error
+    const { error: updateError } = await supabase
+      .from('collab_requests')
+      .update({
+        status: 'error',
+        error_message: error.message || 'Failed to send DM',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+
+    if (updateError) {
+      console.error(`❌ Failed to update error status for ${id}:`, updateError);
+    }
+
+    console.error(`❌ Request ${id} failed:`, error.message);
+  }
 }
 
 /**
  * Send Instagram DM
  */
-async function sendDM(userId, username, formLink) {
+async function sendDM(userId, username, message) {
   try {
-    const message = DM_MESSAGE_TEMPLATE.replace('{FORM_LINK}', formLink);
-
     const thread = ig.entity.directThread([userId.toString()]);
     await thread.broadcastText(message);
 
     console.log(`✅ DM sent to @${username}`);
-
-    // Small delay to avoid rate limits
-    await new Promise(resolve => setTimeout(resolve, 2000));
   } catch (error) {
     console.error(`❌ Failed to send DM to @${username}:`, error.message);
-  }
-}
-
-/**
- * Log request to Supabase
- */
-async function logToSupabase(commentId, userId, username, postId, commentText, keyword, clientId, formLink) {
-  try {
-    await supabase.from('collab_requests').insert({
-      comment_id: commentId.toString(),
-      instagram_user_id: userId.toString(),
-      instagram_username: username,
-      post_id: postId.toString(),
-      comment_text: commentText,
-      keyword: keyword,
-      client_id: clientId,
-      form_link: formLink,
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-    });
-  } catch (error) {
-    // Ignore duplicate errors (comment already logged)
-    if (error.code !== '23505') {
-      console.error('⚠️  Failed to log to Supabase:', error.message);
-    }
+    throw error;
   }
 }
 
@@ -261,20 +221,20 @@ async function logToSupabase(commentId, userId, username, postId, commentText, k
 // ========================================
 
 /**
- * Start monitoring for comments
+ * Start polling Supabase
  */
-function startMonitoring() {
-  console.log('🔄 Starting comment monitoring...\n');
-  console.log(`📊 Checking for comments every ${CHECK_INTERVAL / 1000} seconds`);
-  console.log(`🔑 Watching keywords: ${Object.keys(KEYWORD_TO_CLIENT).join(', ')}\n`);
+function startPolling() {
+  console.log('🔄 Starting Supabase polling...\n');
+  console.log(`📊 Polling interval: ${POLL_INTERVAL / 1000} seconds`);
+  console.log(`📥 Watching for pending collab_requests...\n`);
 
   // Check immediately
-  checkRecentComments();
+  checkPendingRequests();
 
   // Then check periodically
   setInterval(async () => {
-    await checkRecentComments();
-  }, CHECK_INTERVAL);
+    await checkPendingRequests();
+  }, POLL_INTERVAL);
 }
 
 // ========================================
@@ -300,8 +260,9 @@ process.on('SIGTERM', async () => {
 (async () => {
   try {
     await login();
-    startMonitoring();
+    startPolling();
     console.log('✅ Instagram Collab Bot is running');
+    console.log('   Webhook detects comments → Bot sends DMs');
     console.log('   Press Ctrl+C to stop\n');
   } catch (error) {
     console.error('❌ Failed to start bot:', error);
