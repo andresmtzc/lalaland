@@ -206,31 +206,26 @@ async function processRequest(request) {
  */
 async function sendDM(userId, username, message) {
   try {
-    // Split message into parts to avoid URL auto-detection
-    // Send greeting first, then link separately
-    const parts = message.split('https://');
+    // Use the lower-level direct thread API
+    // First get or create thread with user
+    const recipientUsers = [userId.toString()];
 
-    const thread = ig.entity.directThread([userId.toString()]);
-
-    if (parts.length > 1) {
-      // Send greeting first
-      await thread.broadcastText(parts[0]);
-      console.log(`   📤 Sent greeting to @${username}`);
-
-      // Wait a moment
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Send link on second message
-      await thread.broadcastText('https://' + parts[1]);
-      console.log(`   📤 Sent link to @${username}`);
-    } else {
-      // No link in message, send as-is
-      await thread.broadcastText(message);
-    }
+    // Try to send via direct thread broadcast (v2 API)
+    const thread = await ig.directThread.broadcastText({
+      recipients: recipientUsers,
+      text: message
+    });
 
     console.log(`✅ DM sent to @${username}`);
   } catch (error) {
     console.error(`❌ Failed to send DM to @${username}:`, error.message);
+
+    // Log more details for debugging
+    if (error.response) {
+      console.error(`   Response status: ${error.response.status}`);
+      console.error(`   Response data:`, JSON.stringify(error.response.data));
+    }
+
     throw error;
   }
 }
