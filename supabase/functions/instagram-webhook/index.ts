@@ -197,6 +197,19 @@ async function processWebhook(payload: any) {
 
     // Handle incoming DMs (from messaging array - different structure!)
     for (const messaging of entry.messaging || []) {
+      // Filter out non-message events (delivery receipts, read receipts, echoes)
+      // Only process actual incoming user messages
+      if (!messaging.message) {
+        console.log('⏭️ Skipping non-message event (delivery/read receipt)')
+        continue
+      }
+
+      // Skip echoes of our own messages
+      if (messaging.message.is_echo) {
+        console.log('⏭️ Skipping echo of our own message')
+        continue
+      }
+
       const senderId = messaging.sender?.id
       const messageText = messaging.message?.text || ''
 
@@ -212,13 +225,25 @@ async function processWebhook(payload: any) {
         .maybeSingle()
 
       if (collabRequest) {
+        // Check if we already sent the DM to this user
+        if (collabRequest.status === 'dm_sent') {
+          console.log(`⏭️ Already sent DM to ${senderId}, skipping`)
+          continue
+        }
+
         // User has a keyword entry - send them the link!
         const formLink = collabRequest.form_link
         const dmResponse = `¡Hola! Muchas gracias por tu interés. Regístrate aquí:\n${formLink}\nY muy pronto recibirás más información via Whatsapp.`
 
         await sendDM(senderId, dmResponse)
 
-        console.log(`✅ Sent registration link to ${senderId} (keyword: ${collabRequest.keyword})`)
+        // Mark as completed so we don't send again
+        await supabase
+          .from('collab_requests')
+          .update({ status: 'dm_sent' })
+          .eq('id', collabRequest.id)
+
+        console.log(`✅ Sent registration link to ${senderId} (keyword: ${collabRequest.keyword}) and marked as dm_sent`)
       } else {
         // No keyword found - send instructions
         const dmResponse = `¡Hola! Para recibir el link de registro, comenta PIETRA, AQUA o CAÑADAS en nuestras publicaciones 📩`
