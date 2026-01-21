@@ -134,7 +134,7 @@ async function processWebhook(payload: any) {
 
   for (const entry of payload.entry || []) {
     for (const change of entry.changes || []) {
-      // We're interested in 'comments' field
+      // Handle comments
       if (change.field === 'comments') {
         const commentData = change.value
 
@@ -193,6 +193,24 @@ async function processWebhook(payload: any) {
           console.log(`⏭️ No matching keyword in comment: "${commentText}"`)
         }
       }
+
+      // Handle incoming DMs
+      if (change.field === 'messages') {
+        const messageData = change.value
+        const senderId = messageData.from?.id
+        const senderUsername = messageData.from?.username
+        const messageText = messageData.text || ''
+
+        console.log(`📩 DM from @${senderUsername}: "${messageText}"`)
+
+        // Respond with registration link (we'll use 'inverta' for now, can customize later)
+        const formLink = `${BASE_URL}/inverta/registro.html`
+        const dmResponse = `¡Hola! Muchas gracias por tu interés. Regístrate aquí:\n${formLink}\nY muy pronto recibirás más información via Whatsapp.`
+
+        await sendDM(senderId, dmResponse)
+
+        console.log(`✅ Auto-responded to DM from @${senderUsername}`)
+      }
     }
   }
 }
@@ -228,6 +246,45 @@ async function replyToComment(commentId: string, replyText: string) {
     }
   } catch (error) {
     console.error(`❌ Error replying to comment:`, error)
+  }
+}
+
+async function sendDM(recipientId: string, messageText: string) {
+  const accessToken = Deno.env.get('INSTAGRAM_ACCESS_TOKEN')
+
+  if (!accessToken) {
+    console.error('❌ INSTAGRAM_ACCESS_TOKEN not configured')
+    return
+  }
+
+  try {
+    const url = `https://graph.facebook.com/v21.0/me/messages`
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        recipient: {
+          id: recipientId,
+        },
+        message: {
+          text: messageText,
+        },
+        access_token: accessToken,
+      }),
+    })
+
+    const data = await response.json()
+
+    if (response.ok) {
+      console.log(`✅ Sent DM to ${recipientId}:`, data)
+    } else {
+      console.error(`❌ Failed to send DM:`, data)
+    }
+  } catch (error) {
+    console.error(`❌ Error sending DM:`, error)
   }
 }
 
