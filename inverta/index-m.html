@@ -2277,6 +2277,9 @@ ctaobserver.observe(ctaToaster, {
 
       console.log('✅ Lead authenticated via token:', window.currentLead.phone);
 
+      // Start session tracking
+      await startLeadSession();
+
       // Update lead greeting and show name modal if needed
       updateLeadGreeting();
       if (!window.currentLead.name) {
@@ -2327,6 +2330,9 @@ ctaobserver.observe(ctaToaster, {
 
       console.log('✅ Lead authenticated via session:', window.currentLead.phone);
 
+      // Start session tracking
+      await startLeadSession();
+
       // Update lead greeting and show name modal if needed
       updateLeadGreeting();
       if (!window.currentLead.name) {
@@ -2338,6 +2344,97 @@ ctaobserver.observe(ctaToaster, {
       window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
       return;
     }
+  }
+
+  // ===== SESSION TRACKING =====
+  window.currentSessionId = null;
+  window.sessionStartTime = null;
+
+  async function startLeadSession() {
+    if (!window.currentLead || !window.supabaseClient) return;
+
+    try {
+      window.sessionStartTime = new Date();
+
+      const { data, error } = await window.supabaseClient
+        .from('lead_sessions')
+        .insert({
+          lead_id: window.currentLead.id,
+          client_id: CURRENT_CLIENT,
+          started_at: window.sessionStartTime.toISOString(),
+          page_url: window.location.href,
+          user_agent: navigator.userAgent
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Failed to create session:', error);
+        return;
+      }
+
+      window.currentSessionId = data.id;
+      console.log('📊 Session started:', window.currentSessionId);
+
+      // Set up session end tracking
+      setupSessionEndTracking();
+    } catch (err) {
+      console.error('Session tracking error:', err);
+    }
+  }
+
+  async function endLeadSession() {
+    if (!window.currentSessionId || !window.sessionStartTime || !window.supabaseClient) return;
+
+    try {
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      await window.supabaseClient
+        .from('lead_sessions')
+        .update({
+          ended_at: endTime.toISOString(),
+          duration_seconds: durationSeconds
+        })
+        .eq('id', window.currentSessionId);
+
+      console.log(`📊 Session ended: ${durationSeconds}s`);
+    } catch (err) {
+      console.error('Failed to end session:', err);
+    }
+  }
+
+  function setupSessionEndTracking() {
+    // Track when user leaves the page
+    window.addEventListener('beforeunload', () => {
+      if (!window.currentSessionId) return;
+
+      // Use sendBeacon for reliable delivery during page unload
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      // We can't use async/await in beforeunload, so use sendBeacon
+      // But Supabase doesn't support sendBeacon directly, so we do best effort with fetch keepalive
+      if (window.supabaseClient) {
+        window.supabaseClient
+          .from('lead_sessions')
+          .update({
+            ended_at: endTime.toISOString(),
+            duration_seconds: durationSeconds
+          })
+          .eq('id', window.currentSessionId)
+          .then(() => console.log('📊 Session ended on unload'))
+          .catch(err => console.error('Failed to end session on unload:', err));
+      }
+    });
+
+    // Also track visibility changes (tab switches, minimizing)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // User switched away - update session
+        endLeadSession();
+      }
+    });
   }
 
   // Helper function to update lead greeting
