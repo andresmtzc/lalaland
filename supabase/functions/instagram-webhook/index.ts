@@ -197,6 +197,19 @@ async function processWebhook(payload: any) {
 
     // Handle incoming DMs (from messaging array - different structure!)
     for (const messaging of entry.messaging || []) {
+      // Filter out non-message events (delivery receipts, read receipts, echoes)
+      // Only process actual incoming user messages
+      if (!messaging.message) {
+        console.log('⏭️ Skipping non-message event (delivery/read receipt)')
+        continue
+      }
+
+      // Skip echoes of our own messages
+      if (messaging.message.is_echo) {
+        console.log('⏭️ Skipping echo of our own message')
+        continue
+      }
+
       const senderId = messaging.sender?.id
       const messageText = messaging.message?.text || ''
 
