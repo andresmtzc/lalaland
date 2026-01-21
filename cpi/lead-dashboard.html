@@ -272,6 +272,51 @@
       margin-bottom: 10px;
     }
 
+    /* Saved Lots Tooltip */
+    .saved-lots-cell {
+      position: relative;
+      cursor: help;
+    }
+
+    .saved-lots-tooltip {
+      visibility: hidden;
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--color-dark);
+      color: var(--color-cream);
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-size: 13px;
+      white-space: nowrap;
+      z-index: 100;
+      margin-bottom: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      opacity: 0;
+      transition: opacity 0.2s, visibility 0.2s;
+    }
+
+    .saved-lots-tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+      border-top-color: var(--color-dark);
+    }
+
+    .saved-lots-cell:hover .saved-lots-tooltip {
+      visibility: visible;
+      opacity: 1;
+    }
+
+    .saved-lots-tooltip div {
+      text-align: left;
+      line-height: 1.6;
+    }
+
     /* Login Modal */
     .login-modal {
       display: none;
@@ -563,14 +608,15 @@
           )).size : 0;
           const totalTime = sessions?.reduce((sum, s) => sum + (s.duration_seconds || 0), 0) || 0;
 
-          // Get saved lots count
+          // Get saved lots
           const { data: savedLots } = await supabaseClient
             .from('lead_saved_lots')
-            .select('id')
+            .select('lot_name')
             .eq('lead_id', lead.id)
             .eq('client', CURRENT_CLIENT);
 
           const savedCount = savedLots?.length || 0;
+          const savedLotNames = savedLots?.map(s => s.lot_name) || [];
 
           // Calculate score
           const score = calculateScore({
@@ -589,6 +635,7 @@
             uniqueDays,
             totalTime,
             savedCount,
+            savedLotNames,
             score
           };
         }));
@@ -655,6 +702,24 @@
       return phone || '-';
     }
 
+    function stripLotPrefix(lotName) {
+      // Remove prefix like "lotinverta", "lotinvertap", "lotcpi", etc.
+      // lotcpi17-17 -> 17-17
+      // lotcpip5-3 -> P5-3
+      if (!lotName) return '';
+
+      // Match pattern: lot{client}{optional_letter}{numbers-numbers}
+      const match = lotName.match(/^lot[a-z]+([a-z]?)(\d+-\d+)$/i);
+      if (match) {
+        const letter = match[1] ? match[1].toUpperCase() : '';
+        const numbers = match[2];
+        return letter + numbers;
+      }
+
+      // Fallback: just return as-is if pattern doesn't match
+      return lotName;
+    }
+
     function renderLeads() {
       const tbody = document.getElementById('leadsTableBody');
 
@@ -693,6 +758,24 @@
         const fullName = `${lead.name || ''} ${lead.last_name || ''}`.trim() || '-';
         const waLink = `https://wa.me/521${lead.phone}`;
 
+        // Build saved lots tooltip
+        let savedLotsCell = '';
+        if (lead.savedCount > 0 && lead.savedLotNames && lead.savedLotNames.length > 0) {
+          const lotsList = lead.savedLotNames
+            .map(name => stripLotPrefix(name))
+            .join('<br>');
+          savedLotsCell = `
+            <td class="saved-lots-cell">
+              ${lead.savedCount}
+              <div class="saved-lots-tooltip">
+                <div>${lotsList}</div>
+              </div>
+            </td>
+          `;
+        } else {
+          savedLotsCell = `<td>${lead.savedCount}</td>`;
+        }
+
         return `
           <tr>
             <td>${formatPhone(lead.phone)}</td>
@@ -701,7 +784,7 @@
             <td>${lead.visits}</td>
             <td>${lead.uniqueDays}</td>
             <td>${formatTime(lead.totalTime)}</td>
-            <td>${lead.savedCount}</td>
+            ${savedLotsCell}
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
             <td><a href="${waLink}" target="_blank" class="whatsapp-btn">💬 WhatsApp</a></td>
           </tr>
