@@ -1,213 +1,290 @@
-// Instagram Collab Bot
-// Polls Supabase for pending collab_requests and sends DMs via Instagram Graph API
+// Instagram Collab Bot - Using instagram-private-api (Unofficial)
+// Works like WhatsApp Baileys - direct Instagram connection, no Facebook BS
 // Run with: node instagram-bot.js
 
+const { IgApiClient } = require('instagram-private-api');
 const { createClient } = require('@supabase/supabase-js');
-const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 // ========================================
 // CONFIGURATION
 // ========================================
 
+const INSTAGRAM_USERNAME = process.env.INSTAGRAM_USERNAME; // @la_la.land___
+const INSTAGRAM_PASSWORD = process.env.INSTAGRAM_PASSWORD;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://jmoxbhodpvnlmtihcwvt.supabase.co';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Service role key for bot access
-const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN; // Long-lived Instagram access token
-const INSTAGRAM_PAGE_ID = process.env.INSTAGRAM_PAGE_ID; // Instagram Business Account ID
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-const POLL_INTERVAL = 3000; // 3 seconds (same as WhatsApp link polling)
-const RATE_LIMIT_DELAY = 2000; // 2 seconds between DMs to avoid rate limits
+const SESSION_FILE = path.join(__dirname, 'instagram_session.json');
+const CHECK_INTERVAL = 10000; // Check for new comments every 10 seconds
+
+// Keyword to client mapping
+const KEYWORD_TO_CLIENT = {
+  'PIETRA': 'agora',
+  'AQUA': 'agora',
+  'CAÑADAS': 'agora',
+};
 
 // DM message template
 const DM_MESSAGE_TEMPLATE = `¡Hola! Muchas gracias por tu interés. Regístrate aquí:
 {FORM_LINK}
 Y muy pronto recibirás más información via Whatsapp.`;
 
+// Track processed comments (in-memory)
+const processedComments = new Set();
+
 // ========================================
-// SUPABASE CLIENT
+// VALIDATION
 // ========================================
 
-if (!SUPABASE_SERVICE_KEY) {
-  console.error('❌ SUPABASE_SERVICE_KEY environment variable is required');
+if (!INSTAGRAM_USERNAME || !INSTAGRAM_PASSWORD) {
+  console.error('❌ INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD environment variables are required');
   process.exit(1);
 }
 
-if (!INSTAGRAM_ACCESS_TOKEN) {
-  console.error('❌ INSTAGRAM_ACCESS_TOKEN environment variable is required');
-  process.exit(1);
-}
+const ig = new IgApiClient();
+const supabase = SUPABASE_SERVICE_KEY ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY) : null;
 
-if (!INSTAGRAM_PAGE_ID) {
-  console.error('❌ INSTAGRAM_PAGE_ID environment variable is required');
-  process.exit(1);
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-
-console.log('🤖 Instagram Collab Bot starting...');
-console.log(`📊 Polling interval: ${POLL_INTERVAL}ms`);
-console.log(`🔐 Instagram Page ID: ${INSTAGRAM_PAGE_ID}`);
+console.log('🤖 Instagram Collab Bot (Unofficial API) starting...');
+console.log(`📱 Account: @${INSTAGRAM_USERNAME}`);
 
 // ========================================
-// INSTAGRAM GRAPH API
+// INSTAGRAM SESSION MANAGEMENT
 // ========================================
 
 /**
- * Send a DM to an Instagram user via Graph API
- * @param {string} recipientId - Instagram user ID (IGSID)
- * @param {string} message - Message text to send
- * @returns {Promise<Object>} Response from Instagram API
+ * Save session to file for reuse
  */
-async function sendInstagramDM(recipientId, message) {
-  const url = `https://graph.facebook.com/v21.0/${INSTAGRAM_PAGE_ID}/messages`;
-
-  const payload = {
-    recipient: {
-      id: recipientId,
-    },
-    message: {
-      text: message,
-    },
-  };
-
-  try {
-    const response = await axios.post(url, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      params: {
-        access_token: INSTAGRAM_ACCESS_TOKEN,
-      },
-    });
-
-    console.log(`✅ DM sent to ${recipientId}:`, response.data);
-    return response.data;
-  } catch (error) {
-    console.error(`❌ Failed to send DM to ${recipientId}:`, error.response?.data || error.message);
-    throw error;
-  }
+async function saveSession() {
+  const cookies = await ig.state.serializeCookieJar();
+  fs.writeFileSync(SESSION_FILE, JSON.stringify(cookies));
+  console.log('💾 Session saved');
 }
 
-// ========================================
-// COLLAB REQUEST PROCESSING
-// ========================================
-
 /**
- * Process a single collab request
- * @param {Object} request - Collab request from database
+ * Load session from file
  */
-async function processCollabRequest(request) {
-  const {
-    id,
-    instagram_user_id,
-    instagram_username,
-    keyword,
-    form_link,
-    comment_text,
-  } = request;
-
-  console.log(`\n📨 Processing request ${id}`);
-  console.log(`   User: @${instagram_username} (${instagram_user_id})`);
-  console.log(`   Keyword: ${keyword}`);
-  console.log(`   Comment: "${comment_text}"`);
-
-  try {
-    // Build the DM message
-    const message = DM_MESSAGE_TEMPLATE.replace('{FORM_LINK}', form_link);
-
-    // Send the DM
-    await sendInstagramDM(instagram_user_id, message);
-
-    // Mark as completed
-    const { error: updateError } = await supabase
-      .from('collab_requests')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', id);
-
-    if (updateError) {
-      console.error(`❌ Failed to update request ${id}:`, updateError);
-    } else {
-      console.log(`✅ Request ${id} completed successfully`);
+async function loadSession() {
+  if (fs.existsSync(SESSION_FILE)) {
+    try {
+      const cookies = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8'));
+      await ig.state.deserializeCookieJar(cookies);
+      console.log('✅ Session loaded from file');
+      return true;
+    } catch (error) {
+      console.log('⚠️  Failed to load session, will login fresh');
+      return false;
     }
-
-    // Rate limit delay
-    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
-
-  } catch (error) {
-    // Mark as error
-    const { error: updateError } = await supabase
-      .from('collab_requests')
-      .update({
-        status: 'error',
-        error_message: error.message || 'Failed to send DM',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', id);
-
-    if (updateError) {
-      console.error(`❌ Failed to update error status for ${id}:`, updateError);
-    }
-
-    console.error(`❌ Request ${id} failed:`, error.message);
   }
+  return false;
 }
 
 /**
- * Poll Supabase for pending collab requests
+ * Login to Instagram
  */
-async function checkPendingCollabRequests() {
-  try {
-    // Atomic claim pattern: Update status to 'processing' and return the claimed row
-    const { data: claimedRequests, error } = await supabase
-      .from('collab_requests')
-      .update({ status: 'processing' })
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .select();
+async function login() {
+  ig.state.generateDevice(INSTAGRAM_USERNAME);
 
-    if (error) {
-      console.error('❌ Error querying collab_requests:', error);
+  // Try to load existing session first
+  const sessionLoaded = await loadSession();
+
+  if (sessionLoaded) {
+    try {
+      // Verify session is still valid
+      await ig.account.currentUser();
+      console.log('✅ Session is valid, logged in!');
       return;
+    } catch (error) {
+      console.log('⚠️  Session expired, logging in fresh...');
     }
+  }
 
-    if (claimedRequests && claimedRequests.length > 0) {
-      for (const request of claimedRequests) {
-        await processCollabRequest(request);
-      }
+  // Fresh login
+  console.log('🔐 Logging in to Instagram...');
+  await ig.simulate.preLoginFlow();
+  const auth = await ig.account.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD);
+  console.log(`✅ Logged in as @${auth.username} (ID: ${auth.pk})`);
+
+  await ig.simulate.postLoginFlow();
+  await saveSession();
+}
+
+// ========================================
+// COMMENT MONITORING
+// ========================================
+
+/**
+ * Check recent media for new comments with keywords
+ */
+async function checkRecentComments() {
+  try {
+    // Get user's own media feed
+    const userFeed = ig.feed.user(ig.state.cookieUserId);
+    const items = await userFeed.items();
+
+    // Check last 10 posts for comments
+    for (const item of items.slice(0, 10)) {
+      await checkMediaComments(item.pk, item.code);
     }
   } catch (error) {
-    console.error('❌ Error in checkPendingCollabRequests:', error);
+    console.error('❌ Error checking comments:', error.message);
   }
 }
 
 /**
- * Start the polling loop
+ * Check comments on a specific media item
  */
-function startPolling() {
-  console.log('🔄 Starting collab request polling...\n');
+async function checkMediaComments(mediaPk, mediaCode) {
+  try {
+    const commentsFeed = ig.feed.mediaComments(mediaPk);
+    const comments = await commentsFeed.items();
 
+    for (const comment of comments) {
+      await processComment(comment, mediaPk, mediaCode);
+    }
+  } catch (error) {
+    // Silently ignore errors for individual posts
+    // (some posts might not allow comments, etc.)
+  }
+}
+
+/**
+ * Process a single comment
+ */
+async function processComment(comment, mediaPk, mediaCode) {
+  const commentId = comment.pk;
+  const commentText = comment.text || '';
+  const username = comment.user.username;
+  const userId = comment.user.pk;
+
+  // Skip if already processed
+  if (processedComments.has(commentId)) {
+    return;
+  }
+
+  // Check for keywords
+  const keyword = findKeyword(commentText);
+
+  if (keyword) {
+    console.log(`\n💬 Keyword detected!`);
+    console.log(`   Post: https://instagram.com/p/${mediaCode}`);
+    console.log(`   User: @${username} (${userId})`);
+    console.log(`   Comment: "${commentText}"`);
+    console.log(`   Keyword: ${keyword}`);
+
+    // Mark as processed
+    processedComments.add(commentId);
+
+    // Get client and form link
+    const clientId = KEYWORD_TO_CLIENT[keyword];
+    const formLink = `https://la-la.land/${clientId}/registro.html`;
+
+    // Log to Supabase (optional)
+    if (supabase) {
+      await logToSupabase(commentId, userId, username, mediaPk, commentText, keyword, clientId, formLink);
+    }
+
+    // Send DM
+    await sendDM(userId, username, formLink);
+  }
+}
+
+/**
+ * Find keyword in comment text
+ */
+function findKeyword(text) {
+  const keywords = Object.keys(KEYWORD_TO_CLIENT);
+
+  for (const keyword of keywords) {
+    // Match whole word only (not partial)
+    const regex = new RegExp(`\\b${keyword}\\b`);
+    if (regex.test(text)) {
+      return keyword;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Send Instagram DM
+ */
+async function sendDM(userId, username, formLink) {
+  try {
+    const message = DM_MESSAGE_TEMPLATE.replace('{FORM_LINK}', formLink);
+
+    const thread = ig.entity.directThread([userId.toString()]);
+    await thread.broadcastText(message);
+
+    console.log(`✅ DM sent to @${username}`);
+
+    // Small delay to avoid rate limits
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  } catch (error) {
+    console.error(`❌ Failed to send DM to @${username}:`, error.message);
+  }
+}
+
+/**
+ * Log request to Supabase
+ */
+async function logToSupabase(commentId, userId, username, postId, commentText, keyword, clientId, formLink) {
+  try {
+    await supabase.from('collab_requests').insert({
+      comment_id: commentId.toString(),
+      instagram_user_id: userId.toString(),
+      instagram_username: username,
+      post_id: postId.toString(),
+      comment_text: commentText,
+      keyword: keyword,
+      client_id: clientId,
+      form_link: formLink,
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    // Ignore duplicate errors (comment already logged)
+    if (error.code !== '23505') {
+      console.error('⚠️  Failed to log to Supabase:', error.message);
+    }
+  }
+}
+
+// ========================================
+// MAIN LOOP
+// ========================================
+
+/**
+ * Start monitoring for comments
+ */
+function startMonitoring() {
+  console.log('🔄 Starting comment monitoring...\n');
+  console.log(`📊 Checking for comments every ${CHECK_INTERVAL / 1000} seconds`);
+  console.log(`🔑 Watching keywords: ${Object.keys(KEYWORD_TO_CLIENT).join(', ')}\n`);
+
+  // Check immediately
+  checkRecentComments();
+
+  // Then check periodically
   setInterval(async () => {
-    await checkPendingCollabRequests();
-  }, POLL_INTERVAL);
-
-  // Initial check
-  checkPendingCollabRequests();
+    await checkRecentComments();
+  }, CHECK_INTERVAL);
 }
 
 // ========================================
 // GRACEFUL SHUTDOWN
 // ========================================
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n👋 Instagram bot shutting down...');
+  await saveSession();
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('\n👋 Instagram bot shutting down...');
+  await saveSession();
   process.exit(0);
 });
 
@@ -215,7 +292,14 @@ process.on('SIGTERM', () => {
 // START BOT
 // ========================================
 
-startPolling();
-
-console.log('✅ Instagram Collab Bot is running');
-console.log('   Press Ctrl+C to stop\n');
+(async () => {
+  try {
+    await login();
+    startMonitoring();
+    console.log('✅ Instagram Collab Bot is running');
+    console.log('   Press Ctrl+C to stop\n');
+  } catch (error) {
+    console.error('❌ Failed to start bot:', error);
+    process.exit(1);
+  }
+})();
