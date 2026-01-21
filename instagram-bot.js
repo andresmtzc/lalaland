@@ -106,7 +106,7 @@ async function login() {
   const auth = await ig.account.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD);
   console.log(`✅ Logged in as @${auth.username} (ID: ${auth.pk})`);
 
-  await ig.simulate.postLoginFlow();
+  // await ig.simulate.postLoginFlow(); // Skip - Instagram API changed, endpoint returns 404
   await saveSession();
 }
 
