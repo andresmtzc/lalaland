@@ -21,9 +21,9 @@ const CHECK_INTERVAL = 10000; // Check for new comments every 10 seconds
 
 // Keyword to client mapping
 const KEYWORD_TO_CLIENT = {
-  'PIETRA': 'agora',
-  'AQUA': 'agora',
-  'CAÑADAS': 'agora',
+  'PIETRA': 'inverta',
+  'AQUA': 'inverta',
+  'CAÑADAS': 'inverta',
 };
 
 // DM message template
