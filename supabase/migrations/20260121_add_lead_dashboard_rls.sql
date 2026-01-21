@@ -1,10 +1,35 @@
 -- Lead Dashboard RLS Policies
 -- Allows authenticated editors to view lead data for their clients
 
--- Drop policies if they exist (to allow re-running migration)
-DROP POLICY IF EXISTS "Editors can view lead_tokens for their clients" ON public.lead_tokens;
-DROP POLICY IF EXISTS "Editors can view lead_saved_lots for their clients" ON public.lead_saved_lots;
-DROP POLICY IF EXISTS "Editors can view leads for their clients" ON public.leads;
+-- Drop ALL existing policies first (to allow re-running migration and clean slate)
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    -- Drop all policies on lead_tokens
+    FOR r IN (SELECT policyname FROM pg_policies WHERE tablename = 'lead_tokens' AND schemaname = 'public')
+    LOOP
+        EXECUTE 'DROP POLICY IF EXISTS "' || r.policyname || '" ON public.lead_tokens';
+    END LOOP;
+
+    -- Drop all policies on lead_saved_lots
+    FOR r IN (SELECT policyname FROM pg_policies WHERE tablename = 'lead_saved_lots' AND schemaname = 'public')
+    LOOP
+        EXECUTE 'DROP POLICY IF EXISTS "' || r.policyname || '" ON public.lead_saved_lots';
+    END LOOP;
+
+    -- Drop all policies on leads
+    FOR r IN (SELECT policyname FROM pg_policies WHERE tablename = 'leads' AND schemaname = 'public')
+    LOOP
+        EXECUTE 'DROP POLICY IF EXISTS "' || r.policyname || '" ON public.leads';
+    END LOOP;
+
+    -- Drop all policies on lead_sessions
+    FOR r IN (SELECT policyname FROM pg_policies WHERE tablename = 'lead_sessions' AND schemaname = 'public')
+    LOOP
+        EXECUTE 'DROP POLICY IF EXISTS "' || r.policyname || '" ON public.lead_sessions';
+    END LOOP;
+END $$;
 
 -- Policy: Authenticated editors can view lead_tokens for their client's leads
 CREATE POLICY "Editors can view lead_tokens for their clients"

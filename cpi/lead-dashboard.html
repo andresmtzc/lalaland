@@ -479,7 +479,6 @@
             <th class="sortable" data-column="claimed">Token</th>
             <th class="sortable" data-column="visits">Visitas</th>
             <th class="sortable" data-column="days">Días</th>
-            <th class="sortable" data-column="time">Tiempo</th>
             <th class="sortable" data-column="saved">Guardados</th>
             <th class="sortable sorted-desc" data-column="score">Score</th>
             <th>WhatsApp</th>
@@ -608,7 +607,6 @@
           const uniqueDays = sessions ? new Set(sessions.map(s =>
             new Date(s.started_at).toDateString()
           )).size : 0;
-          const totalTime = sessions?.reduce((sum, s) => sum + (s.duration_seconds || 0), 0) || 0;
 
           // Get saved lots
           const { data: savedLots } = await supabaseClient
@@ -626,7 +624,6 @@
             hasName: !!(lead.name && lead.last_name),
             visits,
             uniqueDays,
-            totalTimeMinutes: totalTime / 60,
             savedLots: savedCount
           });
 
@@ -635,7 +632,6 @@
             hasClaimed,
             visits,
             uniqueDays,
-            totalTime,
             savedCount,
             savedLotNames,
             score
@@ -656,7 +652,7 @@
       }
     }
 
-    function calculateScore({ claimed, hasName, visits, uniqueDays, totalTimeMinutes, savedLots }) {
+    function calculateScore({ claimed, hasName, visits, uniqueDays, savedLots }) {
       // Score 1: Token not claimed
       if (!claimed) return 1;
 
@@ -669,7 +665,6 @@
       score += savedLots * 0.6;
       score += visits * 0.08;
       score += uniqueDays * 0.2;
-      score += Math.min(totalTimeMinutes, 60) * 0.01;
 
       // Cap at 5 and round
       return Math.min(Math.round(score), 5);
@@ -684,16 +679,6 @@
         5: '💥'
       };
       return emojis[score] || '❓';
-    }
-
-    function formatTime(seconds) {
-      if (seconds < 60) return `${seconds}s`;
-      const minutes = Math.floor(seconds / 60);
-      const secs = seconds % 60;
-      if (minutes < 60) return `${minutes}m ${secs}s`;
-      const hours = Math.floor(minutes / 60);
-      const mins = minutes % 60;
-      return `${hours}h ${mins}m`;
     }
 
     function formatPhone(phone) {
@@ -731,8 +716,8 @@
       const formatter = new Intl.DateTimeFormat('es-MX', {
         timeZone: 'America/Mexico_City',
         year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
+        month: 'short',
+        day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
         hour12: false
@@ -760,9 +745,6 @@
         } else if (col === 'days') {
           aVal = a.uniqueDays;
           bVal = b.uniqueDays;
-        } else if (col === 'time') {
-          aVal = a.totalTime;
-          bVal = b.totalTime;
         } else if (col === 'saved') {
           aVal = a.savedCount;
           bVal = b.savedCount;
@@ -808,7 +790,6 @@
             <td>${lead.hasClaimed ? '<span class="check-mark">✓</span>' : '<span class="x-mark">✗</span>'}</td>
             <td>${lead.visits}</td>
             <td>${lead.uniqueDays}</td>
-            <td>${formatTime(lead.totalTime)}</td>
             ${savedLotsCell}
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
             <td><a href="${waLink}" target="_blank" class="whatsapp-btn">💬 WhatsApp</a></td>
