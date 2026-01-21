@@ -206,13 +206,26 @@ async function processRequest(request) {
  */
 async function sendDM(userId, username, message) {
   try {
+    // Create thread with user
     const thread = ig.entity.directThread([userId.toString()]);
+
+    // Send as plain text (don't let library auto-detect links)
     await thread.broadcastText(message);
 
     console.log(`✅ DM sent to @${username}`);
   } catch (error) {
-    console.error(`❌ Failed to send DM to @${username}:`, error.message);
-    throw error;
+    // If broadcastText fails, try the raw API
+    console.log(`⚠️  Trying alternative method...`);
+    try {
+      await ig.directThread.broadcastText({
+        recipients: [userId.toString()],
+        text: message
+      });
+      console.log(`✅ DM sent to @${username} (alternative method)`);
+    } catch (error2) {
+      console.error(`❌ Failed to send DM to @${username}:`, error.message);
+      throw error;
+    }
   }
 }
 
