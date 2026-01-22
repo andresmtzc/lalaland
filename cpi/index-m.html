@@ -12093,6 +12093,10 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     setCSSVar('--mini-dot', config.miniSize + 'px');
     setCSSVar('--mini-dot-font-size', config.miniFontSize + 'px');
     setCSSVar('--mini-dot-color', config.miniDotColor);
+    setCSSVar('--tiny-orbit-radius', config.tinyRadius || 24);
+    setCSSVar('--tiny-dot', (config.tinySize || 16) + 'px');
+    setCSSVar('--tiny-dot-font-size', (config.tinyFontSize || 8) + 'px');
+    setCSSVar('--tiny-dot-color', config.tinyDotColor || '#34d399');
     setCSSVar('--rotate-deg', config.rotation + 'deg');
   }
 
@@ -12189,20 +12193,103 @@ function buildDots() {
       miniContainer.appendChild(miniEl);
       ring.appendChild(miniContainer);
 
+      const miniDotObj = { el: miniEl, container: miniContainer, index: j, key: miniKey, tinyDots: [], tinyRing: null, tinyDotsActive: false };
+
       miniEl.addEventListener('click', (e) => {
         e.stopPropagation();
         if (dot.miniDotsActive) {
           // Navigate to this mini-dot's location
           navigateTo(miniKey);
-          toggleMenu();
+
+          // Check if tiny-dots are enabled for this mini-dot
+          if (config.tinyDotsEnabled && config.tinyDotsVisibility && config.tinyDotsVisibility[miniKey] !== false) {
+            toggleTinyDotsForMiniDot(miniDotObj);
+          } else {
+            toggleMenu();
+          }
         }
       });
 
-      dot.miniDots.push({ el: miniEl, container: miniContainer, index: j, key: miniKey });
+      // Build tiny-dots for this mini-dot if enabled
+      if (config.tinyDotsEnabled && config.tinyDotsVisibility && config.tinyDotsVisibility[miniKey] !== false) {
+        buildTinyDots(miniDotObj, miniContainer, dot.i, j);
+      }
+
+      dot.miniDots.push(miniDotObj);
     }
 
     container.appendChild(ring);
     dot.miniRing = ring;
+  }
+
+  function buildTinyDots(miniDot, miniContainer, dotIndex, miniIndex) {
+    const ring = document.createElement('div');
+    ring.className = 'search-btn-tiny-ring';
+    ring.style.width = ((config.tinyRadius || 24) * 2) + 'px';
+    ring.style.height = ((config.tinyRadius || 24) * 2) + 'px';
+
+    const miniKey = `${dotIndex}-${miniIndex}`;
+    const shouldMirror = config.tinyDotsMirror && config.tinyDotsMirror[miniKey];
+    const effectiveRotation = shouldMirror ? -(config.tinyRotation || 0) : (config.tinyRotation || 0);
+
+    for (let k = 0; k < (config.tinyCount || 4); k++) {
+      if (config.individualTinyVisibility && config.individualTinyVisibility[miniKey] && config.individualTinyVisibility[miniKey][k] === false) continue;
+
+      const tinyContainer = document.createElement('div');
+      tinyContainer.className = 'search-btn-tiny-container';
+
+      const tinyEl = document.createElement('button');
+      tinyEl.className = 'search-btn-tiny-dot';
+
+      const tinyKey = `${dotIndex}-${miniIndex}-${k}`;
+      const tinyText = document.createElement('div');
+      tinyText.className = 'search-btn-tiny-text';
+      const tinyLabelText = (config.tinyDotLabels && config.tinyDotLabels[tinyKey]) || (k + 1).toString();
+      tinyText.innerHTML = textToHTML(tinyLabelText);
+      tinyEl.appendChild(tinyText);
+
+      // Position
+      const tinyRadius = config.tinyRadius || 24;
+      const baseAngle = (2 * Math.PI * k) / (config.tinyCount || 4);
+      const angle = baseAngle + (effectiveRotation * Math.PI / 180);
+      const x = tinyRadius + tinyRadius * Math.cos(angle);
+      const y = tinyRadius + tinyRadius * Math.sin(angle);
+      tinyContainer.style.left = x + 'px';
+      tinyContainer.style.top = y + 'px';
+
+      tinyContainer.appendChild(tinyEl);
+      ring.appendChild(tinyContainer);
+
+      tinyEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (miniDot.tinyDotsActive) {
+          // Navigate to this tiny-dot's location
+          navigateTo(tinyKey);
+          toggleMenu();
+        }
+      });
+
+      miniDot.tinyDots.push({ el: tinyEl, container: tinyContainer, index: k, key: tinyKey });
+    }
+
+    miniContainer.appendChild(ring);
+    miniDot.tinyRing = ring;
+  }
+
+  function toggleTinyDotsForMiniDot(miniDot) {
+    miniDot.tinyDotsActive = !miniDot.tinyDotsActive;
+
+    if (miniDot.tinyDotsActive) {
+      miniDot.el.classList.add('hidden');
+      miniDot.tinyDots.forEach(({ el }) => {
+        el.classList.add('visible');
+      });
+    } else {
+      miniDot.el.classList.remove('hidden');
+      miniDot.tinyDots.forEach(({ el }) => {
+        el.classList.remove('visible');
+      });
+    }
   }
 
   function applyAnimationDelays() {
@@ -12223,8 +12310,15 @@ function buildDots() {
       });
     } else {
       dot.el.classList.remove('hidden');
-      dot.miniDots.forEach(({ el }) => {
-        el.classList.remove('visible');
+      dot.miniDots.forEach((miniDot) => {
+        miniDot.el.classList.remove('visible');
+        // Also hide any active tiny-dots
+        if (miniDot.tinyDotsActive) {
+          miniDot.tinyDots.forEach(({ el }) => {
+            el.classList.remove('visible');
+          });
+          miniDot.tinyDotsActive = false;
+        }
       });
     }
   }
@@ -12289,8 +12383,15 @@ function buildDots() {
         dot.el.classList.remove('visible');
         dot.el.classList.remove('hidden');
         if (dot.miniDotsActive) {
-          dot.miniDots.forEach(({ el }) => {
-            el.classList.remove('visible');
+          dot.miniDots.forEach((miniDot) => {
+            miniDot.el.classList.remove('visible');
+            // Also hide any active tiny-dots
+            if (miniDot.tinyDotsActive) {
+              miniDot.tinyDots.forEach(({ el }) => {
+                el.classList.remove('visible');
+              });
+              miniDot.tinyDotsActive = false;
+            }
           });
           dot.miniDotsActive = false;
         }
