@@ -4659,21 +4659,20 @@ function parseLots(text) {
           console.warn('First missing lot:', missingLots[0]);
           console.warn('Last missing lot:', missingLots[missingLots.length - 1]);
 
-          // Analyze missing lots by type for MZ 10-17
-          const standardPrefix = CONFIG.lotPrefixes.standard;
-          const premiumPrefix = CONFIG.lotPrefixes.premium;
-          const standardPattern = new RegExp(`^${standardPrefix}(10|11|12|13|14|15|16|17)-`);
-          const premiumPattern = new RegExp(`^${premiumPrefix}(10|11|12|13|14|15|16|17)-`);
+          // Analyze missing lots by type for MZ 10-17 (dynamic for all prefix types)
+          const prefixes = CONFIG.lotPrefixes;
 
-          const missingStandard = missingLots.filter(name => standardPattern.test(name) && !name.includes(premiumPrefix));
-          const missingPremium = missingLots.filter(name => premiumPattern.test(name));
+          // Analyze each prefix type (excluding 'base' which is not a lot type)
+          Object.entries(prefixes).forEach(([prefixType, prefixValue]) => {
+            if (prefixType === 'base') return; // Skip 'base' prefix
 
-          if (missingStandard.length > 0) {
-            console.warn(`🔴 Missing ${missingStandard.length} ${standardPrefix} (non-premium) lots for MZ 10-17:`, missingStandard.slice(0, 10));
-          }
-          if (missingPremium.length > 0) {
-            console.warn(`🔴 Missing ${missingPremium.length} ${premiumPrefix} lots for MZ 10-17:`, missingPremium.slice(0, 10));
-          }
+            const pattern = new RegExp(`^${prefixValue}(10|11|12|13|14|15|16|17)-`);
+            const missingForPrefix = missingLots.filter(name => pattern.test(name));
+
+            if (missingForPrefix.length > 0) {
+              console.warn(`🔴 Missing ${missingForPrefix.length} ${prefixValue} (${prefixType}) lots for MZ 10-17:`, missingForPrefix.slice(0, 10));
+            }
+          });
         }
 
         console.log('Lot data enriched with availability and fraccionamiento:', lotData);
@@ -5785,12 +5784,18 @@ let infoMode = false;
 function extractLotNumber(lotName) {
   // Remove client-specific lot prefixes to get clean lot number
   const prefixes = CONFIG.lotPrefixes;
-  return lotName
-    .replace(new RegExp(`^${prefixes.standard}`, 'i'), '')
-    .replace(new RegExp(`^${prefixes.premium}`, 'i'), '')
-    .replace(/^lot/i, '')
-    .replace(new RegExp(`^${prefixes.base}`, 'i'), '')
-    .replace(/^p/i, '');
+
+  // Get all prefix values and sort by length (longest first) to handle overlapping prefixes
+  // This ensures 'lotinvertasb' is matched before 'lotinverta'
+  const sortedPrefixes = Object.values(prefixes).sort((a, b) => b.length - a.length);
+
+  let cleanName = lotName;
+  for (const prefix of sortedPrefixes) {
+    cleanName = cleanName.replace(new RegExp(`^${prefix}`, 'i'), '');
+  }
+
+  // Also remove generic 'lot' and 'p' prefixes if still present
+  return cleanName.replace(/^lot/i, '').replace(/^p/i, '');
 }
 
 async function fetchLots() {
