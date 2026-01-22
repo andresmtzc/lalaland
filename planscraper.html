@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlanScraper Pro: Precision Sequencer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { background-color: #0f172a; color: white; overflow: hidden; }
+        #viewer-wrapper { cursor: crosshair; transition: transform 0.1s ease-out; transform-origin: top left; }
+        .table-scroll { height: calc(100vh - 580px); overflow-y: auto; }
+        canvas { box-shadow: 0 0 50px rgba(0,0,0,0.5); }
+        .toolbar-btn { @apply p-2 bg-slate-800 hover:bg-slate-700 rounded transition-colors flex items-center gap-2 text-xs font-medium border border-slate-700; }
+        .mode-active { @apply bg-blue-600 border-blue-400 text-white hover:bg-blue-500; }
+        .marker-label { font-size: 10px; font-weight: bold; fill: white; pointer-events: none; }
+        /* High visibility Red Path */
+        .path-line { fill: none; stroke: #ff0000; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; opacity: 0.8; }
+    </style>
+</head>
+<body class="flex h-screen">
+
+    <aside class="w-96 border-r border-slate-700 bg-slate-900 flex flex-col p-4 z-10 shadow-xl">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+                <i data-lucide="layers" class="text-blue-400"></i>
+                <h1 class="text-xl font-bold">PlanScraper</h1>
+            </div>
+            <span id="zoom-label" class="text-xs text-slate-500 font-mono">100%</span>
+        </div>
+
+        <div class="space-y-2 mb-4">
+            <input type="file" id="file-input" class="hidden" accept="application/pdf">
+            <button onclick="document.getElementById('file-input').click()" class="w-full py-2 border-2 border-dashed border-slate-700 rounded-lg hover:border-blue-500 hover:bg-blue-500/5 transition-all text-xs text-slate-400">
+                Upload PDF
+            </button>
+
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="changeZoom(0.2)" class="toolbar-btn justify-center"><i data-lucide="zoom-in" size="14"></i></button>
+                <button onclick="changeZoom(-0.2)" class="toolbar-btn justify-center"><i data-lucide="zoom-out" size="14"></i></button>
+                <button onclick="resetZoom()" class="toolbar-btn justify-center text-[10px]">Reset</button>
+            </div>
+
+            <div class="flex gap-2">
+                <button id="mode-area" onclick="setMode('AREA')" class="flex-1 toolbar-btn justify-center mode-active">
+                    <i data-lucide="square-dashed-mouse-pointer" size="14"></i> Draw Area
+                </button>
+                <button id="mode-path" onclick="setMode('PATH')" class="flex-1 toolbar-btn justify-center text-red-400">
+                    <i data-lucide="git-commit" size="14"></i> Sequence
+                </button>
+            </div>
+
+            <div class="p-3 bg-slate-800/50 rounded-lg border border-slate-700 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-[10px] font-bold uppercase text-slate-500">Price Cap ($)</span>
+                    <input type="number" id="max-price-limit" value="30000" 
+                           class="w-20 bg-slate-950 border border-slate-600 rounded px-1 text-xs text-blue-400 focus:border-blue-500 outline-none">
+                </div>
+                <button onclick="lockSelection()" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-[10px] font-bold flex items-center justify-center gap-2 transition-all">
+                    <i data-lucide="lock" size="12"></i> Lock & New Selection
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="undo()" class="toolbar-btn justify-center"><i data-lucide="undo-2" size="14"></i> Undo</button>
+                <button onclick="clearAll()" class="toolbar-btn justify-center text-red-400"><i data-lucide="trash-2" size="14"></i> Clear All</button>
+            </div>
+        </div>
+
+        <div class="flex-1 flex flex-col min-h-0">
+            <h2 class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Inventory</h2>
+            <div class="table-scroll border border-slate-800 rounded-lg bg-slate-950/50 flex-1">
+                <table class="w-full text-left text-[11px]" id="data-table">
+                    <thead class="text-[9px] text-slate-500 uppercase border-b border-slate-800 bg-slate-900 sticky top-0">
+                        <tr>
+                            <th class="p-2 w-6">#</th>
+                            <th class="p-2">m2</th>
+                            <th class="p-2">Price</th>
+                            <th class="p-2 text-right">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800" id="table-body"></tbody>
+                </table>
+            </div>
+            <div id="grand-total" class="mt-2 p-3 bg-slate-800 rounded-lg border border-slate-700 text-right">
+                <span class="text-[9px] text-slate-500 uppercase block">Grand Total</span>
+                <span class="text-emerald-400 font-bold text-lg" id="total-val">$0.00</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 bg-slate-950 overflow-auto p-12 relative">
+        <div id="viewer-wrapper" class="relative inline-block">
+            <canvas id="pdf-canvas"></canvas>
+            <svg id="drawing-svg" class="absolute top-0 left-0 w-full h-full"></svg>
+        </div>
+    </main>
+
+    <script>
+        lucide.createIcons();
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let pdfDoc = null, scale = 1.5, mode = 'AREA';
+        let points = [], polygons = [], pathPoints = [], pairs = [];
+
+        const canvas = document.getElementById('pdf-canvas');
+        const svg = document.getElementById('drawing-svg');
+        const tableBody = document.getElementById('table-body');
+
+        function setMode(m) {
+            mode = m;
+            document.getElementById('mode-area').classList.toggle('mode-active', m === 'AREA');
+            document.getElementById('mode-path').classList.toggle('mode-active', m === 'PATH');
+        }
+
+        function getSVGCoords(e) {
+            const pt = svg.createSVGPoint();
+            pt.x = e.clientX; pt.y = e.clientY;
+            return pt.matrixTransform(svg.getScreenCTM().inverse());
+        }
+
+        document.getElementById('file-input').onchange = async (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+            pdfDoc = await pdfjsLib.getDocument(await file.arrayBuffer()).promise;
+            renderPage();
+        };
+
+        async function renderPage() {
+            if (!pdfDoc) return;
+            const page = await pdfDoc.getPage(1);
+            const viewport = page.getViewport({ scale });
+            canvas.height = viewport.height; canvas.width = viewport.width;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            svg.setAttribute('viewBox', `0 0 ${viewport.width} ${viewport.height}`);
+            updateDisplay();
+            document.getElementById('zoom-label').innerText = `${Math.round(scale * 100 / 1.5)}%`;
+        }
+
+        svg.onclick = (e) => {
+            const coord = getSVGCoords(e);
+            if (mode === 'AREA') points.push(coord);
+            else { pathPoints.push(coord); resequence(); }
+            updateDisplay();
+        };
+
+        window.onkeydown = (e) => { if (e.key === 'Enter' && mode === 'AREA') finalizePolygon(); };
+
+        async function finalizePolygon() {
+            if (points.length < 3) return;
+            const poly = { id: Date.now(), points: [...points] };
+            polygons.push(poly);
+            points = [];
+            await extract(poly);
+            updateDisplay();
+        }
+
+        // Logic to find where on a line a point is (Distance + Projection)
+        function getSegmentData(p, v, w) {
+            const l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
+            if (l2 == 0) return { d: Math.sqrt(Math.pow(p.x - v.x, 2) + Math.pow(p.y - v.y, 2)), t: 0 };
+            let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            const d = Math.sqrt(Math.pow(p.x - (v.x + t * (w.x - v.x)), 2) + Math.pow(p.y - (v.y + t * (w.y - v.y)), 2));
+            return { d, t };
+        }
+
+        function resequence() {
+            if (pathPoints.length === 0) {
+                pairs.forEach(p => p.orderIndex = null);
+                updateTable();
+                return;
+            }
+
+            // For every pair, find the EARLIEST path progress (segmentIndex + t)
+            pairs.forEach(p => {
+                let minProgress = Infinity;
+                for (let i = 0; i < pathPoints.length - 1; i++) {
+                    const res = getSegmentData({x: p.area.x, y: p.area.y}, pathPoints[i], pathPoints[i+1]);
+                    if (res.d < 40) { // Detection radius
+                        const progress = i + res.t;
+                        if (progress < minProgress) minProgress = progress;
+                    }
+                }
+                // Handle case where path is just one point
+                if (pathPoints.length === 1) {
+                    const d = Math.sqrt(Math.pow(p.area.x - pathPoints[0].x, 2) + Math.pow(p.area.y - pathPoints[0].y, 2));
+                    if (d < 40) minProgress = 0;
+                }
+                p.tempSortVal = minProgress;
+            });
+
+            // Sort only the items that were captured
+            const captured = pairs.filter(p => p.tempSortVal !== Infinity)
+                                 .sort((a, b) => a.tempSortVal - b.tempSortVal);
+            
+            // Clear existing indices
+            pairs.forEach(p => p.orderIndex = null);
+            
+            // Assign sequential numbers 1, 2, 3... based on sort
+            captured.forEach((p, idx) => {
+                p.orderIndex = idx + 1;
+            });
+
+            updateTable();
+        }
+
+        async function extract(poly) {
+            const page = await pdfDoc.getPage(1);
+            const content = await page.getTextContent();
+            const viewport = page.getViewport({ scale });
+            const maxPrice = parseFloat(document.getElementById('max-price-limit').value) || 30000;
+
+            let areas = [], prices = [];
+            content.items.forEach(item => {
+                const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+                const d = { str: item.str.trim(), x: tx[4], y: tx[5] };
+                if (!isInside(d, poly.points)) return;
+                if (/\d+(\.\d+)?\s*m2/i.test(d.str)) areas.push(d);
+                else if (/^\$\s*([\d,]+)/.test(d.str)) {
+                    const val = parseFloat(d.str.match(/[\d,]+/)[0].replace(/,/g, ''));
+                    if (val < maxPrice) prices.push({...d, val});
+                }
+            });
+
+            areas.forEach(a => {
+                let closest = null, minDist = Infinity;
+                prices.forEach(p => {
+                    const d = Math.sqrt(Math.pow(a.x-p.x,2) + Math.pow(a.y-p.y,2));
+                    if (d < minDist) { minDist = d; closest = p; }
+                });
+                pairs.push({ id: Math.random(), area: a, price: closest || {str:"$0"}, orderIndex: null, polyId: poly.id });
+            });
+            updateTable();
+        }
+
+        function isInside(p, vs) {
+            let x = p.x, y = p.y, inside = false;
+            for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+                let xi = vs[i].x, yi = vs[i].y, xj = vs[j].x, yj = vs[j].y;
+                if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+            }
+            return inside;
+        }
+
+        function updateTable() {
+            let grandTotal = 0;
+            const sorted = [...pairs].sort((a,b) => (a.orderIndex || 9999) - (b.orderIndex || 9999));
+            tableBody.innerHTML = sorted.map(p => {
+                const aVal = parseFloat(p.area.str.match(/\d+(\.\d+)?/)?.[0] || 0);
+                const pVal = parseFloat(p.price.str.replace(/[$, ]/g, '') || 0);
+                const lineTotal = aVal * pVal;
+                grandTotal += lineTotal;
+                return `<tr class="${p.orderIndex ? 'bg-blue-500/10 font-bold' : 'opacity-60'}">
+                    <td class="p-2 text-slate-500">${p.orderIndex || '-'}</td>
+                    <td class="p-2">${p.area.str}</td>
+                    <td class="p-2 text-emerald-400">${p.price.str}</td>
+                    <td class="p-2 text-right text-blue-300 font-mono">$${lineTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                </tr>`;
+            }).join('');
+            document.getElementById('total-val').innerText = `$${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        }
+
+        function lockSelection() { polygons = []; points = []; pathPoints = []; updateDisplay(); }
+        
+        function undo() { 
+            if (mode === 'AREA') {
+                points.length > 0 ? points.pop() : polygons.pop(); 
+            } else {
+                pathPoints.pop(); 
+                resequence(); 
+            }
+            updateDisplay(); 
+        }
+
+        function clearAll() { if(confirm("Delete all data?")) { pairs=[]; polygons=[]; pathPoints=[]; points=[]; updateDisplay(); updateTable(); } }
+        function changeZoom(d) { scale = Math.max(0.5, Math.min(4, scale + d)); renderPage(); }
+        function resetZoom() { scale = 1.5; renderPage(); }
+
+        function updateDisplay() {
+            svg.innerHTML = '';
+            polygons.forEach(p => {
+                const el = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                el.setAttribute("points", p.points.map(pt => `${pt.x},${pt.y}`).join(' '));
+                el.setAttribute("class", "fill-white/5 stroke-slate-700 stroke-1");
+                svg.appendChild(el);
+            });
+            pairs.forEach(p => {
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                c.setAttribute("cx", p.area.x); c.setAttribute("cy", p.area.y); c.setAttribute("r", "15");
+                c.setAttribute("class", p.orderIndex ? "fill-blue-600 stroke-white stroke-2 shadow-lg" : "fill-slate-800 stroke-slate-500 stroke-1");
+                const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                t.setAttribute("x", p.area.x); t.setAttribute("y", p.area.y + 4);
+                t.setAttribute("text-anchor", "middle"); t.setAttribute("class", "marker-label");
+                t.textContent = p.orderIndex || "";
+                g.append(c, t); svg.appendChild(g);
+            });
+            if (pathPoints.length > 1) {
+                const l = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+                l.setAttribute("points", pathPoints.map(pt => `${pt.x},${pt.y}`).join(' '));
+                l.setAttribute("class", "path-line");
+                svg.appendChild(l);
+            }
+            if (points.length > 0) {
+                const l = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+                l.setAttribute("points", points.map(pt => `${pt.x},${pt.y}`).join(' '));
+                l.setAttribute("class", "fill-none stroke-blue-400 stroke-2");
+                svg.appendChild(l);
+            }
+        }
+    </script>
+</body>
+</html>
