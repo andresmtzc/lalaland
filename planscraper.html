@@ -3,36 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PlanScraper Pro: Fixed Path & Hover</title>
+    <title>PlanScraper Pro: Production Build</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         body { background-color: #0f172a; color: white; overflow: hidden; display: flex; height: 100vh; width: 100vw; margin: 0; }
-        
         #sidebar { min-width: 350px; max-width: 900px; width: 500px; position: relative; height: 100vh; flex-shrink: 0; display: flex; flex-direction: column; background: #0f172a; z-index: 100; border-right: 1px solid #334155; }
         #resizer { width: 8px; cursor: col-resize; background: #1e293b; height: 100%; position: absolute; right: 0; top: 0; transition: background 0.2s; z-index: 110; }
         #resizer:hover { background: #3b82f6; }
-
         #main-viewport { flex-grow: 1; overflow: auto; background-color: #020617; position: relative; height: 100vh; }
         #main-viewport.grab-mode { cursor: grab !important; }
-        #main-viewport.grab-mode:active { cursor: grabbing !important; }
-
         #viewer-wrapper { position: relative; display: inline-block; margin: 50px; }
-        canvas { box-shadow: 0 0 50px rgba(0,0,0,0.8); }
-        
-        .table-scroll { height: calc(100vh - 650px); overflow-y: auto; }
+        canvas { box-shadow: 0 0 50px rgba(0,0,0,0.8); pointer-events: none; }
+        #drawing-svg { cursor: crosshair; }
+        .table-scroll { height: calc(100vh - 760px); overflow-y: auto; }
         .toolbar-btn { @apply p-3 bg-slate-800 hover:bg-slate-700 rounded transition-colors flex items-center gap-2 text-xs font-bold border border-slate-700; }
-        .mode-active { @apply bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-900/40; }
-        
-        /* HOVER HIGHLIGHTS */
+        .mode-active { @apply bg-blue-600 border-blue-400 text-white shadow-lg; }
         .marker-label { font-size: 10px; font-weight: 800; fill: white; pointer-events: none; }
-        .marker-circle { opacity: 0.6; transition: all 0.2s; }
+        .marker-circle { opacity: 0.7; transition: all 0.2s; }
         .marker-highlighted { opacity: 1 !important; stroke-width: 6px !important; stroke: #fbbf24 !important; r: 22 !important; filter: drop-shadow(0 0 12px #fbbf24); }
-        .row-highlight { background-color: rgba(59, 130, 246, 0.25) !important; border-left: 4px solid #3b82f6 !important; }
-
         .editable-cell { background-color: #1e293b !important; color: white !important; border: 1px solid #334155 !important; @apply w-full rounded px-2 py-1.5 text-sm outline-none; }
-        .price-input { color: #4ade80 !important; font-family: monospace; }
+        .price-input { color: #4ade80 !apply w-full rounded px-2 py-1.5 text-sm outline-none; font-family: monospace; }
         .delete-btn { @apply text-slate-600 hover:text-red-500 transition-colors p-1; }
     </style>
 </head>
@@ -40,7 +32,6 @@
 
     <aside id="sidebar" class="p-5">
         <div id="resizer"></div>
-        
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center gap-3">
                 <i data-lucide="layers" class="text-blue-400" size="28"></i>
@@ -49,7 +40,7 @@
             <span id="zoom-label" class="text-xs bg-slate-800 px-2 py-1 rounded-md text-slate-400 font-mono">100%</span>
         </div>
 
-        <div class="space-y-3 mb-6">
+        <div class="space-y-3 mb-4">
             <input type="file" id="file-input" class="hidden" accept="application/pdf">
             <button onclick="document.getElementById('file-input').click()" class="w-full py-3 border-2 border-dashed border-slate-700 rounded-xl hover:border-blue-500 text-sm font-bold text-slate-400 flex items-center justify-center gap-2">
                 <i data-lucide="file-up" size="18"></i> Load PDF
@@ -58,7 +49,7 @@
             <div class="grid grid-cols-3 gap-2">
                 <button onclick="changeZoom(0.2)" class="toolbar-btn justify-center"><i data-lucide="zoom-in" size="18"></i></button>
                 <button onclick="changeZoom(-0.2)" class="toolbar-btn justify-center"><i data-lucide="zoom-out" size="18"></i></button>
-                <button onclick="resetZoom()" class="toolbar-btn justify-center text-[10px]">RESET</button>
+                <button id="eye-btn" onclick="toggleZones()" class="toolbar-btn justify-center text-orange-400"><i data-lucide="eye" size="16"></i></button>
             </div>
 
             <div class="flex gap-2">
@@ -67,42 +58,40 @@
             </div>
 
             <div class="p-4 bg-slate-800/40 rounded-xl border border-slate-700 space-y-3">
-                <div class="flex items-center justify-between gap-4">
-                    <label class="text-[10px] font-black uppercase text-slate-500">Prefix</label>
-                    <input type="text" id="group-prefix" value="ZONE-A" oninput="updatePrefix()" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1 text-sm text-blue-400 font-bold outline-none">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[9px] font-black text-slate-500 mb-1 block uppercase">Prefix</label>
+                        <input type="text" id="group-prefix" value="ZONE-A" oninput="updatePrefix()" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1 text-sm text-blue-400 font-bold outline-none">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-black text-slate-500 mb-1 block uppercase">Start At</label>
+                        <input type="number" id="start-index" value="1" oninput="resequence()" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1 text-sm text-blue-400 font-bold outline-none">
+                    </div>
                 </div>
                 <div class="flex items-center justify-between gap-4">
-                    <label class="text-[10px] font-black uppercase text-slate-500 whitespace-nowrap">Price Cap ($)</label>
+                    <label class="text-[9px] font-black uppercase text-slate-500 whitespace-nowrap">Price Cap ($)</label>
                     <input type="number" id="max-price-limit" value="30000" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1 text-sm text-emerald-400 font-bold outline-none">
                 </div>
-                <button onclick="lockAndNewGroup()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-[11px] font-black flex items-center justify-center gap-2 transition-all">
-                    SAVE & NEW GROUP
-                </button>
+                <button onclick="lockAndNewGroup()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-[10px] font-black transition-all">SAVE & NEW GROUP</button>
             </div>
             
             <div class="grid grid-cols-2 gap-2">
                 <button onclick="undo()" class="toolbar-btn justify-center"><i data-lucide="rotate-ccw" size="16"></i> UNDO</button>
-                <button onclick="clearAll()" class="toolbar-btn justify-center text-red-500"><i data-lucide="trash-2" size="16"></i> WIPE</button>
+                <button onclick="downloadCSV()" class="toolbar-btn justify-center text-emerald-400"><i data-lucide="download" size="16"></i> EXPORT CSV</button>
             </div>
         </div>
 
         <div class="flex-1 flex flex-col min-h-0">
             <div class="table-scroll border border-slate-800 rounded-xl bg-slate-950 flex-1">
-                <table class="w-full text-left text-xs" id="data-table">
+                <table class="w-full text-left text-xs">
                     <thead class="text-[10px] text-slate-500 font-black uppercase border-b border-slate-800 bg-slate-900 sticky top-0 z-20">
-                        <tr>
-                            <th class="p-3">ID</th>
-                            <th class="p-3">M2</th>
-                            <th class="p-3">RATE</th>
-                            <th class="p-3 text-right">TOTAL</th>
-                            <th class="p-3 w-8"></th>
-                        </tr>
+                        <tr><th class="p-3">ID</th><th class="p-3">M2</th><th class="p-3">RATE</th><th class="p-3 text-right">TOTAL</th><th class="p-3 w-8"></th></tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-800/50" id="table-body"></tbody>
+                    <tbody id="table-body"></tbody>
                 </table>
             </div>
-            <div id="grand-total" class="mt-4 p-4 bg-blue-600/10 rounded-xl border border-blue-500/30 flex justify-between items-center">
-                <span class="text-xs font-black uppercase text-blue-400">Total</span>
+            <div class="mt-4 p-4 bg-blue-600/10 rounded-xl border border-blue-500/30 flex justify-between items-center">
+                <span class="text-xs font-black text-blue-400 uppercase">Total</span>
                 <span class="text-emerald-400 font-black text-2xl font-mono" id="total-val">$0.00</span>
             </div>
         </div>
@@ -122,198 +111,170 @@
 
         let pdfDoc = null, scale = 1.5, mode = 'AREA';
         let points = [], polygons = [], pathPoints = [], pairs = [];
-        let groupIDCounter = 1, currentPrefix = "ZONE-A";
+        let groupIDCounter = 1, showFinishedZones = true;
         let isSpaceDown = false, isPanning = false, startX, startY, scrollLeft, scrollTop;
 
-        const viewport = document.getElementById('main-viewport');
         const sidebar = document.getElementById('sidebar');
         const resizer = document.getElementById('resizer');
-        const canvas = document.getElementById('pdf-canvas');
         const svg = document.getElementById('drawing-svg');
+        const canvas = document.getElementById('pdf-canvas');
         const tableBody = document.getElementById('table-body');
+        const vpMain = document.getElementById('main-viewport');
 
-        // RESIZER
         let isResizing = false;
         resizer.addEventListener('mousedown', () => isResizing = true);
         window.addEventListener('mousemove', (e) => {
             if (!isResizing) return;
-            let newWidth = e.clientX;
-            if (newWidth > 350 && newWidth < 900) sidebar.style.width = newWidth + 'px';
+            let nw = e.clientX;
+            if (nw > 300 && nw < 1000) sidebar.style.width = nw + 'px';
         });
         window.addEventListener('mouseup', () => isResizing = false);
 
-        // PANNING & KEYBOARD
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'Space') { e.preventDefault(); if (!isSpaceDown) { isSpaceDown = true; viewport.classList.add('grab-mode'); } }
-            if (e.key === 'Enter' && mode === 'AREA') finalizePolygon();
+            if (e.code === 'Space') { e.preventDefault(); isSpaceDown = true; vpMain.classList.add('grab-mode'); }
+            if (e.key === 'Enter' && mode === 'AREA' && points.length >= 3) finalizePolygon();
         });
-        window.addEventListener('keyup', (e) => { if (e.code === 'Space') { e.preventDefault(); isSpaceDown = false; viewport.classList.remove('grab-mode'); } });
+        window.addEventListener('keyup', (e) => { if (e.code === 'Space') { isSpaceDown = false; vpMain.classList.remove('grab-mode'); } });
 
-        viewport.addEventListener('mousedown', (e) => {
-            if (!isSpaceDown) return;
-            isPanning = true;
-            startX = e.pageX - viewport.offsetLeft; startY = e.pageY - viewport.offsetTop;
-            scrollLeft = viewport.scrollLeft; scrollTop = viewport.scrollTop;
-        });
-        window.addEventListener('mousemove', (e) => {
-            if (!isPanning) return;
-            viewport.scrollLeft = scrollLeft - (e.pageX - viewport.offsetLeft - startX);
-            viewport.scrollTop = scrollTop - (e.pageY - viewport.offsetTop - startY);
-        });
+        vpMain.addEventListener('mousedown', (e) => { if (!isSpaceDown) return; isPanning = true; startX = e.pageX - vpMain.offsetLeft; startY = e.pageY - vpMain.offsetTop; scrollLeft = vpMain.scrollLeft; scrollTop = vpMain.scrollTop; });
+        window.addEventListener('mousemove', (e) => { if (isPanning) { vpMain.scrollLeft = scrollLeft - (e.pageX - vpMain.offsetLeft - startX); vpMain.scrollTop = scrollTop - (e.pageY - vpMain.offsetTop - startY); } });
         window.addEventListener('mouseup', () => isPanning = false);
 
-        // --- FIXED COORDINATE CALCULATION ---
-        function getSVGCoords(e) {
-            const rect = svg.getBoundingClientRect();
-            return {
-                x: (e.clientX - rect.left),
-                y: (e.clientY - rect.top)
-            };
-        }
+        function getSVGCoords(e) { const rect = svg.getBoundingClientRect(); return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale }; }
+        svg.onclick = (e) => { if (isSpaceDown) return; const coord = getSVGCoords(e); if (mode === 'AREA') points.push(coord); else { pathPoints.push(coord); resequence(); } updateDisplay(); };
 
-        svg.onclick = (e) => {
-            if (isSpaceDown) return;
-            const coord = getSVGCoords(e);
-            if (mode === 'AREA') points.push(coord);
-            else { pathPoints.push(coord); resequence(); }
-            updateDisplay();
-        };
-
-        // --- HOVER SYNC (LIST TO CIRCLE) ---
-        function toggleHighlight(id, active) {
-            const circle = document.getElementById(`circle-${id}`);
-            const row = document.getElementById(`row-${id}`);
-            if (circle) circle.classList.toggle('marker-highlighted', active);
-            if (row) row.classList.toggle('row-highlight', active);
-        }
+        async function finalizePolygon() { const poly = { id: Date.now(), points: [...points] }; polygons.push(poly); points = []; await extract(poly); }
 
         async function extract(poly) {
             const page = await pdfDoc.getPage(1);
             const content = await page.getTextContent();
-            const vp = page.getViewport({ scale });
-            const maxPrice = parseFloat(document.getElementById('max-price-limit').value) || 30000;
-
+            const viewP = page.getViewport({ scale: 1.0 });
+            const prefix = document.getElementById('group-prefix').value;
+            const priceCap = parseFloat(document.getElementById('max-price-limit').value) || 30000;
+            
             let areas = [], prices = [];
             content.items.forEach(item => {
-                const tx = pdfjsLib.Util.transform(vp.transform, item.transform);
+                const tx = pdfjsLib.Util.transform(viewP.transform, item.transform);
                 const d = { str: item.str.trim(), x: tx[4], y: tx[5] };
                 if (!isInside(d, poly.points)) return;
-                if (/\d+(\.\d+)?\s*m2/i.test(d.str)) areas.push(d);
+                if (/\d+(,\d+)*(\.\d+)?\s*m2/i.test(d.str)) areas.push(d);
                 else if (/^\$\s*([\d,]+)/.test(d.str)) {
                     const val = parseFloat(d.str.match(/[\d,]+/)[0].replace(/,/g, ''));
-                    if (val < maxPrice) prices.push({...d, val});
+                    if (val < priceCap) prices.push({...d, val});
                 }
             });
             areas.forEach(a => {
                 let closest = null, minDist = Infinity;
-                prices.forEach(p => {
-                    const dist = Math.sqrt(Math.pow(a.x-p.x,2) + Math.pow(a.y-p.y,2));
-                    if (dist < minDist) { minDist = dist; closest = p; }
-                });
-                const pairId = Math.random().toString(36).substr(2, 9);
-                pairs.push({ id: pairId, area: a, price: closest || {str:"$0"}, orderIndex: null, groupId: groupIDCounter, prefix: currentPrefix });
+                prices.forEach(p => { const dist = Math.sqrt(Math.pow(a.x-p.x,2)+Math.pow(a.y-p.y,2)); if(dist<minDist) { minDist=dist; closest=p; } });
+                pairs.push({ id: Math.random().toString(36).substr(2,9), area: a, price: closest||{str:"$0"}, groupId: groupIDCounter, prefix: prefix, orderIndex: null });
             });
             updateTable(); updateDisplay();
         }
 
         function resequence() {
-            const currentItems = pairs.filter(p => p.groupId === groupIDCounter);
-            currentItems.forEach(p => {
-                let minProgress = Infinity;
-                for (let i = 0; i < pathPoints.length - 1; i++) {
-                    const l2 = Math.pow(pathPoints[i].x - pathPoints[i+1].x, 2) + Math.pow(pathPoints[i].y - pathPoints[i+1].y, 2);
-                    if (l2 === 0) continue;
-                    let t = ((p.area.x - pathPoints[i].x) * (pathPoints[i+1].x - pathPoints[i].x) + (p.area.y - pathPoints[i].y) * (pathPoints[i+1].y - pathPoints[i].y)) / l2;
-                    t = Math.max(0, Math.min(1, t));
-                    const dist = Math.sqrt(Math.pow(p.area.x - (pathPoints[i].x + t * (pathPoints[i+1].x - pathPoints[i].x)), 2) + Math.pow(p.area.y - (pathPoints[i].y + t * (pathPoints[i+1].y - pathPoints[i].y)), 2));
-                    if (dist < 60) { const prog = i + t; if (prog < minProgress) minProgress = prog; }
+            const startAt = parseInt(document.getElementById('start-index').value) || 1;
+            const current = pairs.filter(p => p.groupId === groupIDCounter);
+            current.forEach(p => {
+                let minP = Infinity;
+                for (let i=0; i<pathPoints.length-1; i++) {
+                    const l2 = Math.pow(pathPoints[i].x-pathPoints[i+1].x,2)+Math.pow(pathPoints[i].y-pathPoints[i+1].y,2);
+                    if (l2===0) continue;
+                    let t = Math.max(0, Math.min(1, ((p.area.x-pathPoints[i].x)*(pathPoints[i+1].x-pathPoints[i].x)+(p.area.y-pathPoints[i].y)*(pathPoints[i+1].y-pathPoints[i].y))/l2));
+                    const d = Math.sqrt(Math.pow(p.area.x-(pathPoints[i].x+t*(pathPoints[i+1].x-pathPoints[i].x)),2)+Math.pow(p.area.y-(pathPoints[i].y+t*(pathPoints[i+1].y-pathPoints[i].y)),2));
+                    if (d<40) minP = Math.min(minP, i+t);
                 }
-                p.tempSortVal = minProgress;
+                p.sortVal = minP;
             });
-            const captured = currentItems.filter(p => p.tempSortVal !== Infinity).sort((a, b) => a.tempSortVal - b.tempSortVal);
-            currentItems.forEach(p => p.orderIndex = null);
-            captured.forEach((p, idx) => p.orderIndex = idx + 1);
-            updateTable();
+            current.forEach(p => p.orderIndex = null);
+            current.filter(p=>p.sortVal!==Infinity).sort((a,b)=>a.sortVal-b.sortVal).forEach((p,i)=>p.orderIndex=i+startAt);
+            updateTable(); updateDisplay();
         }
 
         function updateTable() {
-            let grandTotal = 0;
-            const sorted = [...pairs].sort((a,b) => (a.groupId - b.groupId) || (a.orderIndex || 999) - (b.orderIndex || 999));
+            let total = 0;
+            const sorted = [...pairs].sort((a,b) => (a.groupId-b.groupId) || (a.orderIndex||999)-(b.orderIndex||999));
             tableBody.innerHTML = sorted.map(p => {
-                const aVal = parseFloat(p.area.str.match(/\d+(\.\d+)?/)?.[0] || 0);
-                const pVal = parseFloat(p.price.str.replace(/[$, ]/g, '') || 0);
-                const lineTotal = aVal * pVal; grandTotal += lineTotal;
-                return `<tr id="row-${p.id}" onmouseenter="toggleHighlight('${p.id}', true)" onmouseleave="toggleHighlight('${p.id}', false)" class="${p.orderIndex ? 'bg-blue-600/5' : 'opacity-40'} transition-all">
-                    <td class="p-3 text-blue-400 font-black">${p.prefix}${p.orderIndex || '-'}</td>
-                    <td class="p-2"><input class="editable-cell" value="${p.area.str}" onchange="editValue('${p.id}', 'area', this.value)"></td>
-                    <td class="p-2"><input class="editable-cell price-input" value="${p.price.str}" onchange="editValue('${p.id}', 'price', this.value)"></td>
-                    <td class="p-3 text-right font-mono font-bold">$${lineTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                const aV = parseFloat(p.area.str.replace(/,/g, '').match(/\d+(\.\d+)?/)?.[0] || 0);
+                const pV = parseFloat(p.price.str.replace(/[$, ]/g, '').replace(/,/g, '') || 0);
+                total += (aV * pV);
+                return `<tr id="row-${p.id}" class="${p.orderIndex ? 'bg-blue-600/10' : 'opacity-40'}" onmouseenter="toggleH('${p.id}',true)" onmouseleave="toggleH('${p.id}',false)">
+                    <td class="p-3 text-blue-400 font-black">${p.prefix}${p.orderIndex||'-'}</td>
+                    <td class="p-2"><input class="editable-cell" value="${p.area.str}" onchange="pairs.find(x=>x.id==='${p.id}').area.str=this.value;updateTable()"></td>
+                    <td class="p-2"><input class="editable-cell price-input" value="${p.price.str}" onchange="pairs.find(x=>x.id==='${p.id}').price.str=this.value;updateTable()"></td>
+                    <td class="p-3 text-right font-mono font-bold">$${(aV*pV).toLocaleString()}</td>
                     <td class="p-2 text-center"><button onclick="deleteRow('${p.id}')" class="delete-btn"><i data-lucide="x-circle" size="14"></i></button></td>
                 </tr>`;
             }).join('');
-            document.getElementById('total-val').innerText = `$${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            document.getElementById('total-val').innerText = `$${total.toLocaleString()}`;
             lucide.createIcons();
+        }
+
+        function downloadCSV() {
+            let csv = "ID,Area,Rate,Total\n";
+            const exportData = [...pairs].sort((a, b) => (a.groupId - b.groupId) || (a.orderIndex || 999) - (b.orderIndex || 999));
+            
+            exportData.forEach(p => {
+                const aV = parseFloat(p.area.str.replace(/,/g, '').match(/\d+(\.\d+)?/)?.[0] || 0);
+                const pV = parseFloat(p.price.str.replace(/[$, ]/g, '').replace(/,/g, '') || 0);
+                const total = (aV * pV).toFixed(2);
+                // The \t (tab) before the ID is a trick to force Excel to treat it as text
+                csv += `"\t${p.prefix}${p.orderIndex || '-'}","${p.area.str}","${p.price.str}","${total}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `PlanScraper_Export_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
         }
 
         function updateDisplay() {
             svg.innerHTML = '';
             polygons.forEach(p => {
                 const el = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-                el.setAttribute("points", p.points.map(pt => `${pt.x},${pt.y}`).join(' '));
-                el.setAttribute("class", "fill-blue-500/5 stroke-slate-500 stroke-1");
+                el.setAttribute("points", p.points.map(pt => `${pt.x*scale},${pt.y*scale}`).join(' '));
+                el.setAttribute("class", "fill-blue-500/5 stroke-slate-500/30 stroke-1");
                 svg.appendChild(el);
             });
             pairs.forEach(p => {
+                if (p.groupId < groupIDCounter && !showFinishedZones) return;
                 const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
                 const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
                 c.id = `circle-${p.id}`;
-                c.setAttribute("cx", p.area.x); c.setAttribute("cy", p.area.y); c.setAttribute("r", "15");
-                c.setAttribute("class", `marker-circle ${p.orderIndex ? 'fill-blue-600 stroke-white stroke-2' : 'fill-slate-800 stroke-slate-500 stroke-1'}`);
+                c.setAttribute("cx", p.area.x*scale); c.setAttribute("cy", p.area.y*scale); c.setAttribute("r", "15");
+                c.setAttribute("class", `marker-circle ${p.orderIndex?'fill-blue-600 stroke-white stroke-2':'fill-slate-800 stroke-slate-500'}`);
+                if(p.groupId<groupIDCounter) c.setAttribute("opacity", "0.4");
                 const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                t.setAttribute("x", p.area.x); t.setAttribute("y", p.area.y + 4);
-                t.setAttribute("text-anchor", "middle"); t.setAttribute("class", "marker-label");
+                t.setAttribute("x", p.area.x*scale); t.setAttribute("y", p.area.y*scale+4); t.setAttribute("text-anchor", "middle"); t.setAttribute("class", "marker-label");
                 t.textContent = p.orderIndex ? `${p.prefix}${p.orderIndex}` : "";
                 g.append(c, t); svg.appendChild(g);
             });
             if (pathPoints.length > 1) {
                 const l = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-                l.setAttribute("points", pathPoints.map(pt => `${pt.x},${pt.y}`).join(' '));
-                l.setAttribute("class", "fill-none stroke-red-500 stroke-[10] opacity-20 pointer-events-none");
+                l.setAttribute("points", pathPoints.map(pt => `${pt.x*scale},${pt.y*scale}`).join(' '));
+                l.setAttribute("class", "fill-none stroke-red-500 stroke-[8] opacity-20 pointer-events-none");
                 svg.appendChild(l);
             }
             if (points.length > 0) {
                 const l = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-                l.setAttribute("points", points.map(pt => `${pt.x},${pt.y}`).join(' '));
+                l.setAttribute("points", points.map(pt => `${pt.x*scale},${pt.y*scale}`).join(' '));
                 l.setAttribute("class", "fill-none stroke-blue-400 stroke-2");
                 svg.appendChild(l);
             }
         }
 
-        // Logic Helpers
-        async function finalizePolygon() { if (points.length < 3) return; const poly = { id: Date.now(), points: [...points] }; polygons.push(poly); points = []; await extract(poly); }
-        function isInside(p, vs) { let x = p.x, y = p.y, inside = false; for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) { if (((vs[i].y > y) != (vs[j].y > y)) && (x < (vs[j].x - vs[i].x) * (y - vs[i].y) / (vs[j].y - vs[i].y) + vs[i].x)) inside = !inside; } return inside; }
-        function editValue(id, f, v) { const p = pairs.find(x => x.id == id); if (f === 'area') p.area.str = v; else p.price.str = v; updateTable(); }
-        function deleteRow(id) { pairs = pairs.filter(p => p.id != id); updateTable(); updateDisplay(); }
-        function setMode(m) { mode = m; document.getElementById('mode-area').classList.toggle('mode-active', m === 'AREA'); document.getElementById('mode-path').classList.toggle('mode-active', m === 'PATH'); }
-        function updatePrefix() { currentPrefix = document.getElementById('group-prefix').value; pairs.forEach(p => { if(p.groupId === groupIDCounter) p.prefix = currentPrefix; }); updateTable(); updateDisplay(); }
-        function lockAndNewGroup() { groupIDCounter++; polygons = []; points = []; pathPoints = []; currentPrefix = "ZONE-" + String.fromCharCode(64 + groupIDCounter); document.getElementById('group-prefix').value = currentPrefix; updateDisplay(); updateTable(); }
-        function changeZoom(d) { scale = Math.max(0.2, Math.min(5, scale + d)); renderPage(); }
-        function resetZoom() { scale = 1.5; renderPage(); }
-        function undo() { if (mode === 'AREA') { points.length > 0 ? points.pop() : polygons.pop(); } else { pathPoints.pop(); resequence(); } updateDisplay(); }
-        function clearAll() { if(confirm("Wipe all data?")) { pairs=[]; polygons=[]; pathPoints=[]; points=[]; groupIDCounter=1; updateDisplay(); updateTable(); } }
-        
-        document.getElementById('file-input').onchange = async (e) => {
-            const file = e.target.files[0]; if(!file) return;
-            pdfDoc = await pdfjsLib.getDocument(await file.arrayBuffer()).promise; renderPage();
-        };
-        async function renderPage() {
-            if (!pdfDoc) return; const page = await pdfDoc.getPage(1); const vp = page.getViewport({ scale });
-            canvas.height = vp.height; canvas.width = vp.width;
-            await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-            svg.setAttribute('viewBox', `0 0 ${vp.width} ${vp.height}`);
-            document.getElementById('zoom-label').innerText = Math.round(scale * 100 / 1.5) + "%";
-            updateDisplay();
-        }
+        function toggleH(id, act) { const c = document.getElementById(`circle-${id}`); if(c) c.classList.toggle('marker-highlighted', act); }
+        function deleteRow(id) { pairs=pairs.filter(p=>p.id!==id); updateTable(); updateDisplay(); }
+        function updatePrefix() { const v = document.getElementById('group-prefix').value; pairs.forEach(p=>{if(p.groupId===groupIDCounter) p.prefix=v;}); updateTable(); updateDisplay(); }
+        function isInside(p, vs) { let x=p.x, y=p.y, inside=false; for (let i=0, j=vs.length-1; i<vs.length; j=i++) { if (((vs[i].y > y) != (vs[j].y > y)) && (x < (vs[j].x - vs[i].x) * (y - vs[i].y) / (vs[j].y - vs[i].y) + vs[i].x)) inside = !inside; } return inside; }
+        function setMode(m) { mode=m; document.getElementById('mode-area').classList.toggle('mode-active', m==='AREA'); document.getElementById('mode-path').classList.toggle('mode-active', m==='PATH'); }
+        function changeZoom(d) { scale=Math.max(0.2, Math.min(5, scale+d)); renderPage(); }
+        async function renderPage() { if(!pdfDoc) return; const page = await pdfDoc.getPage(1); const viewport = page.getViewport({scale}); canvas.height = viewport.height; canvas.width = viewport.width; await page.render({canvasContext: canvas.getContext('2d'), viewport: viewport}).promise; svg.setAttribute('viewBox', `0 0 ${viewport.width} ${viewport.height}`); document.getElementById('zoom-label').innerText = Math.round(scale*100/1.5) + "%"; updateDisplay(); }
+        function toggleZones() { showFinishedZones = !showFinishedZones; const btn = document.getElementById('eye-btn'); btn.innerHTML = showFinishedZones ? '<i data-lucide="eye"></i>' : '<i data-lucide="eye-off"></i>'; btn.classList.toggle('text-orange-400', !showFinishedZones); lucide.createIcons(); updateDisplay(); }
+        function undo() { if(mode==='AREA') { points.length>0 ? points.pop() : polygons.pop(); } else { pathPoints.pop(); resequence(); } updateDisplay(); }
+        function lockAndNewGroup() { const lastMax = Math.max(...pairs.filter(p=>p.groupId===groupIDCounter).map(p=>p.orderIndex||0), 0); groupIDCounter++; polygons=[]; points=[]; pathPoints=[]; document.getElementById('group-prefix').value = "ZONE-"+String.fromCharCode(64+groupIDCounter); document.getElementById('start-index').value=lastMax+1; updateDisplay(); updateTable(); }
+        document.getElementById('file-input').onchange = async (e) => { const file = e.target.files[0]; if (!file) return; const arrayBuffer = await file.arrayBuffer(); pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise; renderPage(); };
     </script>
 </body>
 </html>
