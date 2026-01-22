@@ -135,6 +135,50 @@ const CLIENT_CONFIGS = {
         zoom: 16.8,
         position: 6,
         searchMenuId: 'positionOne'
+      },
+
+            cortezia: {
+        id: 'cortezia',
+        name: 'Cortezia',
+        displayName: 'Cortezia',
+        fracc: 'cortezia',
+        center: [-110.909995, 29.12009],
+        zoom: 15.8,
+        position: 6,
+        searchMenuId: 'positionOne'
+      },
+
+            ebano: {
+        id: 'sierrabaja',
+        name: 'Sierra Baja',
+        displayName: 'Sierra Baja',
+        fracc: 'sierrabaja',
+        center: [-110.909995, 29.12009],
+        zoom: 15.8,
+        position: 6,
+        searchMenuId: 'positionOne'
+      },
+
+            verdalia: {
+        id: 'sierrabaja',
+        name: 'Sierra Baja',
+        displayName: 'Sierra Baja',
+        fracc: 'sierrabaja',
+        center: [-96.091763, 19.074588],
+        zoom: 16.8,
+        position: 6,
+        searchMenuId: 'positionOne'
+      },
+
+            frondia: {
+        id: 'sierrabaja',
+        name: 'Sierra Baja',
+        displayName: 'Sierra Baja',
+        fracc: 'sierrabaja',
+        center: [-96.091763, 19.074588],
+        zoom: 16.8,
+        position: 6,
+        searchMenuId: 'positionOne'
       }
 
     },
