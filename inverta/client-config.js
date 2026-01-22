@@ -149,7 +149,11 @@ const CLIENT_CONFIGS = {
     // Prefixes used in lot IDs
     lotPrefixes: {
       standard: 'lotinverta',  // e.g., lotinverta10-1
-      premium: 'lotinvertap',  // e.g., lotinvertap10-1
+      premium: 'lotinvertap',
+      sonora1: 'lotinvertasa',
+      sonora2: 'lotinvertasb',
+      sonora3: 'lotinvertasc',
+      sonora4: 'lotinvertasd',  // e.g., lotinvertap10-1
       base: 'inverta'          // Used in some contexts
     },
 
