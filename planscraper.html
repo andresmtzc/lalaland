@@ -68,6 +68,18 @@
                         <input type="number" id="start-index" value="1" oninput="resequence()" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1 text-sm text-blue-400 font-bold outline-none">
                     </div>
                 </div>
+                
+                <div class="grid grid-cols-2 gap-3 border-t border-slate-700 pt-3">
+                    <div>
+                        <label class="text-[9px] font-black text-slate-500 mb-1 block uppercase">Min (Filter Off)</label>
+                        <input type="number" id="min-val" value="200" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1 text-sm text-blue-400 font-bold outline-none">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-black text-slate-500 mb-1 block uppercase">Max (Filter Off)</label>
+                        <input type="number" id="max-val" value="10000" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1 text-sm text-blue-400 font-bold outline-none">
+                    </div>
+                </div>
+
                 <div class="flex items-center justify-between gap-4">
                     <label class="text-[9px] font-black uppercase text-slate-500 whitespace-nowrap">Price Cap ($)</label>
                     <input type="number" id="max-price-limit" value="30000" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1 text-sm text-emerald-400 font-bold outline-none">
@@ -75,6 +87,15 @@
                 <button onclick="lockAndNewGroup()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-[10px] font-black transition-all">SAVE & NEW GROUP</button>
             </div>
             
+            <div class="grid grid-cols-2 gap-2">
+                <button id="filter-btn" onclick="toggleFilters()" class="toolbar-btn justify-center text-blue-400">
+                    <i data-lucide="filter" size="16"></i> FILTERS: ON
+                </button>
+                <button onclick="clearAllData()" class="toolbar-btn justify-center text-red-400">
+                    <i data-lucide="trash-2" size="16"></i> CLEAR ALL
+                </button>
+            </div>
+
             <div class="grid grid-cols-2 gap-2">
                 <button onclick="undo()" class="toolbar-btn justify-center"><i data-lucide="rotate-ccw" size="16"></i> UNDO</button>
                 <button onclick="downloadCSV()" class="toolbar-btn justify-center text-emerald-400"><i data-lucide="download" size="16"></i> EXPORT CSV</button>
@@ -111,7 +132,7 @@
 
         let pdfDoc = null, scale = 1.5, mode = 'AREA';
         let points = [], polygons = [], pathPoints = [], pairs = [];
-        let groupIDCounter = 1, showFinishedZones = true;
+        let groupIDCounter = 1, showFinishedZones = true, filtersEnabled = true;
         let isSpaceDown = false, isPanning = false, startX, startY, scrollLeft, scrollTop;
 
         const sidebar = document.getElementById('sidebar');
@@ -145,27 +166,64 @@
 
         async function finalizePolygon() { const poly = { id: Date.now(), points: [...points] }; polygons.push(poly); points = []; await extract(poly); }
 
+        function toggleFilters() {
+            filtersEnabled = !filtersEnabled;
+            const btn = document.getElementById('filter-btn');
+            btn.innerHTML = filtersEnabled ? '<i data-lucide="filter"></i> FILTERS: ON' : '<i data-lucide="filter-x"></i> FILTERS: OFF';
+            btn.classList.toggle('text-blue-400', filtersEnabled);
+            btn.classList.toggle('text-slate-500', !filtersEnabled);
+            lucide.createIcons();
+        }
+
+        function clearAllData() {
+            if(confirm("Are you sure you want to clear all data and drawings?")) {
+                pairs = []; polygons = []; points = []; pathPoints = [];
+                groupIDCounter = 1;
+                document.getElementById('group-prefix').value = "ZONE-A";
+                document.getElementById('start-index').value = "1";
+                updateTable(); updateDisplay();
+            }
+        }
+
         async function extract(poly) {
             const page = await pdfDoc.getPage(1);
             const content = await page.getTextContent();
             const viewP = page.getViewport({ scale: 1.0 });
             const prefix = document.getElementById('group-prefix').value;
             const priceCap = parseFloat(document.getElementById('max-price-limit').value) || 30000;
+            const minV = parseFloat(document.getElementById('min-val').value) || 0;
+            const maxV = parseFloat(document.getElementById('max-val').value) || 999999;
             
             let areas = [], prices = [];
             content.items.forEach(item => {
                 const tx = pdfjsLib.Util.transform(viewP.transform, item.transform);
                 const d = { str: item.str.trim(), x: tx[4], y: tx[5] };
                 if (!isInside(d, poly.points)) return;
-                if (/\d+(,\d+)*(\.\d+)?\s*m2/i.test(d.str)) areas.push(d);
-                else if (/^\$\s*([\d,]+)/.test(d.str)) {
+                
+                // ALWAYS look for prices based on the $ symbol and priceCap
+                if (/^\$\s*([\d,]+)/.test(d.str)) {
                     const val = parseFloat(d.str.match(/[\d,]+/)[0].replace(/,/g, ''));
                     if (val < priceCap) prices.push({...d, val});
                 }
+
+                if (filtersEnabled) {
+                    if (/\d+(,\d+)*(\.\d+)?\s*m2/i.test(d.str)) areas.push(d);
+                } else {
+                    // Numerical Range check (ignoring strings that were already identified as prices)
+                    const numMatch = d.str.match(/\d+(\.\d+)?/);
+                    if (numMatch && !d.str.includes('$')) {
+                        const val = parseFloat(numMatch[0]);
+                        if (val >= minV && val <= maxV) areas.push(d);
+                    }
+                }
             });
+            
             areas.forEach(a => {
                 let closest = null, minDist = Infinity;
-                prices.forEach(p => { const dist = Math.sqrt(Math.pow(a.x-p.x,2)+Math.pow(a.y-p.y,2)); if(dist<minDist) { minDist=dist; closest=p; } });
+                prices.forEach(p => { 
+                    const dist = Math.sqrt(Math.pow(a.x-p.x,2)+Math.pow(a.y-p.y,2)); 
+                    if(dist<minDist) { minDist=dist; closest=p; } 
+                });
                 pairs.push({ id: Math.random().toString(36).substr(2,9), area: a, price: closest||{str:"$0"}, groupId: groupIDCounter, prefix: prefix, orderIndex: null });
             });
             updateTable(); updateDisplay();
@@ -212,15 +270,12 @@
         function downloadCSV() {
             let csv = "ID,Area,Rate,Total\n";
             const exportData = [...pairs].sort((a, b) => (a.groupId - b.groupId) || (a.orderIndex || 999) - (b.orderIndex || 999));
-            
             exportData.forEach(p => {
                 const aV = parseFloat(p.area.str.replace(/,/g, '').match(/\d+(\.\d+)?/)?.[0] || 0);
                 const pV = parseFloat(p.price.str.replace(/[$, ]/g, '').replace(/,/g, '') || 0);
                 const total = (aV * pV).toFixed(2);
-                // The \t (tab) before the ID is a trick to force Excel to treat it as text
                 csv += `"\t${p.prefix}${p.orderIndex || '-'}","${p.area.str}","${p.price.str}","${total}"\n`;
             });
-
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
