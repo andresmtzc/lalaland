@@ -149,34 +149,34 @@ const CLIENT_CONFIGS = {
       },
 
             ebano: {
-        id: 'sierrabaja',
-        name: 'Sierra Baja',
-        displayName: 'Sierra Baja',
-        fracc: 'sierrabaja',
-        center: [-110.909995, 29.12009],
-        zoom: 15.8,
+        id: 'ebano',
+        name: 'Ebano',
+        displayName: 'Ebano',
+        fracc: 'ebano',
+        center: [-110.909567, 29.121523],
+        zoom: 16.2,
         position: 6,
         searchMenuId: 'positionOne'
       },
 
             verdalia: {
-        id: 'sierrabaja',
-        name: 'Sierra Baja',
-        displayName: 'Sierra Baja',
-        fracc: 'sierrabaja',
-        center: [-96.091763, 19.074588],
-        zoom: 16.8,
+        id: 'verdalia',
+        name: 'Verdalia',
+        displayName: 'Verdalia',
+        fracc: 'verdalia',
+        center: [-110.90849, 29.123108],
+        zoom: 15.5,
         position: 6,
         searchMenuId: 'positionOne'
       },
 
             frondia: {
-        id: 'sierrabaja',
-        name: 'Sierra Baja',
-        displayName: 'Sierra Baja',
-        fracc: 'sierrabaja',
-        center: [-96.091763, 19.074588],
-        zoom: 16.8,
+        id: 'frondia',
+        name: 'Frondia',
+        displayName: 'Frondia',
+        fracc: 'frondia',
+        center: [-110.906239, 29.125526],
+        zoom: 16,
         position: 6,
         searchMenuId: 'positionOne'
       }
