@@ -5819,7 +5819,14 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       if (lot && window.generateMultiPagePDF) {
         const dynamicText = prompt('Ingrese el texto para el PDF:');
         if (dynamicText !== null) {
-          window.generateMultiPagePDF(lot, dynamicText);
+          // Get selected financing options from the calculator dropdowns
+          const downPaymentSelect = document.getElementById('downPaymentCalc');
+          const installmentsSelect = document.getElementById('installmentsCalc');
+          const financingOptions = {
+            downpaymentPercent: downPaymentSelect ? parseInt(downPaymentSelect.value) : 30,
+            installmentMonths: installmentsSelect ? parseInt(installmentsSelect.value) : 48
+          };
+          window.generateMultiPagePDF(lot, dynamicText, financingOptions);
         }
       } else {
         console.error('PDF generation not available or lot data missing');
@@ -11457,12 +11464,18 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 (function() {
   // PDF Generation for Inverta - Multi-template support based on community group
 
-  async function generateMultiPagePDF(lot, dynamicText) {
+  async function generateMultiPagePDF(lot, dynamicText, financingOptions = {}) {
     if (!lot) {
       console.error('No lot data provided');
       window.showToaster?.('Error: No se pudo obtener datos del lote');
       return;
     }
+
+    // Default financing options (matches modal defaults)
+    const financing = {
+      downpaymentPercent: financingOptions.downpaymentPercent || 30,
+      installmentMonths: financingOptions.installmentMonths || 48
+    };
 
     // Determine community group from fraccionamiento
     const fraccionamiento = lot.fraccionamiento || lot.community || '';
@@ -11511,7 +11524,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     document.body.appendChild(pdfContainer);
 
     // Calculate lot values for placeholders
-    function getLotValues(lot, dynamicText) {
+    function getLotValues(lot, dynamicText, financingOpts = {}) {
       const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
       const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
       const totalPrice = size * priceM2;
@@ -11549,6 +11562,31 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       const downpayment85 = priceWith12Discount * 0.85;
       const contraEscritura15 = priceWith12Discount * 0.15;
 
+      // Dynamic financing calculations based on selected options
+      const selectedDownpaymentPercent = financingOpts.downpaymentPercent || 30;
+      const selectedInstallmentMonths = financingOpts.installmentMonths || 48;
+
+      // Interest rates by month term
+      const INTEREST_RATES = { 24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17 };
+      const selectedInterestRate = INTEREST_RATES[selectedInstallmentMonths] || 0.15;
+
+      // Calculate dynamic financing values
+      const selectedDownpaymentAmount = totalPrice * (selectedDownpaymentPercent / 100);
+      const amountToFinance = totalPrice - selectedDownpaymentAmount;
+
+      // Monthly payment calculation using amortization formula
+      const monthlyRate = selectedInterestRate / 12;
+      let selectedMonthlyPayment;
+      if (monthlyRate === 0) {
+        selectedMonthlyPayment = amountToFinance / selectedInstallmentMonths;
+      } else {
+        const numerator = amountToFinance * monthlyRate * Math.pow(1 + monthlyRate, selectedInstallmentMonths);
+        const denominator = Math.pow(1 + monthlyRate, selectedInstallmentMonths) - 1;
+        selectedMonthlyPayment = numerator / denominator;
+      }
+
+      const selectedTotalFinancedPrice = selectedDownpaymentAmount + (selectedMonthlyPayment * selectedInstallmentMonths);
+
       return {
         'dynamicText': dynamicText,
         'lot.number': lot.number || '',
@@ -11567,7 +11605,14 @@ window.showPaymentViewInModal = showPaymentViewInModal;
         'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
         'lot.contraEscritura30': formatCurrency(contraEscritura30),
         'lot.contraEscritura50': formatCurrency(contraEscritura50),
-        'lot.contraEscritura15': formatCurrency(contraEscritura15)
+        'lot.contraEscritura15': formatCurrency(contraEscritura15),
+        // New dynamic financing placeholders
+        'lot.selectedDownpaymentPercent': selectedDownpaymentPercent + '%',
+        'lot.selectedDownpaymentAmount': formatCurrency(selectedDownpaymentAmount),
+        'lot.selectedInstallmentMonths': String(selectedInstallmentMonths),
+        'lot.selectedMonthlyPayment': formatCurrency(selectedMonthlyPayment),
+        'lot.selectedInterestRate': (selectedInterestRate * 100).toFixed(0) + '%',
+        'lot.selectedTotalFinancedPrice': formatCurrency(selectedTotalFinancedPrice)
       };
     }
 
@@ -11763,8 +11808,8 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       const settings = template.settings || {};
       const totalPages = settings.totalPages || Object.keys(template.pages || {}).length || 8;
 
-      // Calculate lot values
-      const lotValues = getLotValues(lot, dynamicText);
+      // Calculate lot values with financing options
+      const lotValues = getLotValues(lot, dynamicText, financing);
 
       // Step 2: Preload ALL images in parallel
       progressText.textContent = 'Cargando imágenes...';
