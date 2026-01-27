@@ -179,6 +179,17 @@ const CLIENT_CONFIGS = {
         zoom: 16,
         position: 6,
         searchMenuId: 'positionOne'
+      },
+
+                  almaterra: {
+        id: 'almaterra',
+        name: 'Almaterra',
+        displayName: 'Almaterra',
+        fracc: 'almaterra',
+        center: [-100.06265, 25.314019],
+        zoom: 14.5,
+        position: 6,
+        searchMenuId: 'positionOne'
       }
 
     },
