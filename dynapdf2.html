@@ -495,7 +495,8 @@
 
       <label>Page Background Base URL</label>
       <input type="text" id="settingPageBgUrl" placeholder="https://la-la.land/client/pdf/group/" oninput="updateSettings()">
-      <p style="font-size: 9px; color: #888; margin: 2px 0 8px 0;">e.g., https://la-la.land/inverta/pdf/puntolomas/</p>
+      <p style="font-size: 9px; color: #888; margin: 2px 0 4px 0;">e.g., https://la-la.land/inverta/pdf/puntolomas/</p>
+      <p style="font-size: 10px; color: #4ade80; margin: 0 0 8px 0;">Page size: <span id="pageDimDisplay">1224 × 1584</span></p>
 
       <label>Lot Image Base URL (Preview)</label>
       <input type="text" id="settingLotImageUrl" placeholder="/client/pdf/group/" oninput="updateSettings()">
@@ -885,8 +886,54 @@ const MAX_UNDO_HISTORY = 50;
 const templateSettings = {
   pageBackgroundBaseUrl: '',  // e.g., "https://la-la.land/inverta/pdf/puntolomas/"
   lotImageBaseUrl: '',        // e.g., "/inverta/pdf/puntolomas/"
-  lotImagePrefix: 'lot-'      // e.g., "lot-" or "lotcpi1-"
+  lotImagePrefix: 'lot-',     // e.g., "lot-" or "lotcpi1-"
+  pageWidth: 1224,            // Auto-detected from page.001.png
+  pageHeight: 1584            // Auto-detected from page.001.png
 };
+
+// Detect page dimensions from page.001.png
+async function detectPageDimensions(baseUrl) {
+  if (!baseUrl) return { width: 1224, height: 1584 };
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    img.onload = () => {
+      console.log(`Detected page dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+
+    img.onerror = () => {
+      console.warn('Could not load page.001.png, using default dimensions');
+      resolve({ width: 1224, height: 1584 });
+    };
+
+    // Ensure URL ends with / and append page.001.png
+    const cleanUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+    img.src = `${cleanUrl}page.001.png`;
+  });
+}
+
+// Update page dimensions in UI and CSS
+function applyPageDimensions(width, height) {
+  templateSettings.pageWidth = width;
+  templateSettings.pageHeight = height;
+
+  const page = document.getElementById('pdfPage');
+  if (page) {
+    page.style.width = width + 'px';
+    page.style.height = height + 'px';
+  }
+
+  // Update dimension display if exists
+  const dimDisplay = document.getElementById('pageDimDisplay');
+  if (dimDisplay) {
+    dimDisplay.textContent = `${width} × ${height}`;
+  }
+
+  console.log(`Applied page dimensions: ${width}x${height}`);
+}
 
 // Template data: pages[pageNum] = { textBoxes: [], tables: [], images: [] }
 const template = {
@@ -912,10 +959,23 @@ function initializePages() {
 initializePages();
 
 // ===== SETTINGS =====
-function updateSettings() {
-  templateSettings.pageBackgroundBaseUrl = document.getElementById('settingPageBgUrl').value;
+async function updateSettings() {
+  const newBaseUrl = document.getElementById('settingPageBgUrl').value;
+  const oldBaseUrl = templateSettings.pageBackgroundBaseUrl;
+
+  templateSettings.pageBackgroundBaseUrl = newBaseUrl;
   templateSettings.lotImageBaseUrl = document.getElementById('settingLotImageUrl').value;
   templateSettings.lotImagePrefix = document.getElementById('settingLotPrefix').value || 'lot-';
+
+  // Auto-detect dimensions if base URL changed
+  if (newBaseUrl && newBaseUrl !== oldBaseUrl) {
+    const dimDisplay = document.getElementById('pageDimDisplay');
+    if (dimDisplay) dimDisplay.textContent = 'detecting...';
+
+    const dims = await detectPageDimensions(newBaseUrl);
+    applyPageDimensions(dims.width, dims.height);
+  }
+
   template.settings = templateSettings;
   renderPage();
 }
@@ -925,6 +985,15 @@ function loadSettingsToUI() {
   document.getElementById('settingLotImageUrl').value = templateSettings.lotImageBaseUrl || '';
   document.getElementById('settingLotPrefix').value = templateSettings.lotImagePrefix || 'lot-';
   document.getElementById('pageCountDisplay').textContent = totalPages;
+
+  // Display current dimensions
+  const dimDisplay = document.getElementById('pageDimDisplay');
+  if (dimDisplay) {
+    dimDisplay.textContent = `${templateSettings.pageWidth} × ${templateSettings.pageHeight}`;
+  }
+
+  // Apply dimensions to page
+  applyPageDimensions(templateSettings.pageWidth, templateSettings.pageHeight);
 }
 
 // ===== PAGE MANAGEMENT =====
@@ -1379,11 +1448,10 @@ function centerTableHorizontally() {
   const data = getTableData(selectedElement.id);
   if (!data) return;
 
-  const pageWidth = 1224;
   const colWidths = data.colWidths || Array(data.cols).fill(100);
   const tableWidth = colWidths.reduce((sum, w) => sum + w, 0);
 
-  data.x = Math.round((pageWidth - tableWidth) / 2);
+  data.x = Math.round((templateSettings.pageWidth - tableWidth) / 2);
   document.getElementById('prop_tableX').value = data.x;
   selectedElement.style.left = data.x + 'px';
 }
@@ -1954,7 +2022,7 @@ function startImageResize(e, el, data, corner) {
   selectElement(el, 'image');
 
   const page = document.getElementById('pdfPage');
-  const scale = page.getBoundingClientRect().width / 1224;
+  const scale = page.getBoundingClientRect().width / templateSettings.pageWidth;
 
   imageResizeData = {
     el,
@@ -2284,7 +2352,7 @@ function startDrag(e, el, data) {
   e.preventDefault();
 
   const page = document.getElementById('pdfPage');
-  const scale = page.getBoundingClientRect().width / 1224;
+  const scale = page.getBoundingClientRect().width / templateSettings.pageWidth;
 
   dragData = {
     el,
@@ -2337,7 +2405,7 @@ function startResize(e, el, data) {
   e.stopPropagation();
 
   const page = document.getElementById('pdfPage');
-  const scale = page.getBoundingClientRect().width / 1224;
+  const scale = page.getBoundingClientRect().width / templateSettings.pageWidth;
 
   resizeData = {
     el,
@@ -2501,6 +2569,9 @@ function exportPDF() {
   canvasWrapper.scrollLeft = 0;
   canvasWrapper.scrollTop = 0;
 
+  const pw = templateSettings.pageWidth;
+  const ph = templateSettings.pageHeight;
+
   html2pdf().set({
     margin: 0,
     filename: `page-${currentPage}.pdf`,
@@ -2509,16 +2580,16 @@ function exportPDF() {
       scale: 1,
       useCORS: true,
       backgroundColor: '#ffffff',
-      width: 1224,
-      height: 1584,
+      width: pw,
+      height: ph,
       scrollX: 0,
       scrollY: 0,
       x: 0,
       y: 0,
-      windowWidth: 1224,
-      windowHeight: 1584
+      windowWidth: pw,
+      windowHeight: ph
     },
-    jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
+    jsPDF: { unit: 'px', format: [pw, ph], orientation: pw > ph ? 'landscape' : 'portrait' }
   }).from(page).save().then(() => {
     page.style.transform = origTransform;
     canvasWrapper.scrollLeft = origScrollLeft;
