@@ -364,46 +364,45 @@
     async function fetchAvailableLots() {
       await window.supabaseReady;
 
-      const { data, error } = await window.supabaseClient
-        .from('lots')
-        .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, price_m2')
-        .eq('client_id', CURRENT_CLIENT)
-        .order('lot_name', { ascending: true });
+      let allData = [];
+      let from = 0;
+      const pageSize = 1000;
 
-      if (error) {
-        console.error('ERROR fetching lots:', error);
-        const { data: { session } } = await window.supabaseClient.auth.getSession();
-        if (!session || !session.user) {
-          console.error('User is NOT authenticated - please login at /inverta/index.html first');
+      while (true) {
+        const { data, error } = await window.supabaseClient
+          .from('lots')
+          .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, price_m2')
+          .eq('client_id', CURRENT_CLIENT)
+          .order('lot_name', { ascending: true })
+          .range(from, from + pageSize - 1);
+
+        if (error) {
+          console.error('ERROR fetching lots:', error);
+          const { data: { session } } = await window.supabaseClient.auth.getSession();
+          if (!session || !session.user) {
+            console.error('User is NOT authenticated - please login at /inverta/index.html first');
+          }
+          break;
         }
-        return [];
+
+        if (!data || data.length === 0) break;
+
+        allData = allData.concat(data);
+        console.log(`Fetched ${allData.length} lots so far...`);
+
+        if (data.length < pageSize) break; // Last page
+        from += pageSize;
       }
 
-      console.log('Fetched lots from Supabase:', data?.length || 0);
+      console.log('Total lots fetched from Supabase:', allData.length);
 
-      const availableLots = (data || []).filter(lot => {
+      const availableLots = allData.filter(lot => {
         const availability = (lot.availability || '').toString().toLowerCase();
         return availability === 'available' || availability === 'featured';
       });
 
       console.log('Available lots after filtering:', availableLots.length);
       return availableLots;
-    }
-
-    function extractLotNumber(lotName) {
-      return extractLotNumber_config(CURRENT_CLIENT, lotName);
-    }
-
-    // Use config helper if available, fallback to manual extraction
-    function extractLotNumber_config(clientName, lotName) {
-      if (typeof window.extractLotNumber === 'function') {
-        return window.extractLotNumber(clientName, lotName);
-      }
-      // Fallback: remove common prefixes
-      return lotName
-        .replace(/^lotinverta[a-z]*/i, '')
-        .replace(/^lot/i, '')
-        .replace(/^\d+-/, '');
     }
 
     async function mergeData() {
@@ -421,7 +420,7 @@
       }
 
       allAvailableLots = availableLots.map(lot => {
-        const lotNumber = extractLotNumber(lot.lot_name);
+        const lotNumber = extractLotNumber(CURRENT_CLIENT, lot.lot_name);
         const polygonData = lotData.find(l => l.name === lot.lot_name);
 
         if (!polygonData) {
