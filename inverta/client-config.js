@@ -522,6 +522,29 @@ function getColor(clientName, colorKey) {
 }
 
 /**
+ * Get community group name for a fraccionamiento
+ * Used for determining which PDF template to use
+ * @param {string} clientName - The client identifier
+ * @param {string} fraccName - The fraccionamiento/community name
+ * @returns {string|null} Community group name (e.g., 'mediterraneo', 'puntolomas') or null if not found
+ */
+function getCommunityGroup(clientName, fraccName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.communityLogos) return null;
+
+  const fracc = fraccName.toLowerCase().trim();
+
+  // Search through community logo groups
+  for (const [groupName, logoData] of Object.entries(config.communityLogos)) {
+    if (logoData.communities && logoData.communities.includes(fracc)) {
+      return groupName;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Apply colors from config to CSS custom properties (CSS variables)
  * Call this function early in your page load to make colors available as CSS variables
  * @param {string} clientName - The client identifier
@@ -545,6 +568,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getClientConfig,
     getCommunityLogo,
     getCommunityByFracc,
+    getCommunityGroup,
     getAllCommunities,
     buildShareUrl,
     buildShareText,
