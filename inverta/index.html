@@ -11574,18 +11574,28 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       const selectedDownpaymentAmount = totalPrice * (selectedDownpaymentPercent / 100);
       const amountToFinance = totalPrice - selectedDownpaymentAmount;
 
-      // Monthly payment calculation using amortization formula
-      const monthlyRate = selectedInterestRate / 12;
-      let selectedMonthlyPayment;
-      if (monthlyRate === 0) {
-        selectedMonthlyPayment = amountToFinance / selectedInstallmentMonths;
-      } else {
-        const numerator = amountToFinance * monthlyRate * Math.pow(1 + monthlyRate, selectedInstallmentMonths);
-        const denominator = Math.pow(1 + monthlyRate, selectedInstallmentMonths) - 1;
-        selectedMonthlyPayment = numerator / denominator;
+      // Monthly payment calculation helper
+      function calcMonthlyPayment(principal, annualRate, months) {
+        const monthlyRate = annualRate / 12;
+        if (monthlyRate === 0) return principal / months;
+        const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
+        const denominator = Math.pow(1 + monthlyRate, months) - 1;
+        return numerator / denominator;
       }
 
+      // Selected term calculation
+      const selectedMonthlyPayment = calcMonthlyPayment(amountToFinance, selectedInterestRate, selectedInstallmentMonths);
       const selectedTotalFinancedPrice = selectedDownpaymentAmount + (selectedMonthlyPayment * selectedInstallmentMonths);
+
+      // Calculate all term options (using selected downpayment)
+      const terms = [24, 36, 48, 60, 72];
+      const termCalcs = {};
+      terms.forEach(months => {
+        const rate = INTEREST_RATES[months];
+        const monthly = calcMonthlyPayment(amountToFinance, rate, months);
+        const total = selectedDownpaymentAmount + (monthly * months);
+        termCalcs[months] = { rate, monthly, total };
+      });
 
       return {
         'dynamicText': dynamicText,
@@ -11606,13 +11616,29 @@ window.showPaymentViewInModal = showPaymentViewInModal;
         'lot.contraEscritura30': formatCurrency(contraEscritura30),
         'lot.contraEscritura50': formatCurrency(contraEscritura50),
         'lot.contraEscritura15': formatCurrency(contraEscritura15),
-        // New dynamic financing placeholders
+        // New dynamic financing placeholders (selected)
         'lot.selectedDownpaymentPercent': selectedDownpaymentPercent + '%',
         'lot.selectedDownpaymentAmount': formatCurrency(selectedDownpaymentAmount),
         'lot.selectedInstallmentMonths': String(selectedInstallmentMonths),
         'lot.selectedMonthlyPayment': formatCurrency(selectedMonthlyPayment),
         'lot.selectedInterestRate': (selectedInterestRate * 100).toFixed(0) + '%',
-        'lot.selectedTotalFinancedPrice': formatCurrency(selectedTotalFinancedPrice)
+        'lot.selectedTotalFinancedPrice': formatCurrency(selectedTotalFinancedPrice),
+        // All term options (using selected downpayment)
+        'lot.monthly24': formatCurrency(termCalcs[24].monthly),
+        'lot.rate24': (termCalcs[24].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced24': formatCurrency(termCalcs[24].total),
+        'lot.monthly36': formatCurrency(termCalcs[36].monthly),
+        'lot.rate36': (termCalcs[36].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced36': formatCurrency(termCalcs[36].total),
+        'lot.monthly48': formatCurrency(termCalcs[48].monthly),
+        'lot.rate48': (termCalcs[48].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced48': formatCurrency(termCalcs[48].total),
+        'lot.monthly60': formatCurrency(termCalcs[60].monthly),
+        'lot.rate60': (termCalcs[60].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced60': formatCurrency(termCalcs[60].total),
+        'lot.monthly72': formatCurrency(termCalcs[72].monthly),
+        'lot.rate72': (termCalcs[72].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced72': formatCurrency(termCalcs[72].total)
       };
     }
 
