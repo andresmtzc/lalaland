@@ -415,10 +415,8 @@ function getCommunityLogo(clientName, fraccName, forCard = false) {
     }
   }
 
-  // Return first logo as default
-  const firstLogo = Object.values(config.communityLogos)[0];
-  if (!firstLogo) return null;
-  return forCard ? (firstLogo.cardLogoUrl || firstLogo.url) : firstLogo.url;
+  // No match found - return null so logo stays unchanged
+  return null;
 }
 
 /**
