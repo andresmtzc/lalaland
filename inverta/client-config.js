@@ -54,6 +54,14 @@ const CLIENT_CONFIGS = {
         communities: ['cortezia', 'ebano', 'verdalia', 'frondia'],
         center: [-110.908304, 29.123942],
         zoom: 14.9
+      },
+                'almaterra': {
+        // For sierraalta & sierrabaja
+        url: 'https://la-la.land/inverta/almaterra.png', // Original for index.html
+        cardLogoUrl: 'https://la-la.land/inverta/puntolomas_black.png', // Black version for cards
+        communities: ['almaterra'],
+        center: [-100.06265, 25.314019],
+        zoom: 14.5
       }
     },
 
