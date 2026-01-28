@@ -710,6 +710,12 @@
           </div>
         </div>
 
+        <label style="margin-top: 12px;">Layer Order</label>
+        <div class="row">
+          <button class="btn-small btn-secondary" onclick="moveToBack()" style="flex: 1;">Back</button>
+          <button class="btn-small btn-secondary" onclick="moveToFront()" style="flex: 1;">Front</button>
+        </div>
+
         <label style="margin-top: 12px;"></label>
         <button class="btn-danger" onclick="deleteSelected()" style="width: 100%;">Delete Text Box</button>
       </div>
@@ -840,6 +846,12 @@
           <button class="btn-secondary" onclick="mergeCells()">Merge Cells</button>
           <button class="btn-secondary" onclick="unmergeCells()">Unmerge</button>
         </div>
+
+        <label style="margin-top: 12px;">Layer Order</label>
+        <div class="row">
+          <button class="btn-small btn-secondary" onclick="moveToBack()" style="flex: 1;">Back</button>
+          <button class="btn-small btn-secondary" onclick="moveToFront()" style="flex: 1;">Front</button>
+        </div>
       </div>
     </div>
 
@@ -898,6 +910,12 @@
             <label style="font-size: 10px;">Color</label>
             <input type="color" id="prop_borderColor" value="#000000" oninput="updateImageBorder()">
           </div>
+        </div>
+
+        <label style="margin-top: 12px;">Layer Order</label>
+        <div class="row">
+          <button class="btn-small btn-secondary" onclick="moveToBack()" style="flex: 1;">Back</button>
+          <button class="btn-small btn-secondary" onclick="moveToFront()" style="flex: 1;">Front</button>
         </div>
 
         <label style="margin-top: 12px;"></label>
@@ -1219,6 +1237,7 @@ function createTextBoxElement(data) {
   div.style.textDecoration = data.underline ? 'underline' : 'none';
   div.style.textAlign = data.textAlign || 'left';
   div.style.whiteSpace = 'pre-wrap';
+  if (data.zIndex !== undefined) div.style.zIndex = data.zIndex;
 
   div.textContent = data.content;
 
@@ -1370,6 +1389,7 @@ function createTableElement(data) {
 
   container.style.left = data.x + 'px';
   container.style.top = data.y + 'px';
+  if (data.zIndex !== undefined) container.style.zIndex = data.zIndex;
 
   const dragHandle = document.createElement('div');
   dragHandle.className = 'table-drag-handle';
@@ -1918,6 +1938,7 @@ function createImageElement(data) {
   div.style.top = data.y + 'px';
   div.style.width = data.width + 'px';
   div.style.height = data.height + 'px';
+  if (data.zIndex !== undefined) div.style.zIndex = data.zIndex;
 
   const previewUrl = getImagePreviewUrl(data);
   if (previewUrl) {
@@ -2421,6 +2442,84 @@ function deleteSelected() {
   if (!selectedElement) return;
   saveState();
   deleteElementById(selectedElement.id, selectedElement.dataset.type);
+}
+
+function moveToFront() {
+  if (!selectedElement) return;
+  const type = selectedElement.dataset.type;
+  const id = selectedElement.id;
+  const pageData = template.pages[currentPage];
+
+  // Find highest zIndex across all element types
+  let maxZ = 0;
+  ['textBoxes', 'tables', 'images'].forEach(arrName => {
+    (pageData[arrName] || []).forEach(el => {
+      if (el.zIndex && el.zIndex > maxZ) maxZ = el.zIndex;
+    });
+  });
+
+  // Set this element's zIndex to max + 1
+  let arr, item;
+  if (type === 'textbox') {
+    arr = pageData.textBoxes;
+    item = arr.find(t => t.id === id);
+  } else if (type === 'table') {
+    arr = pageData.tables;
+    item = arr.find(t => t.id === id);
+  } else if (type === 'image') {
+    arr = pageData.images;
+    item = arr.find(t => t.id === id);
+  }
+
+  if (item) {
+    item.zIndex = maxZ + 1;
+    saveState();
+    renderPage();
+    // Re-select the element
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (el) el.click();
+    }, 10);
+  }
+}
+
+function moveToBack() {
+  if (!selectedElement) return;
+  const type = selectedElement.dataset.type;
+  const id = selectedElement.id;
+  const pageData = template.pages[currentPage];
+
+  // Set this element's zIndex to 0 and increment all others
+  ['textBoxes', 'tables', 'images'].forEach(arrName => {
+    (pageData[arrName] || []).forEach(el => {
+      if (!el.zIndex) el.zIndex = 1;
+      el.zIndex++;
+    });
+  });
+
+  // Set this element to zIndex 0
+  let arr, item;
+  if (type === 'textbox') {
+    arr = pageData.textBoxes;
+    item = arr.find(t => t.id === id);
+  } else if (type === 'table') {
+    arr = pageData.tables;
+    item = arr.find(t => t.id === id);
+  } else if (type === 'image') {
+    arr = pageData.images;
+    item = arr.find(t => t.id === id);
+  }
+
+  if (item) {
+    item.zIndex = 0;
+    saveState();
+    renderPage();
+    // Re-select the element
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (el) el.click();
+    }, 10);
+  }
 }
 
 // ===== DRAG & RESIZE =====
