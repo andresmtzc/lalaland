@@ -49,6 +49,33 @@ const CLIENT_CONFIGS = {
       }
     },
 
+    // ----- COMMUNITY PRICING -----
+    // Maps community groups to their financing options
+    communityPricing: {
+      'veracruz': {
+        communities: ['marsella', 'barcelona', 'sierraalta', 'sierrabaja'],
+        downPayment: { min: 20, max: 50, step: 5 },
+        terms: [
+          { months: 24, interest: 13 },
+          { months: 36, interest: 14 },
+          { months: 48, interest: 15 },
+          { months: 60, interest: 16 },
+          { months: 72, interest: 17 }
+        ]
+      },
+      'almaterra': {
+        communities: ['almaterra'],
+        downPayment: { min: 20, max: 50, step: 5 },
+        terms: [
+          { months: 12, interest: 0 },
+          { months: 24, interest: 10 },
+          { months: 36, interest: 12 },
+          { months: 48, interest: 13 },
+          { months: 60, interest: 13 }
+        ]
+      }
+    },
+
     // ----- MAPBOX SETTINGS -----
     mapbox: {
       tokenUrl: 'https://la-la.land/mapbox.txt',
@@ -411,6 +438,30 @@ function getCommunityLogo(clientName, fraccName, forCard = false) {
 }
 
 /**
+ * Get community pricing configuration based on fracc
+ * @param {string} clientName - The client identifier
+ * @param {string} fraccName - The fraccionamiento/community name
+ * @returns {object|null} Pricing config with downPayment and terms, or null if not found
+ */
+function getCommunityPricing(clientName, fraccName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.communityPricing) return null;
+
+  const fracc = (fraccName || '').toLowerCase().trim();
+  if (!fracc) return null;
+
+  // Search through community pricing groups
+  for (const [groupName, pricingData] of Object.entries(config.communityPricing)) {
+    if (pricingData.communities.includes(fracc)) {
+      return pricingData;
+    }
+  }
+
+  // No match found - return null (show "contact for pricing")
+  return null;
+}
+
+/**
  * Get community data by fracc name
  * @param {string} clientName - The client identifier
  * @param {string} fraccName - The fraccionamiento/community name
@@ -542,6 +593,7 @@ if (typeof module !== 'undefined' && module.exports) {
     CLIENT_CONFIGS,
     getClientConfig,
     getCommunityLogo,
+    getCommunityPricing,
     getCommunityByFracc,
     getAllCommunities,
     buildShareUrl,

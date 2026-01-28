@@ -5598,6 +5598,35 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const priceM2Formatted = priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const totalPriceFormatted = totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  // Get pricing config for this community
+  const pricingConfig = typeof getCommunityPricing === 'function'
+    ? getCommunityPricing(CURRENT_CLIENT, lot.fraccionamiento)
+    : null;
+
+  // Build down payment options HTML
+  let downPaymentOptionsHtml = '';
+  if (pricingConfig) {
+    const { min, max, step } = pricingConfig.downPayment;
+    for (let pct = min; pct <= max; pct += step) {
+      downPaymentOptionsHtml += `<option value="${pct}">${pct}%</option>`;
+    }
+  }
+
+  // Build installments options HTML and INTEREST_RATES object
+  let installmentsOptionsHtml = '';
+  const INTEREST_RATES = {};
+  if (pricingConfig) {
+    const terms = pricingConfig.terms;
+    terms.forEach((term, idx) => {
+      const selected = idx === terms.length - 1 ? ' selected' : '';
+      installmentsOptionsHtml += `<option value="${term.months}"${selected}>${term.months}</option>`;
+      INTEREST_RATES[term.months] = term.interest / 100;
+    });
+  }
+
+  // Default interest rate (last term's rate or 0)
+  const defaultInterestRate = pricingConfig ? pricingConfig.terms[pricingConfig.terms.length - 1].interest : 0;
+
   detailRow.innerHTML = `
   <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
     <!-- Top row: Lot name on left, calculation centered -->
@@ -5625,23 +5654,18 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     </div>
     <div style="width: 100%; height: 1px; background: ${CONFIG.colors.grayLight}; margin: 0px;"></div>
 
+    ${pricingConfig ? `
     <!-- Financing Calculator -->
     <div style="margin-top: 6px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; position: relative;">
       <!-- Row 1: Down payment % + Enganche amount -->
       <div style="display: flex; align-items: center; gap: 12px;">
         <div style="width: 80px;">
           <select id="downPaymentCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            <option value="20">20%</option>
-            <option value="25">25%</option>
-            <option value="30">30%</option>
-            <option value="35">35%</option>
-            <option value="40">40%</option>
-            <option value="45">45%</option>
-            <option value="50">50%</option>
+            ${downPaymentOptionsHtml}
           </select>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * 0.20).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * (pricingConfig.downPayment.min / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       </div>
 
@@ -5649,89 +5673,92 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       <div style="display: flex; align-items: center; gap: 12px;">
         <div style="width: 80px;">
           <select id="installmentsCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            <option value="24">24</option>
-            <option value="36">36</option>
-            <option value="48">48</option>
-            <option value="60">60</option>
-            <option value="72" selected>72</option>
+            ${installmentsOptionsHtml}
           </select>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$10,315.50</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
+          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
         </div>
       </div>
 
       <!-- Tasa and Precio financiado on same line -->
       <div style="width: 100%; display: flex; justify-content: space-between; margin-top: -4px; font-size: 13px; color: ${CONFIG.colors.textLight};">
         <div style="width: 80px; text-align: center;">
-          <span>Tasa <span id="financingRate">17</span>%</span>
+          <span>Tasa <span id="financingRate">${defaultInterestRate}</span>%</span>
         </div>
         <div style="text-align: right;">
-          <span>Financiado: <span id="financingTotalPrice">$742,716.00</span></span>
+          <span>Financiado: <span id="financingTotalPrice">$0.00</span></span>
         </div>
       </div>
     </div>
+    ` : `
+    <!-- No pricing available - Contact for pricing -->
+    <div style="margin-top: 12px; width: 100%; text-align: center; padding: 16px; background: ${CONFIG.colors.grayVeryLight}; border-radius: 8px;">
+      <div style="font-size: 16px; color: ${CONFIG.colors.textLight};">
+        Contáctanos para conocer opciones de financiamiento
+      </div>
+    </div>
+    `}
   </div>
 `;
 
   detailContainer.appendChild(detailRow);
 
-  // Initialize calculator
-  const totalPriceNum = totalPrice;
-  const INTEREST_RATES = {
-    24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17
-  };
+  // Initialize calculator (only if pricing config exists)
+  if (pricingConfig) {
+    const totalPriceNum = totalPrice;
 
-  function calculateMonthlyPayment(principal, annualRate, months) {
-    const monthlyRate = annualRate / 12;
-    if (monthlyRate === 0) return principal / months;
-    const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-    const denominator = Math.pow(1 + monthlyRate, months) - 1;
-    return numerator / denominator;
-  }
-
-  function updateCalculations() {
-    const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
-    const months = parseInt(document.getElementById('installmentsCalc').value);
-    const interestRate = INTEREST_RATES[months] || 0.17;
-
-    const downPaymentAmount = totalPriceNum * downPaymentPercent;
-    const amountFinanced = totalPriceNum - downPaymentAmount;
-    const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
-
-    const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
-
-    document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
-
-    // Update financing header
-    document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
-    document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  // Add event listeners
-  setTimeout(() => {
-    // Check URL parameters and set values if present
-    // Support both new short params (a, m, i) and old long params for backwards compatibility
-    const urlParams = new URLSearchParams(window.location.search);
-    const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
-    const monthsParam = urlParams.get('m') || urlParams.get('months');
-
-    const downPaymentSelect = document.getElementById('downPaymentCalc');
-    const installmentsSelect = document.getElementById('installmentsCalc');
-
-    if (downpaymentParam && downPaymentSelect) {
-      downPaymentSelect.value = downpaymentParam;
-    }
-    if (monthsParam && installmentsSelect) {
-      installmentsSelect.value = monthsParam;
+    function calculateMonthlyPayment(principal, annualRate, months) {
+      const monthlyRate = annualRate / 12;
+      if (monthlyRate === 0) return principal / months;
+      const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
+      const denominator = Math.pow(1 + monthlyRate, months) - 1;
+      return numerator / denominator;
     }
 
-    downPaymentSelect?.addEventListener('change', updateCalculations);
-    installmentsSelect?.addEventListener('change', updateCalculations);
-    updateCalculations(); // Initial calculation with URL params
-  }, 100);
+    function updateCalculations() {
+      const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
+      const months = parseInt(document.getElementById('installmentsCalc').value);
+      const interestRate = INTEREST_RATES[months] || 0;
+
+      const downPaymentAmount = totalPriceNum * downPaymentPercent;
+      const amountFinanced = totalPriceNum - downPaymentAmount;
+      const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
+
+      const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
+
+      document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
+
+      // Update financing header
+      document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
+      document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Add event listeners
+    setTimeout(() => {
+      // Check URL parameters and set values if present
+      // Support both new short params (a, m, i) and old long params for backwards compatibility
+      const urlParams = new URLSearchParams(window.location.search);
+      const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
+      const monthsParam = urlParams.get('m') || urlParams.get('months');
+
+      const downPaymentSelect = document.getElementById('downPaymentCalc');
+      const installmentsSelect = document.getElementById('installmentsCalc');
+
+      if (downpaymentParam && downPaymentSelect) {
+        downPaymentSelect.value = downpaymentParam;
+      }
+      if (monthsParam && installmentsSelect) {
+        installmentsSelect.value = monthsParam;
+      }
+
+      downPaymentSelect?.addEventListener('change', updateCalculations);
+      installmentsSelect?.addEventListener('change', updateCalculations);
+      updateCalculations(); // Initial calculation with URL params
+    }, 100);
+  }
 
   // CTA Buttons Section
   const ctaSection = document.createElement('div');
