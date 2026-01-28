@@ -46,8 +46,7 @@ const CLIENT_CONFIGS = {
         communities: ['sierraalta', 'sierrabaja'],
         center: [-96.090537, 19.073336],
         zoom: 15.2
-      }
-    },
+      },
           'arborea': {
         // For sierraalta & sierrabaja
         url: 'https://la-la.land/inverta/arborea.png', // Original for index.html
