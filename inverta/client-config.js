@@ -48,6 +48,15 @@ const CLIENT_CONFIGS = {
         zoom: 15.2
       }
     },
+          'arborea': {
+        // For sierraalta & sierrabaja
+        url: 'https://la-la.land/inverta/arborea.png', // Original for index.html
+        cardLogoUrl: 'https://la-la.land/inverta/puntolomas_black.png', // Black version for cards
+        communities: ['cortezia', 'ebano', 'verdalia', 'frondia'],
+        center: [-110.908304, 29.123942],
+        zoom: 14.9
+      }
+    },
 
     // ----- MAPBOX SETTINGS -----
     mapbox: {
