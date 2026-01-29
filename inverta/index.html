@@ -3901,86 +3901,143 @@ let mergedSegmentGroups = [];
 
 function mergeSideSegments(coords) {
   const threshold = (CONFIG.misc && CONFIG.misc.dimensionMergeThreshold) || 0;
-  const segments = [];
 
-  // Calculate all segment distances
+  // Build segments array
+  const segments = [];
   for (let i = 0; i < coords.length - 1; i++) {
     const start = coords[i];
     const end = coords[i + 1];
     const distance = turf.distance(turf.point(start), turf.point(end), { units: 'meters' });
-    segments.push({ start, end, distance, index: i });
+    segments.push({ start, end, distance });
   }
 
-  if (threshold <= 0) {
-    return segments.map(seg => ({
+  const n = segments.length;
+
+  // Helper: compute inner polygon angle at the shared vertex between segA and segB
+  // Uses dot product with flipped B direction. Returns degrees (180 = straight, 90 = corner)
+  function getInnerAngle(segA, segB) {
+    const dAx = segA.end[0] - segA.start[0];
+    const dAy = segA.end[1] - segA.start[1];
+    const dBx = segB.start[0] - segB.end[0]; // flipped
+    const dBy = segB.start[1] - segB.end[1];
+    const magA = Math.sqrt(dAx * dAx + dAy * dAy);
+    const magB = Math.sqrt(dBx * dBx + dBy * dBy);
+    if (magA === 0 || magB === 0) return 180;
+    let dot = (dAx / magA) * (dBx / magB) + (dAy / magA) * (dBy / magB);
+    dot = Math.max(-1, Math.min(1, dot));
+    return Math.acos(dot) * (180 / Math.PI);
+  }
+
+  // Helper: compute path-based midpoint for a group of segment indices
+  function pathMidpoint(group) {
+    let totalDist = 0;
+    for (const idx of group) totalDist += segments[idx].distance;
+    const halfDist = totalDist / 2;
+    let walked = 0;
+    for (const idx of group) {
+      const seg = segments[idx];
+      if (walked + seg.distance >= halfDist) {
+        const t = (halfDist - walked) / seg.distance;
+        return [
+          seg.start[0] + t * (seg.end[0] - seg.start[0]),
+          seg.start[1] + t * (seg.end[1] - seg.start[1])
+        ];
+      }
+      walked += seg.distance;
+    }
+    const last = segments[group[group.length - 1]];
+    return [(last.start[0] + last.end[0]) / 2, (last.start[1] + last.end[1]) / 2];
+  }
+
+  // No merging — return each segment as its own group
+  if (threshold <= 0 || n === 0) {
+    return segments.map((seg, i) => ({
+      totalDistance: seg.distance,
+      midpoint: [(seg.start[0] + seg.end[0]) / 2, (seg.start[1] + seg.end[1]) / 2],
       startCoord: seg.start,
-      endCoord: seg.end,
-      totalDistance: seg.distance
+      endCoord: seg.end
     }));
   }
 
-  // Angle helpers
-  function groupBearing(grp) {
-    return turf.bearing(turf.point(grp.startCoord), turf.point(grp.endCoord));
-  }
-  function angleDiff(a, b) {
-    let d = Math.abs(a - b) % 360;
-    if (d > 180) d = 360 - d;
-    return d;
-  }
+  // Walk segments in polygon order, merge short ones into most collinear neighbor
+  const processed = new Array(n).fill(false);
+  const mergedGroups = [];
 
-  // Start with every segment as its own group
-  const groups = segments.map(seg => ({
-    startCoord: seg.start,
-    endCoord: seg.end,
-    totalDistance: seg.distance
-  }));
+  for (let i = 0; i < n; i++) {
+    if (processed[i]) continue;
 
-  // Iteratively merge the shortest group below threshold into its most parallel neighbor
-  let changed = true;
-  while (changed) {
-    changed = false;
-    let minIdx = -1;
-    let minDist = Infinity;
-    for (let g = 0; g < groups.length; g++) {
-      if (groups[g].totalDistance < threshold && groups[g].totalDistance < minDist) {
-        minDist = groups[g].totalDistance;
-        minIdx = g;
-      }
-    }
-    if (minIdx === -1) break;
+    if (segments[i].distance < threshold) {
+      const prevIdx = (i - 1 + n) % n;
+      const nextIdx = (i + 1) % n;
 
-    const g = minIdx;
-    const bearing = groupBearing(groups[g]);
-    const hasPrev = g > 0;
-    const hasNext = g < groups.length - 1;
+      const angleWithPrev = getInnerAngle(segments[prevIdx], segments[i]);
+      const angleWithNext = getInnerAngle(segments[i], segments[nextIdx]);
 
-    if (hasPrev && hasNext) {
-      const diffPrev = angleDiff(bearing, groupBearing(groups[g - 1]));
-      const diffNext = angleDiff(bearing, groupBearing(groups[g + 1]));
-      if (diffPrev <= diffNext) {
-        groups[g - 1].endCoord = groups[g].endCoord;
-        groups[g - 1].totalDistance += groups[g].totalDistance;
+      const devPrev = Math.abs(180 - angleWithPrev);
+      const devNext = Math.abs(180 - angleWithNext);
+
+      if (Math.abs(devPrev - devNext) < 0.001) {
+        // Equal deviation — don't merge, keep standalone
+        mergedGroups.push([i]);
+        processed[i] = true;
+      } else if (devPrev < devNext) {
+        // Merge with previous (more collinear)
+        let found = false;
+        for (const group of mergedGroups) {
+          if (group.includes(prevIdx)) {
+            group.push(i);
+            processed[i] = true;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          mergedGroups.push([prevIdx, i]);
+          processed[prevIdx] = true;
+          processed[i] = true;
+        }
       } else {
-        groups[g + 1].startCoord = groups[g].startCoord;
-        groups[g + 1].totalDistance += groups[g].totalDistance;
+        // Merge with next (more collinear)
+        let found = false;
+        for (const group of mergedGroups) {
+          if (group.includes(nextIdx)) {
+            group.unshift(i);
+            processed[i] = true;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          mergedGroups.push([i, nextIdx]);
+          processed[i] = true;
+          processed[nextIdx] = true;
+        }
       }
-      groups.splice(g, 1);
-      changed = true;
-    } else if (hasPrev) {
-      groups[g - 1].endCoord = groups[g].endCoord;
-      groups[g - 1].totalDistance += groups[g].totalDistance;
-      groups.splice(g, 1);
-      changed = true;
-    } else if (hasNext) {
-      groups[1].startCoord = groups[0].startCoord;
-      groups[1].totalDistance += groups[0].totalDistance;
-      groups.splice(0, 1);
-      changed = true;
+    } else {
+      mergedGroups.push([i]);
+      processed[i] = true;
     }
   }
 
-  return groups;
+  // Ensure all segments are accounted for
+  for (let i = 0; i < n; i++) {
+    if (!processed[i]) mergedGroups.push([i]);
+  }
+
+  // Sort groups by first segment index to maintain polygon order
+  mergedGroups.sort((a, b) => Math.min(...a) - Math.min(...b));
+
+  // Build output with path-based midpoints
+  return mergedGroups.map(group => {
+    let totalDistance = 0;
+    for (const idx of group) totalDistance += segments[idx].distance;
+    return {
+      totalDistance,
+      midpoint: pathMidpoint(group),
+      startCoord: segments[group[0]].start,
+      endCoord: segments[group[group.length - 1]].end
+    };
+  });
 }
 
 function addSideLengthLabels(lot) {
@@ -4000,11 +4057,6 @@ function addSideLengthLabels(lot) {
 
   groups.forEach((group, i) => {
     setTimeout(() => {
-      const midpoint = [
-        (group.startCoord[0] + group.endCoord[0]) / 2,
-        (group.startCoord[1] + group.endCoord[1]) / 2
-      ];
-
       const roundedDistance = Math.round(group.totalDistance * 2) / 2;
 
       const label = document.createElement('div');
@@ -4012,7 +4064,7 @@ function addSideLengthLabels(lot) {
       label.innerHTML = `${roundedDistance}<span translate="no">m</span>`;
       label.style.position = 'absolute';
 
-      const pixelPos = map.project(midpoint);
+      const pixelPos = map.project(group.midpoint);
       label.style.left = `${pixelPos.x}px`;
       label.style.top = `${pixelPos.y}px`;
       label.style.transform = 'translate(-50%, -50%) scale(0.4)';
@@ -4040,13 +4092,7 @@ function updateSideLengthPositions() {
   }
 
   for (let i = 0; i < mergedSegmentGroups.length; i++) {
-    const group = mergedSegmentGroups[i];
-    const midpoint = [
-      (group.startCoord[0] + group.endCoord[0]) / 2,
-      (group.startCoord[1] + group.endCoord[1]) / 2
-    ];
-
-    const pixelPos = map.project(midpoint);
+    const pixelPos = map.project(mergedSegmentGroups[i].midpoint);
     sideLengthLabels[i].style.left = `${pixelPos.x}px`;
     sideLengthLabels[i].style.top = `${pixelPos.y}px`;
   }
