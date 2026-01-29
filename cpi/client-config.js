@@ -232,7 +232,7 @@ const CLIENT_CONFIGS = {
       minZoomForDimensions: 17.9,
 
       // Merge consecutive segments shorter than this (meters) into one label
-      dimensionMergeThreshold: 15,
+      dimensionMergeThreshold: 21,
 
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
