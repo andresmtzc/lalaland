@@ -4278,6 +4278,53 @@ map.on('click', 'lots-final-click', (e) => {
   }); // fetch token ends
 
 // === SIDE LENGTH LABELS ===
+// Store merged segment groups for repositioning on map move
+let mergedSegmentGroups = [];
+
+function mergeSideSegments(coords) {
+  const threshold = (CONFIG.misc && CONFIG.misc.dimensionMergeThreshold) || 0;
+  const segments = [];
+
+  // Calculate all segment distances
+  for (let i = 0; i < coords.length - 1; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
+    const distance = turf.distance(turf.point(start), turf.point(end), { units: 'meters' });
+    segments.push({ start, end, distance, index: i });
+  }
+
+  if (threshold <= 0) {
+    // No merging — return each segment as its own group
+    return segments.map(seg => ({
+      startCoord: seg.start,
+      endCoord: seg.end,
+      totalDistance: seg.distance
+    }));
+  }
+
+  const groups = [];
+  let i = 0;
+  while (i < segments.length) {
+    if (segments[i].distance < threshold) {
+      // Start a merge group — accumulate consecutive short segments
+      let totalDist = 0;
+      const groupStart = segments[i].start;
+      let groupEnd = segments[i].end;
+      while (i < segments.length && segments[i].distance < threshold) {
+        totalDist += segments[i].distance;
+        groupEnd = segments[i].end;
+        i++;
+      }
+      groups.push({ startCoord: groupStart, endCoord: groupEnd, totalDistance: totalDist });
+    } else {
+      // Segment is >= threshold, keep as-is
+      groups.push({ startCoord: segments[i].start, endCoord: segments[i].end, totalDistance: segments[i].distance });
+      i++;
+    }
+  }
+  return groups;
+}
+
 function addSideLengthLabels(lot) {
   // Always remove any existing labels first
   removeSideLengthLabels();
@@ -4290,16 +4337,17 @@ function addSideLengthLabels(lot) {
     coords.push(coords[0]);
   }
 
-  coords.forEach((_, i) => {
-    if (i >= coords.length - 1) return;
+  const groups = mergeSideSegments(coords);
+  mergedSegmentGroups = groups;
 
+  groups.forEach((group, i) => {
     setTimeout(() => {
-      const start = coords[i];
-      const end = coords[i + 1];
-      const midpoint = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+      const midpoint = [
+        (group.startCoord[0] + group.endCoord[0]) / 2,
+        (group.startCoord[1] + group.endCoord[1]) / 2
+      ];
 
-      const distance = turf.distance(turf.point(start), turf.point(end), { units: 'meters' });
-      const roundedDistance = Math.round(distance * 2) / 2;
+      const roundedDistance = Math.round(group.totalDistance * 2) / 2;
 
       const label = document.createElement('div');
       label.className = 'side-length-label';
@@ -4325,29 +4373,21 @@ function addSideLengthLabels(lot) {
 
 function updateSideLengthPositions() {
   if (!currentLabeledLot || sideLengthLabels.length === 0) return;
-  
-  // Make sure we have the same number of labels as coordinates
-  const coords = [...currentLabeledLot.coords];
-  if (coords[0][0] !== coords[coords.length - 1][0] || 
-      coords[0][1] !== coords[coords.length - 1][1]) {
-    coords.push(coords[0]);
-  }
-  
-  // Safety check - if labels and coordinates don't match, recreate labels
-  if (sideLengthLabels.length !== coords.length - 1) {
+
+  // Safety check - if labels and groups don't match, recreate
+  if (sideLengthLabels.length !== mergedSegmentGroups.length) {
     removeSideLengthLabels();
     addSideLengthLabels(currentLabeledLot);
     return;
   }
 
-  for (let i = 0; i < coords.length - 1; i++) {
-    const start = coords[i];
-    const end = coords[i + 1];
+  for (let i = 0; i < mergedSegmentGroups.length; i++) {
+    const group = mergedSegmentGroups[i];
     const midpoint = [
-      (start[0] + end[0]) / 2,
-      (start[1] + end[1]) / 2
+      (group.startCoord[0] + group.endCoord[0]) / 2,
+      (group.startCoord[1] + group.endCoord[1]) / 2
     ];
-    
+
     const pixelPos = map.project(midpoint);
     sideLengthLabels[i].style.left = `${pixelPos.x}px`;
     sideLengthLabels[i].style.top = `${pixelPos.y}px`;
