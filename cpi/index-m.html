@@ -4307,7 +4307,6 @@ function mergeSideSegments(coords) {
   }
 
   if (threshold <= 0) {
-    // No merging — return each segment as its own group
     return segments.map(seg => ({
       startCoord: seg.start,
       endCoord: seg.end,
@@ -4315,17 +4314,37 @@ function mergeSideSegments(coords) {
     }));
   }
 
-  // First pass: merge consecutive short segments
+  // Helpers for angle comparison (used by both passes)
+  const ANGLE_TOLERANCE = 45;
+  function segBearing(startCoord, endCoord) {
+    return turf.bearing(turf.point(startCoord), turf.point(endCoord));
+  }
+  function groupBearing(grp) {
+    return segBearing(grp.startCoord, grp.endCoord);
+  }
+  function angleDiff(a, b) {
+    let d = Math.abs(a - b) % 360;
+    if (d > 180) d = 360 - d;
+    if (d > 90) d = 180 - d;
+    return d;
+  }
+
+  // First pass: merge consecutive short segments that are roughly collinear
   const groups = [];
   let i = 0;
   while (i < segments.length) {
     if (segments[i].distance < threshold) {
-      let totalDist = 0;
+      let totalDist = segments[i].distance;
       const groupStart = segments[i].start;
       let groupEnd = segments[i].end;
+      let groupDir = segBearing(groupStart, groupEnd);
+      i++;
       while (i < segments.length && segments[i].distance < threshold) {
+        const nextDir = segBearing(segments[i].start, segments[i].end);
+        if (angleDiff(groupDir, nextDir) > ANGLE_TOLERANCE) break;
         totalDist += segments[i].distance;
         groupEnd = segments[i].end;
+        groupDir = segBearing(groupStart, groupEnd);
         i++;
       }
       groups.push({ startCoord: groupStart, endCoord: groupEnd, totalDistance: totalDist });
@@ -4337,16 +4356,6 @@ function mergeSideSegments(coords) {
 
   // Second pass: absorb any group still below threshold into the neighbor
   // with the most similar angle (most parallel / collinear)
-  function groupBearing(grp) {
-    return turf.bearing(turf.point(grp.startCoord), turf.point(grp.endCoord));
-  }
-  function angleDiff(a, b) {
-    let d = Math.abs(a - b) % 360;
-    if (d > 180) d = 360 - d;
-    if (d > 90) d = 180 - d;
-    return d;
-  }
-
   for (let g = groups.length - 1; g >= 0; g--) {
     if (groups[g].totalDistance < threshold) {
       const bearing = groupBearing(groups[g]);
