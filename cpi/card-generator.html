@@ -785,15 +785,39 @@
               }
             }
 
-            // Second pass: absorb any group still below threshold into its neighbor
+            // Second pass: absorb any group still below threshold into the neighbor
+            // with the most similar angle (most parallel / collinear)
             if (mergeThreshold > 0) {
+              function genBearing(grp) {
+                return turf.bearing(turf.point(grp.startCoord), turf.point(grp.endCoord));
+              }
+              function genAngleDiff(a, b) {
+                let d = Math.abs(a - b) % 360;
+                if (d > 180) d = 360 - d;
+                if (d > 90) d = 180 - d;
+                return d;
+              }
               for (let g = groups.length - 1; g >= 0; g--) {
                 if (groups[g].totalDistance < mergeThreshold) {
-                  if (g > 0) {
+                  const bearing = genBearing(groups[g]);
+                  const hasPrev = g > 0;
+                  const hasNext = g < groups.length - 1;
+                  if (hasPrev && hasNext) {
+                    const diffPrev = genAngleDiff(bearing, genBearing(groups[g - 1]));
+                    const diffNext = genAngleDiff(bearing, genBearing(groups[g + 1]));
+                    if (diffPrev <= diffNext) {
+                      groups[g - 1].endCoord = groups[g].endCoord;
+                      groups[g - 1].totalDistance += groups[g].totalDistance;
+                    } else {
+                      groups[g + 1].startCoord = groups[g].startCoord;
+                      groups[g + 1].totalDistance += groups[g].totalDistance;
+                    }
+                    groups.splice(g, 1);
+                  } else if (hasPrev) {
                     groups[g - 1].endCoord = groups[g].endCoord;
                     groups[g - 1].totalDistance += groups[g].totalDistance;
                     groups.splice(g, 1);
-                  } else if (groups.length > 1) {
+                  } else if (hasNext) {
                     groups[1].startCoord = groups[0].startCoord;
                     groups[1].totalDistance += groups[0].totalDistance;
                     groups.splice(0, 1);
