@@ -386,6 +386,9 @@ const CLIENT_CONFIGS = {
       // Minimum zoom level to show lot dimensions (lower = show at farther zoom)
       minZoomForDimensions: 18.8,
 
+      // Merge consecutive segments shorter than this (meters) into one label
+      dimensionMergeThreshold: 8,
+
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
       ctaColor: '#ff8400' // DEPRECATED: Use colors.primary instead
