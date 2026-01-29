@@ -4301,74 +4301,64 @@ function mergeSideSegments(coords) {
     }));
   }
 
-  // Helpers for angle comparison (used by both passes)
-  const ANGLE_TOLERANCE = 45;
-  function segBearing(startCoord, endCoord) {
-    return turf.bearing(turf.point(startCoord), turf.point(endCoord));
-  }
+  // Angle helpers
   function groupBearing(grp) {
-    return segBearing(grp.startCoord, grp.endCoord);
+    return turf.bearing(turf.point(grp.startCoord), turf.point(grp.endCoord));
   }
   function angleDiff(a, b) {
     let d = Math.abs(a - b) % 360;
     if (d > 180) d = 360 - d;
-    if (d > 90) d = 180 - d;
     return d;
   }
 
-  // First pass: merge consecutive short segments that are roughly collinear
-  const groups = [];
-  let i = 0;
-  while (i < segments.length) {
-    if (segments[i].distance < threshold) {
-      let totalDist = segments[i].distance;
-      const groupStart = segments[i].start;
-      let groupEnd = segments[i].end;
-      let groupDir = segBearing(groupStart, groupEnd);
-      i++;
-      while (i < segments.length && segments[i].distance < threshold) {
-        const nextDir = segBearing(segments[i].start, segments[i].end);
-        if (angleDiff(groupDir, nextDir) > ANGLE_TOLERANCE) break;
-        totalDist += segments[i].distance;
-        groupEnd = segments[i].end;
-        groupDir = segBearing(groupStart, groupEnd);
-        i++;
+  // Start with every segment as its own group
+  const groups = segments.map(seg => ({
+    startCoord: seg.start,
+    endCoord: seg.end,
+    totalDistance: seg.distance
+  }));
+
+  // Iteratively merge the shortest group below threshold into its most parallel neighbor
+  let changed = true;
+  while (changed) {
+    changed = false;
+    let minIdx = -1;
+    let minDist = Infinity;
+    for (let g = 0; g < groups.length; g++) {
+      if (groups[g].totalDistance < threshold && groups[g].totalDistance < minDist) {
+        minDist = groups[g].totalDistance;
+        minIdx = g;
       }
-      groups.push({ startCoord: groupStart, endCoord: groupEnd, totalDistance: totalDist });
-    } else {
-      groups.push({ startCoord: segments[i].start, endCoord: segments[i].end, totalDistance: segments[i].distance });
-      i++;
     }
-  }
+    if (minIdx === -1) break;
 
-  // Second pass: absorb any group still below threshold into the neighbor
-  // with the most similar angle (most parallel / collinear)
-  for (let g = groups.length - 1; g >= 0; g--) {
-    if (groups[g].totalDistance < threshold) {
-      const bearing = groupBearing(groups[g]);
-      const hasPrev = g > 0;
-      const hasNext = g < groups.length - 1;
+    const g = minIdx;
+    const bearing = groupBearing(groups[g]);
+    const hasPrev = g > 0;
+    const hasNext = g < groups.length - 1;
 
-      if (hasPrev && hasNext) {
-        const diffPrev = angleDiff(bearing, groupBearing(groups[g - 1]));
-        const diffNext = angleDiff(bearing, groupBearing(groups[g + 1]));
-        if (diffPrev <= diffNext) {
-          groups[g - 1].endCoord = groups[g].endCoord;
-          groups[g - 1].totalDistance += groups[g].totalDistance;
-        } else {
-          groups[g + 1].startCoord = groups[g].startCoord;
-          groups[g + 1].totalDistance += groups[g].totalDistance;
-        }
-        groups.splice(g, 1);
-      } else if (hasPrev) {
+    if (hasPrev && hasNext) {
+      const diffPrev = angleDiff(bearing, groupBearing(groups[g - 1]));
+      const diffNext = angleDiff(bearing, groupBearing(groups[g + 1]));
+      if (diffPrev <= diffNext) {
         groups[g - 1].endCoord = groups[g].endCoord;
         groups[g - 1].totalDistance += groups[g].totalDistance;
-        groups.splice(g, 1);
-      } else if (hasNext) {
-        groups[1].startCoord = groups[0].startCoord;
-        groups[1].totalDistance += groups[0].totalDistance;
-        groups.splice(0, 1);
+      } else {
+        groups[g + 1].startCoord = groups[g].startCoord;
+        groups[g + 1].totalDistance += groups[g].totalDistance;
       }
+      groups.splice(g, 1);
+      changed = true;
+    } else if (hasPrev) {
+      groups[g - 1].endCoord = groups[g].endCoord;
+      groups[g - 1].totalDistance += groups[g].totalDistance;
+      groups.splice(g, 1);
+      changed = true;
+    } else if (hasNext) {
+      groups[1].startCoord = groups[0].startCoord;
+      groups[1].totalDistance += groups[0].totalDistance;
+      groups.splice(0, 1);
+      changed = true;
     }
   }
 
