@@ -734,7 +734,7 @@
             }
           });
 
-          // Add dimension labels on ALL sides
+          // Add dimension labels with segment merging
           const coords = lot.coords;
           if (coords.length >= 3) {
             // Close the polygon if not already closed
@@ -744,14 +744,36 @@
               closedCoords.push(closedCoords[0]);
             }
 
-            // Add dimension line and label for each side
+            // Merge consecutive short segments based on threshold
+            const mergeThreshold = (CLIENT_CONFIG && CLIENT_CONFIG.misc && CLIENT_CONFIG.misc.dimensionMergeThreshold) || 0;
+            const segments = [];
             for (let i = 0; i < closedCoords.length - 1; i++) {
-              const p1 = turf.point(closedCoords[i]);
-              const p2 = turf.point(closedCoords[i + 1]);
-              const distance = turf.distance(p1, p2, { units: 'meters' });
+              const dist = turf.distance(turf.point(closedCoords[i]), turf.point(closedCoords[i + 1]), { units: 'meters' });
+              segments.push({ start: closedCoords[i], end: closedCoords[i + 1], distance: dist });
+            }
 
-              // Round to nearest 0.5m like index.html
-              const roundedDistance = Math.round(distance * 2) / 2;
+            const groups = [];
+            let si = 0;
+            while (si < segments.length) {
+              if (mergeThreshold > 0 && segments[si].distance < mergeThreshold) {
+                let totalDist = 0;
+                const groupStart = segments[si].start;
+                let groupEnd = segments[si].end;
+                while (si < segments.length && segments[si].distance < mergeThreshold) {
+                  totalDist += segments[si].distance;
+                  groupEnd = segments[si].end;
+                  si++;
+                }
+                groups.push({ startCoord: groupStart, endCoord: groupEnd, totalDistance: totalDist });
+              } else {
+                groups.push({ startCoord: segments[si].start, endCoord: segments[si].end, totalDistance: segments[si].distance });
+                si++;
+              }
+            }
+
+            // Add dimension line and label for each merged group
+            groups.forEach((group, i) => {
+              const roundedDistance = Math.round(group.totalDistance * 2) / 2;
 
               // Add dashed dimension line
               map.addSource(`dimension-${i}`, {
@@ -760,7 +782,7 @@
                   type: 'Feature',
                   geometry: {
                     type: 'LineString',
-                    coordinates: [closedCoords[i], closedCoords[i + 1]]
+                    coordinates: [group.startCoord, group.endCoord]
                   }
                 }
               });
@@ -776,8 +798,8 @@
                 }
               });
 
-              // Add label at midpoint - styled like index.html
-              const midpoint = turf.midpoint(p1, p2);
+              // Add label at midpoint
+              const midpoint = turf.midpoint(turf.point(group.startCoord), turf.point(group.endCoord));
 
               const label = document.createElement('div');
               label.className = 'side-length-label';
@@ -799,7 +821,7 @@
               new mapboxgl.Marker({ element: label })
                 .setLngLat(midpoint.geometry.coordinates)
                 .addTo(map);
-            }
+            });
           }
 
           // Wait for map to fully render
