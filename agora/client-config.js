@@ -127,35 +127,35 @@ const CLIENT_CONFIGS = {
 
       'amani-pietra': {
         id: 'amani-pietra',
-        name: 'Barcelona',
-        displayName: 'Barcelona',
-        fracc: 'amani-pietra',
-        center: [-96.035362, 19.046467],
-        zoom: 16.2,
+        name: 'Amani Pietra',
+        displayName: 'Amani Pietra',
+        fracc: 'pietra',
+        center: [-100.189895, 25.428123],
+        zoom: 16.3,
         position: 2,
         searchMenuId: 'positionFour',
         apartarEnabled: false
       },
 
-      'cañadas-vergel': {
-        id: 'cañadas-vergel',
-        name: 'Marsella',
-        displayName: 'Marsella',
-        fracc: 'cañadas-vergel',
-        center: [-96.038468, 19.047346],
-        zoom: 16.3,
+      'amani-aqua': {
+        id: 'amani-aqua',
+        name: 'Amani Aqua',
+        displayName: 'Amani Aqua',
+        fracc: 'aqua',
+        center: [-100.179293, 25.436671],
+        zoom: 15.6,
         position: 1,
         searchMenuId: 'positionThree',
         apartarEnabled: false
       },
 
-      'amani-aqua': {
-        id: 'amani-aqua',
-        name: 'Sierra Alta',
-        displayName: 'Sierra Alta',
-        fracc: 'amani-aqua',
-        center: [-96.090324, 19.072938],
-        zoom: 15.6,
+      'cañadas-vergel': {
+        id: 'cañadas-vergel',
+        name: 'Cañadas Vergel',
+        displayName: 'Cañadas Vergel',
+        fracc: 'canadas',
+        center: [-100.178178, 25.441325],
+        zoom: 16.4,
         position: 7,
         searchMenuId: 'positionTwo',
         apartarEnabled: false
