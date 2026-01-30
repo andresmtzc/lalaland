@@ -91,8 +91,8 @@ const CLIENT_CONFIGS = {
 
       // Initial map view (can be overridden by default community)
       initialView: {
-        center: [-96.062906, 19.073475], // Marsella center
-        zoom: 12.1
+        center: [-100.1534, 25.4255], // Marsella center
+        zoom: 12.0
       }
     },
 
@@ -130,33 +130,33 @@ const CLIENT_CONFIGS = {
 
       pietra: {
         id: 'pietra',
-        name: 'Barcelona',
-        displayName: 'Barcelona',
-        fracc: 'barcelona',
-        center: [-96.035362, 19.046467],
-        zoom: 16.2,
+        name: 'Pietra',
+        displayName: 'Pietra',
+        fracc: 'pietra',
+        center: [-100.189895, 25.428123],
+        zoom: 16.3,
         position: 2,
         searchMenuId: 'positionFour'
       },
 
       canadas: {
-        id: 'canadas',
-        name: 'Marsella',
-        displayName: 'Marsella',
-        fracc: 'marsella',
-        center: [-96.038468, 19.047346],
-        zoom: 16.3,
+        id: 'aqua',
+        name: 'Aqua',
+        displayName: 'Aqua',
+        fracc: 'aqua',
+        center: [-100.179293, 25.436671],
+        zoom: 15.6,
         position: 1,
         searchMenuId: 'positionThree'
       },
 
       aqua: {
-        id: 'aqua',
-        name: 'Sierra Alta',
-        displayName: 'Sierra Alta',
-        fracc: 'sierraalta',
-        center: [-96.090324, 19.072938],
-        zoom: 15.6,
+        id: 'canadas',
+        name: 'Canadas',
+        displayName: 'Canadas',
+        fracc: 'canadas',
+        center: [-100.178178, 25.441325],
+        zoom: 16.4,
         position: 7,
         searchMenuId: 'positionTwo'
       }
