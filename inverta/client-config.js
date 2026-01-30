@@ -144,7 +144,8 @@ const CLIENT_CONFIGS = {
         center: [-96.035362, 19.046467],
         zoom: 16.2,
         position: 2,
-        searchMenuId: 'positionFour'
+        searchMenuId: 'positionFour',
+        apartarEnabled: true
       },
 
       marsella: {
@@ -155,7 +156,8 @@ const CLIENT_CONFIGS = {
         center: [-96.038468, 19.047346],
         zoom: 16.3,
         position: 1,
-        searchMenuId: 'positionThree'
+        searchMenuId: 'positionThree',
+        apartarEnabled: true
       },
 
       sierraalta: {
@@ -166,7 +168,8 @@ const CLIENT_CONFIGS = {
         center: [-96.090324, 19.072938],
         zoom: 15.6,
         position: 7,
-        searchMenuId: 'positionTwo'
+        searchMenuId: 'positionTwo',
+        apartarEnabled: true
       },
 
       sierrabaja: {
@@ -177,7 +180,8 @@ const CLIENT_CONFIGS = {
         center: [-96.091763, 19.074588],
         zoom: 16.8,
         position: 6,
-        searchMenuId: 'positionOne'
+        searchMenuId: 'positionOne',
+        apartarEnabled: true
       },
 
             cortezia: {
@@ -188,7 +192,8 @@ const CLIENT_CONFIGS = {
         center: [-110.909995, 29.12009],
         zoom: 15.8,
         position: 6,
-        searchMenuId: 'positionOne'
+        searchMenuId: 'positionOne',
+        apartarEnabled: true
       },
 
             ebano: {
@@ -199,7 +204,8 @@ const CLIENT_CONFIGS = {
         center: [-110.909567, 29.121523],
         zoom: 16.2,
         position: 6,
-        searchMenuId: 'positionOne'
+        searchMenuId: 'positionOne',
+        apartarEnabled: true
       },
 
             verdalia: {
@@ -210,7 +216,8 @@ const CLIENT_CONFIGS = {
         center: [-110.90849, 29.123108],
         zoom: 15.5,
         position: 6,
-        searchMenuId: 'positionOne'
+        searchMenuId: 'positionOne',
+        apartarEnabled: true
       },
 
             frondia: {
@@ -221,7 +228,8 @@ const CLIENT_CONFIGS = {
         center: [-110.906239, 29.125526],
         zoom: 16,
         position: 6,
-        searchMenuId: 'positionOne'
+        searchMenuId: 'positionOne',
+        apartarEnabled: true
       },
 
                   almaterra: {
@@ -232,7 +240,8 @@ const CLIENT_CONFIGS = {
         center: [-100.06265, 25.314019],
         zoom: 14.5,
         position: 6,
-        searchMenuId: 'positionOne'
+        searchMenuId: 'positionOne',
+        apartarEnabled: true
       }
 
     },

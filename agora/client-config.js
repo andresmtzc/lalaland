@@ -136,7 +136,8 @@ const CLIENT_CONFIGS = {
         center: [-100.189895, 25.428123],
         zoom: 16.3,
         position: 2,
-        searchMenuId: 'positionFour'
+        searchMenuId: 'positionFour',
+        apartarEnabled: false
       },
 
       canadas: {
@@ -147,7 +148,8 @@ const CLIENT_CONFIGS = {
         center: [-100.179293, 25.436671],
         zoom: 15.6,
         position: 1,
-        searchMenuId: 'positionThree'
+        searchMenuId: 'positionThree',
+        apartarEnabled: false
       },
 
       aqua: {
@@ -158,7 +160,8 @@ const CLIENT_CONFIGS = {
         center: [-100.178178, 25.441325],
         zoom: 16.4,
         position: 7,
-        searchMenuId: 'positionTwo'
+        searchMenuId: 'positionTwo',
+        apartarEnabled: false
       }
 
     },

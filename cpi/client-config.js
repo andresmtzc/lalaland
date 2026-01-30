@@ -80,7 +80,8 @@ const CLIENT_CONFIGS = {
         zoom: 14.1,
         position: 0, // Position in community selector
         // Alternative reference for search menu:
-        searchMenuId: 'positionOne'
+        searchMenuId: 'positionOne',
+        apartarEnabled: false
       }
 
 
