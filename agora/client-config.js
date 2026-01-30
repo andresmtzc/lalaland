@@ -62,26 +62,26 @@ const CLIENT_CONFIGS = {
       'amani-pietra': {
         communities: ['amani-pietra'],
         plans: [
-          { name: 'A', downPayment: 30, installments: { count: 12, pct: 70 }, escrituracion: 0, discount: 0 },
-          { name: 'B', downPayment: 50, installments: { count: 12, pct: 50 }, escrituracion: 0, discount: 5 },
-          { name: 'C', downPayment: 30, installments: { count: 3,  pct: 70 }, escrituracion: 0, discount: 10 }
+          { name: 'PLAN INICIAL', downPayment: 30, installments: { count: 12, pct: 70 }, escrituracion: 0, discount: 0 },
+          { name: '12 MESES', downPayment: 50, installments: { count: 12, pct: 50 }, escrituracion: 0, discount: 5 },
+          { name: '3 MESES', downPayment: 30, installments: { count: 3,  pct: 70 }, escrituracion: 0, discount: 10 }
         ]
       },
       'amani-aqua': {
         communities: ['amani-aqua'],
         plans: [
-          { name: 'A', downPayment: 20, installments: { count: 12, pct: 80 }, escrituracion: 0,  discount: 0 },
-          { name: 'B', downPayment: 20, installments: { count: 6,  pct: 20 }, escrituracion: 60, discount: 5 },
-          { name: 'C', downPayment: 20, installments: { count: 3,  pct: 20 }, escrituracion: 60, discount: 10 }
+          { name: '12 MESES', downPayment: 20, installments: { count: 12, pct: 80 }, escrituracion: 0,  discount: 0 },
+          { name: '6 MESES', downPayment: 20, installments: { count: 6,  pct: 20 }, escrituracion: 60, discount: 5 },
+          { name: '3 MESES', downPayment: 20, installments: { count: 3,  pct: 20 }, escrituracion: 60, discount: 10 }
         ]
       },
       'cañadas-vergel': {
         communities: ['cañadas-vergel'],
         plans: [
-          { name: 'A', downPayment: 30, installments: { count: 12, pct: 20 }, escrituracion: 50, discount: 0 },
-          { name: 'B', downPayment: 20, installments: { count: 12, pct: 60 }, escrituracion: 20, discount: 2 },
-          { name: 'C', downPayment: 20, installments: { count: 6,  pct: 60 }, escrituracion: 20, discount: 5 },
-          { name: 'D', downPayment: 20, installments: { count: 3,  pct: 60 }, escrituracion: 20, discount: 10 }
+          { name: 'PLAN INICIAL', downPayment: 30, installments: { count: 12, pct: 20 }, escrituracion: 50, discount: 0 },
+          { name: '12 MESES', downPayment: 20, installments: { count: 12, pct: 60 }, escrituracion: 20, discount: 2 },
+          { name: '6 MESES', downPayment: 20, installments: { count: 6,  pct: 60 }, escrituracion: 20, discount: 5 },
+          { name: '3 MESES', downPayment: 20, installments: { count: 3,  pct: 60 }, escrituracion: 20, discount: 10 }
         ]
       }
     },
