@@ -33,27 +33,27 @@ const CLIENT_CONFIGS = {
     communityLogos: {
       'pietra': {
         // For marsella & barcelona
-        url: 'https://la-la.land/agora/lomasmediterraneo.png', // Original for index.html
+        url: 'https://la-la.land/agora/pietra.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/agora/lomasmediterraneo_black.png', // Black version for cards
-        communities: ['marsella', 'barcelona'],
-        center: [-96.036711, 19.0485],
-        zoom: 15
+        communities: ['pietra', 'barcelona'],
+        center: [-100.189895, 25.428123],
+        zoom: 16.3
       },
-      'canadas': {
+      'aqua': {
         // For sierraalta & sierrabaja
-        url: 'https://la-la.land/agora/puntolomas.png', // Original for index.html
+        url: 'https://la-la.land/agora/aqua.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png', // Black version for cards
-        communities: ['sierraalta', 'sierrabaja'],
-        center: [-96.090537, 19.073336],
-        zoom: 15.2
+        communities: ['aqua', 'sierrabaja'],
+        center: [-100.179293, 25.436671],
+        zoom: 15.6
       },
-          'aqua': {
+          'canadas': {
         // For sierraalta & sierrabaja
-        url: 'https://la-la.land/agora/arborea.png', // Original for index.html
+        url: 'https://la-la.land/agora/canadas.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png', // Black version for cards
-        communities: ['cortezia', 'ebano', 'verdalia', 'frondia'],
-        center: [-110.908304, 29.123942],
-        zoom: 14.9
+        communities: ['canadas', 'ebano'],
+        center: [-100.178178, 25.441325],
+        zoom: 16.4
       }
     },
 
