@@ -315,7 +315,16 @@ function getCommunityByFracc(clientName, fraccName) {
   if (!config) return null;
 
   const fracc = fraccName.toLowerCase().trim();
-  return config.communities[fracc] || null;
+
+  // First try direct key lookup
+  if (config.communities[fracc]) return config.communities[fracc];
+
+  // Then search by fracc property
+  for (const comm of Object.values(config.communities)) {
+    if (comm.fracc && comm.fracc.toLowerCase().trim() === fracc) return comm;
+  }
+
+  return null;
 }
 
 /**
