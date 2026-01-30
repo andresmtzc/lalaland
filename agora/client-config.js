@@ -57,8 +57,8 @@ const CLIENT_CONFIGS = {
     // ----- COMMUNITY PRICING -----
     // Maps community groups to their financing options
     communityPricing: {
-      'veracruz': {
-        communities: ['amani-pietra', 'cañadas-vergel', 'amani-aqua'],
+      'amani-pietra': {
+        communities: ['amani-pietra'],
         downPayment: { min: 20, max: 50, step: 5 },
         terms: [
           { months: 24, interest: 13 },
@@ -68,8 +68,19 @@ const CLIENT_CONFIGS = {
           { months: 72, interest: 17 }
         ]
       },
-      'almaterra': {
-        communities: ['almaterra'],
+            'amani-aqua': {
+        communities: ['amani-aqua'],
+        downPayment: { min: 20, max: 50, step: 5 },
+        terms: [
+          { months: 24, interest: 13 },
+          { months: 36, interest: 14 },
+          { months: 48, interest: 15 },
+          { months: 60, interest: 16 },
+          { months: 72, interest: 17 }
+        ]
+      },
+      'cañadas-vergel': {
+        communities: ['cañadas-vergel'],
         downPayment: { min: 20, max: 50, step: 5 },
         terms: [
           { months: 12, interest: 0 },
