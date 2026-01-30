@@ -19,7 +19,7 @@ const CLIENT_CONFIGS = {
     name: 'AGORA',
     displayName: 'AGORA - La-La Land',
     slug: 'agora', // URL path slug (e.g., /inverta/)
-    defaultCommunity: 'pietra',
+    defaultCommunity: 'amani-pietra',
 
     // ----- BRANDING -----
     branding: {
@@ -31,27 +31,24 @@ const CLIENT_CONFIGS = {
     // ----- COMMUNITY LOGOS -----
     // Maps community groups to their respective logos
     communityLogos: {
-      'pietra': {
-        // For marsella & barcelona
-        url: 'https://la-la.land/agora/pietra.png', // Original for index.html
-        cardLogoUrl: 'https://la-la.land/agora/lomasmediterraneo_black.png', // Black version for cards
-        communities: ['pietra', 'barcelona'],
+      'amani-pietra': {
+        url: 'https://la-la.land/agora/pietra.png',
+        cardLogoUrl: 'https://la-la.land/agora/lomasmediterraneo_black.png',
+        communities: ['amani-pietra'],
         center: [-100.189895, 25.428123],
         zoom: 16.3
       },
-      'aqua': {
-        // For sierraalta & sierrabaja
-        url: 'https://la-la.land/agora/aqua.png', // Original for index.html
-        cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png', // Black version for cards
-        communities: ['aqua', 'sierrabaja'],
+      'amani-aqua': {
+        url: 'https://la-la.land/agora/aqua.png',
+        cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png',
+        communities: ['amani-aqua'],
         center: [-100.179293, 25.436671],
         zoom: 15.6
       },
-          'canadas': {
-        // For sierraalta & sierrabaja
-        url: 'https://la-la.land/agora/canadas.png', // Original for index.html
-        cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png', // Black version for cards
-        communities: ['canadas', 'ebano'],
+      'cañadas-vergel': {
+        url: 'https://la-la.land/agora/canadas.png',
+        cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png',
+        communities: ['cañadas-vergel'],
         center: [-100.178178, 25.441325],
         zoom: 16.4
       }
@@ -61,7 +58,7 @@ const CLIENT_CONFIGS = {
     // Maps community groups to their financing options
     communityPricing: {
       'veracruz': {
-        communities: ['marsella', 'barcelona', 'sierraalta', 'sierrabaja'],
+        communities: ['amani-pietra', 'cañadas-vergel', 'amani-aqua'],
         downPayment: { min: 20, max: 50, step: 5 },
         terms: [
           { months: 24, interest: 13 },
@@ -128,11 +125,11 @@ const CLIENT_CONFIGS = {
     // Each community has center coordinates, zoom level, and display info
     communities: {
 
-      pietra: {
-        id: 'pietra',
+      'amani-pietra': {
+        id: 'amani-pietra',
         name: 'Barcelona',
         displayName: 'Barcelona',
-        fracc: 'barcelona',
+        fracc: 'amani-pietra',
         center: [-96.035362, 19.046467],
         zoom: 16.2,
         position: 2,
@@ -140,11 +137,11 @@ const CLIENT_CONFIGS = {
         apartarEnabled: false
       },
 
-      canadas: {
-        id: 'canadas',
+      'cañadas-vergel': {
+        id: 'cañadas-vergel',
         name: 'Marsella',
         displayName: 'Marsella',
-        fracc: 'marsella',
+        fracc: 'cañadas-vergel',
         center: [-96.038468, 19.047346],
         zoom: 16.3,
         position: 1,
@@ -152,11 +149,11 @@ const CLIENT_CONFIGS = {
         apartarEnabled: false
       },
 
-      aqua: {
-        id: 'aqua',
+      'amani-aqua': {
+        id: 'amani-aqua',
         name: 'Sierra Alta',
         displayName: 'Sierra Alta',
-        fracc: 'sierraalta',
+        fracc: 'amani-aqua',
         center: [-96.090324, 19.072938],
         zoom: 15.6,
         position: 7,
@@ -175,11 +172,11 @@ const CLIENT_CONFIGS = {
     // ----- LOT NAMING CONVENTIONS -----
     // Prefixes used in lot IDs
     lotPrefixes: {
-      a: 'lotagora',  // e.g., lotinverta10-1
-      pietra: 'lotagorap',
-      canadas: 'lotagorac',
-      aqua: 'lotagoraq',
-      base: 'agora'          // Used in some contexts
+      a: 'lotagora',
+      'amani-pietra': 'lotagorap',
+      'cañadas-vergel': 'lotagorac',
+      'amani-aqua': 'lotagoraq',
+      base: 'agora'
     },
 
     // ----- CONTACT & CTA -----
@@ -417,7 +414,16 @@ function getCommunityByFracc(clientName, fraccName) {
   if (!config) return null;
 
   const fracc = fraccName.toLowerCase().trim();
-  return config.communities[fracc] || null;
+
+  // First try direct key lookup
+  if (config.communities[fracc]) return config.communities[fracc];
+
+  // Then search by fracc property
+  for (const comm of Object.values(config.communities)) {
+    if (comm.fracc && comm.fracc.toLowerCase().trim() === fracc) return comm;
+  }
+
+  return null;
 }
 
 /**
