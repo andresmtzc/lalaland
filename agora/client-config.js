@@ -99,19 +99,19 @@ const CLIENT_CONFIGS = {
         url: 'https://la-la.land/agora/agoraearth.png',
         layerId: 'drone-satellite-layer-1',
         sourceId: 'drone-satellite-1',
-        message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
+        message: "Cargamos la imágen aérea más actual — (agosto 2025)",
         bounds: [
-          [-96.041238, 19.0556],
-          [-96.031988, 19.055425],
-          [-96.032264, 19.042404],
-          [-96.041515, 19.04258]
+[-100.18295, 25.440142],
+[-100.176083, 25.440142],
+[-100.176083, 25.433941],
+[-100.18295, 25.433941]
         ]
       },
       {
         url: 'https://la-la.land/agora/agoraearth2.png',
         layerId: 'drone-satellite-layer-2',
         sourceId: 'drone-satellite-2',
-        message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
+        message: "Cargamos la imágen aérea más actual — (agosto 2025)",
         bounds: [
 [-96.097133, 19.079015],
 [-96.0834, 19.079015],
