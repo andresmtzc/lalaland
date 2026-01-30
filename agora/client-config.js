@@ -55,39 +55,33 @@ const CLIENT_CONFIGS = {
     },
 
     // ----- COMMUNITY PRICING -----
-    // Maps community groups to their financing options
+    // Plan-based pricing: each fraccionamiento has fixed plans (A, B, C, D)
+    // Discount applies first, then percentages split the discounted price
+    // down + installments.pct + escrituracion must equal 100
     communityPricing: {
       'amani-pietra': {
         communities: ['amani-pietra'],
-        downPayment: { min: 20, max: 50, step: 5 },
-        terms: [
-          { months: 24, interest: 13 },
-          { months: 36, interest: 14 },
-          { months: 48, interest: 15 },
-          { months: 60, interest: 16 },
-          { months: 72, interest: 17 }
+        plans: [
+          { name: 'A', downPayment: 30, installments: { count: 12, pct: 70 }, escrituracion: 0, discount: 0 },
+          { name: 'B', downPayment: 50, installments: { count: 12, pct: 50 }, escrituracion: 0, discount: 5 },
+          { name: 'C', downPayment: 30, installments: { count: 3,  pct: 70 }, escrituracion: 0, discount: 10 }
         ]
       },
-            'amani-aqua': {
+      'amani-aqua': {
         communities: ['amani-aqua'],
-        downPayment: { min: 20, max: 50, step: 5 },
-        terms: [
-          { months: 24, interest: 13 },
-          { months: 36, interest: 14 },
-          { months: 48, interest: 15 },
-          { months: 60, interest: 16 },
-          { months: 72, interest: 17 }
+        plans: [
+          { name: 'A', downPayment: 20, installments: { count: 12, pct: 80 }, escrituracion: 0,  discount: 0 },
+          { name: 'B', downPayment: 20, installments: { count: 6,  pct: 20 }, escrituracion: 60, discount: 5 },
+          { name: 'C', downPayment: 20, installments: { count: 3,  pct: 20 }, escrituracion: 60, discount: 10 }
         ]
       },
       'cañadas-vergel': {
         communities: ['cañadas-vergel'],
-        downPayment: { min: 20, max: 50, step: 5 },
-        terms: [
-          { months: 12, interest: 0 },
-          { months: 24, interest: 10 },
-          { months: 36, interest: 12 },
-          { months: 48, interest: 13 },
-          { months: 60, interest: 13 }
+        plans: [
+          { name: 'A', downPayment: 30, installments: { count: 12, pct: 20 }, escrituracion: 50, discount: 0 },
+          { name: 'B', downPayment: 20, installments: { count: 12, pct: 60 }, escrituracion: 20, discount: 2 },
+          { name: 'C', downPayment: 20, installments: { count: 6,  pct: 60 }, escrituracion: 20, discount: 5 },
+          { name: 'D', downPayment: 20, installments: { count: 3,  pct: 60 }, escrituracion: 20, discount: 10 }
         ]
       }
     },
