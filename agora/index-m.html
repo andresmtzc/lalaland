@@ -6256,29 +6256,18 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     ? getCommunityPricing(CURRENT_CLIENT, lot.fraccionamiento)
     : null;
 
-  // Build down payment options HTML
-  let downPaymentOptionsHtml = '';
-  if (pricingConfig) {
-    const { min, max, step } = pricingConfig.downPayment;
-    for (let pct = min; pct <= max; pct += step) {
-      downPaymentOptionsHtml += `<option value="${pct}">${pct}%</option>`;
-    }
-  }
-
-  // Build installments options HTML and INTEREST_RATES object
-  let installmentsOptionsHtml = '';
-  const INTEREST_RATES = {};
-  if (pricingConfig) {
-    const terms = pricingConfig.terms;
-    terms.forEach((term, idx) => {
-      const selected = idx === terms.length - 1 ? ' selected' : '';
-      installmentsOptionsHtml += `<option value="${term.months}"${selected}>${term.months}</option>`;
-      INTEREST_RATES[term.months] = term.interest / 100;
+  // Build plan options HTML (plan-based pricing)
+  let planOptionsHtml = '';
+  if (pricingConfig && pricingConfig.plans) {
+    pricingConfig.plans.forEach((plan, idx) => {
+      planOptionsHtml += `<option value="${idx}">${plan.name}</option>`;
     });
   }
 
-  // Default interest rate (last term's rate or 0)
-  const defaultInterestRate = pricingConfig ? pricingConfig.terms[pricingConfig.terms.length - 1].interest : 0;
+  // Get first plan defaults for initial display
+  const defaultPlan = pricingConfig && pricingConfig.plans ? pricingConfig.plans[0] : null;
+  const defaultDiscountedPrice = defaultPlan ? totalPrice * (1 - defaultPlan.discount / 100) : totalPrice;
+  const defaultEnganche = defaultPlan ? defaultDiscountedPrice * (defaultPlan.downPayment / 100) : 0;
 
   detailRow.innerHTML = `
   <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
@@ -6299,7 +6288,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     </div>
 
     <!-- Big total price with more space above -->
-    <div style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
+    <div id="bigTotalPrice" style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
       $${totalPriceFormatted}<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>
     </div>
     <div style="font-size: 13px; color: ${CONFIG.colors.textLight}; text-align: right; width: 100%; margin-top: -8px;">
@@ -6307,40 +6296,38 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     </div>
     <div style="width: 100%; height: 1px; background: ${CONFIG.colors.grayLight}; margin: 0px;"></div>
 
-    ${pricingConfig ? `
-    <!-- Financing Calculator -->
+    ${pricingConfig && pricingConfig.plans ? `
+    <!-- Plan-based Financing -->
     <div style="margin-top: 6px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; position: relative;">
-      <!-- Row 1: Down payment % + Enganche amount -->
+      <!-- Row 1: Plan dropdown + Enganche amount -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="downPaymentCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${downPaymentOptionsHtml}
+        <div style="width: 110px;">
+          <select id="downPaymentCalc" style="width: 110px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
+            ${planOptionsHtml}
           </select>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * (pricingConfig.downPayment.min / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${defaultEnganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       </div>
 
-      <!-- Row 2: Months + Monthly payment -->
+      <!-- Row 2: Discount display + Mensualidades -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="installmentsCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${installmentsOptionsHtml}
-          </select>
+        <div style="width: 110px; text-align: center; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight};">
+          <span id="discountDisplay">${defaultPlan.discount}%</span>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
+          <span id="paymentLabel">${defaultPlan.installments.count} Meses</span>: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span id="paymentSuffix" style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
         </div>
       </div>
 
-      <!-- Tasa and Precio financiado on same line -->
+      <!-- Row 3: Descuento label + Escrituración (conditional) -->
       <div style="width: 100%; display: flex; justify-content: space-between; margin-top: -4px; font-size: 13px; color: ${CONFIG.colors.textLight};">
-        <div style="width: 80px; text-align: center;">
-          <span>Tasa <span id="financingRate">${defaultInterestRate}</span>%</span>
+        <div style="width: 110px; text-align: center;" class="descuento-label">
+          <span>Descuento</span>
         </div>
-        <div style="text-align: right;">
-          <span>Financiado: <span id="financingTotalPrice">$0.00</span></span>
+        <div style="text-align: right;" id="financingInfo">
+          <span>Escrituración: <span id="financingTotalPrice">$0.00</span></span>
         </div>
       </div>
     </div>
@@ -6357,59 +6344,67 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   detailContainer.appendChild(detailRow);
 
-  // Initialize calculator (only if pricing config exists)
-  if (pricingConfig) {
+  // Initialize plan-based calculator (only if pricing config with plans exists)
+  if (pricingConfig && pricingConfig.plans) {
     const totalPriceNum = totalPrice;
+    const plans = pricingConfig.plans;
 
-    function calculateMonthlyPayment(principal, annualRate, months) {
-      const monthlyRate = annualRate / 12;
-      if (monthlyRate === 0) return principal / months;
-      const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-      const denominator = Math.pow(1 + monthlyRate, months) - 1;
-      return numerator / denominator;
+    function updatePlanCalculations() {
+      const planIndex = parseInt(document.getElementById('downPaymentCalc').value);
+      const plan = plans[planIndex];
+      if (!plan) return;
+
+      const discountedPrice = totalPriceNum * (1 - plan.discount / 100);
+      const enganche = discountedPrice * (plan.downPayment / 100);
+      const installmentTotal = discountedPrice * (plan.installments.pct / 100);
+      const mensualidad = installmentTotal / plan.installments.count;
+      const escrituracion = discountedPrice * (plan.escrituracion / 100);
+
+      // Update enganche
+      document.getElementById('downPaymentAmount').textContent = '$' + enganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      // Update discount display
+      document.getElementById('discountDisplay').textContent = plan.discount + '%';
+
+      // Update mensualidades
+      document.getElementById('paymentLabel').textContent = plan.installments.count + ' Meses';
+      document.getElementById('monthlyPayment').textContent = '$' + mensualidad.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('paymentSuffix').textContent = '/MES';
+
+      // Update escrituración row
+      const financingInfo = document.getElementById('financingInfo');
+      if (plan.escrituracion > 0) {
+        financingInfo.style.visibility = 'visible';
+        financingInfo.innerHTML = '<span>Escrituración: <span id="financingTotalPrice">$' + escrituracion.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</span></span>';
+      } else {
+        financingInfo.style.visibility = 'hidden';
+      }
+
+      // Update descuento label visibility
+      const descuentoLabel = document.querySelector('.descuento-label');
+      if (descuentoLabel) {
+        descuentoLabel.style.visibility = plan.discount > 0 ? 'visible' : 'hidden';
+      }
+
+      // Update big total price to show discounted price when discount > 0
+      const bigTotalPrice = document.getElementById('bigTotalPrice');
+      if (bigTotalPrice) {
+        bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+      }
     }
 
-    function updateCalculations() {
-      const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
-      const months = parseInt(document.getElementById('installmentsCalc').value);
-      const interestRate = INTEREST_RATES[months] || 0;
-
-      const downPaymentAmount = totalPriceNum * downPaymentPercent;
-      const amountFinanced = totalPriceNum - downPaymentAmount;
-      const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
-
-      const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
-
-      document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
-
-      // Update financing header
-      document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
-      document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    // Add event listeners
+    // Add event listener
     setTimeout(() => {
-      // Check URL parameters and set values if present
-      // Support both new short params (a, m, i) and old long params for backwards compatibility
       const urlParams = new URLSearchParams(window.location.search);
-      const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
-      const monthsParam = urlParams.get('m') || urlParams.get('months');
+      const planParam = urlParams.get('plan');
 
-      const downPaymentSelect = document.getElementById('downPaymentCalc');
-      const installmentsSelect = document.getElementById('installmentsCalc');
-
-      if (downpaymentParam && downPaymentSelect) {
-        downPaymentSelect.value = downpaymentParam;
-      }
-      if (monthsParam && installmentsSelect) {
-        installmentsSelect.value = monthsParam;
+      const planSelect = document.getElementById('downPaymentCalc');
+      if (planParam !== null && planSelect) {
+        planSelect.value = planParam;
       }
 
-      downPaymentSelect?.addEventListener('change', updateCalculations);
-      installmentsSelect?.addEventListener('change', updateCalculations);
-      updateCalculations(); // Initial calculation with URL params
+      planSelect?.addEventListener('change', updatePlanCalculations);
+      updatePlanCalculations(); // Initial calculation
     }, 100);
   }
 
@@ -10839,9 +10834,8 @@ function shareCurrentLot() {
     return;
   }
   
-  // Get financing calculator values
-  const downPaymentPercent = document.getElementById('downPaymentCalc')?.value || '20';
-  const installments = document.getElementById('installmentsCalc')?.value || '72';
+  // Get selected plan index
+  const selectedPlan = document.getElementById('downPaymentCalc')?.value || '0';
 
   // Get community from modal dataset (current selected fracc), fallback to lot data, then default
   const modal = document.getElementById('lotModal');
@@ -10856,11 +10850,11 @@ function shareCurrentLot() {
   const communitySlug = community.toLowerCase().replace(/\s+/g, '-');
   const communityCapitalized = community.charAt(0).toUpperCase() + community.slice(1);
 
-  // Create share URL with community prefix and short params (a=anticipo, m=mensualidades)
+  // Create share URL with community prefix and plan param
   const shareUrl = `${window.location.origin}${CONFIG.share.urlTemplate
     .replace('{slug}', CONFIG.slug)
     .replace('{communitySlug}', communitySlug)
-    .replace('{lotNumber}', lotNumber)}?a=${downPaymentPercent}&m=${installments}`;
+    .replace('{lotNumber}', lotNumber)}?plan=${selectedPlan}`;
   const shareText = CONFIG.share.textTemplate
     .replace('{lotNumber}', lotNumber)
     .replace('{community}', communityCapitalized)
