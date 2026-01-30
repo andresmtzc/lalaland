@@ -19,11 +19,11 @@ const CLIENT_CONFIGS = {
     name: 'AGORA',
     displayName: 'AGORA - La-La Land',
     slug: 'agora', // URL path slug (e.g., /inverta/)
-    defaultCommunity: 'marsella',
+    defaultCommunity: 'pietra',
 
     // ----- BRANDING -----
     branding: {
-      mainLogo: 'https://la-la.land/agora/agora.svg',
+      mainLogo: 'https://la-la.land/agora/agora.png',
       mainLogoAlt: 'Logo',
       favicon: 'favicon.ico',
     },
