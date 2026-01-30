@@ -13,17 +13,17 @@
 const CLIENT_CONFIGS = {
 
   // ===== INVERTA CLIENT CONFIGURATION =====
-  default: {
+  agora: {
 
     // ----- BASIC INFO -----
     name: 'AGORA',
     displayName: 'AGORA - La-La Land',
     slug: 'agora', // URL path slug (e.g., /inverta/)
-    defaultCommunity: 'pietra',
+    defaultCommunity: 'marsella',
 
     // ----- BRANDING -----
     branding: {
-      mainLogo: 'https://la-la.land/agora/inverta.svg',
+      mainLogo: 'https://la-la.land/agora/agora.svg',
       mainLogoAlt: 'Logo',
       favicon: 'favicon.ico',
     },
@@ -31,7 +31,7 @@ const CLIENT_CONFIGS = {
     // ----- COMMUNITY LOGOS -----
     // Maps community groups to their respective logos
     communityLogos: {
-      'mediterraneo': {
+      'pietra': {
         // For marsella & barcelona
         url: 'https://la-la.land/agora/lomasmediterraneo.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/agora/lomasmediterraneo_black.png', // Black version for cards
@@ -39,13 +39,48 @@ const CLIENT_CONFIGS = {
         center: [-96.036711, 19.0485],
         zoom: 15
       },
-      'puntolomas': {
+      'canadas': {
         // For sierraalta & sierrabaja
         url: 'https://la-la.land/agora/puntolomas.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png', // Black version for cards
         communities: ['sierraalta', 'sierrabaja'],
         center: [-96.090537, 19.073336],
         zoom: 15.2
+      },
+          'aqua': {
+        // For sierraalta & sierrabaja
+        url: 'https://la-la.land/agora/arborea.png', // Original for index.html
+        cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png', // Black version for cards
+        communities: ['cortezia', 'ebano', 'verdalia', 'frondia'],
+        center: [-110.908304, 29.123942],
+        zoom: 14.9
+      }
+    },
+
+    // ----- COMMUNITY PRICING -----
+    // Maps community groups to their financing options
+    communityPricing: {
+      'veracruz': {
+        communities: ['marsella', 'barcelona', 'sierraalta', 'sierrabaja'],
+        downPayment: { min: 20, max: 50, step: 5 },
+        terms: [
+          { months: 24, interest: 13 },
+          { months: 36, interest: 14 },
+          { months: 48, interest: 15 },
+          { months: 60, interest: 16 },
+          { months: 72, interest: 17 }
+        ]
+      },
+      'almaterra': {
+        communities: ['almaterra'],
+        downPayment: { min: 20, max: 50, step: 5 },
+        terms: [
+          { months: 12, interest: 0 },
+          { months: 24, interest: 10 },
+          { months: 36, interest: 12 },
+          { months: 48, interest: 13 },
+          { months: 60, interest: 13 }
+        ]
       }
     },
 
@@ -56,15 +91,15 @@ const CLIENT_CONFIGS = {
 
       // Initial map view (can be overridden by default community)
       initialView: {
-        center: [-96.063523, 19.073323], // Marsella center
-        zoom: 12.0
+        center: [-96.062906, 19.073475], // Marsella center
+        zoom: 12.1
       }
     },
 
     // ----- AERIAL/SATELLITE IMAGES -----
     aerialImages: [
       {
-        url: 'https://la-la.land/agora/invertaearth.png',
+        url: 'https://la-la.land/agora/agoraearth.png',
         layerId: 'drone-satellite-layer-1',
         sourceId: 'drone-satellite-1',
         message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
@@ -76,7 +111,7 @@ const CLIENT_CONFIGS = {
         ]
       },
       {
-        url: 'https://la-la.land/agora/invertaearth2.png',
+        url: 'https://la-la.land/agora/agoraearth2.png',
         layerId: 'drone-satellite-layer-2',
         sourceId: 'drone-satellite-2',
         message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
@@ -93,8 +128,8 @@ const CLIENT_CONFIGS = {
     // Each community has center coordinates, zoom level, and display info
     communities: {
 
-      barcelona: {
-        id: 'barcelona',
+      pietra: {
+        id: 'pietra',
         name: 'Barcelona',
         displayName: 'Barcelona',
         fracc: 'barcelona',
@@ -104,8 +139,8 @@ const CLIENT_CONFIGS = {
         searchMenuId: 'positionFour'
       },
 
-      marsella: {
-        id: 'marsella',
+      canadas: {
+        id: 'canadas',
         name: 'Marsella',
         displayName: 'Marsella',
         fracc: 'marsella',
@@ -115,8 +150,8 @@ const CLIENT_CONFIGS = {
         searchMenuId: 'positionThree'
       },
 
-      sierraalta: {
-        id: 'sierraalta',
+      aqua: {
+        id: 'aqua',
         name: 'Sierra Alta',
         displayName: 'Sierra Alta',
         fracc: 'sierraalta',
@@ -124,17 +159,6 @@ const CLIENT_CONFIGS = {
         zoom: 15.6,
         position: 7,
         searchMenuId: 'positionTwo'
-      },
-
-      sierrabaja: {
-        id: 'sierrabaja',
-        name: 'Sierra Baja',
-        displayName: 'Sierra Baja',
-        fracc: 'sierrabaja',
-        center: [-96.091763, 19.074588],
-        zoom: 16.8,
-        position: 6,
-        searchMenuId: 'positionOne'
       }
 
     },
@@ -148,9 +172,11 @@ const CLIENT_CONFIGS = {
     // ----- LOT NAMING CONVENTIONS -----
     // Prefixes used in lot IDs
     lotPrefixes: {
-      standard: 'lotagaa',  // e.g., lotinverta10-1
-      premium: 'lotagcv',  // e.g., lotinvertap10-1
-      base: 'lotag'          // Used in some contexts
+      a: 'lotagora',  // e.g., lotinverta10-1
+      pietra: 'lotagorap',
+      canadas: 'lotagorac',
+      aqua: 'lotagoraq',
+      base: 'agora'          // Used in some contexts
     },
 
     // ----- CONTACT & CTA -----
@@ -283,6 +309,9 @@ const CLIENT_CONFIGS = {
       // Minimum zoom level to show lot dimensions (lower = show at farther zoom)
       minZoomForDimensions: 18.8,
 
+      // Merge consecutive segments shorter than this (meters) into one label
+      dimensionMergeThreshold: 7,
+
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
       ctaColor: '#ff8400' // DEPRECATED: Use colors.primary instead
@@ -346,10 +375,32 @@ function getCommunityLogo(clientName, fraccName, forCard = false) {
     }
   }
 
-  // Return first logo as default
-  const firstLogo = Object.values(config.communityLogos)[0];
-  if (!firstLogo) return null;
-  return forCard ? (firstLogo.cardLogoUrl || firstLogo.url) : firstLogo.url;
+  // No match found - return null so logo stays unchanged
+  return null;
+}
+
+/**
+ * Get community pricing configuration based on fracc
+ * @param {string} clientName - The client identifier
+ * @param {string} fraccName - The fraccionamiento/community name
+ * @returns {object|null} Pricing config with downPayment and terms, or null if not found
+ */
+function getCommunityPricing(clientName, fraccName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.communityPricing) return null;
+
+  const fracc = (fraccName || '').toLowerCase().trim();
+  if (!fracc) return null;
+
+  // Search through community pricing groups
+  for (const [groupName, pricingData] of Object.entries(config.communityPricing)) {
+    if (pricingData.communities.includes(fracc)) {
+      return pricingData;
+    }
+  }
+
+  // No match found - return null (show "contact for pricing")
+  return null;
 }
 
 /**
@@ -462,6 +513,29 @@ function getColor(clientName, colorKey) {
 }
 
 /**
+ * Get community group name for a fraccionamiento
+ * Used for determining which PDF template to use
+ * @param {string} clientName - The client identifier
+ * @param {string} fraccName - The fraccionamiento/community name
+ * @returns {string|null} Community group name (e.g., 'mediterraneo', 'puntolomas') or null if not found
+ */
+function getCommunityGroup(clientName, fraccName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.communityLogos) return null;
+
+  const fracc = fraccName.toLowerCase().trim();
+
+  // Search through community logo groups
+  for (const [groupName, logoData] of Object.entries(config.communityLogos)) {
+    if (logoData.communities && logoData.communities.includes(fracc)) {
+      return groupName;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Apply colors from config to CSS custom properties (CSS variables)
  * Call this function early in your page load to make colors available as CSS variables
  * @param {string} clientName - The client identifier
@@ -484,7 +558,9 @@ if (typeof module !== 'undefined' && module.exports) {
     CLIENT_CONFIGS,
     getClientConfig,
     getCommunityLogo,
+    getCommunityPricing,
     getCommunityByFracc,
+    getCommunityGroup,
     getAllCommunities,
     buildShareUrl,
     buildShareText,

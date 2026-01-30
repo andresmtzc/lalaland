@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inverta Landscape Map Generator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@2.14.0/dist/dom-to-image-more.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="client-config.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+
+    .controls {
+      max-width: 1400px;
+      margin: 0 auto 30px;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .controls h1 {
+      margin-bottom: 20px;
+      color: #1a1a1a;
+    }
+
+    .preview-section {
+      margin-bottom: 20px;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 6px;
+    }
+
+    .preview-section h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+      color: #1a1a1a;
+    }
+
+    .preview-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+    }
+
+    select {
+      padding: 8px 12px;
+      font-size: 14px;
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      border: 2px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      min-width: 200px;
+    }
+
+    .preview-container {
+      width: 612px;
+      height: 390px;
+      margin: 0 auto;
+      border: 2px solid #ddd;
+      border-radius: 0px;
+      overflow: hidden;
+      background: white;
+      position: relative;
+    }
+
+    .preview-map {
+      width: 1224px;
+      height: 780px;
+      transform: scale(0.5);
+      transform-origin: top left;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      border: 2px solid #2ac6f4;
+      background: #2ac6f4;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    button:disabled {
+      background: #ccc;
+      border-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    .status {
+      padding: 10px;
+      background: #f0f0f0;
+      border-radius: 4px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .map-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+    }
+
+    .map-card {
+      width: 1224px;
+      height: 780px;
+      background: white;
+      position: relative;
+      overflow: hidden;
+      border-radius: 0px;
+    }
+
+    .card-map {
+      height: 100%;
+      width: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      background: #e5e5e5;
+    }
+
+    .card-map-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    #staging-area {
+      position: fixed;
+      left: -9999px;
+      top: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <h1>Inverta Landscape Map Generator</h1>
+
+    <div class="preview-section">
+      <h2>Preview</h2>
+      <div class="preview-controls">
+        <label for="communitySelect">Community:</label>
+        <select id="communitySelect">
+          <option value="">All Communities</option>
+        </select>
+        <label for="lotSelect" style="margin-left: 10px;">Select Lot:</label>
+        <select id="lotSelect">
+          <option value="">Loading lots...</option>
+        </select>
+        <label style="margin-left: 20px;">
+          <input type="checkbox" id="debugMode"> Debug Mode
+        </label>
+      </div>
+      <div id="debugPanel" style="display: none; background: #fffacd; padding: 15px; border-radius: 6px; margin-bottom: 15px; font-family: monospace; font-size: 12px;">
+        <strong>Debug Info:</strong><br>
+        Center Lng: <input type="number" id="debugCenterLng" step="0.00001" value="-96.038468" style="width: 120px;">
+        Center Lat: <input type="number" id="debugCenterLat" step="0.00001" value="19.047346" style="width: 120px;">
+        Zoom: <input type="number" id="debugZoom" step="0.1" value="15.5" style="width: 100px;">
+        <button id="applyDebug" style="margin-left: 10px; padding: 4px 8px; font-size: 12px;">Apply</button>
+        <br>
+        <div id="debugInfo" style="margin-top: 10px;"></div>
+      </div>
+      <div class="preview-container" id="previewContainer">
+        <div class="preview-map" id="previewMap"></div>
+      </div>
+    </div>
+
+    <div class="button-group">
+      <button id="generateSingleBtn">Generate Single Map (Test)</button>
+      <button id="generateBatchBtn">Generate 5 Maps (Test Batch)</button>
+      <button id="generateAllBtn">Generate All Maps</button>
+    </div>
+    <div class="status" id="status">Ready. Click a button to start.</div>
+  </div>
+
+  <div class="map-container" id="mapContainer"></div>
+  <div id="staging-area"></div>
+  <div id="staging-area-1" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-2" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-3" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-4" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-5" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-6" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-7" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-8" style="position: fixed; left: -9999px; top: 0;"></div>
+  <div id="staging-area-9" style="position: fixed; left: -9999px; top: 0;"></div>
+
+  <script>
+    const CURRENT_CLIENT = 'inverta';
+    const CLIENT_CONFIG = getClientConfig(CURRENT_CLIENT);
+    const PRIMARY_COLOR = getColor(CURRENT_CLIENT, 'primary');
+
+    // LOAD SUPABASE
+    window.supabaseReady = new Promise((resolve, reject) => {
+      const supabaseScript = document.createElement('script');
+      supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+
+      supabaseScript.onload = () => {
+        fetch('https://la-la.land/sb_config.json')
+          .then(r => r.json())
+          .then(cfg => {
+            window.supabaseClient = supabase.createClient(cfg.url, cfg.key, {
+              auth: {
+                storageKey: `sb-${CURRENT_CLIENT}-auth`
+              }
+            });
+            console.log(`Supabase client initialized (storageKey: sb-${CURRENT_CLIENT}-auth)`);
+
+            initAuth().then(() => {
+              console.log('Auth initialized');
+              resolve();
+            }).catch(err => {
+              console.error('Auth initialization failed:', err);
+              resolve();
+            });
+          })
+          .catch(e => {
+            console.error('Failed to load Supabase config:', e);
+            reject(new Error("Failed to load Supabase config"));
+          });
+      };
+
+      supabaseScript.onerror = () => {
+        console.error("Failed to load Supabase script");
+        reject(new Error("Failed to load Supabase script"));
+      };
+
+      document.head.appendChild(supabaseScript);
+    });
+
+    async function initAuth() {
+      try {
+        const { data: { session } = { session: null } } =
+          await window.supabaseClient.auth.getSession();
+
+        if (session && session.user) {
+          console.log('User authenticated:', session.user.email);
+          return true;
+        } else {
+          console.log('No active session - you may need to login if RLS is enabled');
+          return false;
+        }
+      } catch (e) {
+        console.warn('getSession failed:', e);
+        return false;
+      }
+    }
+  </script>
+
+  <script>
+    let lotData = [];
+    let allAvailableLots = [];
+    let previewMapInstance = null;
+    let mapboxTokenReady = null;
+    let debugMode = false;
+    let currentCommunity = '';
+
+    // Default center (Marsella - mediterraneo group)
+    let currentCenterLng = -96.038468;
+    let currentCenterLat = 19.047346;
+    let currentDebugZoom = 15.5;
+
+    // Community centers from config
+    const communityCenters = {};
+
+    // Load Mapbox token
+    mapboxTokenReady = fetch('https://la-la.land/mapbox.txt')
+      .then(r => r.text())
+      .then(token => {
+        mapboxgl.accessToken = token.trim();
+        console.log('Mapbox token loaded');
+      })
+      .catch(e => {
+        console.error('Failed to load Mapbox token:', e);
+      });
+
+    function cleanNumber(value) {
+      if (value === null || value === undefined) return 0;
+      return parseFloat(
+        value
+          .toString()
+          .replace(/,/g, '')
+          .replace(/[^0-9.-]/g, '')
+      ) || 0;
+    }
+
+    function parseLots(txt) {
+      const lines = txt.split('\n').map(l => l.trim()).filter(Boolean);
+      const lots = [];
+      let currentLot = null;
+
+      lines.forEach(line => {
+        if (!line.startsWith('{')) {
+          if (currentLot) lots.push(currentLot);
+          currentLot = { name: line, coords: [] };
+        } else {
+          const match = line.match(/lat:\s*([\d.-]+),\s*lng:\s*([\d.-]+)/);
+          if (match && currentLot) {
+            const lng = parseFloat(match[2]);
+            const lat = parseFloat(match[1]);
+            currentLot.coords.push([lng, lat]);
+          }
+        }
+      });
+
+      if (currentLot) lots.push(currentLot);
+
+      lots.forEach(lot => {
+        try {
+          const poly = turf.polygon([[...lot.coords, lot.coords[0]]]);
+          const center = turf.centroid(poly).geometry.coordinates;
+          lot.center = center;
+          lot.bounds = turf.bbox(poly);
+        } catch (err) {
+          console.warn('Failed to calculate center for', lot.name, err);
+          lot.center = [0, 0];
+        }
+      });
+
+      return lots;
+    }
+
+    async function loadLotPolygons() {
+      const response = await fetch('lots.txt');
+      const txt = await response.text();
+      lotData = parseLots(txt);
+      console.log('Loaded', lotData.length, 'lot polygons');
+    }
+
+    async function fetchAvailableLots() {
+      await window.supabaseReady;
+
+      let allData = [];
+      let from = 0;
+      const pageSize = 1000;
+
+      while (true) {
+        const { data, error } = await window.supabaseClient
+          .from('lots')
+          .select('lot_name, rSize, millones, availability, fraccionamiento, nickname, subtitle, price_m2')
+          .eq('client_id', CURRENT_CLIENT)
+          .order('lot_name', { ascending: true })
+          .range(from, from + pageSize - 1);
+
+        if (error) {
+          console.error('ERROR fetching lots:', error);
+          const { data: { session } } = await window.supabaseClient.auth.getSession();
+          if (!session || !session.user) {
+            console.error('User is NOT authenticated - please login at /inverta/index.html first');
+          }
+          break;
+        }
+
+        if (!data || data.length === 0) break;
+
+        allData = allData.concat(data);
+        console.log(`Fetched ${allData.length} lots so far...`);
+
+        if (data.length < pageSize) break; // Last page
+        from += pageSize;
+      }
+
+      console.log('Total lots fetched from Supabase:', allData.length);
+
+      const availableLots = allData.filter(lot => {
+        const availability = (lot.availability || '').toString().toLowerCase();
+        return availability === 'available' || availability === 'featured';
+      });
+
+      console.log('Available lots after filtering:', availableLots.length);
+      return availableLots;
+    }
+
+    async function mergeData() {
+      await loadLotPolygons();
+      const availableLots = await fetchAvailableLots();
+
+      // Build community centers from config
+      if (CLIENT_CONFIG && CLIENT_CONFIG.communities) {
+        Object.entries(CLIENT_CONFIG.communities).forEach(([key, comm]) => {
+          communityCenters[comm.fracc] = {
+            center: comm.center,
+            zoom: comm.zoom
+          };
+        });
+      }
+
+      allAvailableLots = availableLots.map(lot => {
+        const lotNumber = extractLotNumber(CURRENT_CLIENT, lot.lot_name);
+        const polygonData = lotData.find(l => l.name === lot.lot_name);
+
+        if (!polygonData) {
+          console.warn('No polygon data for', lot.lot_name);
+          return null;
+        }
+
+        return {
+          lotName: lot.lot_name,
+          lotNumber: lotNumber,
+          size: cleanNumber(lot.rSize),
+          priceM2: cleanNumber(lot.price_m2),
+          community: lot.fraccionamiento || 'marsella',
+          coords: polygonData.coords,
+          center: polygonData.center,
+          bounds: polygonData.bounds
+        };
+      }).filter(Boolean);
+
+      console.log('Merged', allAvailableLots.length, 'available lots with polygon data');
+    }
+
+    function createMapElement(lot, mapId = null) {
+      const mapDiv = document.createElement('div');
+      mapDiv.className = 'map-card';
+      mapDiv.id = `map-${lot.lotName}`;
+
+      const finalMapId = mapId || `map-canvas-${lot.lotName}`;
+
+      mapDiv.innerHTML = `
+        <div class="card-map">
+          <div class="card-map-canvas" id="${finalMapId}"></div>
+        </div>
+      `;
+
+      return mapDiv;
+    }
+
+    // Get aerial images for current community
+    function getAerialImagesForCommunity(community) {
+      if (!CLIENT_CONFIG || !CLIENT_CONFIG.aerialImages) return [];
+
+      // For now return all aerial images - they're positioned by coordinates
+      return CLIENT_CONFIG.aerialImages;
+    }
+
+    async function renderMap(lot, containerId, isPreview = false) {
+      await mapboxTokenReady;
+
+      // Use lot's center for the map, or community center as fallback
+      const communityData = communityCenters[lot.community];
+      const mapCenter = communityData ? communityData.center : lot.center;
+      const mapZoom = communityData ? communityData.zoom : currentDebugZoom;
+
+      return new Promise((resolve) => {
+        const map = new mapboxgl.Map({
+          container: containerId,
+          style: 'mapbox://styles/mapbox/satellite-streets-v12',
+          center: debugMode ? [currentCenterLng, currentCenterLat] : mapCenter,
+          zoom: debugMode ? currentDebugZoom : mapZoom,
+          interactive: isPreview && debugMode,
+          attributionControl: false,
+          preserveDrawingBuffer: true
+        });
+
+        map.on('load', () => {
+          // Add aerial image overlays from config
+          const aerialImages = getAerialImagesForCommunity(lot.community);
+          aerialImages.forEach((img, index) => {
+            map.addSource(img.sourceId || `drone-satellite-${index}`, {
+              type: 'image',
+              url: img.url,
+              coordinates: img.bounds
+            });
+
+            map.addLayer({
+              id: img.layerId || `drone-satellite-layer-${index}`,
+              type: 'raster',
+              source: img.sourceId || `drone-satellite-${index}`,
+              paint: {
+                'raster-opacity': 1
+              }
+            });
+          });
+
+          // Add ALL lots as white outlines for context
+          const allLotsGeoJSON = {
+            type: 'FeatureCollection',
+            features: lotData.map((lotItem) => ({
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[...lotItem.coords, lotItem.coords[0]]]
+              },
+              properties: {
+                name: lotItem.name
+              }
+            }))
+          };
+
+          map.addSource('all-lots', {
+            type: 'geojson',
+            data: allLotsGeoJSON
+          });
+
+          map.addLayer({
+            id: 'all-lots-outline',
+            type: 'line',
+            source: 'all-lots',
+            paint: {
+              'line-color': '#ffffff',
+              'line-width': 2,
+              'line-opacity': 0.6
+            }
+          });
+
+          // Add selected lot polygon with primary color FILL
+          map.addSource('lot-polygon', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[...lot.coords, lot.coords[0]]]
+              }
+            }
+          });
+
+          map.addLayer({
+            id: 'lot-fill',
+            type: 'fill',
+            source: 'lot-polygon',
+            paint: {
+              'fill-color': PRIMARY_COLOR,
+              'fill-opacity': 1
+            }
+          });
+
+          map.addLayer({
+            id: 'lot-outline',
+            type: 'line',
+            source: 'lot-polygon',
+            paint: {
+              'line-color': PRIMARY_COLOR,
+              'line-width': 4
+            }
+          });
+
+          setTimeout(() => {
+            if (isPreview && debugMode) {
+              map.on('moveend', () => {
+                const center = map.getCenter();
+                const zoom = map.getZoom();
+
+                const debugInfo = `
+                  Map Center: [${center.lng.toFixed(6)}, ${center.lat.toFixed(6)}]<br>
+                  Zoom: ${zoom.toFixed(2)}<br>
+                  Debug Center: [${currentCenterLng.toFixed(6)}, ${currentCenterLat.toFixed(6)}]<br>
+                  Debug Zoom: ${currentDebugZoom.toFixed(2)}
+                `;
+                document.getElementById('debugInfo').innerHTML = debugInfo;
+              });
+              map.fire('moveend');
+            }
+
+            resolve(map);
+          }, 1000);
+        });
+      });
+    }
+
+    async function generateMapImage(lot, stagingId = 'staging-area') {
+      let mapInstance = null;
+
+      try {
+        const mapId = `map-${lot.lotName}-${stagingId}`;
+        const mapElement = createMapElement(lot, mapId);
+        const staging = document.getElementById(stagingId);
+        staging.innerHTML = '';
+        staging.appendChild(mapElement);
+
+        mapInstance = await renderMap(lot, mapId);
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        const blob = await domtoimage.toBlob(mapElement, {
+          width: 1224,
+          height: 780,
+          quality: 0.95,
+          style: {
+            transform: 'scale(1)',
+            transformOrigin: 'top left'
+          },
+          filter: (node) => {
+            if (node.tagName === 'LINK' && node.rel === 'stylesheet') {
+              return false;
+            }
+            if (node.tagName === 'STYLE') return true;
+
+            if (node.getAttribute) {
+              if (node.getAttribute('clip-path')) {
+                node.removeAttribute('clip-path');
+              }
+              if (node.getAttribute('mask')) {
+                node.removeAttribute('mask');
+              }
+              const style = node.getAttribute('style');
+              if (style && style.includes('clip-path')) {
+                node.setAttribute('style', style.replace(/clip-path:[^;]+;?/g, ''));
+              }
+            }
+            return true;
+          }
+        });
+
+        const resizedBlob = await resizeBlob(blob, 1224, 780);
+
+        return {
+          blob: resizedBlob,
+          filename: `${lot.lotName}_landscape.jpg`
+        };
+      } finally {
+        if (mapInstance) {
+          mapInstance.remove();
+        }
+      }
+    }
+
+    async function resizeBlob(blob, width, height) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob((resizedBlob) => {
+            resolve(resizedBlob);
+          }, 'image/jpeg', 0.95);
+        };
+        img.src = URL.createObjectURL(blob);
+      });
+    }
+
+    async function generateSingle() {
+      if (allAvailableLots.length === 0) {
+        updateStatus('No lots available. Loading data...');
+        await mergeData();
+      }
+
+      const lotSelect = document.getElementById('lotSelect');
+      const selectedLotName = lotSelect.value;
+
+      if (!selectedLotName) {
+        updateStatus('Please select a lot first');
+        return;
+      }
+
+      const selectedLot = allAvailableLots.find(l => l.lotName === selectedLotName);
+      if (!selectedLot) {
+        updateStatus('Selected lot not found');
+        return;
+      }
+
+      updateStatus(`Generating map for ${selectedLot.lotName}...`);
+
+      const { blob, filename } = await generateMapImage(selectedLot);
+
+      saveAs(blob, filename);
+      updateStatus(`Generated: ${filename}`);
+    }
+
+    async function generateBatch(count) {
+      if (allAvailableLots.length === 0) {
+        updateStatus('Loading lot data...');
+        await mergeData();
+      }
+
+      let lotsToGenerate = allAvailableLots;
+      if (currentCommunity) {
+        lotsToGenerate = allAvailableLots.filter(l => l.community === currentCommunity);
+      }
+      lotsToGenerate = lotsToGenerate.slice(0, Math.min(count, lotsToGenerate.length));
+
+      updateStatus(`Generating ${lotsToGenerate.length} maps...`);
+      const zip = new JSZip();
+      let successCount = 0;
+      let errorCount = 0;
+
+      const PARALLEL_BATCH_SIZE = 10;
+      const stagingAreas = ['staging-area', 'staging-area-1', 'staging-area-2', 'staging-area-3', 'staging-area-4', 'staging-area-5', 'staging-area-6', 'staging-area-7', 'staging-area-8', 'staging-area-9'];
+
+      for (let i = 0; i < lotsToGenerate.length; i += PARALLEL_BATCH_SIZE) {
+        const batchLots = lotsToGenerate.slice(i, i + PARALLEL_BATCH_SIZE);
+        updateStatus(`Generating ${i + 1}-${Math.min(i + PARALLEL_BATCH_SIZE, lotsToGenerate.length)}/${lotsToGenerate.length}...`);
+
+        const promises = batchLots.map((lot, index) =>
+          generateMapImage(lot, stagingAreas[index])
+            .then(result => ({ success: true, ...result }))
+            .catch(error => {
+              console.error(`Failed to generate map for ${lot.lotName}:`, error);
+              return { success: false, lotName: lot.lotName };
+            })
+        );
+
+        const results = await Promise.all(promises);
+
+        results.forEach(result => {
+          if (result.success) {
+            zip.file(result.filename, result.blob);
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      updateStatus('Creating ZIP file...');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const communityLabel = currentCommunity || 'all';
+      saveAs(zipBlob, `inverta-landscape-maps-${communityLabel}-batch-${lotsToGenerate.length}.zip`);
+      updateStatus(`Generated ${successCount} maps! ${errorCount > 0 ? `(${errorCount} errors)` : ''} Download started.`);
+    }
+
+    async function generateAll() {
+      if (allAvailableLots.length === 0) {
+        updateStatus('Loading lot data...');
+        await mergeData();
+      }
+
+      let lotsToGenerate = allAvailableLots;
+      if (currentCommunity) {
+        lotsToGenerate = allAvailableLots.filter(l => l.community === currentCommunity);
+      }
+
+      updateStatus(`Generating ${lotsToGenerate.length} maps...`);
+      const zip = new JSZip();
+      let successCount = 0;
+      let errorCount = 0;
+
+      const PARALLEL_BATCH_SIZE = 10;
+      const stagingAreas = ['staging-area', 'staging-area-1', 'staging-area-2', 'staging-area-3', 'staging-area-4', 'staging-area-5', 'staging-area-6', 'staging-area-7', 'staging-area-8', 'staging-area-9'];
+
+      for (let i = 0; i < lotsToGenerate.length; i += PARALLEL_BATCH_SIZE) {
+        const batchLots = lotsToGenerate.slice(i, i + PARALLEL_BATCH_SIZE);
+        updateStatus(`Generating ${i + 1}-${Math.min(i + PARALLEL_BATCH_SIZE, lotsToGenerate.length)}/${lotsToGenerate.length}...`);
+
+        const promises = batchLots.map((lot, index) =>
+          generateMapImage(lot, stagingAreas[index])
+            .then(result => ({ success: true, ...result }))
+            .catch(error => {
+              console.error(`Failed to generate map for ${lot.lotName}:`, error);
+              return { success: false, lotName: lot.lotName };
+            })
+        );
+
+        const results = await Promise.all(promises);
+
+        results.forEach(result => {
+          if (result.success) {
+            zip.file(result.filename, result.blob);
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      updateStatus('Creating ZIP file...');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const communityLabel = currentCommunity || 'all';
+      saveAs(zipBlob, `inverta-landscape-maps-${communityLabel}.zip`);
+      updateStatus(`Generated ${successCount} maps! ${errorCount > 0 ? `(${errorCount} errors)` : ''} Download started.`);
+    }
+
+    function updateStatus(message) {
+      document.getElementById('status').textContent = message;
+      console.log(message);
+    }
+
+    // Event listeners
+    document.getElementById('generateSingleBtn').addEventListener('click', async () => {
+      document.getElementById('generateSingleBtn').disabled = true;
+      try {
+        await generateSingle();
+      } catch (error) {
+        console.error('Error generating map:', error);
+        updateStatus('Error: ' + error.message);
+      } finally {
+        document.getElementById('generateSingleBtn').disabled = false;
+      }
+    });
+
+    document.getElementById('generateBatchBtn').addEventListener('click', async () => {
+      document.getElementById('generateBatchBtn').disabled = true;
+      document.getElementById('generateSingleBtn').disabled = true;
+      document.getElementById('generateAllBtn').disabled = true;
+
+      try {
+        await generateBatch(5);
+      } catch (error) {
+        console.error('Error generating batch:', error);
+        updateStatus('Error: ' + error.message);
+      } finally {
+        document.getElementById('generateBatchBtn').disabled = false;
+        document.getElementById('generateSingleBtn').disabled = false;
+        document.getElementById('generateAllBtn').disabled = false;
+      }
+    });
+
+    document.getElementById('generateAllBtn').addEventListener('click', async () => {
+      let lotsToGenerate = allAvailableLots;
+      if (currentCommunity) {
+        lotsToGenerate = allAvailableLots.filter(l => l.community === currentCommunity);
+      }
+
+      const confirm = window.confirm(`This will generate ${lotsToGenerate.length} maps and may take several minutes. Continue?`);
+      if (!confirm) return;
+
+      document.getElementById('generateAllBtn').disabled = true;
+      document.getElementById('generateSingleBtn').disabled = true;
+      document.getElementById('generateBatchBtn').disabled = true;
+
+      try {
+        await generateAll();
+      } catch (error) {
+        console.error('Error generating maps:', error);
+        updateStatus('Error: ' + error.message);
+      } finally {
+        document.getElementById('generateAllBtn').disabled = false;
+        document.getElementById('generateSingleBtn').disabled = false;
+        document.getElementById('generateBatchBtn').disabled = false;
+      }
+    });
+
+    // Populate community selector
+    function populateCommunitySelector() {
+      const select = document.getElementById('communitySelect');
+      select.innerHTML = '<option value="">All Communities</option>';
+
+      if (CLIENT_CONFIG && CLIENT_CONFIG.communities) {
+        Object.entries(CLIENT_CONFIG.communities).forEach(([key, comm]) => {
+          const option = document.createElement('option');
+          option.value = comm.fracc;
+          option.textContent = comm.displayName;
+          select.appendChild(option);
+        });
+      }
+    }
+
+    // Populate lot selector
+    async function populateLotSelector() {
+      if (allAvailableLots.length === 0) {
+        await mergeData();
+      }
+
+      const select = document.getElementById('lotSelect');
+      select.innerHTML = '<option value="">-- Select a lot --</option>';
+
+      let lotsToShow = allAvailableLots;
+      if (currentCommunity) {
+        lotsToShow = allAvailableLots.filter(l => l.community === currentCommunity);
+      }
+
+      lotsToShow.forEach(lot => {
+        const option = document.createElement('option');
+        option.value = lot.lotName;
+        option.textContent = `${lot.lotName} - ${lot.community}`;
+        select.appendChild(option);
+      });
+
+      if (lotsToShow.length > 0) {
+        select.value = lotsToShow[0].lotName;
+        updatePreview(lotsToShow[0].lotName);
+      }
+    }
+
+    async function updatePreview(lotName) {
+      if (!lotName) return;
+
+      const lot = allAvailableLots.find(l => l.lotName === lotName);
+      if (!lot) return;
+
+      if (previewMapInstance) {
+        previewMapInstance.remove();
+        previewMapInstance = null;
+      }
+
+      const previewMap = document.getElementById('previewMap');
+
+      previewMap.innerHTML = `
+        <div class="card-map">
+          <div class="card-map-canvas" id="preview-map"></div>
+        </div>
+      `;
+
+      previewMapInstance = await renderMap(lot, 'preview-map', true);
+    }
+
+    document.getElementById('lotSelect').addEventListener('change', (e) => {
+      updatePreview(e.target.value);
+    });
+
+    document.getElementById('communitySelect').addEventListener('change', (e) => {
+      currentCommunity = e.target.value;
+
+      // Update debug center based on community
+      if (currentCommunity && communityCenters[currentCommunity]) {
+        const comm = communityCenters[currentCommunity];
+        currentCenterLng = comm.center[0];
+        currentCenterLat = comm.center[1];
+        currentDebugZoom = comm.zoom;
+        document.getElementById('debugCenterLng').value = currentCenterLng;
+        document.getElementById('debugCenterLat').value = currentCenterLat;
+        document.getElementById('debugZoom').value = currentDebugZoom;
+      }
+
+      populateLotSelector();
+    });
+
+    document.getElementById('debugMode').addEventListener('change', (e) => {
+      debugMode = e.target.checked;
+      document.getElementById('debugPanel').style.display = debugMode ? 'block' : 'none';
+
+      const lotSelect = document.getElementById('lotSelect');
+      if (lotSelect.value) {
+        updatePreview(lotSelect.value);
+      }
+    });
+
+    document.getElementById('applyDebug').addEventListener('click', () => {
+      currentCenterLng = parseFloat(document.getElementById('debugCenterLng').value);
+      currentCenterLat = parseFloat(document.getElementById('debugCenterLat').value);
+      currentDebugZoom = parseFloat(document.getElementById('debugZoom').value);
+
+      const lotSelect = document.getElementById('lotSelect');
+      if (lotSelect.value) {
+        updatePreview(lotSelect.value);
+      }
+    });
+
+    // Initialize
+    window.addEventListener('load', async () => {
+      updateStatus('Loading lot data for preview...');
+      populateCommunitySelector();
+      await populateLotSelector();
+      updateStatus('Ready. Select a lot to preview, or click "Generate Single Map" to test.');
+    });
+  </script>
+</body>
+</html>

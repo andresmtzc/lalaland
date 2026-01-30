@@ -30,6 +30,12 @@
   <title></title>
   <link rel="icon" href="favicon.ico" type="image/x-icon">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700" rel="stylesheet">
+<!-- STIX Two Text for PDF generation -->
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+<!-- Custom fonts for PDF generation -->
+<link rel="stylesheet" href="/fonts/fonts.css">
+<!-- html2pdf for PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
@@ -44,7 +50,7 @@
 <script src="client-config.js"></script>
 <script>
 // ===== CLIENT CONFIG =====
-const CURRENT_CLIENT = 'default';
+const CURRENT_CLIENT = 'agora';
 const CONFIG = getClientConfig(CURRENT_CLIENT);
 
 // Validate config loaded
@@ -3890,6 +3896,150 @@ map.on('click', 'lots-final-click', (e) => {
   }); // fetch token ends
 
 // === SIDE LENGTH LABELS ===
+// Store merged segment groups for repositioning on map move
+let mergedSegmentGroups = [];
+
+function mergeSideSegments(coords) {
+  const threshold = (CONFIG.misc && CONFIG.misc.dimensionMergeThreshold) || 0;
+
+  // Build segments array
+  const segments = [];
+  for (let i = 0; i < coords.length - 1; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
+    const distance = turf.distance(turf.point(start), turf.point(end), { units: 'meters' });
+    segments.push({ start, end, distance });
+  }
+
+  const n = segments.length;
+
+  // Helper: compute inner polygon angle at the shared vertex between segA and segB
+  // Uses dot product with flipped B direction. Returns degrees (180 = straight, 90 = corner)
+  function getInnerAngle(segA, segB) {
+    const dAx = segA.end[0] - segA.start[0];
+    const dAy = segA.end[1] - segA.start[1];
+    const dBx = segB.start[0] - segB.end[0]; // flipped
+    const dBy = segB.start[1] - segB.end[1];
+    const magA = Math.sqrt(dAx * dAx + dAy * dAy);
+    const magB = Math.sqrt(dBx * dBx + dBy * dBy);
+    if (magA === 0 || magB === 0) return 180;
+    let dot = (dAx / magA) * (dBx / magB) + (dAy / magA) * (dBy / magB);
+    dot = Math.max(-1, Math.min(1, dot));
+    return Math.acos(dot) * (180 / Math.PI);
+  }
+
+  // Helper: compute path-based midpoint for a group of segment indices
+  function pathMidpoint(group) {
+    let totalDist = 0;
+    for (const idx of group) totalDist += segments[idx].distance;
+    const halfDist = totalDist / 2;
+    let walked = 0;
+    for (const idx of group) {
+      const seg = segments[idx];
+      if (walked + seg.distance >= halfDist) {
+        const t = (halfDist - walked) / seg.distance;
+        return [
+          seg.start[0] + t * (seg.end[0] - seg.start[0]),
+          seg.start[1] + t * (seg.end[1] - seg.start[1])
+        ];
+      }
+      walked += seg.distance;
+    }
+    const last = segments[group[group.length - 1]];
+    return [(last.start[0] + last.end[0]) / 2, (last.start[1] + last.end[1]) / 2];
+  }
+
+  // No merging — return each segment as its own group
+  if (threshold <= 0 || n === 0) {
+    return segments.map((seg, i) => ({
+      totalDistance: seg.distance,
+      midpoint: [(seg.start[0] + seg.end[0]) / 2, (seg.start[1] + seg.end[1]) / 2],
+      startCoord: seg.start,
+      endCoord: seg.end
+    }));
+  }
+
+  // Walk segments in polygon order, merge short ones into most collinear neighbor
+  const processed = new Array(n).fill(false);
+  const mergedGroups = [];
+
+  for (let i = 0; i < n; i++) {
+    if (processed[i]) continue;
+
+    if (segments[i].distance < threshold) {
+      const prevIdx = (i - 1 + n) % n;
+      const nextIdx = (i + 1) % n;
+
+      const angleWithPrev = getInnerAngle(segments[prevIdx], segments[i]);
+      const angleWithNext = getInnerAngle(segments[i], segments[nextIdx]);
+
+      const devPrev = Math.abs(180 - angleWithPrev);
+      const devNext = Math.abs(180 - angleWithNext);
+
+      if (Math.abs(devPrev - devNext) < 1) {
+        // Equal deviation — don't merge, keep standalone
+        mergedGroups.push([i]);
+        processed[i] = true;
+      } else if (devPrev < devNext) {
+        // Merge with previous (more collinear)
+        let found = false;
+        for (const group of mergedGroups) {
+          if (group.includes(prevIdx)) {
+            group.push(i);
+            processed[i] = true;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          mergedGroups.push([prevIdx, i]);
+          processed[prevIdx] = true;
+          processed[i] = true;
+        }
+      } else {
+        // Merge with next (more collinear)
+        let found = false;
+        for (const group of mergedGroups) {
+          if (group.includes(nextIdx)) {
+            group.unshift(i);
+            processed[i] = true;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          mergedGroups.push([i, nextIdx]);
+          processed[i] = true;
+          processed[nextIdx] = true;
+        }
+      }
+    } else {
+      mergedGroups.push([i]);
+      processed[i] = true;
+    }
+  }
+
+  // Ensure all segments are accounted for
+  for (let i = 0; i < n; i++) {
+    if (!processed[i]) mergedGroups.push([i]);
+  }
+
+  // Sort groups by first segment index to maintain polygon order
+  mergedGroups.sort((a, b) => Math.min(...a) - Math.min(...b));
+
+  // Build output with path-based midpoints
+  return mergedGroups.map(group => {
+    let totalDistance = 0;
+    for (const idx of group) totalDistance += segments[idx].distance;
+    return {
+      totalDistance,
+      midpoint: pathMidpoint(group),
+      startCoord: segments[group[0]].start,
+      endCoord: segments[group[group.length - 1]].end
+    };
+  });
+}
+
 function addSideLengthLabels(lot) {
   // Always remove any existing labels first
   removeSideLengthLabels();
@@ -3902,23 +4052,19 @@ function addSideLengthLabels(lot) {
     coords.push(coords[0]);
   }
 
-  coords.forEach((_, i) => {
-    if (i >= coords.length - 1) return;
+  const groups = mergeSideSegments(coords);
+  mergedSegmentGroups = groups;
 
+  groups.forEach((group, i) => {
     setTimeout(() => {
-      const start = coords[i];
-      const end = coords[i + 1];
-      const midpoint = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
-
-      const distance = turf.distance(turf.point(start), turf.point(end), { units: 'meters' });
-      const roundedDistance = Math.round(distance * 2) / 2;
+      const roundedDistance = Math.round(group.totalDistance * 2) / 2;
 
       const label = document.createElement('div');
       label.className = 'side-length-label';
       label.innerHTML = `${roundedDistance}<span translate="no">m</span>`;
       label.style.position = 'absolute';
 
-      const pixelPos = map.project(midpoint);
+      const pixelPos = map.project(group.midpoint);
       label.style.left = `${pixelPos.x}px`;
       label.style.top = `${pixelPos.y}px`;
       label.style.transform = 'translate(-50%, -50%) scale(0.4)';
@@ -3937,30 +4083,16 @@ function addSideLengthLabels(lot) {
 
 function updateSideLengthPositions() {
   if (!currentLabeledLot || sideLengthLabels.length === 0) return;
-  
-  // Make sure we have the same number of labels as coordinates
-  const coords = [...currentLabeledLot.coords];
-  if (coords[0][0] !== coords[coords.length - 1][0] || 
-      coords[0][1] !== coords[coords.length - 1][1]) {
-    coords.push(coords[0]);
-  }
-  
-  // Safety check - if labels and coordinates don't match, recreate labels
-  if (sideLengthLabels.length !== coords.length - 1) {
+
+  // Safety check - if labels and groups don't match, recreate
+  if (sideLengthLabels.length !== mergedSegmentGroups.length) {
     removeSideLengthLabels();
     addSideLengthLabels(currentLabeledLot);
     return;
   }
 
-  for (let i = 0; i < coords.length - 1; i++) {
-    const start = coords[i];
-    const end = coords[i + 1];
-    const midpoint = [
-      (start[0] + end[0]) / 2,
-      (start[1] + end[1]) / 2
-    ];
-    
-    const pixelPos = map.project(midpoint);
+  for (let i = 0; i < mergedSegmentGroups.length; i++) {
+    const pixelPos = map.project(mergedSegmentGroups[i].midpoint);
     sideLengthLabels[i].style.left = `${pixelPos.x}px`;
     sideLengthLabels[i].style.top = `${pixelPos.y}px`;
   }
@@ -4271,21 +4403,20 @@ function parseLots(text) {
           console.warn('First missing lot:', missingLots[0]);
           console.warn('Last missing lot:', missingLots[missingLots.length - 1]);
 
-          // Analyze missing lots by type for MZ 10-17
-          const standardPrefix = CONFIG.lotPrefixes.standard;
-          const premiumPrefix = CONFIG.lotPrefixes.premium;
-          const standardPattern = new RegExp(`^${standardPrefix}(10|11|12|13|14|15|16|17)-`);
-          const premiumPattern = new RegExp(`^${premiumPrefix}(10|11|12|13|14|15|16|17)-`);
+          // Analyze missing lots by type for MZ 10-17 (dynamic for all prefix types)
+          const prefixes = CONFIG.lotPrefixes;
 
-          const missingStandard = missingLots.filter(name => standardPattern.test(name) && !name.includes(premiumPrefix));
-          const missingPremium = missingLots.filter(name => premiumPattern.test(name));
+          // Analyze each prefix type (excluding 'base' which is not a lot type)
+          Object.entries(prefixes).forEach(([prefixType, prefixValue]) => {
+            if (prefixType === 'base') return; // Skip 'base' prefix
 
-          if (missingStandard.length > 0) {
-            console.warn(`🔴 Missing ${missingStandard.length} ${standardPrefix} (non-premium) lots for MZ 10-17:`, missingStandard.slice(0, 10));
-          }
-          if (missingPremium.length > 0) {
-            console.warn(`🔴 Missing ${missingPremium.length} ${premiumPrefix} lots for MZ 10-17:`, missingPremium.slice(0, 10));
-          }
+            const pattern = new RegExp(`^${prefixValue}(10|11|12|13|14|15|16|17)-`);
+            const missingForPrefix = missingLots.filter(name => pattern.test(name));
+
+            if (missingForPrefix.length > 0) {
+              console.warn(`🔴 Missing ${missingForPrefix.length} ${prefixValue} (${prefixType}) lots for MZ 10-17:`, missingForPrefix.slice(0, 10));
+            }
+          });
         }
 
         console.log('Lot data enriched with availability and fraccionamiento:', lotData);
@@ -5262,12 +5393,18 @@ let infoMode = false;
 function extractLotNumber(lotName) {
   // Remove client-specific lot prefixes to get clean lot number
   const prefixes = CONFIG.lotPrefixes;
-  return lotName
-    .replace(new RegExp(`^${prefixes.standard}`, 'i'), '')
-    .replace(new RegExp(`^${prefixes.premium}`, 'i'), '')
-    .replace(/^lot/i, '')
-    .replace(new RegExp(`^${prefixes.base}`, 'i'), '')
-    .replace(/^p/i, '');
+
+  // Get all prefix values and sort by length (longest first) to handle overlapping prefixes
+  // This ensures 'lotinvertasb' is matched before 'lotinverta'
+  const sortedPrefixes = Object.values(prefixes).sort((a, b) => b.length - a.length);
+
+  let cleanName = lotName;
+  for (const prefix of sortedPrefixes) {
+    cleanName = cleanName.replace(new RegExp(`^${prefix}`, 'i'), '');
+  }
+
+  // Also remove generic 'lot' and 'p' prefixes if still present
+  return cleanName.replace(/^lot/i, '').replace(/^p/i, '');
 }
 
 async function fetchLots() {
@@ -5593,6 +5730,35 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const priceM2Formatted = priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const totalPriceFormatted = totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  // Get pricing config for this community
+  const pricingConfig = typeof getCommunityPricing === 'function'
+    ? getCommunityPricing(CURRENT_CLIENT, lot.fraccionamiento)
+    : null;
+
+  // Build down payment options HTML
+  let downPaymentOptionsHtml = '';
+  if (pricingConfig) {
+    const { min, max, step } = pricingConfig.downPayment;
+    for (let pct = min; pct <= max; pct += step) {
+      downPaymentOptionsHtml += `<option value="${pct}">${pct}%</option>`;
+    }
+  }
+
+  // Build installments options HTML and INTEREST_RATES object
+  let installmentsOptionsHtml = '';
+  const INTEREST_RATES = {};
+  if (pricingConfig) {
+    const terms = pricingConfig.terms;
+    terms.forEach((term, idx) => {
+      const selected = idx === terms.length - 1 ? ' selected' : '';
+      installmentsOptionsHtml += `<option value="${term.months}"${selected}>${term.months}</option>`;
+      INTEREST_RATES[term.months] = term.interest / 100;
+    });
+  }
+
+  // Default interest rate (last term's rate or 0)
+  const defaultInterestRate = pricingConfig ? pricingConfig.terms[pricingConfig.terms.length - 1].interest : 0;
+
   detailRow.innerHTML = `
   <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
     <!-- Top row: Lot name on left, calculation centered -->
@@ -5620,23 +5786,18 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     </div>
     <div style="width: 100%; height: 1px; background: ${CONFIG.colors.grayLight}; margin: 0px;"></div>
 
+    ${pricingConfig ? `
     <!-- Financing Calculator -->
     <div style="margin-top: 6px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; position: relative;">
       <!-- Row 1: Down payment % + Enganche amount -->
       <div style="display: flex; align-items: center; gap: 12px;">
         <div style="width: 80px;">
           <select id="downPaymentCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            <option value="20">20%</option>
-            <option value="25">25%</option>
-            <option value="30">30%</option>
-            <option value="35">35%</option>
-            <option value="40">40%</option>
-            <option value="45">45%</option>
-            <option value="50">50%</option>
+            ${downPaymentOptionsHtml}
           </select>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * 0.20).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * (pricingConfig.downPayment.min / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       </div>
 
@@ -5644,89 +5805,92 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       <div style="display: flex; align-items: center; gap: 12px;">
         <div style="width: 80px;">
           <select id="installmentsCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            <option value="24">24</option>
-            <option value="36">36</option>
-            <option value="48">48</option>
-            <option value="60">60</option>
-            <option value="72" selected>72</option>
+            ${installmentsOptionsHtml}
           </select>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$10,315.50</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
+          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
         </div>
       </div>
 
       <!-- Tasa and Precio financiado on same line -->
       <div style="width: 100%; display: flex; justify-content: space-between; margin-top: -4px; font-size: 13px; color: ${CONFIG.colors.textLight};">
         <div style="width: 80px; text-align: center;">
-          <span>Tasa <span id="financingRate">17</span>%</span>
+          <span>Tasa <span id="financingRate">${defaultInterestRate}</span>%</span>
         </div>
         <div style="text-align: right;">
-          <span>Financiado: <span id="financingTotalPrice">$742,716.00</span></span>
+          <span>Financiado: <span id="financingTotalPrice">$0.00</span></span>
         </div>
       </div>
     </div>
+    ` : `
+    <!-- No pricing available - Contact for pricing -->
+    <div style="margin-top: 12px; width: 100%; text-align: center; padding: 16px; background: ${CONFIG.colors.grayVeryLight}; border-radius: 8px;">
+      <div style="font-size: 16px; color: ${CONFIG.colors.textLight};">
+        Contáctanos para conocer opciones de financiamiento
+      </div>
+    </div>
+    `}
   </div>
 `;
 
   detailContainer.appendChild(detailRow);
 
-  // Initialize calculator
-  const totalPriceNum = totalPrice;
-  const INTEREST_RATES = {
-    24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17
-  };
+  // Initialize calculator (only if pricing config exists)
+  if (pricingConfig) {
+    const totalPriceNum = totalPrice;
 
-  function calculateMonthlyPayment(principal, annualRate, months) {
-    const monthlyRate = annualRate / 12;
-    if (monthlyRate === 0) return principal / months;
-    const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-    const denominator = Math.pow(1 + monthlyRate, months) - 1;
-    return numerator / denominator;
-  }
-
-  function updateCalculations() {
-    const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
-    const months = parseInt(document.getElementById('installmentsCalc').value);
-    const interestRate = INTEREST_RATES[months] || 0.17;
-
-    const downPaymentAmount = totalPriceNum * downPaymentPercent;
-    const amountFinanced = totalPriceNum - downPaymentAmount;
-    const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
-
-    const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
-
-    document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
-
-    // Update financing header
-    document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
-    document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  // Add event listeners
-  setTimeout(() => {
-    // Check URL parameters and set values if present
-    // Support both new short params (a, m, i) and old long params for backwards compatibility
-    const urlParams = new URLSearchParams(window.location.search);
-    const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
-    const monthsParam = urlParams.get('m') || urlParams.get('months');
-
-    const downPaymentSelect = document.getElementById('downPaymentCalc');
-    const installmentsSelect = document.getElementById('installmentsCalc');
-
-    if (downpaymentParam && downPaymentSelect) {
-      downPaymentSelect.value = downpaymentParam;
-    }
-    if (monthsParam && installmentsSelect) {
-      installmentsSelect.value = monthsParam;
+    function calculateMonthlyPayment(principal, annualRate, months) {
+      const monthlyRate = annualRate / 12;
+      if (monthlyRate === 0) return principal / months;
+      const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
+      const denominator = Math.pow(1 + monthlyRate, months) - 1;
+      return numerator / denominator;
     }
 
-    downPaymentSelect?.addEventListener('change', updateCalculations);
-    installmentsSelect?.addEventListener('change', updateCalculations);
-    updateCalculations(); // Initial calculation with URL params
-  }, 100);
+    function updateCalculations() {
+      const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
+      const months = parseInt(document.getElementById('installmentsCalc').value);
+      const interestRate = INTEREST_RATES[months] || 0;
+
+      const downPaymentAmount = totalPriceNum * downPaymentPercent;
+      const amountFinanced = totalPriceNum - downPaymentAmount;
+      const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
+
+      const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
+
+      document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
+
+      // Update financing header
+      document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
+      document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Add event listeners
+    setTimeout(() => {
+      // Check URL parameters and set values if present
+      // Support both new short params (a, m, i) and old long params for backwards compatibility
+      const urlParams = new URLSearchParams(window.location.search);
+      const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
+      const monthsParam = urlParams.get('m') || urlParams.get('months');
+
+      const downPaymentSelect = document.getElementById('downPaymentCalc');
+      const installmentsSelect = document.getElementById('installmentsCalc');
+
+      if (downpaymentParam && downPaymentSelect) {
+        downPaymentSelect.value = downpaymentParam;
+      }
+      if (monthsParam && installmentsSelect) {
+        installmentsSelect.value = monthsParam;
+      }
+
+      downPaymentSelect?.addEventListener('change', updateCalculations);
+      installmentsSelect?.addEventListener('change', updateCalculations);
+      updateCalculations(); // Initial calculation with URL params
+    }, 100);
+  }
 
   // CTA Buttons Section
   const ctaSection = document.createElement('div');
@@ -5745,9 +5909,11 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'cta-buttons-row';
   buttonsRow.style.position = 'relative';
+  // Show COTIZAR button when authenticated, CÓMO LLEGAR otherwise
+  const isAuthenticated = window.isUserAuthenticated === true;
   buttonsRow.innerHTML = `
     <button class="cta-button first" id="separarBtn" translate="no">APARTAR</button>
-    <button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>
+    ${isAuthenticated ? '<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>' : '<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>'}
     <button class="cta-button second" id="chatearBtn" translate="no">CHATEAR</button>
   `;
 
@@ -5800,6 +5966,25 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       // Example: open WhatsApp
       // window.open('https://wa.me/5218185261819', '_blank');
       e.stopPropagation();
+    } else if (e.target.id === 'descargarPdfBtn') {
+      // Generate PDF quote
+      e.stopPropagation();
+      if (lot && window.generateMultiPagePDF) {
+        const dynamicText = prompt('Ingrese el texto para el PDF:');
+        if (dynamicText !== null) {
+          // Get selected financing options from the calculator dropdowns
+          const downPaymentSelect = document.getElementById('downPaymentCalc');
+          const installmentsSelect = document.getElementById('installmentsCalc');
+          const financingOptions = {
+            downpaymentPercent: downPaymentSelect ? parseInt(downPaymentSelect.value) : 30,
+            installmentMonths: installmentsSelect ? parseInt(installmentsSelect.value) : 48
+          };
+          window.generateMultiPagePDF(lot, dynamicText, financingOptions);
+        }
+      } else {
+        console.error('PDF generation not available or lot data missing');
+        window.showToaster?.('Error al generar PDF');
+      }
     }
   });
 
@@ -11060,6 +11245,21 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     return text.split('\n').map(line => `<div>${line || '&nbsp;'}</div>`).join('');
   }
 
+  function updateLogo(logoUrl) {
+    const communityLogo = document.getElementById('communityLogo');
+    const communityLogoImg = document.getElementById('communityLogoImg');
+
+    if (!communityLogo || !communityLogoImg) return;
+
+    if (logoUrl && logoUrl.trim() !== '') {
+      communityLogo.style.display = 'block';
+      communityLogoImg.src = logoUrl;
+    } else {
+      communityLogo.style.display = 'none';
+      communityLogoImg.src = '';
+    }
+  }
+
   function applyConfig() {
     setCSSVar('--orbit-radius', config.radius);
     setCSSVar('--dot', config.dotSize + 'px');
@@ -11071,7 +11271,14 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     setCSSVar('--mini-dot', config.miniSize + 'px');
     setCSSVar('--mini-dot-font-size', config.miniFontSize + 'px');
     setCSSVar('--mini-dot-color', config.miniDotColor);
+    setCSSVar('--tiny-orbit-radius', config.tinyRadius || 24);
+    setCSSVar('--tiny-dot', (config.tinySize || 16) + 'px');
+    setCSSVar('--tiny-dot-font-size', (config.tinyFontSize || 8) + 'px');
+    setCSSVar('--tiny-dot-color', config.tinyDotColor || '#34d399');
     setCSSVar('--rotate-deg', config.rotation + 'deg');
+
+    // Initialize logo on page load
+    updateLogo(config.defaultLogo || '');
   }
 
   function buildDots() {
@@ -11116,7 +11323,11 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       e.stopPropagation();
       if (menuActive) {
         navigateTo(String(i)); // Navigate to main dot coords
-        updateLogoForDot(i); // Update community logo
+        updateLogoForDot(i); // Update community logo (legacy)
+        // Update logo from config
+        if (config.dotLogos && config.dotLogos[i]) {
+          updateLogo(config.dotLogos[i]);
+        }
         if (config.miniDotsEnabled && config.miniDotsVisibility[i] !== false) {
           // If mini-dots are enabled, toggle them
           toggleMiniDotsForDot(dotObj);
@@ -11167,20 +11378,114 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       miniContainer.appendChild(miniEl);
       ring.appendChild(miniContainer);
 
+      const miniDotObj = { el: miniEl, container: miniContainer, index: j, key: miniKey, tinyDots: [], tinyRing: null, tinyDotsActive: false };
+
       miniEl.addEventListener('click', (e) => {
         e.stopPropagation();
         if (dot.miniDotsActive) {
           // Navigate to this mini-dot's location
           navigateTo(miniKey);
-          toggleMenu();
+
+          // Update logo from config
+          if (config.miniDotLogos && config.miniDotLogos[miniKey]) {
+            updateLogo(config.miniDotLogos[miniKey]);
+          }
+
+          // Check if tiny-dots are enabled for this mini-dot
+          if (config.tinyDotsEnabled && config.tinyDotsVisibility && config.tinyDotsVisibility[miniKey] !== false) {
+            toggleTinyDotsForMiniDot(miniDotObj);
+          } else {
+            toggleMenu();
+          }
         }
       });
 
-      dot.miniDots.push({ el: miniEl, container: miniContainer, index: j, key: miniKey });
+      // Build tiny-dots for this mini-dot if enabled
+      if (config.tinyDotsEnabled && config.tinyDotsVisibility && config.tinyDotsVisibility[miniKey] !== false) {
+        buildTinyDots(miniDotObj, miniContainer, dot.i, j);
+      }
+
+      dot.miniDots.push(miniDotObj);
     }
 
     container.appendChild(ring);
     dot.miniRing = ring;
+  }
+
+  function buildTinyDots(miniDot, miniContainer, dotIndex, miniIndex) {
+    const ring = document.createElement('div');
+    ring.className = 'search-btn-tiny-ring';
+    ring.style.width = ((config.tinyRadius || 24) * 2) + 'px';
+    ring.style.height = ((config.tinyRadius || 24) * 2) + 'px';
+
+    const miniKey = `${dotIndex}-${miniIndex}`;
+    const shouldMirror = config.tinyDotsMirror && config.tinyDotsMirror[miniKey];
+    const effectiveRotation = shouldMirror ? -(config.tinyRotation || 0) : (config.tinyRotation || 0);
+
+    for (let k = 0; k < (config.tinyCount || 4); k++) {
+      if (config.individualTinyVisibility && config.individualTinyVisibility[miniKey] && config.individualTinyVisibility[miniKey][k] === false) continue;
+
+      const tinyContainer = document.createElement('div');
+      tinyContainer.className = 'search-btn-tiny-container';
+
+      const tinyEl = document.createElement('button');
+      tinyEl.className = 'search-btn-tiny-dot';
+
+      const tinyKey = `${dotIndex}-${miniIndex}-${k}`;
+      const tinyText = document.createElement('div');
+      tinyText.className = 'search-btn-tiny-text';
+      const tinyLabelText = (config.tinyDotLabels && config.tinyDotLabels[tinyKey]) || (k + 1).toString();
+      tinyText.innerHTML = textToHTML(tinyLabelText);
+      tinyEl.appendChild(tinyText);
+
+      // Position
+      const tinyRadius = config.tinyRadius || 24;
+      const baseAngle = (2 * Math.PI * k) / (config.tinyCount || 4);
+      const angle = baseAngle + (effectiveRotation * Math.PI / 180);
+      const x = tinyRadius + tinyRadius * Math.cos(angle);
+      const y = tinyRadius + tinyRadius * Math.sin(angle);
+      tinyContainer.style.left = x + 'px';
+      tinyContainer.style.top = y + 'px';
+
+      tinyContainer.appendChild(tinyEl);
+      ring.appendChild(tinyContainer);
+
+      tinyEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (miniDot.tinyDotsActive) {
+          // Navigate to this tiny-dot's location
+          navigateTo(tinyKey);
+
+          // Update logo from config
+          if (config.tinyDotLogos && config.tinyDotLogos[tinyKey]) {
+            updateLogo(config.tinyDotLogos[tinyKey]);
+          }
+
+          toggleMenu();
+        }
+      });
+
+      miniDot.tinyDots.push({ el: tinyEl, container: tinyContainer, index: k, key: tinyKey });
+    }
+
+    miniContainer.appendChild(ring);
+    miniDot.tinyRing = ring;
+  }
+
+  function toggleTinyDotsForMiniDot(miniDot) {
+    miniDot.tinyDotsActive = !miniDot.tinyDotsActive;
+
+    if (miniDot.tinyDotsActive) {
+      miniDot.el.classList.add('hidden');
+      miniDot.tinyDots.forEach(({ el }) => {
+        el.classList.add('visible');
+      });
+    } else {
+      miniDot.el.classList.remove('hidden');
+      miniDot.tinyDots.forEach(({ el }) => {
+        el.classList.remove('visible');
+      });
+    }
   }
 
   function applyAnimationDelays() {
@@ -11201,8 +11506,15 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       });
     } else {
       dot.el.classList.remove('hidden');
-      dot.miniDots.forEach(({ el }) => {
-        el.classList.remove('visible');
+      dot.miniDots.forEach((miniDot) => {
+        miniDot.el.classList.remove('visible');
+        // Also hide any active tiny-dots
+        if (miniDot.tinyDotsActive) {
+          miniDot.tinyDots.forEach(({ el }) => {
+            el.classList.remove('visible');
+          });
+          miniDot.tinyDotsActive = false;
+        }
       });
     }
   }
@@ -11267,8 +11579,15 @@ window.showPaymentViewInModal = showPaymentViewInModal;
         dot.el.classList.remove('visible');
         dot.el.classList.remove('hidden');
         if (dot.miniDotsActive) {
-          dot.miniDots.forEach(({ el }) => {
-            el.classList.remove('visible');
+          dot.miniDots.forEach((miniDot) => {
+            miniDot.el.classList.remove('visible');
+            // Also hide any active tiny-dots
+            if (miniDot.tinyDotsActive) {
+              miniDot.tinyDots.forEach(({ el }) => {
+                el.classList.remove('visible');
+              });
+              miniDot.tinyDotsActive = false;
+            }
           });
           dot.miniDotsActive = false;
         }
@@ -11290,6 +11609,521 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     .catch(err => {
       console.error('❌ Failed to load saved.json:', err);
     });
+})();
+</script>
+
+<!-- ===== PDF GENERATION COMPONENT ===== -->
+<script>
+(function() {
+  // PDF Generation for Inverta - Multi-template support based on community group
+
+  async function generateMultiPagePDF(lot, dynamicText, financingOptions = {}) {
+    if (!lot) {
+      console.error('No lot data provided');
+      window.showToaster?.('Error: No se pudo obtener datos del lote');
+      return;
+    }
+
+    // Default financing options (matches modal defaults)
+    const financing = {
+      downpaymentPercent: financingOptions.downpaymentPercent || 30,
+      installmentMonths: financingOptions.installmentMonths || 48
+    };
+
+    // Determine community group from fraccionamiento
+    const fraccionamiento = lot.fraccionamiento || lot.community || '';
+    const communityGroup = getCommunityGroup('agora', fraccionamiento);
+
+    if (!communityGroup) {
+      console.error('Could not determine community group for:', fraccionamiento);
+      window.showToaster?.('Error: Plantilla no disponible para esta comunidad');
+      return;
+    }
+
+    // Create progress overlay
+    const progressOverlay = document.createElement('div');
+    progressOverlay.id = 'pdf-progress-overlay';
+    progressOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+    `;
+    progressOverlay.innerHTML = `
+      <div style="background: white; padding: 32px 48px; border-radius: 12px; text-align: center; font-family: Arial, sans-serif;">
+        <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Generando PDF...</div>
+        <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Cargando plantilla...</div>
+        <div style="width: 200px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
+          <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: ${CONFIG?.colors?.primary || '#007bff'}; transition: width 0.3s;"></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(progressOverlay);
+
+    const progressText = document.getElementById('pdf-progress-text');
+    const progressBar = document.getElementById('pdf-progress-bar');
+
+    // Create hidden container for rendering pages
+    const pdfContainer = document.createElement('div');
+    pdfContainer.id = 'pdf-generation-container';
+    pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+    document.body.appendChild(pdfContainer);
+
+    // Calculate lot values for placeholders
+    function getLotValues(lot, dynamicText, financingOpts = {}) {
+      const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
+      const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+      const totalPrice = size * priceM2;
+
+      // Calculate category based on priceM2 tier
+      const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+      const uniquePrices = [...new Set(allLotsData.map(l =>
+        parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+      ))].filter(p => p > 0).sort((a, b) => b - a);
+
+      const categories = ['AAA+', 'AAA', 'AA', 'A'];
+      const priceIndex = uniquePrices.findIndex(p => Math.abs(p - priceM2) < 0.01);
+      const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+      // Format helpers
+      const formatCurrency = (num) => '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const formatNumber = (num) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      // Discount calculations
+      const discount5 = totalPrice * 0.05;
+      const discount12 = totalPrice * 0.12;
+      const priceWith5Discount = totalPrice * 0.95;
+      const priceWith12Discount = totalPrice * 0.88;
+
+      // 25% plan: no discount, 25% down, 45% in 24 months, 30% contra escritura
+      const downpayment25 = totalPrice * 0.25;
+      const monthly25 = (totalPrice * 0.45) / 24;
+      const contraEscritura30 = totalPrice * 0.30;
+
+      // 50% plan: 5% discount, 50% down, 50% contra escritura
+      const downpayment50 = priceWith5Discount * 0.50;
+      const contraEscritura50 = priceWith5Discount * 0.50;
+
+      // 85% plan: 12% discount, 85% down, 15% contra escritura
+      const downpayment85 = priceWith12Discount * 0.85;
+      const contraEscritura15 = priceWith12Discount * 0.15;
+
+      // Dynamic financing calculations based on selected options
+      const selectedDownpaymentPercent = financingOpts.downpaymentPercent || 30;
+      const selectedInstallmentMonths = financingOpts.installmentMonths || 48;
+
+      // Interest rates by month term
+      const INTEREST_RATES = { 24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17 };
+      const selectedInterestRate = INTEREST_RATES[selectedInstallmentMonths] || 0.15;
+
+      // Calculate dynamic financing values
+      const selectedDownpaymentAmount = totalPrice * (selectedDownpaymentPercent / 100);
+      const amountToFinance = totalPrice - selectedDownpaymentAmount;
+
+      // Monthly payment calculation helper
+      function calcMonthlyPayment(principal, annualRate, months) {
+        const monthlyRate = annualRate / 12;
+        if (monthlyRate === 0) return principal / months;
+        const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
+        const denominator = Math.pow(1 + monthlyRate, months) - 1;
+        return numerator / denominator;
+      }
+
+      // Selected term calculation
+      const selectedMonthlyPayment = calcMonthlyPayment(amountToFinance, selectedInterestRate, selectedInstallmentMonths);
+      const selectedTotalFinancedPrice = selectedDownpaymentAmount + (selectedMonthlyPayment * selectedInstallmentMonths);
+
+      // Calculate all term options (using selected downpayment)
+      const terms = [24, 36, 48, 60, 72];
+      const termCalcs = {};
+      terms.forEach(months => {
+        const rate = INTEREST_RATES[months];
+        const monthly = calcMonthlyPayment(amountToFinance, rate, months);
+        const total = selectedDownpaymentAmount + (monthly * months);
+        termCalcs[months] = { rate, monthly, total };
+      });
+
+      // Parse lot number (e.g., "10-11" → "MZ10L11")
+      const lotNumberParts = (lot.number || '').split('-');
+      const lotFormatted = lotNumberParts.length === 2
+        ? `MZ${lotNumberParts[0]}L${lotNumberParts[1]}`
+        : lot.number || '';
+
+      // Current date in Spanish format (e.g., "28 ENE 2026")
+      const spanishMonths = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+      const today = new Date();
+      const dateFormatted = `${today.getDate()} ${spanishMonths[today.getMonth()]} ${today.getFullYear()}`;
+
+      return {
+        'dynamicText': dynamicText,
+        'lot.number': lot.number || '',
+        'lot.nameA': lotNumberParts[0] || '',
+        'lot.nameB': lotNumberParts[1] || '',
+        'lot.numberFormatted': lotFormatted,
+        'lot.date': dateFormatted,
+        'lot.category': category || 'A',
+        'lot.size': formatNumber(size) + ' m²',
+        'lot.pricePerM2': formatCurrency(priceM2),
+        'lot.totalPrice': formatCurrency(totalPrice),
+        'lot.downpayment25': formatCurrency(downpayment25),
+        'lot.downpayment50': formatCurrency(downpayment50),
+        'lot.downpayment85': formatCurrency(downpayment85),
+        'lot.monthly25': formatCurrency(monthly25),
+        'lot.discount0': formatCurrency(0),
+        'lot.discount5': formatCurrency(discount5),
+        'lot.discount12': formatCurrency(discount12),
+        'lot.priceWith5Discount': formatCurrency(priceWith5Discount),
+        'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
+        'lot.contraEscritura30': formatCurrency(contraEscritura30),
+        'lot.contraEscritura50': formatCurrency(contraEscritura50),
+        'lot.contraEscritura15': formatCurrency(contraEscritura15),
+        // New dynamic financing placeholders (selected)
+        'lot.selectedDownpaymentPercent': selectedDownpaymentPercent + '%',
+        'lot.selectedDownpaymentAmount': formatCurrency(selectedDownpaymentAmount),
+        'lot.selectedInstallmentMonths': String(selectedInstallmentMonths),
+        'lot.selectedMonthlyPayment': formatCurrency(selectedMonthlyPayment),
+        'lot.selectedInterestRate': (selectedInterestRate * 100).toFixed(0) + '%',
+        'lot.selectedTotalFinancedPrice': formatCurrency(selectedTotalFinancedPrice),
+        // All term options (using selected downpayment)
+        'lot.monthly24': formatCurrency(termCalcs[24].monthly),
+        'lot.rate24': (termCalcs[24].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced24': formatCurrency(termCalcs[24].total),
+        'lot.monthly36': formatCurrency(termCalcs[36].monthly),
+        'lot.rate36': (termCalcs[36].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced36': formatCurrency(termCalcs[36].total),
+        'lot.monthly48': formatCurrency(termCalcs[48].monthly),
+        'lot.rate48': (termCalcs[48].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced48': formatCurrency(termCalcs[48].total),
+        'lot.monthly60': formatCurrency(termCalcs[60].monthly),
+        'lot.rate60': (termCalcs[60].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced60': formatCurrency(termCalcs[60].total),
+        'lot.monthly72': formatCurrency(termCalcs[72].monthly),
+        'lot.rate72': (termCalcs[72].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced72': formatCurrency(termCalcs[72].total)
+      };
+    }
+
+    // Replace placeholders in text
+    function replacePlaceholders(text, values) {
+      if (!text) return '';
+      return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+        return values[key.trim()] !== undefined ? values[key.trim()] : match;
+      });
+    }
+
+    // Function to create a page with template elements
+    function createPage(pageNum, template, lotValues, settings) {
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImagePrefix = settings.lotImagePrefix || '';
+      const pageWidth = settings.pageWidth || 1224;
+      const pageHeight = settings.pageHeight || 1584;
+
+      const pdfPage = document.createElement('div');
+      pdfPage.style.cssText = `
+        width: ${pageWidth}px;
+        height: ${pageHeight}px;
+        position: relative;
+        overflow: visible;
+        background-image: url("${pageBackgroundBaseUrl}page.${pageNum}.png");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: top left;
+      `;
+
+      // Get page data from template
+      const pageIndex = parseInt(pageNum, 10);
+      const pageData = template?.pages?.[pageIndex];
+
+      if (pageData) {
+        // Render text boxes
+        if (pageData.textBoxes) {
+          pageData.textBoxes.forEach(tb => {
+            const textEl = document.createElement('div');
+            textEl.textContent = replacePlaceholders(tb.content, lotValues);
+            textEl.style.cssText = `
+              position: absolute;
+              left: ${tb.x}px;
+              top: ${tb.y}px;
+              ${tb.width ? `width: ${tb.width}px;` : ''}
+              ${tb.height ? `height: ${tb.height}px;` : ''}
+              font-size: ${tb.fontSize || 24}px;
+              font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+              color: ${tb.color || '#000000'};
+              font-weight: ${tb.bold ? '700' : '400'};
+              font-style: ${tb.italic ? 'italic' : 'normal'};
+              text-decoration: ${tb.underline ? 'underline' : 'none'};
+              text-align: ${tb.textAlign || 'left'};
+              white-space: pre-wrap;
+              ${tb.zIndex !== undefined ? `z-index: ${tb.zIndex};` : ''}
+            `;
+            pdfPage.appendChild(textEl);
+          });
+        }
+
+        // Render tables
+        if (pageData.tables) {
+          pageData.tables.forEach(tableData => {
+            const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
+            const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
+            const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
+
+            const tableContainer = document.createElement('div');
+            tableContainer.style.cssText = `
+              position: absolute;
+              left: ${tableData.x}px;
+              top: ${tableData.y}px;
+              ${tableData.zIndex !== undefined ? `z-index: ${tableData.zIndex};` : ''}
+            `;
+
+            const table = document.createElement('table');
+            table.style.cssText = `
+              border-collapse: collapse;
+              table-layout: fixed;
+              width: ${totalWidth}px;
+            `;
+
+            for (let r = 0; r < tableData.rows; r++) {
+              const tr = document.createElement('tr');
+              tr.style.height = rowHeights[r] + 'px';
+
+              for (let c = 0; c < tableData.cols; c++) {
+                const cellData = tableData.cells?.[r]?.[c];
+                if (!cellData || cellData.hidden) continue;
+
+                const td = document.createElement('td');
+                td.textContent = replacePlaceholders(cellData.content || '', lotValues);
+
+                const borderWidth = cellData.borderWidth || 1;
+                const borderStyle = cellData.borderStyle || 'solid';
+                const borderColor = cellData.borderColor || '#000000';
+                const borderPosition = cellData.borderPosition || 'all';
+
+                let borderCss = '';
+                if (borderPosition === 'bottom') {
+                  borderCss = `border: none; border-bottom: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                } else if (borderPosition === 'top') {
+                  borderCss = `border: none; border-top: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                } else {
+                  borderCss = `border: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                }
+
+                td.style.cssText = `
+                  width: ${colWidths[c]}px;
+                  height: ${rowHeights[r]}px;
+                  box-sizing: border-box;
+                  overflow: hidden;
+                  background-color: ${cellData.bgColor || '#ffffff'};
+                  color: ${cellData.textColor || '#000000'};
+                  font-family: "${cellData.fontFamily || 'Arial'}", sans-serif;
+                  font-size: ${cellData.fontSize || 14}px;
+                  font-weight: ${cellData.bold ? '700' : '400'};
+                  font-style: ${cellData.italic ? 'italic' : 'normal'};
+                  text-decoration: ${cellData.underline ? 'underline' : 'none'};
+                  ${borderCss}
+                  padding: 0;
+                  text-align: ${cellData.textAlign || 'left'};
+                  vertical-align: middle;
+                `;
+
+                if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
+                if (cellData.rowSpan > 1) td.rowSpan = cellData.rowSpan;
+
+                tr.appendChild(td);
+              }
+              table.appendChild(tr);
+            }
+
+            tableContainer.appendChild(table);
+            pdfPage.appendChild(tableContainer);
+          });
+        }
+
+        // Render images
+        if (pageData.images) {
+          pageData.images.forEach(imgData => {
+            const imgEl = document.createElement('div');
+
+            // Determine image URL based on type
+            let imageUrl = '';
+            if (imgData.type === '{{lot.landscape}}') {
+              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_landscape.jpg`;
+            } else if (imgData.type === '{{lot.map}}') {
+              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_map.jpg`;
+            } else if (imgData.type === 'static' && imgData.url) {
+              imageUrl = imgData.url;
+            }
+
+            imgEl.style.cssText = `
+              position: absolute;
+              left: ${imgData.x}px;
+              top: ${imgData.y}px;
+              width: ${imgData.width}px;
+              height: ${imgData.height}px;
+              background-image: url("${imageUrl}");
+              background-size: cover;
+              background-position: center;
+              background-repeat: no-repeat;
+              ${imgData.borderWidth > 0 ? `border: ${imgData.borderWidth}px solid ${imgData.borderColor || '#000000'}; box-sizing: border-box;` : ''}
+              ${imgData.zIndex !== undefined ? `z-index: ${imgData.zIndex};` : ''}
+            `;
+            pdfPage.appendChild(imgEl);
+          });
+        }
+      }
+
+      return pdfPage;
+    }
+
+    try {
+      // Step 1: Fetch template for this community group
+      progressText.textContent = 'Cargando plantilla...';
+      const templatePath = `/agora/pdf/${communityGroup}/pdf-template.json`;
+
+      let template = { pages: {}, settings: {} };
+      try {
+        const response = await fetch(templatePath);
+        if (response.ok) {
+          template = await response.json();
+        } else {
+          throw new Error(`Template not found: ${templatePath}`);
+        }
+      } catch (err) {
+        console.error('Could not load PDF template:', err);
+        window.showToaster?.('Error: No se pudo cargar la plantilla PDF');
+        document.body.removeChild(progressOverlay);
+        document.body.removeChild(pdfContainer);
+        return;
+      }
+
+      // Get settings from template or use defaults
+      const settings = template.settings || {};
+      const totalPages = settings.totalPages || Object.keys(template.pages || {}).length || 8;
+
+      // Calculate lot values with financing options
+      const lotValues = getLotValues(lot, dynamicText, financing);
+
+      // Step 2: Preload ALL images in parallel
+      progressText.textContent = 'Cargando imágenes...';
+      progressBar.style.width = '10%';
+
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImagePrefix = settings.lotImagePrefix || '';
+
+      const imagePromises = [];
+
+      // Preload page backgrounds
+      for (let i = 1; i <= totalPages; i++) {
+        const pageNum = String(i).padStart(3, '0');
+        imagePromises.push(new Promise(resolve => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = resolve;
+          img.onerror = resolve;
+          img.src = `${pageBackgroundBaseUrl}page.${pageNum}.png`;
+        }));
+      }
+
+      // Preload lot-specific images (landscape and map)
+      const lotNum = lotValues['lot.number'];
+      if (lotNum) {
+        ['landscape', 'map'].forEach(type => {
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = resolve;
+            img.onerror = resolve;
+            img.src = `${lotImageBaseUrl}${lotImagePrefix}${lotNum}_${type}.jpg`;
+          }));
+        });
+
+        // Preload any static images from the template
+        Object.values(template.pages || {}).forEach(pageData => {
+          (pageData.images || []).forEach(imgData => {
+            if (imgData.type === 'static' && imgData.url) {
+              imagePromises.push(new Promise(resolve => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = resolve;
+                img.onerror = resolve;
+                img.src = imgData.url;
+              }));
+            }
+          });
+        });
+      }
+
+      await Promise.all(imagePromises);
+      progressBar.style.width = '40%';
+
+      // Step 3: Generate PDF pages sequentially (required by jsPDF)
+      progressText.textContent = 'Generando PDF...';
+
+      // Use page dimensions from template or defaults
+      const pageWidth = settings.pageWidth || 1224;
+      const pageHeight = settings.pageHeight || 1584;
+      const orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
+
+      const worker = html2pdf().set({
+        margin: 0,
+        filename: `Agora-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
+        image: { type: 'jpeg', quality: 1 },
+        html2canvas: { scale: 1, useCORS: true },
+        jsPDF: { unit: 'px', format: [pageWidth, pageHeight], orientation: orientation }
+      });
+
+      for (let i = 1; i <= totalPages; i++) {
+        progressText.textContent = `Renderizando página ${i} de ${totalPages}`;
+        progressBar.style.width = `${40 + (i / totalPages) * 55}%`;
+
+        const pageNum = String(i).padStart(3, '0');
+
+        // Create page with template elements
+        const page = createPage(pageNum, template, lotValues, settings);
+        pdfContainer.innerHTML = '';
+        pdfContainer.appendChild(page);
+
+        if (i === 1) {
+          await worker.from(page).toContainer().toCanvas().toPdf();
+        } else {
+          await worker.get('pdf').then(pdf => {
+            pdf.addPage([pageWidth, pageHeight], orientation);
+          });
+          await worker.from(page).toContainer().toCanvas().toPdf();
+        }
+      }
+
+      // Save the final PDF
+      progressText.textContent = 'Descargando...';
+      progressBar.style.width = '100%';
+      await worker.save();
+
+      // Clean up
+      document.body.removeChild(pdfContainer);
+      document.body.removeChild(progressOverlay);
+
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      window.showToaster?.('Error al generar el PDF');
+      if (document.getElementById('pdf-progress-overlay')) {
+        document.body.removeChild(progressOverlay);
+      }
+      if (document.getElementById('pdf-generation-container')) {
+        document.body.removeChild(pdfContainer);
+      }
+    }
+  }
+
+  // Expose to global scope
+  window.generateMultiPagePDF = generateMultiPagePDF;
 })();
 </script>
 
