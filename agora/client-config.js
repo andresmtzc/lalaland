@@ -139,7 +139,8 @@ const CLIENT_CONFIGS = {
         zoom: 16.3,
         position: 2,
         searchMenuId: 'positionFour',
-        apartarEnabled: false
+        apartarEnabled: false,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/pietra/frames/'
       },
 
       'amani-aqua': {
@@ -151,7 +152,8 @@ const CLIENT_CONFIGS = {
         zoom: 15.6,
         position: 1,
         searchMenuId: 'positionThree',
-        apartarEnabled: false
+        apartarEnabled: false,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/aqua/frames/'
       },
 
       'cañadas-vergel': {
@@ -163,7 +165,8 @@ const CLIENT_CONFIGS = {
         zoom: 16.4,
         position: 7,
         searchMenuId: 'positionTwo',
-        apartarEnabled: false
+        apartarEnabled: false,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/canadas/frames/'
       }
 
     },

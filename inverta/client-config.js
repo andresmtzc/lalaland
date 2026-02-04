@@ -145,7 +145,8 @@ const CLIENT_CONFIGS = {
         zoom: 16.2,
         position: 2,
         searchMenuId: 'positionFour',
-        apartarEnabled: true
+        apartarEnabled: true,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/barcelona/frames/'
       },
 
       marsella: {
@@ -157,7 +158,8 @@ const CLIENT_CONFIGS = {
         zoom: 16.3,
         position: 1,
         searchMenuId: 'positionThree',
-        apartarEnabled: true
+        apartarEnabled: true,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/marsella/frames/'
       },
 
       sierraalta: {
@@ -169,7 +171,8 @@ const CLIENT_CONFIGS = {
         zoom: 15.6,
         position: 7,
         searchMenuId: 'positionTwo',
-        apartarEnabled: true
+        apartarEnabled: true,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/sierraalta/frames/'
       },
 
       sierrabaja: {
@@ -181,7 +184,8 @@ const CLIENT_CONFIGS = {
         zoom: 16.8,
         position: 6,
         searchMenuId: 'positionOne',
-        apartarEnabled: true
+        apartarEnabled: true,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/sierrabaja/frames/'
       },
 
             cortezia: {
@@ -193,7 +197,8 @@ const CLIENT_CONFIGS = {
         zoom: 15.8,
         position: 6,
         searchMenuId: 'positionOne',
-        apartarEnabled: true
+        apartarEnabled: true,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/cortezia/frames/'
       },
 
             ebano: {
@@ -205,7 +210,8 @@ const CLIENT_CONFIGS = {
         zoom: 16.2,
         position: 6,
         searchMenuId: 'positionOne',
-        apartarEnabled: true
+        apartarEnabled: true,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/ebano/frames/'
       },
 
             verdalia: {
@@ -217,7 +223,8 @@ const CLIENT_CONFIGS = {
         zoom: 15.5,
         position: 6,
         searchMenuId: 'positionOne',
-        apartarEnabled: true
+        apartarEnabled: true,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/verdalia/frames/'
       },
 
             frondia: {
@@ -229,7 +236,8 @@ const CLIENT_CONFIGS = {
         zoom: 16,
         position: 6,
         searchMenuId: 'positionOne',
-        apartarEnabled: true
+        apartarEnabled: true,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/frondia/frames/'
       },
 
                   almaterra: {
@@ -241,7 +249,8 @@ const CLIENT_CONFIGS = {
         zoom: 14.5,
         position: 6,
         searchMenuId: 'positionOne',
-        apartarEnabled: true
+        apartarEnabled: true,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/almaterra/frames/'
       }
 
     },

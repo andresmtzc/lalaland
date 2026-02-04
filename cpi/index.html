@@ -462,8 +462,14 @@ let preloadedImages = {};
 let viewConeMarker = null;
 let isSwitchingTrack = false;
 
-// Constants
-const FRAMES_BASE = CONFIG.data.framesBase;
+// Dynamic frames base - changes based on current fraccionamiento
+let currentFraccionamiento = CONFIG.defaultCommunity || Object.keys(CONFIG.communities)[0];
+
+function getFramesBase() {
+  const community = Object.values(CONFIG.communities)
+    .find(c => c.fracc === currentFraccionamiento || c.id === currentFraccionamiento);
+  return community?.framesBase || CONFIG.data.framesBase;
+}
 // ===== REST OF YOUR EXISTING CODE STARTS HERE =====
 //button tracking here
 </script>
@@ -954,7 +960,7 @@ function calculateBranchPosition() {
 // ===== GPX LOADING AND MARBLE MANAGEMENT =====
 async function loadGPXFromManifest() {
   try {
-    const MANIFEST_URL = FRAMES_BASE + 'index.json';
+    const MANIFEST_URL = getFramesBase() + 'index.json';
     const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
     if (!res.ok) { 
       console.log('No predefined tracks found'); 
@@ -1010,7 +1016,8 @@ async function loadGPXFromManifest() {
 }
 
 async function loadSingleGPX(filename) {
-  const fullPath = filename.startsWith(FRAMES_BASE) ? filename : FRAMES_BASE + filename;
+  const framesBase = getFramesBase();
+  const fullPath = filename.startsWith('http') ? filename : framesBase + filename;
   const response = await fetch(fullPath);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -1300,7 +1307,7 @@ function preloadMarriedMarbleImages() {
         // Find the image URL for this marble
         const trackName = result.track.name.replace(/\.gpx$/i, '');
         const imageIndex = result.marble.assignedImage;
-        const imageUrl = `${FRAMES_BASE}${trackName}-${imageIndex + 1}.jpg`;
+        const imageUrl = `${getFramesBase()}${trackName}-${imageIndex + 1}.jpg`;
         imagesToPreload.add(imageUrl);
       }
     }
@@ -1656,12 +1663,12 @@ async function load360Images() {
 }
   
 async function createImagesFromFramesFolder() {
-  currentImages = []; 
+  currentImages = [];
   currentImageIndex = -1;
-  const track = getCurrentTrack(); 
-  if (!track) { 
-    showToaster('No track selected'); 
-    return; 
+  const track = getCurrentTrack();
+  if (!track) {
+    showToaster('No track selected');
+    return;
   }
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
   if (!gpxName) {
@@ -1672,9 +1679,13 @@ async function createImagesFromFramesFolder() {
   const gpxNameLC = gpxName.toLowerCase();
   const prefixHyphen = gpxNameLC + '-';
   const prefixUnderscore = gpxNameLC + '_';
+
+  // Get the frames base URL for the current fraccionamiento
+  const framesBase = getFramesBase();
+
   let list;
   try {
-    const res = await fetch(FRAMES_BASE + 'index.json', { cache: 'no-store' });
+    const res = await fetch(framesBase + 'index.json', { cache: 'no-store' });
     if (!res.ok) {
       showToaster('Could not fetch frames index');
       return;
@@ -1695,14 +1706,14 @@ async function createImagesFromFramesFolder() {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   if (!matches.length) {
     showToaster(`No frames for "${gpxName}"`);
-    return; 
+    return;
   }
 
   currentImages = matches.map((filename, i) => ({
-    url: FRAMES_BASE + filename, 
-    index: i, 
-    filename, 
-    timestamp: filename, 
+    url: framesBase + filename,
+    index: i,
+    filename,
+    timestamp: filename,
     sequence: i
   }));
 }
@@ -5651,6 +5662,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   // Update community logo for this lot's fraccionamiento
   modalEl.dataset.fracc = lot.fraccionamiento;
+  currentFraccionamiento = lot.fraccionamiento; // Update for dynamic frames loading
   if (window.updateCommunityLogo) window.updateCommunityLogo();
 
   const status = String(lot.availability || '').toLowerCase();
@@ -11884,6 +11896,13 @@ function buildDots() {
     if (!nav || !nav.center) {
       console.log('No navigation data for:', key);
       return;
+    }
+
+    // Update current fraccionamiento if specified in nav config
+    // Add "fracc": "fraccionamiento_name" to saved.json navigation entries
+    if (nav.fracc) {
+      currentFraccionamiento = nav.fracc;
+      console.log('Updated currentFraccionamiento to:', nav.fracc);
     }
 
     if (typeof map !== 'undefined' && map.flyTo) {
