@@ -249,7 +249,7 @@ const CLIENT_CONFIGS = {
     // ----- DATA SOURCES -----
     data: {
       lotsFile: 'https://la-la.land/inverta/lots.txt',
-      framesBase: 'https://la-la.land/inverta/frames/'
+      framesBase: 'https://andresmtzc.github.io/geepeeX/sierraalta/frames/'
     },
 
     // ----- LOT NAMING CONVENTIONS -----
