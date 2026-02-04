@@ -81,7 +81,8 @@ const CLIENT_CONFIGS = {
         position: 0, // Position in community selector
         // Alternative reference for search menu:
         searchMenuId: 'positionOne',
-        apartarEnabled: false
+        apartarEnabled: false,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/senterra/frames/'
       }
 
 
