@@ -146,7 +146,7 @@ const CLIENT_CONFIGS = {
         position: 2,
         searchMenuId: 'positionFour',
         apartarEnabled: true,
-        framesBase: 'https://andresmtzc.github.io/geepeeX/barcelona/frames/'
+        framesBase: 'https://andresmtzc.github.io/street/barcelona/'
       },
 
       marsella: {
