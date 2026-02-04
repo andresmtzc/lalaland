@@ -519,27 +519,32 @@ function updateViewCone() {
 
   const currentIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
 
-  let pathBearing;
-  if (lastHopBearingDeg !== null) {
-    pathBearing = lastHopBearingDeg;
-  } else if (track._lastPathBearing !== undefined) {
-    pathBearing = track._lastPathBearing;
-  } else if (currentIndex < track.marbles.length - 1) {
+  // 1. GET PATH DIRECTION (base bearing)
+  let pathBearing = track._lastPathBearing || 0; // keep last good direction as fallback
+
+  if (currentIndex < track.marbles.length - 1) {
     const nextMarble = track.marbles[currentIndex + 1];
     const dx = nextMarble.position[0] - marble.position[0];
     const dy = nextMarble.position[1] - marble.position[1];
     pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
   } else if (currentIndex > 0) {
     const prevMarble = track.marbles[currentIndex - 1];
-    const dx = marble.position[0] - prevMarble.position[0];
+    const dx = marble.position[0] - prevMarble.position[0]; // invert vector so it still points forward
     const dy = marble.position[1] - prevMarble.position[1];
     pathBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
-  } else {
-    pathBearing = 0;
+  }
+
+  // smooth continuity near endpoints (avoid 180° flip)
+  if (track._lastPathBearing !== undefined) {
+    const diff = pathBearing - track._lastPathBearing;
+    if (Math.abs(diff) > 180) {
+      // wrap around direction instead of flipping
+      pathBearing += diff > 0 ? -360 : 360;
+    }
   }
   track._lastPathBearing = pathBearing;
 
-  // Apply user yaw offset
+  // 2. GET USER OFFSET (convert yaw to degrees and apply to path)
   const userYawDeg = THREE.MathUtils.radToDeg(currentYaw);
   const finalHeading = (pathBearing + userYawDeg + 360) % 360;
 
@@ -1146,25 +1151,25 @@ function extractImageIndexFromWaypoint(name, description){
 }
 
 // ===== TRACK AND MARBLE SELECTION =====
-function selectTrack(trackId){
+async function selectTrack(trackId){
   if (currentTrackId && allTracks.has(currentTrackId)) {
     allTracks.get(currentTrackId).isActive = false;
   }
-  
+
   currentTrackId = trackId;
   const track = allTracks.get(trackId);
   track.isActive = true;
 
   updateMarbleDisplay();
-  load360Images();
+  await load360Images();
   console.log(`Selected track: ${track.name}`);
 }
 
-function selectTrackWithoutMapReset(trackId){
+async function selectTrackWithoutMapReset(trackId){
   if (currentTrackId && allTracks.has(currentTrackId)) {
     allTracks.get(currentTrackId).isActive = false;
   }
-  
+
   currentTrackId = trackId;
   const track = allTracks.get(trackId);
   track.isActive = true;
@@ -1172,15 +1177,15 @@ function selectTrackWithoutMapReset(trackId){
   resetViewerOrientationForTrack(track);
   updateMarbleDisplay();
 
-  if (viewConeMarker){ 
-    viewConeMarker.remove(); 
-    viewConeMarker = null; 
+  if (viewConeMarker){
+    viewConeMarker.remove();
+    viewConeMarker = null;
   }
-  
+
   updateNavigationRing(true);
   updateViewCone();
-  load360Images();
-  
+  await load360Images();
+
   console.log(`Switched to track: ${track.name} - ${track.marbles.length} marbles`);
 }
 
@@ -10784,20 +10789,18 @@ async function selectTrackAndThenMarble(trackId, marbleId) {
 
   const prevTrackId = currentTrackId;
   try {
-    selectTrackWithoutMapReset(trackId);
-    
-    // 🔹 Wait for orientation reset and initial UI updates
-    await new Promise(r => setTimeout(r, 100));
-    
+    // Await track switch to ensure images are loaded before showing marble
+    await selectTrackWithoutMapReset(trackId);
+
     selectMarble(marbleId);
 
     // 🟢 Use showMarbleImage to properly handle viewer initialization
     showMarbleImage(marbleId);
- 
+
     console.log(`Switched to ${allTracks.get(trackId).name} and selected marble`);
   } catch (err) {
     console.error('Switch error', err);
-    if (prevTrackId) selectTrackWithoutMapReset(prevTrackId);
+    if (prevTrackId) await selectTrackWithoutMapReset(prevTrackId);
   } finally {
     isSwitchingTrack = false;
   }
