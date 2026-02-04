@@ -1189,25 +1189,25 @@ function extractImageIndexFromWaypoint(name, description){
 }
 
 // ===== TRACK AND MARBLE SELECTION =====
-function selectTrack(trackId){
+async function selectTrack(trackId){
   if (currentTrackId && allTracks.has(currentTrackId)) {
     allTracks.get(currentTrackId).isActive = false;
   }
-  
+
   currentTrackId = trackId;
   const track = allTracks.get(trackId);
   track.isActive = true;
 
   updateMarbleDisplay();
-  load360Images();
+  await load360Images();
   console.log(`Selected track: ${track.name}`);
 }
 
-function selectTrackWithoutMapReset(trackId){
+async function selectTrackWithoutMapReset(trackId){
   if (currentTrackId && allTracks.has(currentTrackId)) {
     allTracks.get(currentTrackId).isActive = false;
   }
-  
+
   currentTrackId = trackId;
   const track = allTracks.get(trackId);
   track.isActive = true;
@@ -1215,15 +1215,15 @@ function selectTrackWithoutMapReset(trackId){
   resetViewerOrientationForTrack(track);
   updateMarbleDisplay();
 
-  if (viewConeMarker){ 
-    viewConeMarker.remove(); 
-    viewConeMarker = null; 
+  if (viewConeMarker){
+    viewConeMarker.remove();
+    viewConeMarker = null;
   }
-  
+
   updateNavigationRing(true);
   updateViewCone();
-  load360Images();
-  
+  await load360Images();
+
   console.log(`Switched to track: ${track.name} - ${track.marbles.length} marbles`);
 }
 
@@ -11379,20 +11379,18 @@ async function selectTrackAndThenMarble(trackId, marbleId) {
 
   const prevTrackId = currentTrackId;
   try {
-    selectTrackWithoutMapReset(trackId);
-    
-    // 🔹 Wait for orientation reset and initial UI updates
-    await new Promise(r => setTimeout(r, 100));
-    
+    // Await track switch to ensure images are loaded before showing marble
+    await selectTrackWithoutMapReset(trackId);
+
     selectMarble(marbleId);
 
     // 🟢 Use showMarbleImage to properly handle viewer initialization
     showMarbleImage(marbleId);
- 
+
     console.log(`Switched to ${allTracks.get(trackId).name} and selected marble`);
   } catch (err) {
     console.error('Switch error', err);
-    if (prevTrackId) selectTrackWithoutMapReset(prevTrackId);
+    if (prevTrackId) await selectTrackWithoutMapReset(prevTrackId);
   } finally {
     isSwitchingTrack = false;
   }
