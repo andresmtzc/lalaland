@@ -19,7 +19,7 @@ const CLIENT_CONFIGS = {
     name: 'INVERTA',
     displayName: 'INVERTA - La-La Land',
     slug: 'inverta', // URL path slug (e.g., /inverta/)
-    defaultCommunity: 'marsella',
+    defaultCommunity: 'sierraalta',
 
     // ----- BRANDING -----
     branding: {
