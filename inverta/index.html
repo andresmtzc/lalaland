@@ -960,49 +960,61 @@ function calculateBranchPosition() {
 // ===== GPX LOADING AND MARBLE MANAGEMENT =====
 async function loadGPXFromManifest() {
   try {
-    const MANIFEST_URL = getFramesBase() + 'index.json';
-    const res = await fetch(MANIFEST_URL, { cache: 'no-store' });
-    if (!res.ok) { 
-      console.log('No predefined tracks found'); 
-      return; 
-    }
+    // Collect all unique framesBase URLs from communities
+    const framesBaseUrls = new Set();
+    Object.values(CONFIG.communities).forEach(c => {
+      if (c.framesBase) framesBaseUrls.add(c.framesBase);
+    });
+    // Also add the global fallback in case it's not in any community
+    if (CONFIG.data.framesBase) framesBaseUrls.add(CONFIG.data.framesBase);
 
-    const manifest = await res.json();
-
-    // Load yawfix mapping
-    window.yawFixesByFile = manifest.yawfixes || {};
-    console.log("Yaw fixes loaded:", window.yawFixesByFile);
-
-    // Load marriages if present
-    if (manifest.marriages && Array.isArray(manifest.marriages)) {
-      marriageGroups = manifest.marriages;
-      console.log("Marriages loaded:", marriageGroups);
-    }
-
-    // Get GPX files from manifest
-    let gpxFiles = [];
-    if (manifest.gpxFiles && manifest.gpxFiles.length) gpxFiles = manifest.gpxFiles;
-    else if (manifest.files) gpxFiles = manifest.files.filter(f => f.toLowerCase().endsWith('.gpx'));
-
-    if (!gpxFiles.length) {
-      console.log('No GPX files in manifest');
-      return;
-    }
-
+    window.yawFixesByFile = {};
     let loadedCount = 0;
-    for (const gpxFile of gpxFiles) {
+
+    for (const framesBase of framesBaseUrls) {
       try {
-        await loadSingleGPX(gpxFile);
-        loadedCount++;
+        const res = await fetch(framesBase + 'index.json', { cache: 'no-store' });
+        if (!res.ok) {
+          console.log('No manifest at:', framesBase);
+          continue;
+        }
+
+        const manifest = await res.json();
+
+        // Merge yawfix mappings
+        if (manifest.yawfixes) {
+          Object.assign(window.yawFixesByFile, manifest.yawfixes);
+          console.log("Yaw fixes loaded from:", framesBase);
+        }
+
+        // Merge marriages if present
+        if (manifest.marriages && Array.isArray(manifest.marriages)) {
+          marriageGroups = marriageGroups.concat(manifest.marriages);
+          console.log("Marriages loaded from:", framesBase);
+        }
+
+        // Get GPX files from manifest
+        let gpxFiles = [];
+        if (manifest.gpxFiles && manifest.gpxFiles.length) gpxFiles = manifest.gpxFiles;
+        else if (manifest.files) gpxFiles = manifest.files.filter(f => f.toLowerCase().endsWith('.gpx'));
+
+        for (const gpxFile of gpxFiles) {
+          try {
+            await loadSingleGPX(gpxFile, framesBase);
+            loadedCount++;
+          } catch(e) {
+            console.error('Failed GPX:', gpxFile, e);
+          }
+        }
       } catch(e) {
-        console.error('Failed GPX:', gpxFile, e);
+        console.log('No manifest or error at:', framesBase, e.message);
       }
     }
 
     if (loadedCount > 0 && allTracks.size > 0) {
       const firstTrackId = Array.from(allTracks.keys())[0];
       selectTrack(firstTrackId);
-      console.log(`Loaded ${loadedCount} GPX files with marbles`);
+      console.log(`Loaded ${loadedCount} GPX files from ${framesBaseUrls.size} sources`);
 
       // Preload images for married marbles after tracks are loaded
       if (marriageGroups.length > 0) {
@@ -1011,12 +1023,12 @@ async function loadGPXFromManifest() {
     }
 
   } catch(e) {
-    console.error('Error loading manifest:', e);
+    console.error('Error loading manifests:', e);
   }
 }
 
-async function loadSingleGPX(filename) {
-  const framesBase = getFramesBase();
+async function loadSingleGPX(filename, framesBaseOverride) {
+  const framesBase = framesBaseOverride || getFramesBase();
   const fullPath = filename.startsWith('http') ? filename : framesBase + filename;
   const response = await fetch(fullPath);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
