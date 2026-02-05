@@ -720,6 +720,24 @@
     color: #9aa0a6;
     min-width: 60px;
   }
+  .nav-fracc-input {
+    width: 90px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    border: 1px solid #333;
+    background: #0a0a0a;
+    color: #eaeaea;
+    font-size: 11px;
+    font-family: monospace;
+  }
+  .nav-fracc-input::placeholder {
+    color: #555;
+    font-style: italic;
+  }
+  .nav-fracc-input:focus {
+    outline: none;
+    border-color: #60a5fa;
+  }
   .nav-pick-btn {
     padding: 6px 12px;
     border-radius: 6px;
@@ -2389,8 +2407,18 @@ function positionDots(){
   }
 
   // Export coords for client-config.js
+  function exportNavEntry(nav, label) {
+    let entry = `'${label}': {\n`;
+    entry += `  center: [${nav.center[0]}, ${nav.center[1]}],\n`;
+    entry += `  zoom: ${nav.zoom}`;
+    if (nav.fracc) entry += `,\n  fracc: '${nav.fracc}'  // must match supabase naming`;
+    entry += `\n},\n`;
+    return entry;
+  }
+
   function exportCoords() {
-    let output = '// ===== COORDS FOR client-config.js =====\n\n';
+    let output = '// ===== COORDS FOR client-config.js =====\n';
+    output += '// NOTE: fracc values must match supabase naming exactly\n\n';
 
     // Group coords (main dots)
     output += '// ----- GROUP OVERVIEW COORDS -----\n';
@@ -2402,10 +2430,7 @@ function positionDots(){
       if (!nav) continue;
 
       const label = (dotLabels[i] || `dot${i}`).replace(/\n/g, '').toLowerCase().replace(/\s+/g, '');
-      output += `'${label}': {\n`;
-      output += `  center: [${nav.center[0]}, ${nav.center[1]}],\n`;
-      output += `  zoom: ${nav.zoom}\n`;
-      output += `},\n`;
+      output += exportNavEntry(nav, label);
     }
 
     output += '\n// ----- MINI-DOT COORDS -----\n';
@@ -2425,10 +2450,7 @@ function positionDots(){
         if (!nav) continue;
 
         const label = (miniDotLabels[miniKey] || `mini${i}_${j}`).replace(/\n/g, '').toLowerCase().replace(/\s+/g, '');
-        output += `'${label}': {\n`;
-        output += `  center: [${nav.center[0]}, ${nav.center[1]}],\n`;
-        output += `  zoom: ${nav.zoom}\n`;
-        output += `},\n`;
+        output += exportNavEntry(nav, label);
       }
     }
 
@@ -2456,10 +2478,7 @@ function positionDots(){
           if (!nav) continue;
 
           const label = (tinyDotLabels[tinyKey] || `tiny${i}_${j}_${k}`).replace(/\n/g, '').toLowerCase().replace(/\s+/g, '');
-          output += `'${label}': {\n`;
-          output += `  center: [${nav.center[0]}, ${nav.center[1]}],\n`;
-          output += `  zoom: ${nav.zoom}\n`;
-          output += `},\n`;
+          output += exportNavEntry(nav, label);
         }
       }
     }
@@ -2540,10 +2559,12 @@ function positionDots(){
     const center = navMap.getCenter();
     const zoom = navMap.getZoom();
 
+    const existingFracc = navigation[key]?.fracc;
     navigation[key] = {
       center: [parseFloat(center.lng.toFixed(6)), parseFloat(center.lat.toFixed(6))],
       zoom: parseFloat(zoom.toFixed(1))
     };
+    if (existingFracc) navigation[key].fracc = existingFracc;
 
     console.log('Picked position for', key, navigation[key]);
     rebuildNavControls();
@@ -2558,6 +2579,33 @@ function positionDots(){
     });
   }
 
+  function buildNavItem(label, key, nav, container) {
+    const item = document.createElement('div');
+    item.className = 'nav-item';
+    item.innerHTML = `
+      <div class="nav-item-label">${label.replace(/\n/g, ' ')}</div>
+      <div class="nav-item-coords">${nav ? `[${nav.center[0].toFixed(4)}, ${nav.center[1].toFixed(4)}]` : 'Not set'}</div>
+      <div class="nav-item-zoom">${nav ? `z${nav.zoom}` : ''}</div>
+      <input class="nav-fracc-input" type="text" placeholder="fracc" value="${nav?.fracc || ''}" data-key="${key}" title="fracc name (must match supabase naming)">
+      <button class="nav-pick-btn" data-key="${key}">📍 Pick</button>
+      <button class="nav-fly-btn" data-key="${key}" ${!nav ? 'disabled style="opacity:0.4"' : ''}>Go</button>
+    `;
+
+    item.querySelector('.nav-pick-btn').addEventListener('click', () => pickCurrentPosition(key));
+    item.querySelector('.nav-fly-btn').addEventListener('click', () => flyToNav(key));
+    item.querySelector('.nav-fracc-input').addEventListener('change', (e) => {
+      const val = e.target.value.trim();
+      if (!navigation[key]) navigation[key] = {};
+      if (val) {
+        navigation[key].fracc = val;
+      } else {
+        delete navigation[key].fracc;
+      }
+    });
+
+    container.appendChild(item);
+  }
+
   function rebuildNavControls() {
     const mainDotsNav = document.getElementById('mainDotsNav');
     const miniDotsNav = document.getElementById('miniDotsNav');
@@ -2570,25 +2618,9 @@ function positionDots(){
     // Main dots
     for (let i = 0; i < count; i++) {
       if (dotVisibility[i] === false) continue;
-
       const label = dotLabels[i] || `Dot ${i + 1}`;
       const key = String(i);
-      const nav = navigation[key];
-
-      const item = document.createElement('div');
-      item.className = 'nav-item';
-      item.innerHTML = `
-        <div class="nav-item-label">${label.replace(/\n/g, ' ')}</div>
-        <div class="nav-item-coords">${nav ? `[${nav.center[0].toFixed(4)}, ${nav.center[1].toFixed(4)}]` : 'Not set'}</div>
-        <div class="nav-item-zoom">${nav ? `z${nav.zoom}` : ''}</div>
-        <button class="nav-pick-btn" data-key="${key}">📍 Pick</button>
-        <button class="nav-fly-btn" data-key="${key}" ${!nav ? 'disabled style="opacity:0.4"' : ''}>Go</button>
-      `;
-
-      item.querySelector('.nav-pick-btn').addEventListener('click', () => pickCurrentPosition(key));
-      item.querySelector('.nav-fly-btn').addEventListener('click', () => flyToNav(key));
-
-      mainDotsNav.appendChild(item);
+      buildNavItem(label, key, navigation[key], mainDotsNav);
     }
 
     // Mini dots
@@ -2599,26 +2631,9 @@ function positionDots(){
 
       for (let j = 0; j < miniCount; j++) {
         if (individualMiniVisibility[i] && individualMiniVisibility[i][j] === false) continue;
-
         const miniKey = `${i}-${j}`;
-        const parentLabel = dotLabels[i] || `Dot ${i + 1}`;
         const miniLabel = miniDotLabels[miniKey] || `${i + 1}.${j + 1}`;
-        const nav = navigation[miniKey];
-
-        const item = document.createElement('div');
-        item.className = 'nav-item';
-        item.innerHTML = `
-          <div class="nav-item-label">${miniLabel.replace(/\n/g, ' ')}</div>
-          <div class="nav-item-coords">${nav ? `[${nav.center[0].toFixed(4)}, ${nav.center[1].toFixed(4)}]` : 'Not set'}</div>
-          <div class="nav-item-zoom">${nav ? `z${nav.zoom}` : ''}</div>
-          <button class="nav-pick-btn" data-key="${miniKey}">📍 Pick</button>
-          <button class="nav-fly-btn" data-key="${miniKey}" ${!nav ? 'disabled style="opacity:0.4"' : ''}>Go</button>
-        `;
-
-        item.querySelector('.nav-pick-btn').addEventListener('click', () => pickCurrentPosition(miniKey));
-        item.querySelector('.nav-fly-btn').addEventListener('click', () => flyToNav(miniKey));
-
-        miniDotsNav.appendChild(item);
+        buildNavItem(miniLabel, miniKey, navigation[miniKey], miniDotsNav);
       }
     }
 
@@ -2637,26 +2652,9 @@ function positionDots(){
 
         for (let k = 0; k < tinyCount; k++) {
           if (individualTinyVisibility[miniKey] && individualTinyVisibility[miniKey][k] === false) continue;
-
           const tinyKey = `${i}-${j}-${k}`;
-          const parentLabel = miniDotLabels[miniKey] || `${i + 1}.${j + 1}`;
           const tinyLabel = tinyDotLabels[tinyKey] || `${i + 1}.${j + 1}.${k + 1}`;
-          const nav = navigation[tinyKey];
-
-          const item = document.createElement('div');
-          item.className = 'nav-item';
-          item.innerHTML = `
-            <div class="nav-item-label">${tinyLabel.replace(/\n/g, ' ')}</div>
-            <div class="nav-item-coords">${nav ? `[${nav.center[0].toFixed(4)}, ${nav.center[1].toFixed(4)}]` : 'Not set'}</div>
-            <div class="nav-item-zoom">${nav ? `z${nav.zoom}` : ''}</div>
-            <button class="nav-pick-btn" data-key="${tinyKey}">📍 Pick</button>
-            <button class="nav-fly-btn" data-key="${tinyKey}" ${!nav ? 'disabled style="opacity:0.4"' : ''}>Go</button>
-          `;
-
-          item.querySelector('.nav-pick-btn').addEventListener('click', () => pickCurrentPosition(tinyKey));
-          item.querySelector('.nav-fly-btn').addEventListener('click', () => flyToNav(tinyKey));
-
-          tinyDotsNav.appendChild(item);
+          buildNavItem(tinyLabel, tinyKey, navigation[tinyKey], tinyDotsNav);
         }
       }
     }
