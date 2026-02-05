@@ -488,6 +488,25 @@ async function processLinkRequest(request) {
 
         console.log(`✅ Link sent to ${request.phone}`);
 
+        // Notify the client's advisor about the new lead
+        try {
+            const { data: notifyRow } = await supabase
+                .from('client_notify_numbers')
+                .select('phone')
+                .eq('client', request.client)
+                .single();
+
+            if (notifyRow && notifyRow.phone) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                const notifyJid = notifyRow.phone + '@s.whatsapp.net';
+                const notifyMsg = `Nuevo lead registrado.\nWhatsApp: +${request.phone}`;
+                await sock.sendMessage(notifyJid, { text: notifyMsg });
+                console.log(`📢 Notified ${request.client} advisor at ${notifyRow.phone}`);
+            }
+        } catch (notifyErr) {
+            console.error(`⚠️ Failed to notify ${request.client} advisor:`, notifyErr.message);
+        }
+
         // Track for global rate limiting
         linksSentTimestamps.push(Date.now());
         // Clean up old timestamps (older than 1 minute)
