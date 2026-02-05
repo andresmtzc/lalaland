@@ -479,7 +479,7 @@ async function processLinkRequest(request) {
         const mapLink = `https://la-la.land/${request.client}/index-m.html?token=${request.token}`;
 
         // Build WhatsApp message
-        const message = `¡Hola! 👋\n\nAquí está tu acceso al mapa de ${request.client.toUpperCase()}:\n\n${mapLink}\n\nExplora disponibilidad y precios. ¡Te contactamos pronto!`;
+        const message = `¡Hola! 👋\n\nAquí está tu acceso al Master Plan de ${request.client.toUpperCase()}:\n\n${mapLink}\n\nÁbrelo para explorar disponibilidad y precios.\nUn asesor te escribirá muy pronto.`;
 
         // Send WhatsApp message
         const jid = request.phone + '@s.whatsapp.net';
