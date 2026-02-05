@@ -1,0 +1,334 @@
+// Supabase Edge Function for Instagram Graph API Webhooks
+// Updated for "Private Reply" Automation (No prior DM needed)
+// Deploy with: supabase functions deploy instagram-webhook
+
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts"
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// Keyword to client mapping
+const KEYWORD_TO_CLIENT: Record<string, string> = {
+  'PIETRA': 'agora',
+  'AQUA': 'agora',
+  'CAÑADAS': 'agora',
+}
+
+// Base URL for registration forms
+const BASE_URL = 'https://la-la.land'
+
+serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    const url = new URL(req.url)
+
+    // GET request: Webhook verification (Instagram setup)
+    if (req.method === 'GET') {
+      const mode = url.searchParams.get('hub.mode')
+      const token = url.searchParams.get('hub.verify_token')
+      const challenge = url.searchParams.get('hub.challenge')
+
+      const verifyToken = Deno.env.get('INSTAGRAM_VERIFY_TOKEN')
+
+      if (mode === 'subscribe' && token === verifyToken) {
+        console.log('✅ Instagram webhook verified')
+        return new Response(challenge, {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain' }
+        })
+      } else {
+        console.error('❌ Webhook verification failed')
+        return new Response('Forbidden', { status: 403 })
+      }
+    }
+
+    // POST request: Incoming webhook notification
+    if (req.method === 'POST') {
+      // Verify signature
+      const signature = req.headers.get('x-hub-signature-256')
+      const appSecret = Deno.env.get('INSTAGRAM_APP_SECRET')
+
+      if (signature && appSecret) {
+        const body = await req.text()
+        const expectedSignature = await generateSignature(body, appSecret)
+
+        if (signature !== expectedSignature) {
+          console.error('❌ Invalid signature')
+          return new Response('Invalid signature', { status: 403 })
+        }
+
+        // Parse the verified body
+        const payload = JSON.parse(body)
+        await processWebhook(payload)
+      } else {
+        // No signature verification (development mode)
+        console.warn('⚠️ Processing webhook without signature verification')
+        const payload = await req.json()
+        await processWebhook(payload)
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    return new Response('Method not allowed', { status: 405 })
+
+  } catch (error) {
+    console.error('❌ Webhook error:', error)
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
+    )
+  }
+})
+
+async function generateSignature(payload: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    encoder.encode(payload)
+  )
+
+  const hashArray = Array.from(new Uint8Array(signature))
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+
+  return `sha256=${hashHex}`
+}
+
+async function processWebhook(payload: any) {
+  console.log('📩 Webhook received:', JSON.stringify(payload, null, 2))
+
+  // Initialize Supabase client
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+  if (payload.object !== 'instagram') {
+    console.log('⏭️ Skipping non-Instagram webhook')
+    return
+  }
+
+  for (const entry of payload.entry || []) {
+    
+    // ------------------------------------------------------------------
+    // 1. HANDLE COMMENTS (Now sends Private Reply immediately)
+    // ------------------------------------------------------------------
+    for (const change of entry.changes || []) {
+      if (change.field === 'comments') {
+        const commentData = change.value
+
+        const commentId = commentData.id
+        const commentText = commentData.text || ''
+        const instagramUserId = commentData.from?.id
+        const instagramUsername = commentData.from?.username
+        const postId = commentData.media?.id
+
+        console.log(`💬 Comment from @${instagramUsername}: "${commentText}"`)
+
+        // Check if comment contains a keyword
+        const keyword = findKeyword(commentText)
+
+        if (keyword) {
+          const clientId = KEYWORD_TO_CLIENT[keyword]
+          const formLink = `${BASE_URL}/${clientId}/registro.html`
+
+          console.log(`✅ Keyword "${keyword}" detected → Client: ${clientId}`)
+
+          // --- STEP A: Send the Private Reply (The Link) ---
+          const privateMessage = `¡Hola! Aquí tienes el link de registro para ${keyword}:\n${formLink}\n\nY muy pronto recibirás más información via Whatsapp.`
+          const dmSuccess = await sendPrivateReply(commentId, privateMessage)
+
+          // --- STEP B: Reply Publicly ---
+          // If DM failed (e.g. user privacy), we ask them to DM us. If success, we say check inbox.
+          const publicReply = dmSuccess 
+            ? `@${instagramUsername} ¡Te envié la info por DM! 📩` 
+            : `@${instagramUsername} ¡Hola! Por favor envíame un DM para pasarte el link.`
+          
+          await replyToComment(commentId, publicReply)
+
+          // --- STEP C: Log to Supabase ---
+          // We mark status as 'dm_sent' immediately so the DM handler doesn't send it again
+          const { data, error } = await supabase
+            .from('collab_requests')
+            .insert({
+              instagram_user_id: instagramUserId,
+              instagram_username: instagramUsername,
+              post_id: postId,
+              comment_id: commentId,
+              comment_text: commentText,
+              keyword: keyword,
+              client_id: clientId,
+              form_link: formLink,
+              status: dmSuccess ? 'dm_sent' : 'failed_dm_privacy', 
+              completed_at: new Date().toISOString(),
+              post_type: commentData.media?.media_product_type || 'POST',
+            })
+            .select()
+            .single()
+
+          if (error) {
+             // Handle duplicates gracefully
+             if (error.code === '23505') console.log(`⏭️ Duplicate comment ${commentId}, skipping`)
+             else console.error('❌ Error inserting collab_request:', error)
+          } else {
+            console.log(`✅ Request processed. DM Sent: ${dmSuccess}`)
+          }
+        } else {
+          console.log(`⏭️ No matching keyword in comment`)
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 2. HANDLE INCOMING DMs (Fallback / Conversation Handling)
+    // ------------------------------------------------------------------
+    for (const messaging of entry.messaging || []) {
+      if (!messaging.message || messaging.message.is_echo) continue
+
+      const senderId = messaging.sender?.id
+      const messageText = messaging.message?.text || ''
+
+      console.log(`📩 DM from ${senderId}: "${messageText}"`)
+
+      // Check DB history
+      const { data: collabRequest } = await supabase
+        .from('collab_requests')
+        .select('*')
+        .eq('instagram_user_id', senderId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (collabRequest) {
+        // If we already sent the DM (via the comment trigger above), DO NOT send again.
+        if (collabRequest.status === 'dm_sent') {
+          console.log(`⏭️ User ${senderId} already received the link. Skipping auto-response.`)
+          continue
+        }
+
+        // Fallback: If status is NOT dm_sent (maybe privacy settings blocked the auto-reply earlier), try again.
+        const formLink = collabRequest.form_link
+        const dmResponse = `¡Hola! Aquí tienes el link de registro:\n${formLink}`
+
+        await sendDM(senderId, dmResponse)
+
+        await supabase
+          .from('collab_requests')
+          .update({ status: 'dm_sent' })
+          .eq('id', collabRequest.id)
+          
+        console.log(`✅ Late DM sent to ${senderId}`)
+      } else {
+        // General inquiry (no keyword history)
+        const dmResponse = `¡Hola! Para recibir el link de registro, comenta PIETRA, AQUA o CAÑADAS en nuestras publicaciones 📩`
+        await sendDM(senderId, dmResponse)
+      }
+    }
+  }
+}
+
+// ------------------------------------------------------------------
+// HELPER FUNCTIONS
+// ------------------------------------------------------------------
+
+// NEW: Sends a private message via comment_id (No prior DM needed)
+async function sendPrivateReply(commentId: string, messageText: string) {
+  const accessToken = Deno.env.get('INSTAGRAM_ACCESS_TOKEN')
+  if (!accessToken) return false
+
+  try {
+    const url = `https://graph.facebook.com/v21.0/me/messages`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: { comment_id: commentId }, // <--- The Magic Key
+        message: { text: messageText },
+        access_token: accessToken,
+      }),
+    })
+
+    const data = await response.json()
+    if (response.ok) {
+      console.log(`✅ Private Reply sent to comment ${commentId}`)
+      return true
+    } else {
+      console.error(`❌ Failed Private Reply (likely privacy settings):`, data)
+      return false
+    }
+  } catch (error) {
+    console.error(`❌ Error sending Private Reply:`, error)
+    return false
+  }
+}
+
+// Standard Public Reply
+async function replyToComment(commentId: string, replyText: string) {
+  const accessToken = Deno.env.get('INSTAGRAM_ACCESS_TOKEN')
+  if (!accessToken) return
+
+  try {
+    const url = `https://graph.facebook.com/v21.0/${commentId}/replies`
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: replyText, access_token: accessToken }),
+    })
+    console.log(`✅ Public reply sent to ${commentId}`)
+  } catch (error) {
+    console.error(`❌ Error public reply:`, error)
+  }
+}
+
+// Standard DM (requires user_id)
+async function sendDM(recipientId: string, messageText: string) {
+  const accessToken = Deno.env.get('INSTAGRAM_ACCESS_TOKEN')
+  if (!accessToken) return
+
+  try {
+    const url = `https://graph.facebook.com/v21.0/me/messages`
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: { id: recipientId },
+        message: { text: messageText },
+        access_token: accessToken,
+      }),
+    })
+    console.log(`✅ Standard DM sent to ${recipientId}`)
+  } catch (error) {
+    console.error(`❌ Error sending standard DM:`, error)
+  }
+}
+
+function findKeyword(text: string): string | null {
+  const keywords = Object.keys(KEYWORD_TO_CLIENT)
+  for (const keyword of keywords) {
+    const regex = new RegExp(`\\b${keyword}\\b`) // Case-sensitive as per your original code
+    if (regex.test(text)) return keyword
+  }
+  return null
+}
