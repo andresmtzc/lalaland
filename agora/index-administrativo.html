@@ -27,49 +27,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- ===== LEAD AUTH CHECK (runs first) ===== -->
-  <script>
-    (function() {
-      const CURRENT_CLIENT = 'agora';
-
-      // Cookie helpers
-      function getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
-        return null;
-      }
-
-      function setCookie(name, value, days) {
-        const expires = new Date(Date.now() + days * 864e5).toUTCString();
-        document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
-      }
-
-      // Check if URL has ?token= query parameter
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlToken = urlParams.get('token');
-
-      // Check for session cookie
-      const sessionToken = getCookie('lead_session_' + CURRENT_CLIENT);
-
-      // If no token in URL and no session, redirect to registro
-      if (!urlToken && !sessionToken) {
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-        // Stop execution
-        throw new Error('Redirecting to registro');
-      }
-
-      // Store token for later validation (after Supabase loads)
-      window.__leadAuthToken = urlToken;
-      window.__leadSessionToken = sessionToken;
-      window.__leadClient = CURRENT_CLIENT;
-    })();
-  </script>
-
   <title></title>
   <link rel="icon" href="favicon.ico" type="image/x-icon">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700" rel="stylesheet">
+<!-- STIX Two Text for PDF generation -->
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+<!-- Custom fonts for PDF generation -->
+<link rel="stylesheet" href="/fonts/fonts.css">
+<!-- html2pdf for PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
@@ -120,6 +86,15 @@ window.clientAccessCache = window.clientAccessCache || {};
       document.body.classList.add('fonts-loaded'); // Fallback if fonts fail
     });
   </script>
+
+  <script>
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group identify setPersonProperties setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags resetGroups onFeatureFlags addFeatureFlagsHandler onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init('phc_gVIOdluBMP7Mshnq3isBacO9uSRCXbk9JxiKEZNFp0a', {
+        api_host: 'https://us.i.posthog.com',
+        defaults: '2025-11-30'
+    })
+</script>
+
 </head>
  
 <body>
@@ -161,23 +136,10 @@ window.clientAccessCache = window.clientAccessCache || {};
   })();
 </script>
 
-<!-- Lead greeting in top right -->
-<div id="lead-greeting" class="lead-greeting">
-  Hola, <span id="lead-name"></span>
-</div>
-
-<!-- Name Modal (shown when lead has no name) -->
-<div id="nameModal" class="name-modal">
-  <div class="name-modal-content">
-    <h2>¡Bienvenido!</h2>
-    <p>¿Cómo te llamas?</p>
-    <form id="nameForm">
-      <input type="text" id="leadNameInput" placeholder="Nombre" required>
-      <input type="text" id="leadLastNameInput" placeholder="Apellido" required>
-      <button type="submit">Empezar</button>
-    </form>
-  </div>
-</div>
+<!-- Login button in top right -->
+<button id="globe-login-btn" class="globe-login-button" title="Login">
+  Login
+</button>
 
 <!-- Dashboard button - bottom left above mapbox logo, only visible when authenticated -->
 <button id="dashboard-btn" class="dashboard-button" title="Dashboard">
@@ -1714,15 +1676,15 @@ async function load360Images() {
 }
   
 async function createImagesFromFramesFolder() {
-  currentImages = []; 
+  currentImages = [];
   currentImageIndex = -1;
-  const track = getCurrentTrack(); 
-  if (!track) { 
-    showToaster('No track selected'); 
-    return; 
+  const track = getCurrentTrack();
+  if (!track) {
+    showToaster('No track selected');
+    return;
   }
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
-    if (!gpxName) {
+  if (!gpxName) {
     showToaster('GPX name missing');
     return;
   }
@@ -1730,7 +1692,10 @@ async function createImagesFromFramesFolder() {
   const gpxNameLC = gpxName.toLowerCase();
   const prefixHyphen = gpxNameLC + '-';
   const prefixUnderscore = gpxNameLC + '_';
+
+  // Use the track's own framesBase (set at GPX load time), fall back to dynamic lookup
   const framesBase = track.framesBase || getFramesBase();
+
   let list;
   try {
     const res = await fetch(framesBase + 'index.json', { cache: 'no-store' });
@@ -1754,14 +1719,14 @@ async function createImagesFromFramesFolder() {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   if (!matches.length) {
     showToaster(`No frames for "${gpxName}"`);
-    return; 
+    return;
   }
 
   currentImages = matches.map((filename, i) => ({
-    url: framesBase + filename,
-    index: i,
-    filename,
-    timestamp: filename,
+    url: framesBase + filename, 
+    index: i, 
+    filename, 
+    timestamp: filename, 
     sequence: i
   }));
 }
@@ -1955,7 +1920,7 @@ function close360ViewerInModal(targetBaseIndex = null) {
       const scrollTarget = (targetBaseIndex !== null && typeof targetBaseIndex === 'number') 
         ? targetBaseIndex 
         : (typeof targetBaseIndex === 'string' 
-          ? baseLots.findIndex(l => l.number === targetBaseIndex)
+          ? baseLots.findIndex(l => l.name === targetBaseIndex)
           : lastOpenedBaseIndex);
           
       if (typeof scrollTarget === 'number' && scrollTarget !== -1) {
@@ -2154,20 +2119,6 @@ ctaobserver.observe(ctaToaster, {
         // If lot just became sold, add X mark
         if (wasAvailable && nowSold && typeof addSoldXs === 'function') {
           addSoldXs(map, [lot], 300);
-
-          // Auto-remove sold lots from lead's saved lots
-          if (window.currentLead && window.leadSavedLots?.has(lot.name)) {
-            window.leadSavedLots.delete(lot.name);
-            // Remove from database
-            window.supabaseClient?.from('lead_saved_lots')
-              .delete()
-              .eq('lead_id', window.currentLead.id)
-              .eq('lot_name', lot.name)
-              .eq('client', CURRENT_CLIENT)
-              .then(() => console.log('🗑️ Auto-removed sold lot from favorites:', lot.name));
-            // Refresh map layer
-            if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
-          }
         }
       }
 
@@ -2231,332 +2182,7 @@ ctaobserver.observe(ctaToaster, {
   });
 </script>
 
-<!-- ===== LEAD TOKEN AUTH VALIDATION ===== -->
-<script>
-(async function validateLeadAuth() {
-  const CURRENT_CLIENT = window.__leadClient || 'agora';
 
-  // Cookie helpers
-  function getCookie(name) {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop().split(';').shift();
-    return null;
-  }
-
-  function setCookie(name, value, days) {
-    const expires = new Date(Date.now() + days * 864e5).toUTCString();
-    document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
-  }
-
-  // Wait for Supabase
-  await window.supabaseReady;
-
-  const urlToken = window.__leadAuthToken;
-  const sessionToken = window.__leadSessionToken;
-
-  // If we have a URL token, validate and claim it
-  if (urlToken) {
-    try {
-      // Look up the token
-      const { data: tokenData, error: tokenError } = await window.supabaseClient
-        .from('lead_tokens')
-        .select('id, lead_id, claimed, leads(id, phone, name, last_name)')
-        .eq('token', urlToken)
-        .single();
-
-      if (tokenError || !tokenData) {
-        // Invalid token
-        console.error('Invalid token:', urlToken);
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
-        return;
-      }
-
-      if (tokenData.claimed) {
-        // Token already claimed by another device
-        console.error('Token already claimed:', urlToken);
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=claimed';
-        return;
-      }
-
-      // Claim the token
-      await window.supabaseClient
-        .from('lead_tokens')
-        .update({ claimed: true, claimed_at: new Date().toISOString() })
-        .eq('id', tokenData.id);
-
-      // Update lead's last_seen_at
-      await window.supabaseClient
-        .from('leads')
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq('id', tokenData.lead_id);
-
-      // Save session cookie (365 days)
-      setCookie('lead_session_' + CURRENT_CLIENT, urlToken, 365);
-
-      // Store lead info globally
-      window.currentLead = {
-        id: tokenData.lead_id,
-        phone: tokenData.leads?.phone,
-        name: tokenData.leads?.name,
-        lastName: tokenData.leads?.last_name,
-        token: urlToken
-      };
-
-      console.log('✅ Lead authenticated via token:', window.currentLead.phone);
-
-      // Start session tracking
-      await startLeadSession();
-
-      // Update lead greeting and show name modal if needed
-      updateLeadGreeting();
-      if (!window.currentLead.name) {
-        showNameModal();
-      }
-
-      // Clean URL (remove /m/token, keep just /client/)
-      const cleanUrl = window.location.origin + '/' + CURRENT_CLIENT + '/index-m.html';
-      window.history.replaceState({}, '', cleanUrl);
-
-    } catch (err) {
-      console.error('Token validation error:', err);
-      window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
-      return;
-    }
-  }
-  // If we have a session cookie, validate it
-  else if (sessionToken) {
-    try {
-      const { data: tokenData, error: tokenError } = await window.supabaseClient
-        .from('lead_tokens')
-        .select('id, lead_id, leads(id, phone, name, last_name)')
-        .eq('token', sessionToken)
-        .single();
-
-      if (tokenError || !tokenData) {
-        // Session token no longer valid
-        console.error('Session token invalid');
-        document.cookie = 'lead_session_' + CURRENT_CLIENT + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-        return;
-      }
-
-      // Update lead's last_seen_at
-      await window.supabaseClient
-        .from('leads')
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq('id', tokenData.lead_id);
-
-      // Store lead info globally
-      window.currentLead = {
-        id: tokenData.lead_id,
-        phone: tokenData.leads?.phone,
-        name: tokenData.leads?.name,
-        lastName: tokenData.leads?.last_name,
-        token: sessionToken
-      };
-
-      console.log('✅ Lead authenticated via session:', window.currentLead.phone);
-
-      // Start session tracking
-      await startLeadSession();
-
-      // Update lead greeting and show name modal if needed
-      updateLeadGreeting();
-      if (!window.currentLead.name) {
-        showNameModal();
-      }
-
-    } catch (err) {
-      console.error('Session validation error:', err);
-      window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-      return;
-    }
-  }
-
-  // ===== SESSION TRACKING =====
-  window.currentSessionId = null;
-  window.sessionStartTime = null;
-
-  async function startLeadSession() {
-    if (!window.currentLead || !window.supabaseClient) return;
-
-    try {
-      window.sessionStartTime = new Date();
-
-      const { data, error } = await window.supabaseClient
-        .from('lead_sessions')
-        .insert({
-          lead_id: window.currentLead.id,
-          client_id: CURRENT_CLIENT,
-          started_at: window.sessionStartTime.toISOString(),
-          page_url: window.location.href,
-          user_agent: navigator.userAgent
-        })
-        .select('id')
-        .single();
-
-      if (error) {
-        console.error('Failed to create session:', error);
-        return;
-      }
-
-      window.currentSessionId = data.id;
-      console.log('📊 Session started:', window.currentSessionId);
-
-      // Set up session end tracking
-      setupSessionEndTracking();
-    } catch (err) {
-      console.error('Session tracking error:', err);
-    }
-  }
-
-  async function endLeadSession() {
-    if (!window.currentSessionId || !window.sessionStartTime || !window.supabaseClient) return;
-
-    try {
-      const endTime = new Date();
-      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
-
-      await window.supabaseClient
-        .from('lead_sessions')
-        .update({
-          ended_at: endTime.toISOString(),
-          duration_seconds: durationSeconds
-        })
-        .eq('id', window.currentSessionId);
-
-      console.log(`📊 Session ended: ${durationSeconds}s`);
-    } catch (err) {
-      console.error('Failed to end session:', err);
-    }
-  }
-
-  function setupSessionEndTracking() {
-    // Track when user leaves the page
-    window.addEventListener('beforeunload', () => {
-      if (!window.currentSessionId) return;
-
-      // Use sendBeacon for reliable delivery during page unload
-      const endTime = new Date();
-      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
-
-      // We can't use async/await in beforeunload, so use sendBeacon
-      // But Supabase doesn't support sendBeacon directly, so we do best effort with fetch keepalive
-      if (window.supabaseClient) {
-        window.supabaseClient
-          .from('lead_sessions')
-          .update({
-            ended_at: endTime.toISOString(),
-            duration_seconds: durationSeconds
-          })
-          .eq('id', window.currentSessionId)
-          .then(() => console.log('📊 Session ended on unload'))
-          .catch(err => console.error('Failed to end session on unload:', err));
-      }
-    });
-
-    // Also track visibility changes (tab switches, minimizing)
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        // User switched away - update session
-        endLeadSession();
-      }
-    });
-  }
-
-  // Helper function to update lead greeting
-  function updateLeadGreeting() {
-    const leadNameEl = document.getElementById('lead-name');
-    if (leadNameEl && window.currentLead) {
-      const fullName = `${window.currentLead.name || ''} ${window.currentLead.lastName || ''}`.trim();
-      leadNameEl.textContent = fullName || 'Usuario';
-    }
-  }
-
-  // Show name modal
-  function showNameModal() {
-    const modal = document.getElementById('nameModal');
-    if (modal) {
-      modal.classList.add('show');
-    }
-  }
-
-  // Hide name modal
-  function hideNameModal() {
-    const modal = document.getElementById('nameModal');
-    if (modal) {
-      modal.classList.remove('show');
-    }
-  }
-
-  // Handle name form submission
-  const nameForm = document.getElementById('nameForm');
-  if (nameForm) {
-    nameForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const nameInput = document.getElementById('leadNameInput');
-      const lastNameInput = document.getElementById('leadLastNameInput');
-      const submitBtn = nameForm.querySelector('button');
-
-      const name = nameInput.value.trim();
-      const lastName = lastNameInput.value.trim();
-
-      if (!name || !lastName) return;
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Guardando...';
-
-      try {
-        // Update lead in Supabase
-        await window.supabaseClient
-          .from('leads')
-          .update({ name, last_name: lastName })
-          .eq('id', window.currentLead.id);
-
-        // Update local state
-        window.currentLead.name = name;
-        window.currentLead.lastName = lastName;
-
-        // Update greeting
-        updateLeadGreeting();
-
-        // Hide modal
-        hideNameModal();
-
-      } catch (err) {
-        console.error('Error saving name:', err);
-        alert('Error al guardar. Intenta de nuevo.');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Continuar';
-      }
-    });
-  }
-
-  // Load saved lots for this lead
-  if (window.currentLead) {
-    try {
-      const { data: savedLots } = await window.supabaseClient
-        .from('lead_saved_lots')
-        .select('lot_name')
-        .eq('lead_id', window.currentLead.id)
-        .eq('client', CURRENT_CLIENT);
-
-      window.leadSavedLots = new Set(savedLots?.map(s => s.lot_name) || []);
-      console.log('✅ Loaded', window.leadSavedLots.size, 'saved lots for lead');
-
-      // Add saved lots layer to map if map is already loaded
-      if (window.map && typeof addSavedLotsLayer === 'function') {
-        addSavedLotsLayer(window.map);
-      }
-    } catch (err) {
-      console.error('Error loading saved lots:', err);
-      window.leadSavedLots = new Set();
-    }
-  }
-})();
-</script>
 
 
 <script>
@@ -3782,12 +3408,7 @@ fetch(mapboxTokenUrl)
           await loadManzanaLabels(map);
           addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
-
-    // Add saved lots layer for leads
-    if (window.currentLead && window.leadSavedLots) {
-      addSavedLotsLayer(map);
-    }
-
+    
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
 
         // ===== COMMUNITY SEARCH CIRCULAR MENU =====
@@ -4153,9 +3774,9 @@ map.on('click', 'lots-final-click', (e) => {
     let targetBaseIndex = null;
     if (lot) {
       targetBaseIndex = baseLots.findIndex(l => l.name === lot.name);
-      // If baseLots is empty (data not loaded yet), store the lot number for later
+      // If baseLots is empty (data not loaded yet), store the lot name for later
       if (targetBaseIndex === -1 && !isDataLoaded) {
-        targetBaseIndex = extractLotNumber(lot.name);
+        targetBaseIndex = lot.name;
       }
     }
     
@@ -5616,141 +5237,7 @@ function startPolygonPulse(map, onComplete) {
 
   requestAnimationFrame(frame);
 }
-
-// ===== SAVED LOTS LAYER (for leads) =====
-function savedPolygonFeature(lot) {
-  const coords = [...lot.coords];
-  if (
-    coords.length < 3 ||
-    coords[0][0] !== coords[coords.length - 1][0] ||
-    coords[0][1] !== coords[coords.length - 1][1]
-  ) {
-    coords.push(coords[0]); // Ensure closed polygon
-  }
-
-  return {
-    type: 'Feature',
-    geometry: {
-      type: 'Polygon',
-      coordinates: [coords]
-    },
-    properties: {
-      name: lot.name,
-      phase: Math.random() * Math.PI * 2,
-      opacity: 0.5
-    }
-  };
-}
-
-function addSavedLotsLayer(map) {
-  if (!window.currentLead || !window.leadSavedLots || window.leadSavedLots.size === 0) {
-    return;
-  }
-
-  const savedLots = lotData.filter(lot =>
-    window.leadSavedLots.has(lot.name) &&
-    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
-  );
-
-  if (savedLots.length === 0) return;
-
-  const features = savedLots.map(savedPolygonFeature);
-
-  if (map.getSource('saved-lots')) {
-    map.getSource('saved-lots').setData({
-      type: 'FeatureCollection',
-      features
-    });
-    return;
-  }
-
-  map.addSource('saved-lots', {
-    type: 'geojson',
-    data: {
-      type: 'FeatureCollection',
-      features
-    }
-  });
-
-  // Primary fill with pulsating opacity
-  map.addLayer({
-    id: 'saved-lots-layer',
-    type: 'fill',
-    source: 'saved-lots',
-    paint: {
-      'fill-color': CONFIG.colors.primary,
-      'fill-opacity': ['get', 'opacity']
-    }
-  }, 'lots-final-available');
-
-  // Primary color outline
-  map.addLayer({
-    id: 'saved-lots-outline',
-    type: 'line',
-    source: 'saved-lots',
-    paint: {
-      'line-color': CONFIG.colors.primary,
-      'line-width': 2,
-      'line-opacity': 1
-    }
-  }, 'lots-final-click');
-
-  // Start animation
-  startSavedLotsPulse(map);
-}
-
-function refreshSavedLotsLayer() {
-  if (!window.map) return;
-
-  const savedLots = lotData.filter(lot =>
-    window.leadSavedLots?.has(lot.name) &&
-    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
-  );
-
-  const features = savedLots.map(savedPolygonFeature);
-
-  const source = window.map.getSource('saved-lots');
-  if (source) {
-    source.setData({
-      type: 'FeatureCollection',
-      features
-    });
-  } else if (savedLots.length > 0) {
-    addSavedLotsLayer(window.map);
-  }
-}
-
-function startSavedLotsPulse(map) {
-  let t = 0;
-
-  function frame() {
-    t += 0.05;
-
-    const source = map.getSource('saved-lots');
-    if (!source || !source._data) return;
-
-    const updated = {
-      ...source._data,
-      features: source._data.features.map(f => {
-        const phase = f.properties?.phase ?? 0;
-        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
-        return {
-          ...f,
-          properties: {
-            ...f.properties,
-            opacity
-          }
-        };
-      })
-    };
-
-    source.setData(updated);
-    requestAnimationFrame(frame);
-  }
-
-  requestAnimationFrame(frame);
-}
-</script>
+</script> 
 
 
 
@@ -6188,7 +5675,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   // Update community logo for this lot's fraccionamiento
   modalEl.dataset.fracc = lot.fraccionamiento;
-  currentFraccionamiento = lot.fraccionamiento;
+  currentFraccionamiento = lot.fraccionamiento; // Update for dynamic frames loading
   if (window.updateCommunityLogo) window.updateCommunityLogo();
 
   const status = String(lot.availability || '').toLowerCase();
@@ -6457,10 +5944,12 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'cta-buttons-row';
   buttonsRow.style.position = 'relative';
+  // Show COTIZAR button when authenticated, CÓMO LLEGAR otherwise
+  const isAuthenticated = window.isUserAuthenticated === true;
   const apartarEnabled = getCommunityByFracc(CURRENT_CLIENT, lot.fraccionamiento)?.apartarEnabled === true;
   buttonsRow.innerHTML = `
     <button class="cta-button first" id="separarBtn" translate="no"${!apartarEnabled ? ' disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>APARTAR</button>
-    <button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>
+    ${isAuthenticated ? '<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>' : '<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>'}
     <button class="cta-button second" id="chatearBtn" translate="no">CHATEAR</button>
   `;
 
@@ -6518,6 +6007,23 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       // Example: open WhatsApp
       // window.open('https://wa.me/5218185261819', '_blank');
       e.stopPropagation();
+    } else if (e.target.id === 'descargarPdfBtn') {
+      // Generate PDF quote
+      e.stopPropagation();
+      if (lot && window.generateMultiPagePDF) {
+        const dynamicText = prompt('Ingrese el texto para el PDF:');
+        if (dynamicText !== null) {
+          // Get selected plan index from the plan dropdown
+          const planSelect = document.getElementById('downPaymentCalc');
+          const financingOptions = {
+            planIndex: planSelect ? parseInt(planSelect.value) : 0
+          };
+          window.generateMultiPagePDF(lot, dynamicText, financingOptions);
+        }
+      } else {
+        console.error('PDF generation not available or lot data missing');
+        window.showToaster?.('Error al generar PDF');
+      }
     }
   });
 
@@ -6724,9 +6230,7 @@ const calculatedPriceFormatted = calculatedPrice.toString().replace(/\B(?=(\d{3}
 // Format price per m2 from Supabase
 const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '');
 
-    const isSaved = window.currentLead && window.leadSavedLots?.has(lot.name);
     if (isFeatured) row.classList.add('info-row--featured');
-    if (isSaved && !isSold) row.classList.add('info-row--saved');
 
 row.innerHTML = `
   <div class="lot-left">
@@ -6770,12 +6274,6 @@ row.innerHTML = `
               <path d="M23 4L23 10 17 10M1 20L1 14 7 14M3.51 9a9 9 0 0114.85-3.36L23 10M20.49 15a9 9 0 01-14.85 3.36L1 14"/>
             </svg>
           </button>
-        ` : (window.currentLead && !isSold) ? `
-          <button class="row-action-btn heart-btn ${window.leadSavedLots?.has(lot.name) ? 'saved' : ''}" title="Guardar" data-lot-name="${lot.name}">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="${window.leadSavedLots?.has(lot.name) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-            </svg>
-          </button>
         ` : ''}
       </div>
 
@@ -6800,22 +6298,6 @@ row.innerHTML = `
       const label = document.createElement('div');
       label.classList.add('featured-label');
       label.textContent = 'SELECCIÓN LA-LA LAND';
-      row.appendChild(label);
-    }
-
-    // Add saved lot styling (similar to featured but with heart)
-    if (isSaved && !isSold && !isFeatured) {
-      const left = document.createElement('div');
-      left.classList.add('border-left', 'border-left--saved');
-      row.appendChild(left);
-
-      const top = document.createElement('div');
-      top.classList.add('border-top', 'border-top--saved');
-      row.appendChild(top);
-
-      const label = document.createElement('div');
-      label.classList.add('saved-label');
-      label.innerHTML = 'FAVORITO';
       row.appendChild(label);
     }
 
@@ -6934,60 +6416,6 @@ function setupRowActionButtons() {
         if (typeof window.cycleSelectedLotAvailability === 'function') {
           window.cycleSelectedLotAvailability();
         }
-        return;
-      }
-
-      // Handle heart button clicks (save lot for leads)
-      const heartBtn = e.target.closest('.row-action-btn.heart-btn');
-      if (heartBtn) {
-        e.stopPropagation();
-        const lotName = heartBtn.dataset.lotName;
-
-        if (!window.currentLead || !window.supabaseClient) {
-          console.error('Lead not authenticated');
-          return;
-        }
-
-        const isSaved = window.leadSavedLots?.has(lotName);
-
-        try {
-          if (isSaved) {
-            // Remove from saved
-            await window.supabaseClient
-              .from('lead_saved_lots')
-              .delete()
-              .eq('lead_id', window.currentLead.id)
-              .eq('lot_name', lotName)
-              .eq('client', CURRENT_CLIENT);
-
-            window.leadSavedLots.delete(lotName);
-            heartBtn.classList.remove('saved');
-            heartBtn.querySelector('svg').setAttribute('fill', 'none');
-            showToaster('Removed from favorites');
-          } else {
-            // Add to saved
-            await window.supabaseClient
-              .from('lead_saved_lots')
-              .insert({
-                lead_id: window.currentLead.id,
-                lot_name: lotName,
-                client: CURRENT_CLIENT
-              });
-
-            window.leadSavedLots.add(lotName);
-            heartBtn.classList.add('saved');
-            heartBtn.querySelector('svg').setAttribute('fill', 'currentColor');
-            showToaster('Saved to favorites');
-          }
-
-          // Refresh map layer and list
-          if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
-          if (typeof render === 'function') render();
-        } catch (err) {
-          console.error('Error saving lot:', err);
-          showToaster('Error saving');
-        }
-        return;
       }
     });
   }
@@ -7222,18 +6650,6 @@ function highlightCenter(isClamping = false) {
           void row.offsetWidth;
           row.classList.add('animate-featured');
           animatedFeaturedLots.add(featureIndex);
-        } else {
-          row.classList.add('animate-featured');
-        }
-      }
-
-      // Animate saved lots (same as featured)
-      if (row.classList.contains('info-row--saved')) {
-        const savedIndex = row.dataset.index;
-        if (!animatedFeaturedLots.has('saved-' + savedIndex)) {
-          void row.offsetWidth;
-          row.classList.add('animate-featured');
-          animatedFeaturedLots.add('saved-' + savedIndex);
         } else {
           row.classList.add('animate-featured');
         }
@@ -10472,10 +9888,10 @@ function getCurrentFraccZoom() {
                       // 🟢 HIDE THE PLUS BUTTON
                       const plusButton = document.querySelector('.plus-button');
                       if (plusButton) plusButton.style.display = 'none';
-                      
+
                       // 🟢 SHOW DETAIL VIEW (this will handle dimensions internally)
                       showDetailViewForLot(baseIndex + cloneCount);
-                      
+
                       // 🟢 UPDATE CURRENT LOT INDEX
                       const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                       if (lotMapIndex !== -1) {
@@ -10756,7 +10172,7 @@ setTimeout(() => {
                   if (baseIndex !== -1) {
                     const plusButton = document.querySelector('.plus-button');
                     if (plusButton) plusButton.style.display = 'none';
-                    
+
                     const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                     if (lotMapIndex !== -1) {
                       currentLotIndex = lotMapIndex;
@@ -11864,6 +11280,21 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     return text.split('\n').map(line => `<div>${line || '&nbsp;'}</div>`).join('');
   }
 
+  function updateLogo(logoUrl) {
+    const communityLogo = document.getElementById('communityLogo');
+    const communityLogoImg = document.getElementById('communityLogoImg');
+
+    if (!communityLogo || !communityLogoImg) return;
+
+    if (logoUrl && logoUrl.trim() !== '') {
+      communityLogo.style.display = 'block';
+      communityLogoImg.src = logoUrl;
+    } else {
+      communityLogo.style.display = 'none';
+      communityLogoImg.src = '';
+    }
+  }
+
   function applyConfig() {
     setCSSVar('--orbit-radius', config.radius);
     setCSSVar('--dot', config.dotSize + 'px');
@@ -11883,21 +11314,6 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     // Initialize logo on page load
     updateLogo(config.defaultLogo || '');
-  }
-
-  function updateLogo(logoUrl) {
-    const communityLogo = document.getElementById('communityLogo');
-    const communityLogoImg = document.getElementById('communityLogoImg');
-
-    if (!communityLogo || !communityLogoImg) return;
-
-    if (logoUrl && logoUrl.trim() !== '') {
-      communityLogo.style.display = 'block';
-      communityLogoImg.src = logoUrl;
-    } else {
-      communityLogo.style.display = 'none';
-      communityLogoImg.src = '';
-    }
   }
 
   function buildDots() {
@@ -12212,6 +11628,521 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     .catch(err => {
       console.error('❌ Failed to load saved.json:', err);
     });
+})();
+</script>
+
+<!-- ===== PDF GENERATION COMPONENT ===== -->
+<script>
+(function() {
+  // PDF Generation for Inverta - Multi-template support based on community group
+
+  async function generateMultiPagePDF(lot, dynamicText, financingOptions = {}) {
+    if (!lot) {
+      console.error('No lot data provided');
+      window.showToaster?.('Error: No se pudo obtener datos del lote');
+      return;
+    }
+
+    // Default financing options (matches modal defaults)
+    const financing = {
+      downpaymentPercent: financingOptions.downpaymentPercent || 30,
+      installmentMonths: financingOptions.installmentMonths || 48
+    };
+
+    // Determine community group from fraccionamiento
+    const fraccionamiento = lot.fraccionamiento || lot.community || '';
+    const communityGroup = getCommunityGroup('agora', fraccionamiento);
+
+    if (!communityGroup) {
+      console.error('Could not determine community group for:', fraccionamiento);
+      window.showToaster?.('Error: Plantilla no disponible para esta comunidad');
+      return;
+    }
+
+    // Create progress overlay
+    const progressOverlay = document.createElement('div');
+    progressOverlay.id = 'pdf-progress-overlay';
+    progressOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+    `;
+    progressOverlay.innerHTML = `
+      <div style="background: white; padding: 32px 48px; border-radius: 12px; text-align: center; font-family: Arial, sans-serif;">
+        <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Generando PDF...</div>
+        <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Cargando plantilla...</div>
+        <div style="width: 200px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
+          <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: ${CONFIG?.colors?.primary || '#007bff'}; transition: width 0.3s;"></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(progressOverlay);
+
+    const progressText = document.getElementById('pdf-progress-text');
+    const progressBar = document.getElementById('pdf-progress-bar');
+
+    // Create hidden container for rendering pages
+    const pdfContainer = document.createElement('div');
+    pdfContainer.id = 'pdf-generation-container';
+    pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+    document.body.appendChild(pdfContainer);
+
+    // Calculate lot values for placeholders
+    function getLotValues(lot, dynamicText, financingOpts = {}) {
+      const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
+      const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+      const totalPrice = size * priceM2;
+
+      // Calculate category based on priceM2 tier
+      const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+      const uniquePrices = [...new Set(allLotsData.map(l =>
+        parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+      ))].filter(p => p > 0).sort((a, b) => b - a);
+
+      const categories = ['AAA+', 'AAA', 'AA', 'A'];
+      const priceIndex = uniquePrices.findIndex(p => Math.abs(p - priceM2) < 0.01);
+      const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+      // Format helpers
+      const formatCurrency = (num) => '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const formatNumber = (num) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      // Discount calculations
+      const discount5 = totalPrice * 0.05;
+      const discount12 = totalPrice * 0.12;
+      const priceWith5Discount = totalPrice * 0.95;
+      const priceWith12Discount = totalPrice * 0.88;
+
+      // 25% plan: no discount, 25% down, 45% in 24 months, 30% contra escritura
+      const downpayment25 = totalPrice * 0.25;
+      const monthly25 = (totalPrice * 0.45) / 24;
+      const contraEscritura30 = totalPrice * 0.30;
+
+      // 50% plan: 5% discount, 50% down, 50% contra escritura
+      const downpayment50 = priceWith5Discount * 0.50;
+      const contraEscritura50 = priceWith5Discount * 0.50;
+
+      // 85% plan: 12% discount, 85% down, 15% contra escritura
+      const downpayment85 = priceWith12Discount * 0.85;
+      const contraEscritura15 = priceWith12Discount * 0.15;
+
+      // Dynamic financing calculations based on selected options
+      const selectedDownpaymentPercent = financingOpts.downpaymentPercent || 30;
+      const selectedInstallmentMonths = financingOpts.installmentMonths || 48;
+
+      // Interest rates by month term
+      const INTEREST_RATES = { 24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17 };
+      const selectedInterestRate = INTEREST_RATES[selectedInstallmentMonths] || 0.15;
+
+      // Calculate dynamic financing values
+      const selectedDownpaymentAmount = totalPrice * (selectedDownpaymentPercent / 100);
+      const amountToFinance = totalPrice - selectedDownpaymentAmount;
+
+      // Monthly payment calculation helper
+      function calcMonthlyPayment(principal, annualRate, months) {
+        const monthlyRate = annualRate / 12;
+        if (monthlyRate === 0) return principal / months;
+        const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
+        const denominator = Math.pow(1 + monthlyRate, months) - 1;
+        return numerator / denominator;
+      }
+
+      // Selected term calculation
+      const selectedMonthlyPayment = calcMonthlyPayment(amountToFinance, selectedInterestRate, selectedInstallmentMonths);
+      const selectedTotalFinancedPrice = selectedDownpaymentAmount + (selectedMonthlyPayment * selectedInstallmentMonths);
+
+      // Calculate all term options (using selected downpayment)
+      const terms = [24, 36, 48, 60, 72];
+      const termCalcs = {};
+      terms.forEach(months => {
+        const rate = INTEREST_RATES[months];
+        const monthly = calcMonthlyPayment(amountToFinance, rate, months);
+        const total = selectedDownpaymentAmount + (monthly * months);
+        termCalcs[months] = { rate, monthly, total };
+      });
+
+      // Parse lot number (e.g., "10-11" → "MZ10L11")
+      const lotNumberParts = (lot.number || '').split('-');
+      const lotFormatted = lotNumberParts.length === 2
+        ? `MZ${lotNumberParts[0]}L${lotNumberParts[1]}`
+        : lot.number || '';
+
+      // Current date in Spanish format (e.g., "28 ENE 2026")
+      const spanishMonths = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+      const today = new Date();
+      const dateFormatted = `${today.getDate()} ${spanishMonths[today.getMonth()]} ${today.getFullYear()}`;
+
+      return {
+        'dynamicText': dynamicText,
+        'lot.number': lot.number || '',
+        'lot.nameA': lotNumberParts[0] || '',
+        'lot.nameB': lotNumberParts[1] || '',
+        'lot.numberFormatted': lotFormatted,
+        'lot.date': dateFormatted,
+        'lot.category': category || 'A',
+        'lot.size': formatNumber(size) + ' m²',
+        'lot.pricePerM2': formatCurrency(priceM2),
+        'lot.totalPrice': formatCurrency(totalPrice),
+        'lot.downpayment25': formatCurrency(downpayment25),
+        'lot.downpayment50': formatCurrency(downpayment50),
+        'lot.downpayment85': formatCurrency(downpayment85),
+        'lot.monthly25': formatCurrency(monthly25),
+        'lot.discount0': formatCurrency(0),
+        'lot.discount5': formatCurrency(discount5),
+        'lot.discount12': formatCurrency(discount12),
+        'lot.priceWith5Discount': formatCurrency(priceWith5Discount),
+        'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
+        'lot.contraEscritura30': formatCurrency(contraEscritura30),
+        'lot.contraEscritura50': formatCurrency(contraEscritura50),
+        'lot.contraEscritura15': formatCurrency(contraEscritura15),
+        // New dynamic financing placeholders (selected)
+        'lot.selectedDownpaymentPercent': selectedDownpaymentPercent + '%',
+        'lot.selectedDownpaymentAmount': formatCurrency(selectedDownpaymentAmount),
+        'lot.selectedInstallmentMonths': String(selectedInstallmentMonths),
+        'lot.selectedMonthlyPayment': formatCurrency(selectedMonthlyPayment),
+        'lot.selectedInterestRate': (selectedInterestRate * 100).toFixed(0) + '%',
+        'lot.selectedTotalFinancedPrice': formatCurrency(selectedTotalFinancedPrice),
+        // All term options (using selected downpayment)
+        'lot.monthly24': formatCurrency(termCalcs[24].monthly),
+        'lot.rate24': (termCalcs[24].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced24': formatCurrency(termCalcs[24].total),
+        'lot.monthly36': formatCurrency(termCalcs[36].monthly),
+        'lot.rate36': (termCalcs[36].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced36': formatCurrency(termCalcs[36].total),
+        'lot.monthly48': formatCurrency(termCalcs[48].monthly),
+        'lot.rate48': (termCalcs[48].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced48': formatCurrency(termCalcs[48].total),
+        'lot.monthly60': formatCurrency(termCalcs[60].monthly),
+        'lot.rate60': (termCalcs[60].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced60': formatCurrency(termCalcs[60].total),
+        'lot.monthly72': formatCurrency(termCalcs[72].monthly),
+        'lot.rate72': (termCalcs[72].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced72': formatCurrency(termCalcs[72].total)
+      };
+    }
+
+    // Replace placeholders in text
+    function replacePlaceholders(text, values) {
+      if (!text) return '';
+      return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+        return values[key.trim()] !== undefined ? values[key.trim()] : match;
+      });
+    }
+
+    // Function to create a page with template elements
+    function createPage(pageNum, template, lotValues, settings) {
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImagePrefix = settings.lotImagePrefix || '';
+      const pageWidth = settings.pageWidth || 1224;
+      const pageHeight = settings.pageHeight || 1584;
+
+      const pdfPage = document.createElement('div');
+      pdfPage.style.cssText = `
+        width: ${pageWidth}px;
+        height: ${pageHeight}px;
+        position: relative;
+        overflow: visible;
+        background-image: url("${pageBackgroundBaseUrl}page.${pageNum}.png");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: top left;
+      `;
+
+      // Get page data from template
+      const pageIndex = parseInt(pageNum, 10);
+      const pageData = template?.pages?.[pageIndex];
+
+      if (pageData) {
+        // Render text boxes
+        if (pageData.textBoxes) {
+          pageData.textBoxes.forEach(tb => {
+            const textEl = document.createElement('div');
+            textEl.textContent = replacePlaceholders(tb.content, lotValues);
+            textEl.style.cssText = `
+              position: absolute;
+              left: ${tb.x}px;
+              top: ${tb.y}px;
+              ${tb.width ? `width: ${tb.width}px;` : ''}
+              ${tb.height ? `height: ${tb.height}px;` : ''}
+              font-size: ${tb.fontSize || 24}px;
+              font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+              color: ${tb.color || '#000000'};
+              font-weight: ${tb.bold ? '700' : '400'};
+              font-style: ${tb.italic ? 'italic' : 'normal'};
+              text-decoration: ${tb.underline ? 'underline' : 'none'};
+              text-align: ${tb.textAlign || 'left'};
+              white-space: pre-wrap;
+              ${tb.zIndex !== undefined ? `z-index: ${tb.zIndex};` : ''}
+            `;
+            pdfPage.appendChild(textEl);
+          });
+        }
+
+        // Render tables
+        if (pageData.tables) {
+          pageData.tables.forEach(tableData => {
+            const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
+            const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
+            const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
+
+            const tableContainer = document.createElement('div');
+            tableContainer.style.cssText = `
+              position: absolute;
+              left: ${tableData.x}px;
+              top: ${tableData.y}px;
+              ${tableData.zIndex !== undefined ? `z-index: ${tableData.zIndex};` : ''}
+            `;
+
+            const table = document.createElement('table');
+            table.style.cssText = `
+              border-collapse: collapse;
+              table-layout: fixed;
+              width: ${totalWidth}px;
+            `;
+
+            for (let r = 0; r < tableData.rows; r++) {
+              const tr = document.createElement('tr');
+              tr.style.height = rowHeights[r] + 'px';
+
+              for (let c = 0; c < tableData.cols; c++) {
+                const cellData = tableData.cells?.[r]?.[c];
+                if (!cellData || cellData.hidden) continue;
+
+                const td = document.createElement('td');
+                td.textContent = replacePlaceholders(cellData.content || '', lotValues);
+
+                const borderWidth = cellData.borderWidth || 1;
+                const borderStyle = cellData.borderStyle || 'solid';
+                const borderColor = cellData.borderColor || '#000000';
+                const borderPosition = cellData.borderPosition || 'all';
+
+                let borderCss = '';
+                if (borderPosition === 'bottom') {
+                  borderCss = `border: none; border-bottom: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                } else if (borderPosition === 'top') {
+                  borderCss = `border: none; border-top: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                } else {
+                  borderCss = `border: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                }
+
+                td.style.cssText = `
+                  width: ${colWidths[c]}px;
+                  height: ${rowHeights[r]}px;
+                  box-sizing: border-box;
+                  overflow: hidden;
+                  background-color: ${cellData.bgColor || '#ffffff'};
+                  color: ${cellData.textColor || '#000000'};
+                  font-family: "${cellData.fontFamily || 'Arial'}", sans-serif;
+                  font-size: ${cellData.fontSize || 14}px;
+                  font-weight: ${cellData.bold ? '700' : '400'};
+                  font-style: ${cellData.italic ? 'italic' : 'normal'};
+                  text-decoration: ${cellData.underline ? 'underline' : 'none'};
+                  ${borderCss}
+                  padding: 0;
+                  text-align: ${cellData.textAlign || 'left'};
+                  vertical-align: middle;
+                `;
+
+                if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
+                if (cellData.rowSpan > 1) td.rowSpan = cellData.rowSpan;
+
+                tr.appendChild(td);
+              }
+              table.appendChild(tr);
+            }
+
+            tableContainer.appendChild(table);
+            pdfPage.appendChild(tableContainer);
+          });
+        }
+
+        // Render images
+        if (pageData.images) {
+          pageData.images.forEach(imgData => {
+            const imgEl = document.createElement('div');
+
+            // Determine image URL based on type
+            let imageUrl = '';
+            if (imgData.type === '{{lot.landscape}}') {
+              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_landscape.jpg`;
+            } else if (imgData.type === '{{lot.map}}') {
+              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_map.jpg`;
+            } else if (imgData.type === 'static' && imgData.url) {
+              imageUrl = imgData.url;
+            }
+
+            imgEl.style.cssText = `
+              position: absolute;
+              left: ${imgData.x}px;
+              top: ${imgData.y}px;
+              width: ${imgData.width}px;
+              height: ${imgData.height}px;
+              background-image: url("${imageUrl}");
+              background-size: cover;
+              background-position: center;
+              background-repeat: no-repeat;
+              ${imgData.borderWidth > 0 ? `border: ${imgData.borderWidth}px solid ${imgData.borderColor || '#000000'}; box-sizing: border-box;` : ''}
+              ${imgData.zIndex !== undefined ? `z-index: ${imgData.zIndex};` : ''}
+            `;
+            pdfPage.appendChild(imgEl);
+          });
+        }
+      }
+
+      return pdfPage;
+    }
+
+    try {
+      // Step 1: Fetch template for this community group
+      progressText.textContent = 'Cargando plantilla...';
+      const templatePath = `/agora/pdf/${communityGroup}/pdf-template.json`;
+
+      let template = { pages: {}, settings: {} };
+      try {
+        const response = await fetch(templatePath);
+        if (response.ok) {
+          template = await response.json();
+        } else {
+          throw new Error(`Template not found: ${templatePath}`);
+        }
+      } catch (err) {
+        console.error('Could not load PDF template:', err);
+        window.showToaster?.('Error: No se pudo cargar la plantilla PDF');
+        document.body.removeChild(progressOverlay);
+        document.body.removeChild(pdfContainer);
+        return;
+      }
+
+      // Get settings from template or use defaults
+      const settings = template.settings || {};
+      const totalPages = settings.totalPages || Object.keys(template.pages || {}).length || 8;
+
+      // Calculate lot values with financing options
+      const lotValues = getLotValues(lot, dynamicText, financing);
+
+      // Step 2: Preload ALL images in parallel
+      progressText.textContent = 'Cargando imágenes...';
+      progressBar.style.width = '10%';
+
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImagePrefix = settings.lotImagePrefix || '';
+
+      const imagePromises = [];
+
+      // Preload page backgrounds
+      for (let i = 1; i <= totalPages; i++) {
+        const pageNum = String(i).padStart(3, '0');
+        imagePromises.push(new Promise(resolve => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = resolve;
+          img.onerror = resolve;
+          img.src = `${pageBackgroundBaseUrl}page.${pageNum}.png`;
+        }));
+      }
+
+      // Preload lot-specific images (landscape and map)
+      const lotNum = lotValues['lot.number'];
+      if (lotNum) {
+        ['landscape', 'map'].forEach(type => {
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = resolve;
+            img.onerror = resolve;
+            img.src = `${lotImageBaseUrl}${lotImagePrefix}${lotNum}_${type}.jpg`;
+          }));
+        });
+
+        // Preload any static images from the template
+        Object.values(template.pages || {}).forEach(pageData => {
+          (pageData.images || []).forEach(imgData => {
+            if (imgData.type === 'static' && imgData.url) {
+              imagePromises.push(new Promise(resolve => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = resolve;
+                img.onerror = resolve;
+                img.src = imgData.url;
+              }));
+            }
+          });
+        });
+      }
+
+      await Promise.all(imagePromises);
+      progressBar.style.width = '40%';
+
+      // Step 3: Generate PDF pages sequentially (required by jsPDF)
+      progressText.textContent = 'Generando PDF...';
+
+      // Use page dimensions from template or defaults
+      const pageWidth = settings.pageWidth || 1224;
+      const pageHeight = settings.pageHeight || 1584;
+      const orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
+
+      const worker = html2pdf().set({
+        margin: 0,
+        filename: `Agora-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
+        image: { type: 'jpeg', quality: 1 },
+        html2canvas: { scale: 1, useCORS: true },
+        jsPDF: { unit: 'px', format: [pageWidth, pageHeight], orientation: orientation }
+      });
+
+      for (let i = 1; i <= totalPages; i++) {
+        progressText.textContent = `Renderizando página ${i} de ${totalPages}`;
+        progressBar.style.width = `${40 + (i / totalPages) * 55}%`;
+
+        const pageNum = String(i).padStart(3, '0');
+
+        // Create page with template elements
+        const page = createPage(pageNum, template, lotValues, settings);
+        pdfContainer.innerHTML = '';
+        pdfContainer.appendChild(page);
+
+        if (i === 1) {
+          await worker.from(page).toContainer().toCanvas().toPdf();
+        } else {
+          await worker.get('pdf').then(pdf => {
+            pdf.addPage([pageWidth, pageHeight], orientation);
+          });
+          await worker.from(page).toContainer().toCanvas().toPdf();
+        }
+      }
+
+      // Save the final PDF
+      progressText.textContent = 'Descargando...';
+      progressBar.style.width = '100%';
+      await worker.save();
+
+      // Clean up
+      document.body.removeChild(pdfContainer);
+      document.body.removeChild(progressOverlay);
+
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      window.showToaster?.('Error al generar el PDF');
+      if (document.getElementById('pdf-progress-overlay')) {
+        document.body.removeChild(progressOverlay);
+      }
+      if (document.getElementById('pdf-generation-container')) {
+        document.body.removeChild(pdfContainer);
+      }
+    }
+  }
+
+  // Expose to global scope
+  window.generateMultiPagePDF = generateMultiPagePDF;
 })();
 </script>
 

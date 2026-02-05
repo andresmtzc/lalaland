@@ -476,7 +476,7 @@ async function processLinkRequest(request) {
         console.log(`✅ Claimed request ${request.id}`)
 
         // Build the map link
-        const mapLink = `https://la-la.land/${request.client}/index-m.html?token=${request.token}`;
+        const mapLink = `https://la-la.land/${request.client}/index.html?token=${request.token}`;
 
         // Build WhatsApp message
         const message = `¡Hola! 👋\n\nAquí está tu acceso al Master Plan de ${request.client.toUpperCase()}:\n\n${mapLink}\n\nÁbrelo para explorar disponibilidad y precios.\nUn asesor te escribirá muy pronto.`;
