@@ -21,6 +21,7 @@ const KEYWORD_TO_CLIENT: Record<string, string> = {
 
 const BASE_URL = 'https://la-la.land'
 const GRAPH_API = 'https://graph.facebook.com/v21.0'
+const INSTAGRAM_ACCOUNT_ID = '17841475666468361'
 
 // Only check reels posted in the last 30 days
 const REELS_MAX_AGE_DAYS = 30
@@ -54,7 +55,7 @@ serve(async (req) => {
 
     // 1. Fetch recent media
     const mediaRes = await fetch(
-      `${GRAPH_API}/me/media?fields=id,media_product_type,timestamp&limit=25&access_token=${accessToken}`
+      `${GRAPH_API}/${INSTAGRAM_ACCOUNT_ID}/media?fields=id,media_product_type,timestamp&limit=25&access_token=${accessToken}`
     )
     const mediaData = await mediaRes.json()
 
