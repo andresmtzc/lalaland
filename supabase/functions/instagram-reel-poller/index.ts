@@ -22,8 +22,8 @@ const KEYWORD_TO_CLIENT: Record<string, string> = {
 const BASE_URL = 'https://la-la.land'
 const GRAPH_API = 'https://graph.facebook.com/v21.0'
 
-// Only check reels posted in the last 7 days
-const REELS_MAX_AGE_DAYS = 7
+// Only check reels posted in the last 30 days
+const REELS_MAX_AGE_DAYS = 30
 
 serve(async (req) => {
   try {
