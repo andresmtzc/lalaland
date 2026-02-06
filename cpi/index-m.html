@@ -2272,7 +2272,7 @@ ctaobserver.observe(ctaToaster, {
       // Look up the token
       const { data: tokenData, error: tokenError } = await window.supabaseClient
         .from('lead_tokens')
-        .select('id, lead_id, claimed, leads(id, phone, name, last_name)')
+        .select('id, lead_id, claimed, leads(id, phone, name, last_name, is_agent)')
         .eq('token', urlToken)
         .single();
 
@@ -2311,10 +2311,14 @@ ctaobserver.observe(ctaToaster, {
         phone: tokenData.leads?.phone,
         name: tokenData.leads?.name,
         lastName: tokenData.leads?.last_name,
-        token: urlToken
+        token: urlToken,
+        isAgent: tokenData.leads?.is_agent || false
       };
 
-      console.log('✅ Lead authenticated via token:', window.currentLead.phone);
+      // Set global agent flag
+      window.isAgent = tokenData.leads?.is_agent || false;
+
+      console.log('✅ Lead authenticated via token:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
 
       // Start session tracking
       await startLeadSession();
@@ -2340,7 +2344,7 @@ ctaobserver.observe(ctaToaster, {
     try {
       const { data: tokenData, error: tokenError } = await window.supabaseClient
         .from('lead_tokens')
-        .select('id, lead_id, leads(id, phone, name, last_name)')
+        .select('id, lead_id, leads(id, phone, name, last_name, is_agent)')
         .eq('token', sessionToken)
         .single();
 
@@ -2364,10 +2368,14 @@ ctaobserver.observe(ctaToaster, {
         phone: tokenData.leads?.phone,
         name: tokenData.leads?.name,
         lastName: tokenData.leads?.last_name,
-        token: sessionToken
+        token: sessionToken,
+        isAgent: tokenData.leads?.is_agent || false
       };
 
-      console.log('✅ Lead authenticated via session:', window.currentLead.phone);
+      // Set global agent flag
+      window.isAgent = tokenData.leads?.is_agent || false;
+
+      console.log('✅ Lead authenticated via session:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
 
       // Start session tracking
       await startLeadSession();
@@ -6437,12 +6445,13 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'cta-buttons-row';
   buttonsRow.style.position = 'relative';
-  // Show COTIZAR when authenticated, CÓMO LLEGAR when not
+  // Show COTIZAR when authenticated OR agent, CÓMO LLEGAR otherwise
   const isAuthenticated = window.isUserAuthenticated === true;
+  const isAgent = window.isAgent === true;
   const apartarEnabled = getCommunityByFracc(CURRENT_CLIENT, lot.fraccionamiento)?.apartarEnabled === true;
   buttonsRow.innerHTML = `
     <button class="cta-button first" id="separarBtn" translate="no"${!apartarEnabled ? ' disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>APARTAR</button>
-    ${isAuthenticated
+    ${(isAuthenticated || isAgent)
       ? `<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>`
       : `<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>`
     }
@@ -6486,6 +6495,22 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       // Prompt user for dynamic text (for page 3)
       const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
       if (!dynamicText) return; // User cancelled
+
+      // Track agent quote if this is an agent
+      if (window.isAgent && window.currentLead?.phone) {
+        window.supabaseClient
+          .from('agent_quotes')
+          .insert({
+            agent_phone: window.currentLead.phone,
+            client_id: CURRENT_CLIENT,
+            lot_name: lot?.name || null,
+            lead_name: dynamicText
+          })
+          .then(({ error }) => {
+            if (error) console.error('Error tracking agent quote:', error);
+            else console.log('✅ Agent quote tracked:', dynamicText);
+          });
+      }
 
       // Create progress overlay
       const progressOverlay = document.createElement('div');
