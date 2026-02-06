@@ -1,6 +1,7 @@
 // Supabase Edge Function: Instagram Reel Comment Poller
-// Fills the gap where Instagram webhooks don't fire for collab reel comments.
-// Called via pg_cron every 5 minutes.
+// Polls collab reels for keyword comments (webhooks don't fire for collabs).
+// Reads reel IDs from monitored_reels table in Supabase.
+// Called via pg_cron every 3 minutes.
 // Deploy with: supabase functions deploy instagram-reel-poller
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
@@ -21,10 +22,6 @@ const KEYWORD_TO_CLIENT: Record<string, string> = {
 
 const BASE_URL = 'https://la-la.land'
 const GRAPH_API = 'https://graph.facebook.com/v21.0'
-const INSTAGRAM_ACCOUNT_ID = '17841475666468361'
-
-// Only check reels posted in the last 30 days
-const REELS_MAX_AGE_DAYS = 30
 
 serve(async (req) => {
   try {
@@ -53,34 +50,30 @@ serve(async (req) => {
 
     console.log(`🕐 Last polled: ${lastPolledAt?.toISOString() || 'never (first run)'}`)
 
-    // 1. Fetch recent media
-    const mediaRes = await fetch(
-      `${GRAPH_API}/${INSTAGRAM_ACCOUNT_ID}/media?fields=id,media_product_type,timestamp&limit=25&access_token=${accessToken}`
-    )
-    const mediaData = await mediaRes.json()
+    // 1. Get reel IDs from monitored_reels table
+    const { data: monitoredReels, error: reelsError } = await supabase
+      .from('monitored_reels')
+      .select('media_id')
 
-    if (mediaData.error) {
-      console.error('❌ Graph API error fetching media:', mediaData.error)
-      return new Response(JSON.stringify({ error: mediaData.error.message }), { status: 500 })
+    if (reelsError) {
+      console.error('❌ Error reading monitored_reels:', reelsError)
+      return new Response(JSON.stringify({ error: reelsError.message }), { status: 500 })
     }
 
-    // 2. Filter for recent reels only
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() - REELS_MAX_AGE_DAYS)
+    if (!monitoredReels || monitoredReels.length === 0) {
+      console.log('📹 No reels to monitor. Add reel IDs to the monitored_reels table.')
+      return new Response(JSON.stringify({ success: true, reels_checked: 0, processed: 0 }), { status: 200 })
+    }
 
-    const reels = (mediaData.data || []).filter((m: any) =>
-      m.media_product_type === 'REELS' && new Date(m.timestamp) > cutoff
-    )
-
-    console.log(`📹 Found ${reels.length} recent reels to check`)
+    console.log(`📹 Monitoring ${monitoredReels.length} reels`)
 
     let processed = 0
     let skippedOld = 0
 
-    // 3. Check comments on each reel (paginated, newest-first, skip old)
-    for (const reel of reels) {
+    // 2. Check comments on each monitored reel (paginated, newest-first, skip old)
+    for (const reel of monitoredReels) {
       let commentsUrl: string | null =
-        `${GRAPH_API}/${reel.id}/comments?fields=id,text,from{id,username},timestamp&limit=50&order=reverse_chronological&access_token=${accessToken}`
+        `${GRAPH_API}/${reel.media_id}/comments?fields=id,text,from{id,username},timestamp&limit=50&order=reverse_chronological&access_token=${accessToken}`
 
       let doneWithReel = false
 
@@ -89,7 +82,7 @@ serve(async (req) => {
         const commentsData = await commentsRes.json()
 
         if (commentsData.error) {
-          console.error(`❌ Error fetching comments for reel ${reel.id}:`, commentsData.error)
+          console.error(`❌ Error fetching comments for reel ${reel.media_id}:`, commentsData.error)
           break
         }
 
@@ -119,7 +112,7 @@ serve(async (req) => {
           const formLink = `${BASE_URL}/${clientId}/registro.html`
           const username = comment.from?.username || 'amigo'
 
-          console.log(`✅ Reel keyword "${keyword}" from @${username} on reel ${reel.id}`)
+          console.log(`✅ Reel keyword "${keyword}" from @${username} on reel ${reel.media_id}`)
 
           // --- STEP A: Private Reply ---
           const privateMessage = `¡Hola! Por favor compártenos tu WhatsApp en esta liga:\n\n${formLink}\n\nY un asesor de ${clientId.toUpperCase()} te va contactar muy pronto.`
@@ -137,7 +130,7 @@ serve(async (req) => {
             .insert({
               instagram_user_id: comment.from?.id,
               instagram_username: username,
-              post_id: reel.id,
+              post_id: reel.media_id,
               comment_id: comment.id,
               comment_text: comment.text,
               keyword: keyword,
@@ -165,10 +158,10 @@ serve(async (req) => {
       .from('poller_state')
       .upsert({ id: 'reel_poller', last_polled_at: pollStartTime })
 
-    console.log(`✅ Poll complete. Reels: ${reels.length}, new keywords: ${processed}, skipped old: ${skippedOld}`)
+    console.log(`✅ Poll complete. Reels: ${monitoredReels.length}, new keywords: ${processed}, skipped old: ${skippedOld}`)
 
     return new Response(
-      JSON.stringify({ success: true, reels_checked: reels.length, processed, skipped_old: skippedOld }),
+      JSON.stringify({ success: true, reels_checked: monitoredReels.length, processed, skipped_old: skippedOld }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
 
