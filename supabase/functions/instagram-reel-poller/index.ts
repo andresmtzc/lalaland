@@ -37,6 +37,21 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing access token' }), { status: 500 })
     }
 
+    // --- Read last poll timestamp ---
+    const { data: stateRow } = await supabase
+      .from('poller_state')
+      .select('last_polled_at')
+      .eq('id', 'reel_poller')
+      .single()
+
+    const lastPolledAt = stateRow?.last_polled_at
+      ? new Date(stateRow.last_polled_at)
+      : null
+
+    const pollStartTime = new Date().toISOString()
+
+    console.log(`🕐 Last polled: ${lastPolledAt?.toISOString() || 'never (first run)'}`)
+
     // 1. Fetch recent media
     const mediaRes = await fetch(
       `${GRAPH_API}/me/media?fields=id,media_product_type,timestamp&limit=25&access_token=${accessToken}`
@@ -59,15 +74,16 @@ serve(async (req) => {
     console.log(`📹 Found ${reels.length} recent reels to check`)
 
     let processed = 0
+    let skippedOld = 0
 
-    // 3. Check comments on each reel (paginated, newest-first, early stop)
+    // 3. Check comments on each reel (paginated, newest-first, skip old)
     for (const reel of reels) {
       let commentsUrl: string | null =
         `${GRAPH_API}/${reel.id}/comments?fields=id,text,from{id,username},timestamp&limit=50&order=reverse_chronological&access_token=${accessToken}`
 
-      let hitKnownComment = false
+      let doneWithReel = false
 
-      while (commentsUrl && !hitKnownComment) {
+      while (commentsUrl && !doneWithReel) {
         const commentsRes = await fetch(commentsUrl)
         const commentsData = await commentsRes.json()
 
@@ -77,21 +93,25 @@ serve(async (req) => {
         }
 
         for (const comment of commentsData.data || []) {
-          // Check for keyword first (cheap, avoids DB call for most comments)
+          // Skip comments older than last poll (we already checked them)
+          if (lastPolledAt && new Date(comment.timestamp) <= lastPolledAt) {
+            skippedOld++
+            doneWithReel = true
+            break
+          }
+
+          // Check for keyword (cheap, no DB call)
           const keyword = findKeyword(comment.text || '')
           if (!keyword) continue
 
-          // Check if already processed — if yes, everything older is too
+          // Check if already processed (dedup safety net)
           const { data: existing } = await supabase
             .from('collab_requests')
             .select('id')
             .eq('comment_id', comment.id)
             .maybeSingle()
 
-          if (existing) {
-            hitKnownComment = true
-            break
-          }
+          if (existing) continue
 
           // New keyword comment on a reel — process it!
           const clientId = KEYWORD_TO_CLIENT[keyword]
@@ -134,15 +154,20 @@ serve(async (req) => {
           processed++
         }
 
-        // Next page of comments (if any and we haven't hit a known comment)
-        commentsUrl = commentsData.paging?.next || null
+        // Next page (if any and we haven't hit old comments)
+        commentsUrl = doneWithReel ? null : (commentsData.paging?.next || null)
       }
     }
 
-    console.log(`✅ Reel poll complete. Checked ${reels.length} reels, processed ${processed} new comments.`)
+    // --- Update last poll timestamp ---
+    await supabase
+      .from('poller_state')
+      .upsert({ id: 'reel_poller', last_polled_at: pollStartTime })
+
+    console.log(`✅ Poll complete. Reels: ${reels.length}, new keywords: ${processed}, skipped old: ${skippedOld}`)
 
     return new Response(
-      JSON.stringify({ success: true, reels_checked: reels.length, processed }),
+      JSON.stringify({ success: true, reels_checked: reels.length, processed, skipped_old: skippedOld }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
 
