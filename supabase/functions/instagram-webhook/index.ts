@@ -1,5 +1,5 @@
 // Supabase Edge Function for Instagram Graph API Webhooks
-// Handles comment notifications and triggers collab bot automation
+// Updated for "Private Reply" Automation (No prior DM needed)
 // Deploy with: supabase functions deploy instagram-webhook
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
@@ -13,9 +13,14 @@ const corsHeaders = {
 
 // Keyword to client mapping
 const KEYWORD_TO_CLIENT: Record<string, string> = {
-  'PIETRA': 'inverta',
-  'AQUA': 'inverta',
-  'CAÑADAS': 'inverta',
+  'pietra': 'agora',
+  'peitra': 'agora', // Still good to keep misspellings!
+  'petra': 'agora',
+  'pitra': 'agora',
+  'piedra': 'agora',
+  'prieta': 'agora',
+  'aqua': 'agora',    // No need for 'AQUA' and 'aqua' separately anymore
+  'cañadas': 'agora',
 }
 
 // Base URL for registration forms
@@ -120,25 +125,25 @@ async function generateSignature(payload: string, secret: string): Promise<strin
 async function processWebhook(payload: any) {
   console.log('📩 Webhook received:', JSON.stringify(payload, null, 2))
 
-  // Initialize Supabase client with service role key (full access)
+  // Initialize Supabase client
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-  // Instagram webhook structure:
-  // { object: 'instagram', entry: [...] }
   if (payload.object !== 'instagram') {
     console.log('⏭️ Skipping non-Instagram webhook')
     return
   }
 
   for (const entry of payload.entry || []) {
-    // Handle comments (from changes array)
+
+    // ------------------------------------------------------------------
+    // 1. HANDLE COMMENTS (Now sends Private Reply immediately)
+    // ------------------------------------------------------------------
     for (const change of entry.changes || []) {
       if (change.field === 'comments') {
         const commentData = change.value
 
-        // Extract comment details
         const commentId = commentData.id
         const commentText = commentData.text || ''
         const instagramUserId = commentData.from?.id
@@ -147,7 +152,7 @@ async function processWebhook(payload: any) {
 
         console.log(`💬 Comment from @${instagramUsername}: "${commentText}"`)
 
-        // Check if comment contains a keyword (exact match, caps only)
+        // Check if comment contains a keyword
         const keyword = findKeyword(commentText)
 
         if (keyword) {
@@ -156,11 +161,20 @@ async function processWebhook(payload: any) {
 
           console.log(`✅ Keyword "${keyword}" detected → Client: ${clientId}`)
 
-          // Reply to comment via Graph API
-          const replyText = `@${instagramUsername} ¡Hola! Envíame un mensaje directo (DM) y te envío el link de registro 📩`
-          await replyToComment(commentId, replyText)
+          // --- STEP A: Send the Private Reply (The Link) ---
+          const privateMessage = `¡Hola! Por favor compártenos tu WhatsApp en esta liga:\n\n${formLink}\n\nY un asesor de ${clientId.toUpperCase()} te va contactar muy pronto.`
+          const dmSuccess = await sendPrivateReply(commentId, privateMessage)
 
-          // Insert into collab_requests table for tracking
+          // --- STEP B: Reply Publicly ---
+          // If DM failed (e.g. user privacy), we ask them to DM us. If success, we say check inbox.
+          const publicReply = dmSuccess
+            ? `@${instagramUsername} ¡Te envié la info por DM! 📩`
+            : `@${instagramUsername} ¡Hola! Por favor envíame un DM para pasarte el link.`
+
+          await replyToComment(commentId, publicReply)
+
+          // --- STEP C: Log to Supabase ---
+          // We mark status as 'dm_sent' immediately so the DM handler doesn't send it again
           const { data, error } = await supabase
             .from('collab_requests')
             .insert({
@@ -172,7 +186,7 @@ async function processWebhook(payload: any) {
               keyword: keyword,
               client_id: clientId,
               form_link: formLink,
-              status: 'completed',
+              status: dmSuccess ? 'dm_sent' : 'failed_dm_privacy',
               completed_at: new Date().toISOString(),
               post_type: commentData.media?.media_product_type || 'POST',
             })
@@ -180,42 +194,30 @@ async function processWebhook(payload: any) {
             .single()
 
           if (error) {
-            // Check if it's a duplicate (unique constraint violation)
-            if (error.code === '23505') {
-              console.log(`⏭️ Comment ${commentId} already processed, skipping`)
-            } else {
-              console.error('❌ Error inserting collab_request:', error)
-            }
+             // Handle duplicates gracefully
+             if (error.code === '23505') console.log(`⏭️ Duplicate comment ${commentId}, skipping`)
+             else console.error('❌ Error inserting collab_request:', error)
           } else {
-            console.log(`✅ Collab request created and replied: ${data.id}`)
+            console.log(`✅ Request processed. DM Sent: ${dmSuccess}`)
           }
         } else {
-          console.log(`⏭️ No matching keyword in comment: "${commentText}"`)
+          console.log(`⏭️ No matching keyword in comment`)
         }
       }
     }
 
-    // Handle incoming DMs (from messaging array - different structure!)
+    // ------------------------------------------------------------------
+    // 2. HANDLE INCOMING DMs (Fallback / Conversation Handling)
+    // ------------------------------------------------------------------
     for (const messaging of entry.messaging || []) {
-      // Filter out non-message events (delivery receipts, read receipts, echoes)
-      // Only process actual incoming user messages
-      if (!messaging.message) {
-        console.log('⏭️ Skipping non-message event (delivery/read receipt)')
-        continue
-      }
-
-      // Skip echoes of our own messages
-      if (messaging.message.is_echo) {
-        console.log('⏭️ Skipping echo of our own message')
-        continue
-      }
+      if (!messaging.message || messaging.message.is_echo) continue
 
       const senderId = messaging.sender?.id
       const messageText = messaging.message?.text || ''
 
       console.log(`📩 DM from ${senderId}: "${messageText}"`)
 
-      // Look up if this user commented a keyword
+      // Check DB history
       const { data: collabRequest } = await supabase
         .from('collab_requests')
         .select('*')
@@ -225,121 +227,123 @@ async function processWebhook(payload: any) {
         .maybeSingle()
 
       if (collabRequest) {
-        // Check if we already sent the DM to this user
+        // If we already sent the DM (via the comment trigger above), DO NOT send again.
         if (collabRequest.status === 'dm_sent') {
-          console.log(`⏭️ Already sent DM to ${senderId}, skipping`)
+          console.log(`⏭️ User ${senderId} already received the link. Skipping auto-response.`)
           continue
         }
 
-        // User has a keyword entry - send them the link!
+        // Fallback: If status is NOT dm_sent (maybe privacy settings blocked the auto-reply earlier), try again.
         const formLink = collabRequest.form_link
-        const dmResponse = `¡Hola! Muchas gracias por tu interés. Regístrate aquí:\n${formLink}\nY muy pronto recibirás más información via Whatsapp.`
+        const dmResponse = `¡Hola! Por favor compártenos tu WhatsApp en esta liga:\n\n${formLink}`
 
         await sendDM(senderId, dmResponse)
 
-        // Mark as completed so we don't send again
         await supabase
           .from('collab_requests')
           .update({ status: 'dm_sent' })
           .eq('id', collabRequest.id)
 
-        console.log(`✅ Sent registration link to ${senderId} (keyword: ${collabRequest.keyword}) and marked as dm_sent`)
+        console.log(`✅ Late DM sent to ${senderId}`)
       } else {
-        // No keyword found - send instructions
-        const dmResponse = `¡Hola! Para recibir el link de registro, comenta PIETRA, AQUA o CAÑADAS en nuestras publicaciones 📩`
-
+        // General inquiry (no keyword history)
+        const dmResponse = `¡Hola! Si quieres información por favor comenta el KEYWORD en nuestras publicaciones 📩`
         await sendDM(senderId, dmResponse)
-
-        console.log(`✅ Sent instructions to ${senderId} (no keyword found)`)
       }
     }
   }
 }
 
-async function replyToComment(commentId: string, replyText: string) {
+// ------------------------------------------------------------------
+// HELPER FUNCTIONS
+// ------------------------------------------------------------------
+
+// NEW: Sends a private message via comment_id (No prior DM needed)
+async function sendPrivateReply(commentId: string, messageText: string) {
   const accessToken = Deno.env.get('INSTAGRAM_ACCESS_TOKEN')
-
-  if (!accessToken) {
-    console.error('❌ INSTAGRAM_ACCESS_TOKEN not configured')
-    return
-  }
-
-  try {
-    const url = `https://graph.facebook.com/v21.0/${commentId}/replies`
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: replyText,
-        access_token: accessToken,
-      }),
-    })
-
-    const data = await response.json()
-
-    if (response.ok) {
-      console.log(`✅ Replied to comment ${commentId}:`, data)
-    } else {
-      console.error(`❌ Failed to reply to comment:`, data)
-    }
-  } catch (error) {
-    console.error(`❌ Error replying to comment:`, error)
-  }
-}
-
-async function sendDM(recipientId: string, messageText: string) {
-  const accessToken = Deno.env.get('INSTAGRAM_ACCESS_TOKEN')
-
-  if (!accessToken) {
-    console.error('❌ INSTAGRAM_ACCESS_TOKEN not configured')
-    return
-  }
+  if (!accessToken) return false
 
   try {
     const url = `https://graph.facebook.com/v21.0/me/messages`
-
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        recipient: {
-          id: recipientId,
-        },
-        message: {
-          text: messageText,
-        },
+        recipient: { comment_id: commentId }, // <--- The Magic Key
+        message: { text: messageText },
         access_token: accessToken,
       }),
     })
 
     const data = await response.json()
-
     if (response.ok) {
-      console.log(`✅ Sent DM to ${recipientId}:`, data)
+      console.log(`✅ Private Reply sent to comment ${commentId}`)
+      return true
     } else {
-      console.error(`❌ Failed to send DM:`, data)
+      console.error(`❌ Failed Private Reply (likely privacy settings):`, data)
+      return false
     }
   } catch (error) {
-    console.error(`❌ Error sending DM:`, error)
+    console.error(`❌ Error sending Private Reply:`, error)
+    return false
+  }
+}
+
+// Standard Public Reply
+async function replyToComment(commentId: string, replyText: string) {
+  const accessToken = Deno.env.get('INSTAGRAM_ACCESS_TOKEN')
+  if (!accessToken) return
+
+  try {
+    const url = `https://graph.facebook.com/v21.0/${commentId}/replies`
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: replyText, access_token: accessToken }),
+    })
+    console.log(`✅ Public reply sent to ${commentId}`)
+  } catch (error) {
+    console.error(`❌ Error public reply:`, error)
+  }
+}
+
+// Standard DM (requires user_id)
+async function sendDM(recipientId: string, messageText: string) {
+  const accessToken = Deno.env.get('INSTAGRAM_ACCESS_TOKEN')
+  if (!accessToken) return
+
+  try {
+    const url = `https://graph.facebook.com/v21.0/me/messages`
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: { id: recipientId },
+        message: { text: messageText },
+        access_token: accessToken,
+      }),
+    })
+    console.log(`✅ Standard DM sent to ${recipientId}`)
+  } catch (error) {
+    console.error(`❌ Error sending standard DM:`, error)
   }
 }
 
 function findKeyword(text: string): string | null {
-  // Check for exact keyword matches (case-sensitive, caps only)
-  const keywords = Object.keys(KEYWORD_TO_CLIENT)
+  // 1. Convert user comment to lowercase once
+  const lowerText = text.toLowerCase();
+
+  // 2. Get the keys from your mapping
+  const keywords = Object.keys(KEYWORD_TO_CLIENT);
 
   for (const keyword of keywords) {
-    // Match whole word only (not partial)
-    const regex = new RegExp(`\\b${keyword}\\b`)
-    if (regex.test(text)) {
-      return keyword
+    // 3. Match against the key (also lowercased just in case)
+    // We use \b for "word boundaries" so 'petra' doesn't match 'petrafied'
+    const regex = new RegExp(`\\b${keyword.toLowerCase()}\\b`);
+
+    if (regex.test(lowerText)) {
+      return keyword; // Returns the exact key needed for KEYWORD_TO_CLIENT[keyword]
     }
   }
-
-  return null
+  return null;
 }
