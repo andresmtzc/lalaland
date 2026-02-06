@@ -1,6 +1,6 @@
 // Supabase Edge Function: Instagram Reel Comment Poller
-// Fills the gap where Instagram webhooks don't fire for Reel comments.
-// Called via pg_cron every minute.
+// Fills the gap where Instagram webhooks don't fire for collab reel comments.
+// Called via pg_cron every 5 minutes.
 // Deploy with: supabase functions deploy instagram-reel-poller
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
@@ -60,71 +60,82 @@ serve(async (req) => {
 
     let processed = 0
 
-    // 3. Check comments on each reel
+    // 3. Check comments on each reel (paginated, newest-first, early stop)
     for (const reel of reels) {
-      const commentsRes = await fetch(
-        `${GRAPH_API}/${reel.id}/comments?fields=id,text,from{id,username},timestamp&limit=50&access_token=${accessToken}`
-      )
-      const commentsData = await commentsRes.json()
+      let commentsUrl: string | null =
+        `${GRAPH_API}/${reel.id}/comments?fields=id,text,from{id,username},timestamp&limit=50&order=reverse_chronological&access_token=${accessToken}`
 
-      if (commentsData.error) {
-        console.error(`❌ Error fetching comments for reel ${reel.id}:`, commentsData.error)
-        continue
-      }
+      let hitKnownComment = false
 
-      for (const comment of commentsData.data || []) {
-        // 4. Check for keyword first (cheap, avoids DB call for most comments)
-        const keyword = findKeyword(comment.text || '')
-        if (!keyword) continue
+      while (commentsUrl && !hitKnownComment) {
+        const commentsRes = await fetch(commentsUrl)
+        const commentsData = await commentsRes.json()
 
-        // 5. Check if already processed
-        const { data: existing } = await supabase
-          .from('collab_requests')
-          .select('id')
-          .eq('comment_id', comment.id)
-          .maybeSingle()
-
-        if (existing) continue
-
-        // 6. New keyword comment on a reel — process it!
-        const clientId = KEYWORD_TO_CLIENT[keyword]
-        const formLink = `${BASE_URL}/${clientId}/registro.html`
-        const username = comment.from?.username || 'amigo'
-
-        console.log(`✅ Reel keyword "${keyword}" from @${username} on reel ${reel.id}`)
-
-        // --- STEP A: Private Reply ---
-        const privateMessage = `¡Hola! Por favor compártenos tu WhatsApp en esta liga:\n\n${formLink}\n\nY un asesor de ${clientId.toUpperCase()} te va contactar muy pronto.`
-        const dmSuccess = await sendPrivateReply(comment.id, privateMessage, accessToken)
-
-        // --- STEP B: Public Reply ---
-        const publicReply = dmSuccess
-          ? `@${username} ¡Te envié la info por DM! 📩`
-          : `@${username} ¡Hola! Por favor envíame un DM para pasarte el link.`
-        await replyToComment(comment.id, publicReply, accessToken)
-
-        // --- STEP C: Log to Supabase ---
-        const { error } = await supabase
-          .from('collab_requests')
-          .insert({
-            instagram_user_id: comment.from?.id,
-            instagram_username: username,
-            post_id: reel.id,
-            comment_id: comment.id,
-            comment_text: comment.text,
-            keyword: keyword,
-            client_id: clientId,
-            form_link: formLink,
-            status: dmSuccess ? 'dm_sent' : 'failed_dm_privacy',
-            completed_at: new Date().toISOString(),
-            post_type: 'REELS',
-          })
-
-        if (error && error.code !== '23505') {
-          console.error('❌ Error inserting collab_request:', error)
+        if (commentsData.error) {
+          console.error(`❌ Error fetching comments for reel ${reel.id}:`, commentsData.error)
+          break
         }
 
-        processed++
+        for (const comment of commentsData.data || []) {
+          // Check for keyword first (cheap, avoids DB call for most comments)
+          const keyword = findKeyword(comment.text || '')
+          if (!keyword) continue
+
+          // Check if already processed — if yes, everything older is too
+          const { data: existing } = await supabase
+            .from('collab_requests')
+            .select('id')
+            .eq('comment_id', comment.id)
+            .maybeSingle()
+
+          if (existing) {
+            hitKnownComment = true
+            break
+          }
+
+          // New keyword comment on a reel — process it!
+          const clientId = KEYWORD_TO_CLIENT[keyword]
+          const formLink = `${BASE_URL}/${clientId}/registro.html`
+          const username = comment.from?.username || 'amigo'
+
+          console.log(`✅ Reel keyword "${keyword}" from @${username} on reel ${reel.id}`)
+
+          // --- STEP A: Private Reply ---
+          const privateMessage = `¡Hola! Por favor compártenos tu WhatsApp en esta liga:\n\n${formLink}\n\nY un asesor de ${clientId.toUpperCase()} te va contactar muy pronto.`
+          const dmSuccess = await sendPrivateReply(comment.id, privateMessage, accessToken)
+
+          // --- STEP B: Public Reply ---
+          const publicReply = dmSuccess
+            ? `@${username} ¡Te envié la info por DM! 📩`
+            : `@${username} ¡Hola! Por favor envíame un DM para pasarte el link.`
+          await replyToComment(comment.id, publicReply, accessToken)
+
+          // --- STEP C: Log to Supabase ---
+          const { error } = await supabase
+            .from('collab_requests')
+            .insert({
+              instagram_user_id: comment.from?.id,
+              instagram_username: username,
+              post_id: reel.id,
+              comment_id: comment.id,
+              comment_text: comment.text,
+              keyword: keyword,
+              client_id: clientId,
+              form_link: formLink,
+              status: dmSuccess ? 'dm_sent' : 'failed_dm_privacy',
+              completed_at: new Date().toISOString(),
+              post_type: 'REELS',
+            })
+
+          if (error && error.code !== '23505') {
+            console.error('❌ Error inserting collab_request:', error)
+          }
+
+          processed++
+        }
+
+        // Next page of comments (if any and we haven't hit a known comment)
+        commentsUrl = commentsData.paging?.next || null
       }
     }
 
