@@ -77,6 +77,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="stylesheet" href="https://la-la.land/styles.css">
 <link rel="stylesheet" href="https://la-la.land/street-view-nav.css">
 
@@ -12257,6 +12258,520 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     .catch(err => {
       console.error('❌ Failed to load saved.json:', err);
     });
+})();
+</script>
+
+<script>
+(function() {
+  // PDF Generation for Agora - Multi-template support based on community group
+
+  async function generateMultiPagePDF(lot, dynamicText, financingOptions = {}) {
+    if (!lot) {
+      console.error('No lot data provided');
+      window.showToaster?.('Error: No se pudo obtener datos del lote');
+      return;
+    }
+
+    // Default financing options (matches modal defaults)
+    const financing = {
+      downpaymentPercent: financingOptions.downpaymentPercent || 30,
+      installmentMonths: financingOptions.installmentMonths || 48
+    };
+
+    // Determine community group from fraccionamiento
+    const fraccionamiento = lot.fraccionamiento || lot.community || '';
+    const communityGroup = getCommunityGroup('agora', fraccionamiento);
+
+    if (!communityGroup) {
+      console.error('Could not determine community group for:', fraccionamiento);
+      window.showToaster?.('Error: Plantilla no disponible para esta comunidad');
+      return;
+    }
+
+    // Create progress overlay
+    const progressOverlay = document.createElement('div');
+    progressOverlay.id = 'pdf-progress-overlay';
+    progressOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+    `;
+    progressOverlay.innerHTML = `
+      <div style="background: white; padding: 32px 48px; border-radius: 12px; text-align: center; font-family: Arial, sans-serif;">
+        <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Generando PDF...</div>
+        <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Cargando plantilla...</div>
+        <div style="width: 200px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
+          <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: ${CONFIG?.colors?.primary || '#007bff'}; transition: width 0.3s;"></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(progressOverlay);
+
+    const progressText = document.getElementById('pdf-progress-text');
+    const progressBar = document.getElementById('pdf-progress-bar');
+
+    // Create hidden container for rendering pages
+    const pdfContainer = document.createElement('div');
+    pdfContainer.id = 'pdf-generation-container';
+    pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+    document.body.appendChild(pdfContainer);
+
+    // Calculate lot values for placeholders
+    function getLotValues(lot, dynamicText, financingOpts = {}) {
+      const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
+      const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+      const totalPrice = size * priceM2;
+
+      // Calculate category based on priceM2 tier
+      const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+      const uniquePrices = [...new Set(allLotsData.map(l =>
+        parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+      ))].filter(p => p > 0).sort((a, b) => b - a);
+
+      const categories = ['AAA+', 'AAA', 'AA', 'A'];
+      const priceIndex = uniquePrices.findIndex(p => Math.abs(p - priceM2) < 0.01);
+      const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+      // Format helpers
+      const formatCurrency = (num) => '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const formatNumber = (num) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      // Discount calculations
+      const discount5 = totalPrice * 0.05;
+      const discount12 = totalPrice * 0.12;
+      const priceWith5Discount = totalPrice * 0.95;
+      const priceWith12Discount = totalPrice * 0.88;
+
+      // 25% plan: no discount, 25% down, 45% in 24 months, 30% contra escritura
+      const downpayment25 = totalPrice * 0.25;
+      const monthly25 = (totalPrice * 0.45) / 24;
+      const contraEscritura30 = totalPrice * 0.30;
+
+      // 50% plan: 5% discount, 50% down, 50% contra escritura
+      const downpayment50 = priceWith5Discount * 0.50;
+      const contraEscritura50 = priceWith5Discount * 0.50;
+
+      // 85% plan: 12% discount, 85% down, 15% contra escritura
+      const downpayment85 = priceWith12Discount * 0.85;
+      const contraEscritura15 = priceWith12Discount * 0.15;
+
+      // Dynamic financing calculations based on selected options
+      const selectedDownpaymentPercent = financingOpts.downpaymentPercent || 30;
+      const selectedInstallmentMonths = financingOpts.installmentMonths || 48;
+
+      // Interest rates by month term
+      const INTEREST_RATES = { 24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17 };
+      const selectedInterestRate = INTEREST_RATES[selectedInstallmentMonths] || 0.15;
+
+      // Calculate dynamic financing values
+      const selectedDownpaymentAmount = totalPrice * (selectedDownpaymentPercent / 100);
+      const amountToFinance = totalPrice - selectedDownpaymentAmount;
+
+      // Monthly payment calculation helper
+      function calcMonthlyPayment(principal, annualRate, months) {
+        const monthlyRate = annualRate / 12;
+        if (monthlyRate === 0) return principal / months;
+        const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
+        const denominator = Math.pow(1 + monthlyRate, months) - 1;
+        return numerator / denominator;
+      }
+
+      // Selected term calculation
+      const selectedMonthlyPayment = calcMonthlyPayment(amountToFinance, selectedInterestRate, selectedInstallmentMonths);
+      const selectedTotalFinancedPrice = selectedDownpaymentAmount + (selectedMonthlyPayment * selectedInstallmentMonths);
+
+      // Calculate all term options (using selected downpayment)
+      const terms = [24, 36, 48, 60, 72];
+      const termCalcs = {};
+      terms.forEach(months => {
+        const rate = INTEREST_RATES[months];
+        const monthly = calcMonthlyPayment(amountToFinance, rate, months);
+        const total = selectedDownpaymentAmount + (monthly * months);
+        termCalcs[months] = { rate, monthly, total };
+      });
+
+      // Parse lot number (e.g., "10-11" → "MZ10L11")
+      const lotNumberParts = (lot.number || '').split('-');
+      const lotFormatted = lotNumberParts.length === 2
+        ? `MZ${lotNumberParts[0]}L${lotNumberParts[1]}`
+        : lot.number || '';
+
+      // Current date in Spanish format (e.g., "28 ENE 2026")
+      const spanishMonths = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+      const today = new Date();
+      const dateFormatted = `${today.getDate()} ${spanishMonths[today.getMonth()]} ${today.getFullYear()}`;
+
+      return {
+        'dynamicText': dynamicText,
+        'lot.number': lot.number || '',
+        'lot.nameA': lotNumberParts[0] || '',
+        'lot.nameB': lotNumberParts[1] || '',
+        'lot.numberFormatted': lotFormatted,
+        'lot.date': dateFormatted,
+        'lot.category': category || 'A',
+        'lot.size': formatNumber(size) + ' m²',
+        'lot.pricePerM2': formatCurrency(priceM2),
+        'lot.totalPrice': formatCurrency(totalPrice),
+        'lot.downpayment25': formatCurrency(downpayment25),
+        'lot.downpayment50': formatCurrency(downpayment50),
+        'lot.downpayment85': formatCurrency(downpayment85),
+        'lot.monthly25': formatCurrency(monthly25),
+        'lot.discount0': formatCurrency(0),
+        'lot.discount5': formatCurrency(discount5),
+        'lot.discount12': formatCurrency(discount12),
+        'lot.priceWith5Discount': formatCurrency(priceWith5Discount),
+        'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
+        'lot.contraEscritura30': formatCurrency(contraEscritura30),
+        'lot.contraEscritura50': formatCurrency(contraEscritura50),
+        'lot.contraEscritura15': formatCurrency(contraEscritura15),
+        // New dynamic financing placeholders (selected)
+        'lot.selectedDownpaymentPercent': selectedDownpaymentPercent + '%',
+        'lot.selectedDownpaymentAmount': formatCurrency(selectedDownpaymentAmount),
+        'lot.selectedInstallmentMonths': String(selectedInstallmentMonths),
+        'lot.selectedMonthlyPayment': formatCurrency(selectedMonthlyPayment),
+        'lot.selectedInterestRate': (selectedInterestRate * 100).toFixed(0) + '%',
+        'lot.selectedTotalFinancedPrice': formatCurrency(selectedTotalFinancedPrice),
+        // All term options (using selected downpayment)
+        'lot.monthly24': formatCurrency(termCalcs[24].monthly),
+        'lot.rate24': (termCalcs[24].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced24': formatCurrency(termCalcs[24].total),
+        'lot.monthly36': formatCurrency(termCalcs[36].monthly),
+        'lot.rate36': (termCalcs[36].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced36': formatCurrency(termCalcs[36].total),
+        'lot.monthly48': formatCurrency(termCalcs[48].monthly),
+        'lot.rate48': (termCalcs[48].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced48': formatCurrency(termCalcs[48].total),
+        'lot.monthly60': formatCurrency(termCalcs[60].monthly),
+        'lot.rate60': (termCalcs[60].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced60': formatCurrency(termCalcs[60].total),
+        'lot.monthly72': formatCurrency(termCalcs[72].monthly),
+        'lot.rate72': (termCalcs[72].rate * 100).toFixed(0) + '%',
+        'lot.totalFinanced72': formatCurrency(termCalcs[72].total)
+      };
+    }
+
+    // Replace placeholders in text
+    function replacePlaceholders(text, values) {
+      if (!text) return '';
+      return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+        return values[key.trim()] !== undefined ? values[key.trim()] : match;
+      });
+    }
+
+    // Function to create a page with template elements
+    function createPage(pageNum, template, lotValues, settings) {
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImagePrefix = settings.lotImagePrefix || '';
+      const pageWidth = settings.pageWidth || 1224;
+      const pageHeight = settings.pageHeight || 1584;
+
+      const pdfPage = document.createElement('div');
+      pdfPage.style.cssText = `
+        width: ${pageWidth}px;
+        height: ${pageHeight}px;
+        position: relative;
+        overflow: visible;
+        background-image: url("${pageBackgroundBaseUrl}page.${pageNum}.png");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: top left;
+      `;
+
+      // Get page data from template
+      const pageIndex = parseInt(pageNum, 10);
+      const pageData = template?.pages?.[pageIndex];
+
+      if (pageData) {
+        // Render text boxes
+        if (pageData.textBoxes) {
+          pageData.textBoxes.forEach(tb => {
+            const textEl = document.createElement('div');
+            textEl.textContent = replacePlaceholders(tb.content, lotValues);
+            textEl.style.cssText = `
+              position: absolute;
+              left: ${tb.x}px;
+              top: ${tb.y}px;
+              ${tb.width ? `width: ${tb.width}px;` : ''}
+              ${tb.height ? `height: ${tb.height}px;` : ''}
+              font-size: ${tb.fontSize || 24}px;
+              font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+              color: ${tb.color || '#000000'};
+              font-weight: ${tb.bold ? '700' : '400'};
+              font-style: ${tb.italic ? 'italic' : 'normal'};
+              text-decoration: ${tb.underline ? 'underline' : 'none'};
+              text-align: ${tb.textAlign || 'left'};
+              white-space: pre-wrap;
+              ${tb.zIndex !== undefined ? `z-index: ${tb.zIndex};` : ''}
+            `;
+            pdfPage.appendChild(textEl);
+          });
+        }
+
+        // Render tables
+        if (pageData.tables) {
+          pageData.tables.forEach(tableData => {
+            const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
+            const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
+            const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
+
+            const tableContainer = document.createElement('div');
+            tableContainer.style.cssText = `
+              position: absolute;
+              left: ${tableData.x}px;
+              top: ${tableData.y}px;
+              ${tableData.zIndex !== undefined ? `z-index: ${tableData.zIndex};` : ''}
+            `;
+
+            const table = document.createElement('table');
+            table.style.cssText = `
+              border-collapse: collapse;
+              table-layout: fixed;
+              width: ${totalWidth}px;
+            `;
+
+            for (let r = 0; r < tableData.rows; r++) {
+              const tr = document.createElement('tr');
+              tr.style.height = rowHeights[r] + 'px';
+
+              for (let c = 0; c < tableData.cols; c++) {
+                const cellData = tableData.cells?.[r]?.[c];
+                if (!cellData || cellData.hidden) continue;
+
+                const td = document.createElement('td');
+                td.textContent = replacePlaceholders(cellData.content || '', lotValues);
+
+                const borderWidth = cellData.borderWidth || 1;
+                const borderStyle = cellData.borderStyle || 'solid';
+                const borderColor = cellData.borderColor || '#000000';
+                const borderPosition = cellData.borderPosition || 'all';
+
+                let borderCss = '';
+                if (borderPosition === 'bottom') {
+                  borderCss = `border: none; border-bottom: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                } else if (borderPosition === 'top') {
+                  borderCss = `border: none; border-top: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                } else {
+                  borderCss = `border: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                }
+
+                td.style.cssText = `
+                  width: ${colWidths[c]}px;
+                  height: ${rowHeights[r]}px;
+                  box-sizing: border-box;
+                  overflow: hidden;
+                  background-color: ${cellData.bgColor || '#ffffff'};
+                  color: ${cellData.textColor || '#000000'};
+                  font-family: "${cellData.fontFamily || 'Arial'}", sans-serif;
+                  font-size: ${cellData.fontSize || 14}px;
+                  font-weight: ${cellData.bold ? '700' : '400'};
+                  font-style: ${cellData.italic ? 'italic' : 'normal'};
+                  text-decoration: ${cellData.underline ? 'underline' : 'none'};
+                  ${borderCss}
+                  padding: 0;
+                  text-align: ${cellData.textAlign || 'left'};
+                  vertical-align: middle;
+                `;
+
+                if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
+                if (cellData.rowSpan > 1) td.rowSpan = cellData.rowSpan;
+
+                tr.appendChild(td);
+              }
+              table.appendChild(tr);
+            }
+
+            tableContainer.appendChild(table);
+            pdfPage.appendChild(tableContainer);
+          });
+        }
+
+        // Render images
+        if (pageData.images) {
+          pageData.images.forEach(imgData => {
+            const imgEl = document.createElement('div');
+
+            // Determine image URL based on type
+            let imageUrl = '';
+            if (imgData.type === '{{lot.landscape}}') {
+              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_landscape.jpg`;
+            } else if (imgData.type === '{{lot.map}}') {
+              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_map.jpg`;
+            } else if (imgData.type === 'static' && imgData.url) {
+              imageUrl = imgData.url;
+            }
+
+            imgEl.style.cssText = `
+              position: absolute;
+              left: ${imgData.x}px;
+              top: ${imgData.y}px;
+              width: ${imgData.width}px;
+              height: ${imgData.height}px;
+              background-image: url("${imageUrl}");
+              background-size: cover;
+              background-position: center;
+              background-repeat: no-repeat;
+              ${imgData.borderWidth > 0 ? `border: ${imgData.borderWidth}px solid ${imgData.borderColor || '#000000'}; box-sizing: border-box;` : ''}
+              ${imgData.zIndex !== undefined ? `z-index: ${imgData.zIndex};` : ''}
+            `;
+            pdfPage.appendChild(imgEl);
+          });
+        }
+      }
+
+      return pdfPage;
+    }
+
+    try {
+      // Step 1: Fetch template for this community group
+      progressText.textContent = 'Cargando plantilla...';
+      const templatePath = `/agora/pdf/${communityGroup}/pdf-template.json`;
+
+      let template = { pages: {}, settings: {} };
+      try {
+        const response = await fetch(templatePath);
+        if (response.ok) {
+          template = await response.json();
+        } else {
+          throw new Error(`Template not found: ${templatePath}`);
+        }
+      } catch (err) {
+        console.error('Could not load PDF template:', err);
+        window.showToaster?.('Error: No se pudo cargar la plantilla PDF');
+        document.body.removeChild(progressOverlay);
+        document.body.removeChild(pdfContainer);
+        return;
+      }
+
+      // Get settings from template or use defaults
+      const settings = template.settings || {};
+      const totalPages = settings.totalPages || Object.keys(template.pages || {}).length || 8;
+
+      // Calculate lot values with financing options
+      const lotValues = getLotValues(lot, dynamicText, financing);
+
+      // Step 2: Preload ALL images in parallel
+      progressText.textContent = 'Cargando imágenes...';
+      progressBar.style.width = '10%';
+
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImagePrefix = settings.lotImagePrefix || '';
+
+      const imagePromises = [];
+
+      // Preload page backgrounds
+      for (let i = 1; i <= totalPages; i++) {
+        const pageNum = String(i).padStart(3, '0');
+        imagePromises.push(new Promise(resolve => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = resolve;
+          img.onerror = resolve;
+          img.src = `${pageBackgroundBaseUrl}page.${pageNum}.png`;
+        }));
+      }
+
+      // Preload lot-specific images (landscape and map)
+      const lotNum = lotValues['lot.number'];
+      if (lotNum) {
+        ['landscape', 'map'].forEach(type => {
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = resolve;
+            img.onerror = resolve;
+            img.src = `${lotImageBaseUrl}${lotImagePrefix}${lotNum}_${type}.jpg`;
+          }));
+        });
+
+        // Preload any static images from the template
+        Object.values(template.pages || {}).forEach(pageData => {
+          (pageData.images || []).forEach(imgData => {
+            if (imgData.type === 'static' && imgData.url) {
+              imagePromises.push(new Promise(resolve => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = resolve;
+                img.onerror = resolve;
+                img.src = imgData.url;
+              }));
+            }
+          });
+        });
+      }
+
+      await Promise.all(imagePromises);
+      progressBar.style.width = '40%';
+
+      // Step 3: Generate PDF pages sequentially (required by jsPDF)
+      progressText.textContent = 'Generando PDF...';
+
+      // Use page dimensions from template or defaults
+      const pageWidth = settings.pageWidth || 1224;
+      const pageHeight = settings.pageHeight || 1584;
+      const orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
+
+      const worker = html2pdf().set({
+        margin: 0,
+        filename: `Agora-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
+        image: { type: 'jpeg', quality: 1 },
+        html2canvas: { scale: 1, useCORS: true },
+        jsPDF: { unit: 'px', format: [pageWidth, pageHeight], orientation: orientation }
+      });
+
+      for (let i = 1; i <= totalPages; i++) {
+        progressText.textContent = `Renderizando página ${i} de ${totalPages}`;
+        progressBar.style.width = `${40 + (i / totalPages) * 55}%`;
+
+        const pageNum = String(i).padStart(3, '0');
+
+        // Create page with template elements
+        const page = createPage(pageNum, template, lotValues, settings);
+        pdfContainer.innerHTML = '';
+        pdfContainer.appendChild(page);
+
+        if (i === 1) {
+          await worker.from(page).toContainer().toCanvas().toPdf();
+        } else {
+          await worker.get('pdf').then(pdf => {
+            pdf.addPage([pageWidth, pageHeight], orientation);
+          });
+          await worker.from(page).toContainer().toCanvas().toPdf();
+        }
+      }
+
+      // Save the final PDF
+      progressText.textContent = 'Descargando...';
+      progressBar.style.width = '100%';
+      await worker.save();
+
+      // Clean up
+      document.body.removeChild(pdfContainer);
+      document.body.removeChild(progressOverlay);
+
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      window.showToaster?.('Error al generar el PDF');
+      if (document.getElementById('pdf-progress-overlay')) {
+        document.body.removeChild(progressOverlay);
+      }
+      if (document.getElementById('pdf-generation-container')) {
+        document.body.removeChild(pdfContainer);
+      }
+    }
+  }
+
+  // Expose to global scope
+  window.generateMultiPagePDF = generateMultiPagePDF;
 })();
 </script>
 
