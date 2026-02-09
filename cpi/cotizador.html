@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cotización Especial - La-La Land</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'STIX Two Text', serif;
+      background: #f5f3f0;
+      color: #333;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 660px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    h1 {
+      text-align: center;
+      color: #8f5e38;
+      font-size: 28px;
+      margin-bottom: 30px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #8f5e38;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e4e3df;
+    }
+    .field-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 10px;
+    }
+    .field-row label {
+      flex: 0 0 170px;
+      font-size: 14px;
+      color: #5d5d5d;
+      text-align: right;
+    }
+    .field-row input, .field-row select {
+      flex: 1;
+      padding: 8px 12px;
+      border: 2px solid #e4e3df;
+      border-radius: 6px;
+      font-size: 16px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .field-row input:focus, .field-row select:focus {
+      border-color: #8f5e38;
+    }
+    .field-row input[readonly] {
+      background: #f9f8f6;
+      color: #8f5e38;
+      font-weight: 700;
+      border-color: transparent;
+    }
+    .unit {
+      font-size: 14px;
+      color: #999;
+      flex-shrink: 0;
+    }
+    .pct-row {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      gap: 6px;
+    }
+    .pct-row input[type="number"] {
+      width: 75px;
+      flex: 0 0 75px;
+    }
+    .pct-row .amount {
+      font-weight: 700;
+      color: #8f5e38;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    .btn-generate {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      background: #8f5e38;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 18px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 10px;
+    }
+    .btn-generate:hover { background: #7a5030; }
+    .btn-generate:disabled { background: #ccc; cursor: not-allowed; }
+    .error-msg {
+      color: #d32f2f;
+      font-size: 13px;
+      margin-top: -8px;
+      margin-bottom: 8px;
+      padding-left: 180px;
+      display: none;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Cotización Especial</h1>
+
+    <div id="loadingMsg" class="loading">Cargando datos de lotes...</div>
+
+    <div id="formContent" style="display: none;">
+
+      <!-- Lot Info -->
+      <div class="card">
+        <div class="card-title">Información del Lote</div>
+
+        <div class="field-row">
+          <label>Lote</label>
+          <select id="lotNumber"><option value="">Seleccionar lote...</option></select>
+        </div>
+
+        <div class="field-row">
+          <label>Categoría</label>
+          <input type="text" id="lotCategory" readonly>
+        </div>
+
+        <div class="field-row">
+          <label>Superficie</label>
+          <input type="text" id="lotSize" readonly>
+          <span class="unit">m²</span>
+        </div>
+
+        <div class="field-row">
+          <label>Precio / m²</label>
+          <input type="text" id="priceM2" readonly>
+        </div>
+
+        <div class="field-row">
+          <label>Valor Total</label>
+          <input type="text" id="totalPrice" readonly>
+        </div>
+
+        <div class="field-row">
+          <label>Descuento</label>
+          <div class="pct-row">
+            <input type="number" id="descuentoPct" value="0" min="0" max="100" step="0.5">
+            <span class="unit">%</span>
+            <span class="amount" id="descuentoAmountDisplay">$0.00</span>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Precio Final</label>
+          <input type="text" id="precioFinal" readonly>
+        </div>
+      </div>
+
+      <!-- Client -->
+      <div class="card">
+        <div class="card-title">Datos del Cliente</div>
+        <div class="field-row">
+          <label>Nombre</label>
+          <input type="text" id="clientName" value="Estimada Familia">
+        </div>
+      </div>
+
+      <!-- Payment -->
+      <div class="card">
+        <div class="card-title">Esquema de Pago</div>
+
+        <div class="field-row">
+          <label>Separación</label>
+          <div class="pct-row">
+            <span class="unit">$</span>
+            <input type="number" id="separacion" value="0" min="0" step="1000">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Enganche</label>
+          <div class="pct-row">
+            <input type="number" id="enganchePct" value="20" min="0" max="100" step="0.5">
+            <span class="unit">%</span>
+            <span class="amount" id="engancheAmountDisplay">$0.00</span>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Mensualidades</label>
+          <div class="pct-row">
+            <input type="number" id="mensualidadesPct" value="30" min="0" max="100" step="0.5">
+            <span class="unit">%</span>
+            <span class="amount" id="mensualidadesTotalDisplay">$0.00</span>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Núm. Mensualidades</label>
+          <input type="number" id="numMensualidades" value="24" min="1" max="120" style="width:80px; flex:0 0 80px;">
+        </div>
+
+        <div class="field-row">
+          <label>Mensualidad / mes</label>
+          <input type="text" id="mensualidadMes" readonly>
+        </div>
+
+        <div class="field-row">
+          <label>Núm. Anualidades</label>
+          <input type="number" id="numAnualidades" value="2" min="0" max="10" style="width:80px; flex:0 0 80px;">
+        </div>
+
+        <div class="field-row">
+          <label>Monto por Anualidad</label>
+          <div class="pct-row">
+            <span class="unit">$</span>
+            <input type="number" id="anualidad" value="0" min="0" step="1000">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Total Anualidades</label>
+          <input type="text" id="anualidadesTotalDisplay" readonly>
+        </div>
+
+        <div class="field-row">
+          <label>Escrituración</label>
+          <div class="pct-row">
+            <span class="amount" id="escrituracionPctDisplay">50%</span>
+            <span class="amount" id="escrituracionDisplay">$0.00</span>
+          </div>
+        </div>
+
+        <div class="error-msg" id="errorMsg"></div>
+
+        <div class="field-row" style="margin-top:20px; padding-top:16px; border-top:2px solid #e4e3df;">
+          <label style="font-weight:700; font-size:16px; color:#8f5e38;">Total</label>
+          <input type="text" id="totalDisplay" readonly style="font-size:18px;">
+        </div>
+      </div>
+
+      <button class="btn-generate" id="generateBtn" onclick="generatePDF()">Generar PDF</button>
+    </div>
+  </div>
+
+  <script src="client-config.js"></script>
+  <script>
+    const CURRENT_CLIENT = 'cpi';
+    const CONFIG = getClientConfig(CURRENT_CLIENT);
+
+    let allLots = [];
+    let lotMap = {};
+
+    // --- Utilities ---
+
+    function formatCurrency(num) {
+      return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatNumber(num) {
+      return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function extractLotNumber(lotName) {
+      if (!lotName) return '';
+      const prefixes = Object.values(CONFIG.lotPrefixes || {});
+      for (const prefix of prefixes) {
+        if (lotName.startsWith(prefix)) {
+          return lotName.substring(prefix.length);
+        }
+      }
+      return lotName;
+    }
+
+    function calculateCategory(priceM2) {
+      const uniquePrices = [...new Set(allLots.map(l =>
+        parseFloat(String(l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+      ))].filter(p => p > 0).sort((a, b) => b - a);
+      const categories = ['AAA+', 'AAA', 'AA', 'A'];
+      const priceIndex = uniquePrices.findIndex(p => Math.abs(p - priceM2) < 0.01);
+      return priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+    }
+
+    function replacePlaceholders(text, values) {
+      if (!text) return '';
+      return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+        return values[key.trim()] !== undefined ? values[key.trim()] : match;
+      });
+    }
+
+    // --- Lot selection ---
+
+    function onLotChange() {
+      const lotName = document.getElementById('lotNumber').value;
+      const lot = lotMap[lotName];
+      if (lot) {
+        const size = parseFloat(String(lot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+        const pm2 = parseFloat(String(lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+        document.getElementById('lotCategory').value = calculateCategory(pm2);
+        document.getElementById('lotSize').value = formatNumber(size);
+        document.getElementById('priceM2').value = formatCurrency(pm2);
+      } else {
+        document.getElementById('lotCategory').value = '';
+        document.getElementById('lotSize').value = '';
+        document.getElementById('priceM2').value = '';
+      }
+      recalculate();
+    }
+
+    // --- Recalculate ---
+
+    function recalculate() {
+      const lotName = document.getElementById('lotNumber').value;
+      const lot = lotMap[lotName];
+
+      const size = lot ? (parseFloat(String(lot.rSize || '0').replace(/[^0-9.]/g, '')) || 0) : 0;
+      const pm2 = lot ? (parseFloat(String(lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0) : 0;
+      const totalPrice = size * pm2;
+
+      const descuentoPct = parseFloat(document.getElementById('descuentoPct').value) || 0;
+      const descuentoAmount = totalPrice * (descuentoPct / 100);
+      const precioFinal = totalPrice - descuentoAmount;
+
+      const separacion = parseFloat(document.getElementById('separacion').value) || 0;
+      const anualidad = parseFloat(document.getElementById('anualidad').value) || 0;
+      const numAnualidades = parseInt(document.getElementById('numAnualidades').value) || 0;
+      const anualidadesTotal = anualidad * numAnualidades;
+
+      const remaining = precioFinal - separacion - anualidadesTotal;
+
+      const enganchePct = parseFloat(document.getElementById('enganchePct').value) || 0;
+      const mensualidadesPct = parseFloat(document.getElementById('mensualidadesPct').value) || 0;
+      const numMensualidades = parseInt(document.getElementById('numMensualidades').value) || 1;
+
+      const engancheAmount = remaining * (enganchePct / 100);
+      const mensualidadesTotal = remaining * (mensualidadesPct / 100);
+      const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
+
+      const escrituracionPct = 100 - enganchePct - mensualidadesPct;
+      const escrituracion = remaining * (escrituracionPct / 100);
+
+      // Update UI
+      document.getElementById('totalPrice').value = formatCurrency(totalPrice);
+      document.getElementById('descuentoAmountDisplay').textContent = formatCurrency(descuentoAmount);
+      document.getElementById('precioFinal').value = formatCurrency(precioFinal);
+      document.getElementById('engancheAmountDisplay').textContent = formatCurrency(engancheAmount);
+      document.getElementById('mensualidadesTotalDisplay').textContent = formatCurrency(mensualidadesTotal);
+      document.getElementById('mensualidadMes').value = formatCurrency(mensualidadMes);
+      document.getElementById('anualidadesTotalDisplay').value = formatCurrency(anualidadesTotal);
+      document.getElementById('escrituracionPctDisplay').textContent = escrituracionPct.toFixed(1) + '%';
+      document.getElementById('escrituracionDisplay').textContent = formatCurrency(escrituracion);
+      document.getElementById('totalDisplay').value = formatCurrency(precioFinal);
+
+      // Validation
+      const errorMsg = document.getElementById('errorMsg');
+      if (escrituracionPct < 0) {
+        errorMsg.textContent = 'Error: Enganche% + Mensualidades% excede 100%';
+        errorMsg.style.display = 'block';
+      } else if (remaining < 0) {
+        errorMsg.textContent = 'Error: Separación + Anualidades exceden el Precio Final';
+        errorMsg.style.display = 'block';
+      } else {
+        errorMsg.style.display = 'none';
+      }
+    }
+
+    // --- PDF Generation ---
+
+    function createPage(pageNum, template, lotValues) {
+      const pdfPage = document.createElement('div');
+      pdfPage.style.cssText = `
+        width: 1224px;
+        height: 1584px;
+        position: relative;
+        background-image: url("https://la-la.land/cpi/pdf/page.${pageNum}.png");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: top left;
+      `;
+
+      const pageIndex = parseInt(pageNum, 10);
+      const pageData = template?.pages?.[pageIndex];
+      if (!pageData) return pdfPage;
+
+      // Text boxes
+      if (pageData.textBoxes) {
+        pageData.textBoxes.forEach(tb => {
+          const el = document.createElement('div');
+          el.textContent = replacePlaceholders(tb.content, lotValues);
+          el.style.cssText = `
+            position: absolute;
+            left: ${tb.x}px; top: ${tb.y}px;
+            ${tb.width ? `width: ${tb.width}px;` : ''}
+            ${tb.height ? `height: ${tb.height}px;` : ''}
+            font-size: ${tb.fontSize || 24}px;
+            font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+            color: ${tb.color || '#000000'};
+            font-weight: ${tb.bold ? '700' : '400'};
+            font-style: ${tb.italic ? 'italic' : 'normal'};
+            text-decoration: ${tb.underline ? 'underline' : 'none'};
+            text-align: ${tb.textAlign || 'left'};
+            white-space: pre-wrap;
+          `;
+          pdfPage.appendChild(el);
+        });
+      }
+
+      // Tables
+      if (pageData.tables) {
+        pageData.tables.forEach(tableData => {
+          const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
+          const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
+          const totalWidth = colWidths.reduce((s, w) => s + w, 0);
+
+          const container = document.createElement('div');
+          container.style.cssText = `position: absolute; left: ${tableData.x}px; top: ${tableData.y}px;`;
+
+          const table = document.createElement('table');
+          table.style.cssText = `border-collapse: collapse; table-layout: fixed; width: ${totalWidth}px;`;
+
+          for (let r = 0; r < tableData.rows; r++) {
+            const tr = document.createElement('tr');
+            tr.style.height = rowHeights[r] + 'px';
+
+            for (let c = 0; c < tableData.cols; c++) {
+              const cell = tableData.cells?.[r]?.[c];
+              if (!cell || cell.hidden) continue;
+
+              const td = document.createElement('td');
+              td.textContent = replacePlaceholders(cell.content || '', lotValues);
+
+              const bw = cell.borderWidth || 1;
+              const bs = cell.borderStyle || 'solid';
+              const bc = cell.borderColor || '#000000';
+              const bp = cell.borderPosition || 'all';
+
+              let borderCss = '';
+              if (bp === 'bottom') borderCss = `border: none; border-bottom: ${bw}px ${bs} ${bc};`;
+              else if (bp === 'top') borderCss = `border: none; border-top: ${bw}px ${bs} ${bc};`;
+              else if (bp === 'none') borderCss = 'border: none;';
+              else borderCss = `border: ${bw}px ${bs} ${bc};`;
+
+              td.style.cssText = `
+                width: ${colWidths[c]}px; height: ${rowHeights[r]}px;
+                box-sizing: border-box; overflow: hidden;
+                background-color: ${cell.bgColor || '#ffffff'};
+                color: ${cell.textColor || '#000000'};
+                font-family: "${cell.fontFamily || 'Arial'}", sans-serif;
+                font-size: ${cell.fontSize || 14}px;
+                font-weight: ${cell.bold ? '700' : '400'};
+                font-style: ${cell.italic ? 'italic' : 'normal'};
+                text-decoration: ${cell.underline ? 'underline' : 'none'};
+                ${borderCss}
+                padding: 0;
+                text-align: ${cell.textAlign || 'left'};
+                vertical-align: middle;
+              `;
+
+              if (cell.colSpan > 1) td.colSpan = cell.colSpan;
+              if (cell.rowSpan > 1) td.rowSpan = cell.rowSpan;
+              tr.appendChild(td);
+            }
+            table.appendChild(tr);
+          }
+
+          container.appendChild(table);
+          pdfPage.appendChild(container);
+        });
+      }
+
+      // Images
+      if (pageData.images) {
+        pageData.images.forEach(imgData => {
+          let imageUrl = '';
+          if (imgData.type === '{{lot.landscape}}') {
+            imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_landscape.jpg`;
+          } else if (imgData.type === '{{lot.map}}') {
+            imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_map.jpg`;
+          } else if (imgData.type === 'static' && imgData.url) {
+            imageUrl = imgData.url;
+          }
+
+          const el = document.createElement('div');
+          el.style.cssText = `
+            position: absolute;
+            left: ${imgData.x}px; top: ${imgData.y}px;
+            width: ${imgData.width}px; height: ${imgData.height}px;
+            background-image: url("${imageUrl}");
+            background-size: cover; background-position: center; background-repeat: no-repeat;
+          `;
+          pdfPage.appendChild(el);
+        });
+      }
+
+      return pdfPage;
+    }
+
+    function buildLotValues() {
+      const lotName = document.getElementById('lotNumber').value;
+      const lot = lotMap[lotName];
+      if (!lot) return null;
+
+      const size = parseFloat(String(lot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+      const pm2 = parseFloat(String(lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+      const totalPrice = size * pm2;
+      const lotNum = extractLotNumber(lotName);
+      const category = calculateCategory(pm2);
+
+      const descuentoPct = parseFloat(document.getElementById('descuentoPct').value) || 0;
+      const descuentoAmount = totalPrice * (descuentoPct / 100);
+      const precioFinal = totalPrice - descuentoAmount;
+
+      const separacion = parseFloat(document.getElementById('separacion').value) || 0;
+      const anualidad = parseFloat(document.getElementById('anualidad').value) || 0;
+      const numAnualidades = parseInt(document.getElementById('numAnualidades').value) || 0;
+      const anualidadesTotal = anualidad * numAnualidades;
+
+      const remaining = precioFinal - separacion - anualidadesTotal;
+
+      const enganchePct = parseFloat(document.getElementById('enganchePct').value) || 0;
+      const mensualidadesPct = parseFloat(document.getElementById('mensualidadesPct').value) || 0;
+      const numMensualidades = parseInt(document.getElementById('numMensualidades').value) || 1;
+
+      const engancheAmount = remaining * (enganchePct / 100);
+      const mensualidadesTotal = remaining * (mensualidadesPct / 100);
+      const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
+
+      const escrituracionPct = 100 - enganchePct - mensualidadesPct;
+      const escrituracion = remaining * (escrituracionPct / 100);
+
+      const clientName = document.getElementById('clientName').value || 'Estimada Familia';
+
+      return {
+        'dynamicText': clientName,
+        'lot.number': lotNum,
+        'lot.category': category,
+        'lot.size': formatNumber(size) + ' m²',
+        'lot.pricePerM2': formatCurrency(pm2),
+        'lot.totalPrice': formatCurrency(totalPrice),
+        'lot.descuentoPct': descuentoPct + '%',
+        'lot.descuentoAmount': formatCurrency(descuentoAmount),
+        'lot.precioFinal': formatCurrency(precioFinal),
+        'lot.clientName': clientName,
+        'lot.separacion': formatCurrency(separacion),
+        'lot.enganchePct': enganchePct + '%',
+        'lot.engancheAmount': formatCurrency(engancheAmount),
+        'lot.mensualidadesPct': mensualidadesPct + '%',
+        'lot.mensualidadesTotal': formatCurrency(mensualidadesTotal),
+        'lot.numMensualidades': numMensualidades.toString(),
+        'lot.mensualidadMes': formatCurrency(mensualidadMes),
+        'lot.anualidad': formatCurrency(anualidad),
+        'lot.numAnualidades': numAnualidades.toString(),
+        'lot.anualidadesTotal': formatCurrency(anualidadesTotal),
+        'lot.escrituracionPct': escrituracionPct.toFixed(1) + '%',
+        'lot.escrituracion': formatCurrency(escrituracion)
+      };
+    }
+
+    async function generatePDF() {
+      const lotValues = buildLotValues();
+      if (!lotValues) {
+        alert('Seleccione un lote primero.');
+        return;
+      }
+
+      // Validation
+      const enganchePct = parseFloat(document.getElementById('enganchePct').value) || 0;
+      const mensualidadesPct = parseFloat(document.getElementById('mensualidadesPct').value) || 0;
+      if (enganchePct + mensualidadesPct > 100) {
+        alert('Enganche% + Mensualidades% no puede exceder 100%');
+        return;
+      }
+
+      // Progress overlay
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.7); display: flex; flex-direction: column;
+        align-items: center; justify-content: center; z-index: 99999;
+      `;
+      overlay.innerHTML = `
+        <div style="background:white; padding:32px 48px; border-radius:12px; text-align:center; font-family:Arial,sans-serif;">
+          <div style="font-size:18px; font-weight:600; margin-bottom:16px;">Generando PDF...</div>
+          <div id="pdf-progress-text" style="font-size:14px; color:#666; margin-bottom:12px;">Cargando plantilla...</div>
+          <div style="width:200px; height:8px; background:#eee; border-radius:4px; overflow:hidden;">
+            <div id="pdf-progress-bar" style="width:0%; height:100%; background:#8f5e38; transition:width 0.3s;"></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const progressText = document.getElementById('pdf-progress-text');
+      const progressBar = document.getElementById('pdf-progress-bar');
+
+      try {
+        // Load template
+        const response = await fetch('/cpi/pdf/pdf-template-especial.json');
+        const template = await response.json();
+        progressBar.style.width = '5%';
+
+        // Preload images
+        progressText.textContent = 'Cargando imágenes...';
+        const imagePromises = [];
+
+        for (let i = 1; i <= 8; i++) {
+          const pageNum = String(i).padStart(3, '0');
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = resolve;
+            img.onerror = resolve;
+            img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
+          }));
+        }
+
+        const lotNum = lotValues['lot.number'];
+        if (lotNum) {
+          ['landscape', 'map'].forEach(type => {
+            imagePromises.push(new Promise(resolve => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = resolve;
+              img.onerror = resolve;
+              img.src = `/cpi/pdf/lotcpi1-${lotNum}_${type}.jpg`;
+            }));
+          });
+        }
+
+        // Preload static images from template
+        Object.values(template.pages || {}).forEach(pageData => {
+          (pageData.images || []).forEach(imgData => {
+            if (imgData.type === 'static' && imgData.url) {
+              imagePromises.push(new Promise(resolve => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = resolve;
+                img.onerror = resolve;
+                img.src = imgData.url;
+              }));
+            }
+          });
+        });
+
+        await Promise.all(imagePromises);
+        progressBar.style.width = '40%';
+
+        // PDF container
+        const pdfContainer = document.createElement('div');
+        pdfContainer.style.cssText = 'position:absolute; left:-9999px; top:0;';
+        document.body.appendChild(pdfContainer);
+
+        // Generate pages
+        progressText.textContent = 'Generando PDF...';
+
+        const worker = html2pdf().set({
+          margin: 0,
+          filename: 'CPI-cotizacion-especial.pdf',
+          image: { type: 'jpeg', quality: 1 },
+          html2canvas: { scale: 1, useCORS: true },
+          jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
+        });
+
+        for (let i = 1; i <= 8; i++) {
+          progressText.textContent = `Renderizando página ${i} de 8`;
+          progressBar.style.width = `${40 + (i / 8) * 55}%`;
+
+          const pageNum = String(i).padStart(3, '0');
+          const page = createPage(pageNum, template, lotValues);
+          pdfContainer.innerHTML = '';
+          pdfContainer.appendChild(page);
+
+          if (i === 1) {
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          } else {
+            await worker.get('pdf').then(pdf => {
+              pdf.addPage([1224, 1584], 'portrait');
+            });
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          }
+        }
+
+        progressText.textContent = 'Descargando...';
+        progressBar.style.width = '100%';
+        await worker.save();
+
+        document.body.removeChild(pdfContainer);
+      } catch (err) {
+        console.error('PDF generation error:', err);
+        alert('Error generando PDF: ' + err.message);
+      } finally {
+        document.body.removeChild(overlay);
+      }
+    }
+
+    // --- Init ---
+
+    async function init() {
+      try {
+        // Load supabase
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        document.head.appendChild(script);
+        await new Promise((resolve, reject) => {
+          script.onload = resolve;
+          script.onerror = reject;
+        });
+
+        const cfg = await fetch('https://la-la.land/sb_config.json').then(r => r.json());
+        const client = supabase.createClient(cfg.url, cfg.key);
+
+        // Fetch lots
+        let start = 0;
+        const BATCH_SIZE = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data: batch, error } = await client
+            .from('lots')
+            .select('lot_name, rSize, price_m2, availability')
+            .eq('client_id', CURRENT_CLIENT)
+            .range(start, start + BATCH_SIZE - 1);
+
+          if (error || !batch || batch.length === 0) {
+            hasMore = false;
+          } else {
+            allLots = [...allLots, ...batch];
+            start += BATCH_SIZE;
+            hasMore = batch.length === BATCH_SIZE;
+          }
+        }
+
+        // Populate dropdown
+        const select = document.getElementById('lotNumber');
+        const sorted = allLots
+          .map(l => ({ ...l, num: extractLotNumber(l.lot_name) }))
+          .sort((a, b) => {
+            const an = parseInt(a.num) || 0;
+            const bn = parseInt(b.num) || 0;
+            return an - bn;
+          });
+
+        sorted.forEach(lot => {
+          const opt = document.createElement('option');
+          opt.value = lot.lot_name;
+          opt.textContent = lot.num;
+          select.appendChild(opt);
+          lotMap[lot.lot_name] = lot;
+        });
+
+        // Pre-select from URL param
+        const urlParams = new URLSearchParams(window.location.search);
+        const lotParam = urlParams.get('lot');
+        if (lotParam) {
+          const match = sorted.find(l => l.num === lotParam);
+          if (match) {
+            select.value = match.lot_name;
+            onLotChange();
+          }
+        }
+
+        // Show form
+        document.getElementById('loadingMsg').style.display = 'none';
+        document.getElementById('formContent').style.display = 'block';
+
+      } catch (err) {
+        console.error('Init error:', err);
+        document.getElementById('loadingMsg').textContent = 'Error cargando datos. Recarga la página.';
+      }
+    }
+
+    // Event listeners
+    document.getElementById('lotNumber').addEventListener('change', onLotChange);
+    ['descuentoPct', 'separacion', 'enganchePct', 'mensualidadesPct',
+     'numMensualidades', 'anualidad', 'numAnualidades'].forEach(id => {
+      document.getElementById(id).addEventListener('input', recalculate);
+    });
+
+    init();
+  </script>
+</body>
+</html>
