@@ -43,11 +43,10 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 4: Delete the mask layer (selection stays active)
+-- Step 4: Delete the mask layer (selection stays active, focus drops to image layer)
 tell application "System Events"
 	tell process "Pixelmator Pro"
-		-- Edit > Delete or backspace to remove the mask layer
-		key code 51 -- backspace
+		click menu item "Delete" of menu "Layer" of menu bar 1
 		delay 0.3
 	end tell
 end tell
