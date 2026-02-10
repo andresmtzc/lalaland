@@ -40,6 +40,7 @@ tell application "Pixelmator Pro"
 end tell
 
 set processedCount to 0
+set startTime to current date
 
 repeat with i from 1 to processCount
 	set imageName to item i of imageNames
@@ -129,4 +130,15 @@ repeat with i from 1 to processCount
 	set processedCount to processedCount + 1
 end repeat
 
-display dialog "Done! Processed " & processedCount & " of " & totalCount & " images." buttons {"OK"} default button "OK"
+set endTime to current date
+set elapsedSecs to (endTime - startTime)
+set elapsedMin to elapsedSecs div 60
+set elapsedRemSecs to elapsedSecs mod 60
+set avgSecs to 0
+if processedCount > 0 then set avgSecs to (round (elapsedSecs / processedCount) rounding to nearest)
+
+set summary to "Processed " & processedCount & " of " & totalCount & " images." & return
+set summary to summary & "Total time: " & elapsedMin & "m " & elapsedRemSecs & "s" & return
+set summary to summary & "Avg per image: " & avgSecs & "s"
+
+display dialog summary buttons {"OK"} default button "OK"
