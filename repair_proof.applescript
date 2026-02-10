@@ -1,5 +1,5 @@
 -- Single Image Repair — Proof of Concept
--- Flow: open image → add mask layer → load selection → delete mask → repair selection
+-- Flow: open image → add mask layer → load selection → switch to image layer → repair selection
 --
 -- BEFORE RUNNING:
 --   1. System Settings > Privacy & Security > Accessibility → enable Script Editor (or Terminal)
@@ -43,20 +43,13 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 4: Dump Arrange menu items to find the layer delete command
+-- Step 4: Switch to the image layer below the mask layer (Option + [)
 tell application "System Events"
 	tell process "Pixelmator Pro"
-		set arrangeItems to name of every menu item of menu "Arrange" of menu bar 1
+		key code 33 using {option down} -- Option + [ = select layer below
+		delay 0.3
 	end tell
 end tell
-set itemList to ""
-repeat with i in arrangeItems
-	if i is not missing value then
-		set itemList to itemList & i & return
-	end if
-end repeat
-display dialog "Arrange menu items:" & return & itemList buttons {"OK"} default button "OK"
-return -- stop here
 
 -- Step 5: Select the Repair tool
 tell application "System Events"
