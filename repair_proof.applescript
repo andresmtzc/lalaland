@@ -60,20 +60,60 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 6: Open Accessibility Inspector and pause so you can find the "Repair Selection" button path
-tell application "Accessibility Inspector" to activate
-delay 1
+-- Step 6: Dump the UI hierarchy to find the "Repair Selection" button
+-- No Accessibility Inspector needed — this writes to a file on your Desktop
+tell application "System Events"
+	tell process "Pixelmator Pro"
+		set frontmost to true
+		delay 0.3
 
-display dialog "Accessibility Inspector is open." & return & return & ¬
-	"1. Click the target icon (crosshair) in Accessibility Inspector" & return & ¬
-	"2. Hover over the \"Repair Selection\" button in Pixelmator Pro" & return & ¬
-	"3. Note the element hierarchy shown in the inspector" & return & return & ¬
-	"Click OK when done inspecting." buttons {"OK"} default button "OK"
+		-- Walk the entire window and collect every UI element's role + name
+		set uiDump to ""
+		set win to window 1
+		set uiDump to my dumpElements(win, 0)
+	end tell
+end tell
 
--- Bring Pixelmator back to front
-tell application "Pixelmator Pro" to activate
-delay 0.3
+-- Write the dump to Desktop so you can send it to me
+set dumpPath to (POSIX path of (path to desktop)) & "pixelmator_ui_dump.txt"
+do shell script "echo " & quoted form of uiDump & " > " & quoted form of dumpPath
 
--- TODO: Replace this with the real element path from Accessibility Inspector
--- Example: click button "Repair Selection" of group X of scroll area Y of window 1
-display dialog "Paste the element path here in the script, then re-run." buttons {"OK"} default button "OK"
+display dialog "UI dump saved to:" & return & dumpPath & return & return & "Send me the contents of that file and I'll wire up the last step." buttons {"OK"} default button "OK"
+
+-- Helper: recursively dump UI element tree
+on dumpElements(parentElement, depth)
+	set indent to ""
+	repeat depth times
+		set indent to indent & "  "
+	end repeat
+
+	set output to ""
+	tell application "System Events"
+		try
+			set elemRole to role of parentElement
+		on error
+			set elemRole to "?"
+		end try
+		try
+			set elemName to name of parentElement
+		on error
+			set elemName to ""
+		end try
+		try
+			set elemDesc to description of parentElement
+		on error
+			set elemDesc to ""
+		end try
+
+		set output to output & indent & elemRole & " | " & elemName & " | " & elemDesc & "
+"
+
+		try
+			set childElements to UI elements of parentElement
+			repeat with child in childElements
+				set output to output & my dumpElements(child, depth + 1)
+			end repeat
+		end try
+	end tell
+	return output
+end dumpElements
