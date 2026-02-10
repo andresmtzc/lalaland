@@ -43,9 +43,10 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 4: Select the image layer (bottom layer) via native scripting
+-- Step 4: Hide mask layer and select the image layer (bottom layer)
 tell application "Pixelmator Pro"
 	tell front document
+		set visible of layer 1 to false
 		set current layer to last layer
 	end tell
 	delay 0.3

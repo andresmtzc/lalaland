@@ -77,9 +77,10 @@ repeat with i from 1 to processCount
 		end tell
 	end tell
 
-	-- Step 4: Select the image layer (bottom layer)
+	-- Step 4: Hide mask layer and select the image layer (bottom layer)
 	tell application "Pixelmator Pro"
 		tell front document
+			set visible of layer 1 to false
 			set current layer to last layer
 		end tell
 		delay 0.3
@@ -108,13 +109,9 @@ repeat with i from 1 to processCount
 		end tell
 	end tell
 
-	-- Step 8: Hide mask layer and export
+	-- Step 8: Export
 	set exportFile to POSIX file exportPath
 	tell application "Pixelmator Pro"
-		tell front document
-			set visible of layer 1 to false
-		end tell
-		delay 0.3
 		if ext is "jpg" or ext is "jpeg" or ext is "JPG" or ext is "JPEG" then
 			export front document to exportFile as JPEG
 		else
