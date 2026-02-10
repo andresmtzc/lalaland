@@ -28,6 +28,17 @@ end if
 tell application "Pixelmator Pro" to activate
 delay 0.5
 
+-- Copy mask to clipboard once
+tell application "Pixelmator Pro"
+	open maskFile
+	delay 0.5
+	tell front document
+		select all
+		copy
+	end tell
+	close front document without saving
+end tell
+
 set processedCount to 0
 
 repeat with i from 1 to processCount
@@ -48,16 +59,8 @@ repeat with i from 1 to processCount
 		delay 1
 	end tell
 
-	-- Step 2: Add mask as a new layer
+	-- Step 2: Paste mask as a new layer (already in clipboard)
 	tell application "Pixelmator Pro"
-		open maskFile
-		delay 0.5
-		tell front document
-			select all
-			copy
-		end tell
-		close front document without saving
-		delay 0.3
 		tell front document
 			paste
 		end tell
