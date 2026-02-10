@@ -293,6 +293,255 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <div class="lot-details" id="lotDetails"></div>
 
+<!-- Cotizador Panel (hidden by default, shown when modal expands) -->
+<div id="cotizadorPanel" style="display:none; padding:16px; overflow-y:auto;">
+  <style>
+    #cotizadorPanel .cot-card {
+      background: white;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    #cotizadorPanel .cot-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #8f5e38;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #e4e3df;
+    }
+    #cotizadorPanel .cot-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+    #cotizadorPanel .cot-row label {
+      flex: 0 0 130px;
+      font-size: 13px;
+      color: #5d5d5d;
+      text-align: right;
+    }
+    #cotizadorPanel .cot-row input,
+    #cotizadorPanel .cot-row select {
+      flex: 1;
+      padding: 6px 10px;
+      border: 2px solid #e4e3df;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #faf9f7;
+    }
+    #cotizadorPanel .cot-row input:read-only {
+      background: #f0efec;
+      color: #888;
+    }
+    #cotizadorPanel .cot-row input:focus,
+    #cotizadorPanel .cot-row select:focus {
+      outline: none;
+      border-color: #8f5e38;
+    }
+    #cotizadorPanel .cot-pct {
+      display: flex;
+      align-items: center;
+      flex: 1;
+      gap: 6px;
+    }
+    #cotizadorPanel .cot-pct input {
+      width: 70px;
+      flex: 0 0 70px;
+      text-align: center;
+    }
+    #cotizadorPanel .cot-unit {
+      font-size: 13px;
+      color: #999;
+      flex: 0 0 auto;
+    }
+    #cotizadorPanel .cot-amount {
+      font-size: 13px;
+      color: #333;
+      flex: 1;
+      text-align: right;
+    }
+    #cotizadorPanel .cot-error {
+      display: none;
+      color: #d32f2f;
+      font-size: 13px;
+      padding: 6px 0;
+    }
+    #cotizadorPanel .cot-balancer-select {
+      padding: 4px 8px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: inherit;
+      background: white;
+    }
+    #cotizadorPanel .cot-generate-btn {
+      width: 100%;
+      padding: 14px;
+      background: #8f5e38;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    #cotizadorPanel .cot-generate-btn:hover {
+      background: #7a4f2e;
+    }
+    @media (max-width: 767px) {
+      #cotizadorPanel .cot-row label {
+        flex: 0 0 100px;
+        font-size: 12px;
+      }
+      #cotizadorPanel .cot-pct input {
+        width: 58px;
+        flex: 0 0 58px;
+      }
+    }
+  </style>
+
+  <!-- Lot Info -->
+  <div class="cot-card">
+    <div class="cot-card-title">Información del Lote</div>
+    <div class="cot-row">
+      <label>Lote</label>
+      <input type="text" id="cotLotNumber" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Categoría</label>
+      <input type="text" id="cotLotCategory" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Superficie</label>
+      <input type="text" id="cotLotSize" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Precio / m²</label>
+      <input type="text" id="cotPriceM2" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Valor Total</label>
+      <input type="text" id="cotTotalPrice" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Descuento</label>
+      <div class="cot-pct">
+        <input type="number" id="cotDescuentoPct" value="0" min="0" max="100" step="0.5">
+        <span class="cot-unit">%</span>
+        <span class="cot-amount" id="cotDescuentoAmountDisplay">$0.00</span>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Precio Final</label>
+      <input type="text" id="cotPrecioFinal" readonly>
+    </div>
+  </div>
+
+  <!-- Client -->
+  <div class="cot-card">
+    <div class="cot-card-title">Datos del Cliente</div>
+    <div class="cot-row">
+      <label>Nombre</label>
+      <input type="text" id="cotClientName" value="Estimada Familia">
+    </div>
+  </div>
+
+  <!-- Payment -->
+  <div class="cot-card">
+    <div class="cot-card-title" style="display:flex; justify-content:space-between; align-items:center;">
+      Esquema de Pago
+      <div style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:400; color:#5d5d5d;">
+        Ajustar:
+        <select id="cotBalancerField" class="cot-balancer-select">
+          <option value="cotSeparacionPct">Separación</option>
+          <option value="cotEnganchePct">Enganche</option>
+          <option value="cotMensualidadesPct">Mensualidades</option>
+          <option value="cotAnualidadesPct">Anualidades</option>
+          <option value="cotEscrituracionPct" selected>Escrituración</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="cot-row">
+      <label>Separación</label>
+      <div class="cot-pct">
+        <input type="number" id="cotSeparacionPct" value="0" min="0" max="100" step="0.5">
+        <span class="cot-unit">%</span>
+        <span class="cot-amount" id="cotSeparacionDisplay">$0.00</span>
+      </div>
+    </div>
+
+    <div class="cot-row">
+      <label>Enganche</label>
+      <div class="cot-pct">
+        <input type="number" id="cotEnganchePct" value="20" min="0" max="100" step="0.5">
+        <span class="cot-unit">%</span>
+        <span class="cot-amount" id="cotEngancheDisplay">$0.00</span>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Núm. Enganches</label>
+      <input type="number" id="cotNumEnganche" value="1" min="1" max="24" style="width:70px; flex:0 0 70px;">
+      <span class="cot-unit">→</span>
+      <span class="cot-amount" id="cotEnganchePerPayDisplay" style="font-weight:700; color:#8f5e38;">$0.00/pago</span>
+    </div>
+
+    <div class="cot-row">
+      <label>Mensualidades</label>
+      <div class="cot-pct">
+        <input type="number" id="cotMensualidadesPct" value="30" min="0" max="100" step="0.5">
+        <span class="cot-unit">%</span>
+        <span class="cot-amount" id="cotMensualidadesTotalDisplay">$0.00</span>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Núm. Mensualidades</label>
+      <input type="number" id="cotNumMensualidades" value="24" min="1" max="120" style="width:70px; flex:0 0 70px;">
+      <span class="cot-unit">→</span>
+      <span class="cot-amount" id="cotMensualidadMesDisplay" style="font-weight:700; color:#8f5e38;">$0.00/mes</span>
+    </div>
+
+    <div class="cot-row">
+      <label>Anualidades</label>
+      <div class="cot-pct">
+        <input type="number" id="cotAnualidadesPct" value="0" min="0" max="100" step="0.5">
+        <span class="cot-unit">%</span>
+        <span class="cot-amount" id="cotAnualidadesTotalDisplay">$0.00</span>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Núm. Anualidades</label>
+      <input type="number" id="cotNumAnualidades" value="2" min="1" max="10" style="width:70px; flex:0 0 70px;">
+      <span class="cot-unit">→</span>
+      <span class="cot-amount" id="cotAnualidadDisplay" style="font-weight:700; color:#8f5e38;">$0.00/pago</span>
+    </div>
+
+    <div class="cot-row">
+      <label>Escrituración</label>
+      <div class="cot-pct">
+        <input type="number" id="cotEscrituracionPct" value="50" min="0" max="100" step="0.5">
+        <span class="cot-unit">%</span>
+        <span class="cot-amount" id="cotEscrituracionDisplay">$0.00</span>
+      </div>
+    </div>
+
+    <div class="cot-error" id="cotErrorMsg"></div>
+
+    <div class="cot-row" style="margin-top:16px; padding-top:12px; border-top:2px solid #e4e3df;">
+      <label style="font-weight:700; font-size:15px; color:#8f5e38;">Total</label>
+      <input type="text" id="cotTotalDisplay" readonly style="font-size:16px; font-weight:700;">
+    </div>
+  </div>
+
+  <button class="cot-generate-btn" id="cotGenerateBtn">Generar PDF</button>
+</div>
+
 <!-- Calendly must be a sibling, not inside lotDetails -->
 <div id="calendlyEmbed" class="calendly-embed-container">
 
@@ -5941,10 +6190,9 @@ document.getElementById('authControls').classList.add('hide-in-detail');
         console.error('Payment view not available or lot data missing');
       }
     } else if (e.target.id === 'descargarPdfBtn') {
-      // Open Cotización Especial page
+      // Expand modal into cotizador mode
       e.stopPropagation();
-      const lotNum = lot?.number || '';
-      window.open('/cpi/cotizador.html?lot=' + encodeURIComponent(lotNum), '_blank');
+      openCotizadorInModal(lot);
     } else if (e.target.id === '__disabled_old_cotizar__') {
       // OLD PDF generation code (disabled - replaced by cotizador page)
       e.stopPropagation();
@@ -6398,6 +6646,17 @@ backButton.addEventListener('click', () => {
   const plusIcon = document.querySelector('.plus-button .plus-icon');
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const calendly = document.getElementById('calendlyEmbed');
+
+  // Handle cotizador back navigation
+  const cotPanel = document.getElementById('cotizadorPanel');
+  if (cotPanel && cotPanel.style.display !== 'none') {
+    cotPanel.style.display = 'none';
+    document.getElementById('lotDetails').style.display = 'block';
+    modal.classList.remove('expanded');
+    if (plusIcon) plusIcon.style.display = 'block';
+    if (minusIcon) minusIcon.style.display = 'none';
+    return;
+  }
 
   // 🟢 FIX: Handle 360 viewer back navigation FIRST
   if (modal.classList.contains('viewer-mode')) {
@@ -7258,6 +7517,424 @@ modalInfo.addEventListener('wheel', (e) => {
   });
 });
 
+// ===== COTIZADOR ESPECIAL (in-modal) =====
+
+const COT_PCT_FIELDS = ['cotSeparacionPct', 'cotEnganchePct', 'cotMensualidadesPct', 'cotAnualidadesPct', 'cotEscrituracionPct'];
+
+let cotCurrentLot = null;
+
+function cotFormatCurrency(num) {
+  return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function cotFormatNumber(num) {
+  return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function cotGetBalancer() {
+  return document.getElementById('cotBalancerField').value;
+}
+
+function cotOnBalancerChange() {
+  const balancer = cotGetBalancer();
+  COT_PCT_FIELDS.forEach(id => {
+    document.getElementById(id).readOnly = (id === balancer);
+  });
+  cotRecalculate();
+}
+
+function cotRecalculate() {
+  if (!cotCurrentLot) return;
+
+  const size = parseFloat(String(cotCurrentLot.size || cotCurrentLot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+  const pm2 = parseFloat(String(cotCurrentLot.priceM2 || cotCurrentLot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+  const totalPrice = size * pm2;
+
+  const descuentoPct = parseFloat(document.getElementById('cotDescuentoPct').value) || 0;
+  const descuentoAmount = totalPrice * (descuentoPct / 100);
+  const precioFinal = totalPrice - descuentoAmount;
+
+  const balancer = cotGetBalancer();
+  const otherSum = COT_PCT_FIELDS
+    .filter(id => id !== balancer)
+    .reduce((sum, id) => sum + (parseFloat(document.getElementById(id).value) || 0), 0);
+  const balancerValue = 100 - otherSum;
+  document.getElementById(balancer).value = balancerValue;
+
+  const separacionPct = parseFloat(document.getElementById('cotSeparacionPct').value) || 0;
+  const enganchePct = parseFloat(document.getElementById('cotEnganchePct').value) || 0;
+  const mensualidadesPct = parseFloat(document.getElementById('cotMensualidadesPct').value) || 0;
+  const anualidadesPct = parseFloat(document.getElementById('cotAnualidadesPct').value) || 0;
+  const escrituracionPct = parseFloat(document.getElementById('cotEscrituracionPct').value) || 0;
+
+  const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
+  const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
+  const numAnualidades = parseInt(document.getElementById('cotNumAnualidades').value) || 1;
+
+  const separacion = precioFinal * (separacionPct / 100);
+  const engancheAmount = precioFinal * (enganchePct / 100);
+  const enganche = numEnganche > 0 ? engancheAmount / numEnganche : 0;
+  const mensualidadesTotal = precioFinal * (mensualidadesPct / 100);
+  const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
+  const anualidadesTotal = precioFinal * (anualidadesPct / 100);
+  const anualidad = numAnualidades > 0 ? anualidadesTotal / numAnualidades : 0;
+  const escrituracion = precioFinal * (escrituracionPct / 100);
+
+  document.getElementById('cotTotalPrice').value = cotFormatCurrency(totalPrice);
+  document.getElementById('cotDescuentoAmountDisplay').textContent = cotFormatCurrency(descuentoAmount);
+  document.getElementById('cotPrecioFinal').value = cotFormatCurrency(precioFinal);
+
+  document.getElementById('cotSeparacionDisplay').textContent = cotFormatCurrency(separacion);
+  document.getElementById('cotEngancheDisplay').textContent = cotFormatCurrency(engancheAmount);
+  document.getElementById('cotEnganchePerPayDisplay').textContent = cotFormatCurrency(enganche) + '/pago';
+  document.getElementById('cotMensualidadesTotalDisplay').textContent = cotFormatCurrency(mensualidadesTotal);
+  document.getElementById('cotMensualidadMesDisplay').textContent = cotFormatCurrency(mensualidadMes) + '/mes';
+  document.getElementById('cotAnualidadesTotalDisplay').textContent = cotFormatCurrency(anualidadesTotal);
+  document.getElementById('cotAnualidadDisplay').textContent = cotFormatCurrency(anualidad) + '/pago';
+  document.getElementById('cotEscrituracionDisplay').textContent = cotFormatCurrency(escrituracion);
+  document.getElementById('cotTotalDisplay').value = cotFormatCurrency(precioFinal);
+
+  const errorMsg = document.getElementById('cotErrorMsg');
+  if (balancerValue < 0) {
+    errorMsg.textContent = 'Error: Los porcentajes exceden 100%';
+    errorMsg.style.display = 'block';
+  } else {
+    errorMsg.style.display = 'none';
+  }
+}
+
+function cotBuildLotValues() {
+  if (!cotCurrentLot) return null;
+
+  const size = parseFloat(String(cotCurrentLot.size || cotCurrentLot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+  const pm2 = parseFloat(String(cotCurrentLot.priceM2 || cotCurrentLot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+  const totalPrice = size * pm2;
+  const lotNum = cotCurrentLot.number || '';
+
+  const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+  const uniquePrices = [...new Set(allLotsData.map(l =>
+    parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+  ))].filter(p => p > 0).sort((a, b) => b - a);
+  const categories = ['AAA+', 'AAA', 'AA', 'A'];
+  const priceIndex = uniquePrices.findIndex(p => Math.abs(p - pm2) < 0.01);
+  const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+  const descuentoPct = parseFloat(document.getElementById('cotDescuentoPct').value) || 0;
+  const descuentoAmount = totalPrice * (descuentoPct / 100);
+  const precioFinal = totalPrice - descuentoAmount;
+
+  const separacionPct = parseFloat(document.getElementById('cotSeparacionPct').value) || 0;
+  const enganchePct = parseFloat(document.getElementById('cotEnganchePct').value) || 0;
+  const mensualidadesPct = parseFloat(document.getElementById('cotMensualidadesPct').value) || 0;
+  const anualidadesPct = parseFloat(document.getElementById('cotAnualidadesPct').value) || 0;
+  const escrituracionPct = parseFloat(document.getElementById('cotEscrituracionPct').value) || 0;
+
+  const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
+  const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
+  const numAnualidades = parseInt(document.getElementById('cotNumAnualidades').value) || 1;
+
+  const separacion = precioFinal * (separacionPct / 100);
+  const engancheAmount = precioFinal * (enganchePct / 100);
+  const enganche = numEnganche > 0 ? engancheAmount / numEnganche : 0;
+  const mensualidadesTotal = precioFinal * (mensualidadesPct / 100);
+  const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
+  const anualidadesTotal = precioFinal * (anualidadesPct / 100);
+  const anualidad = numAnualidades > 0 ? anualidadesTotal / numAnualidades : 0;
+  const escrituracion = precioFinal * (escrituracionPct / 100);
+
+  const clientName = document.getElementById('cotClientName').value || 'Estimada Familia';
+
+  return {
+    'dynamicText': clientName,
+    'lot.number': lotNum,
+    'lot.category': category,
+    'lot.size': cotFormatNumber(size) + ' m²',
+    'lot.pricePerM2': cotFormatCurrency(pm2),
+    'lot.totalPrice': cotFormatCurrency(totalPrice),
+    'lot.descuentoPct': descuentoPct + '%',
+    'lot.descuentoAmount': cotFormatCurrency(descuentoAmount),
+    'lot.precioFinal': cotFormatCurrency(precioFinal),
+    'lot.clientName': clientName,
+    'lot.separacionPct': separacionPct + '%',
+    'lot.separacion': cotFormatCurrency(separacion),
+    'lot.enganchePct': enganchePct + '%',
+    'lot.engancheAmount': cotFormatCurrency(engancheAmount),
+    'lot.numEnganche': numEnganche.toString(),
+    'lot.enganche': cotFormatCurrency(enganche),
+    'lot.mensualidadesPct': mensualidadesPct + '%',
+    'lot.mensualidadesTotal': cotFormatCurrency(mensualidadesTotal),
+    'lot.numMensualidades': numMensualidades.toString(),
+    'lot.mensualidadMes': cotFormatCurrency(mensualidadMes),
+    'lot.anualidadesPct': anualidadesPct + '%',
+    'lot.anualidad': cotFormatCurrency(anualidad),
+    'lot.numAnualidades': numAnualidades.toString(),
+    'lot.anualidadesTotal': cotFormatCurrency(anualidadesTotal),
+    'lot.escrituracionPct': escrituracionPct + '%',
+    'lot.escrituracion': cotFormatCurrency(escrituracion)
+  };
+}
+
+function cotReplacePlaceholders(text, values) {
+  if (!text) return '';
+  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+    return values[key.trim()] !== undefined ? values[key.trim()] : match;
+  });
+}
+
+function cotCreatePage(pageNum, template, lotValues) {
+  const pdfPage = document.createElement('div');
+  pdfPage.style.cssText = `
+    width: 1224px; height: 1584px; position: relative;
+    background-image: url("https://la-la.land/cpi/pdf/page.${pageNum}.png");
+    background-size: cover; background-repeat: no-repeat; background-position: top left;
+  `;
+  const pageIndex = parseInt(pageNum, 10);
+  const pageData = template?.pages?.[pageIndex];
+  if (!pageData) return pdfPage;
+
+  if (pageData.textBoxes) {
+    pageData.textBoxes.forEach(tb => {
+      const el = document.createElement('div');
+      el.textContent = cotReplacePlaceholders(tb.content, lotValues);
+      el.style.cssText = `
+        position: absolute; left: ${tb.x}px; top: ${tb.y}px;
+        ${tb.width ? `width: ${tb.width}px;` : ''} ${tb.height ? `height: ${tb.height}px;` : ''}
+        font-size: ${tb.fontSize || 24}px; font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+        color: ${tb.color || '#000000'}; font-weight: ${tb.bold ? '700' : '400'};
+        font-style: ${tb.italic ? 'italic' : 'normal'}; text-decoration: ${tb.underline ? 'underline' : 'none'};
+        text-align: ${tb.textAlign || 'left'}; white-space: pre-wrap;
+      `;
+      pdfPage.appendChild(el);
+    });
+  }
+
+  if (pageData.tables) {
+    pageData.tables.forEach(tableData => {
+      const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
+      const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
+      const totalWidth = colWidths.reduce((s, w) => s + w, 0);
+      const container = document.createElement('div');
+      container.style.cssText = `position: absolute; left: ${tableData.x}px; top: ${tableData.y}px;`;
+      const table = document.createElement('table');
+      table.style.cssText = `border-collapse: collapse; table-layout: fixed; width: ${totalWidth}px;`;
+      for (let r = 0; r < tableData.rows; r++) {
+        const tr = document.createElement('tr');
+        tr.style.height = rowHeights[r] + 'px';
+        for (let c = 0; c < tableData.cols; c++) {
+          const cell = tableData.cells?.[r]?.[c];
+          if (!cell || cell.hidden) continue;
+          const td = document.createElement('td');
+          td.textContent = cotReplacePlaceholders(cell.content || '', lotValues);
+          const bw = cell.borderWidth || 1, bs = cell.borderStyle || 'solid';
+          const bc = cell.borderColor || '#000000', bp = cell.borderPosition || 'all';
+          let borderCss = '';
+          if (bp === 'bottom') borderCss = `border: none; border-bottom: ${bw}px ${bs} ${bc};`;
+          else if (bp === 'top') borderCss = `border: none; border-top: ${bw}px ${bs} ${bc};`;
+          else if (bp === 'none') borderCss = 'border: none;';
+          else borderCss = `border: ${bw}px ${bs} ${bc};`;
+          td.style.cssText = `
+            width: ${colWidths[c]}px; height: ${rowHeights[r]}px; box-sizing: border-box; overflow: hidden;
+            background-color: ${cell.bgColor || '#ffffff'}; color: ${cell.textColor || '#000000'};
+            font-family: "${cell.fontFamily || 'Arial'}", sans-serif; font-size: ${cell.fontSize || 14}px;
+            font-weight: ${cell.bold ? '700' : '400'}; font-style: ${cell.italic ? 'italic' : 'normal'};
+            text-decoration: ${cell.underline ? 'underline' : 'none'}; ${borderCss}
+            padding: 0; text-align: ${cell.textAlign || 'left'}; vertical-align: middle;
+          `;
+          if (cell.colSpan > 1) td.colSpan = cell.colSpan;
+          if (cell.rowSpan > 1) td.rowSpan = cell.rowSpan;
+          tr.appendChild(td);
+        }
+        table.appendChild(tr);
+      }
+      container.appendChild(table);
+      pdfPage.appendChild(container);
+    });
+  }
+
+  if (pageData.images) {
+    pageData.images.forEach(imgData => {
+      let imageUrl = '';
+      if (imgData.type === '{{lot.landscape}}') imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_landscape.jpg`;
+      else if (imgData.type === '{{lot.map}}') imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_map.jpg`;
+      else if (imgData.type === 'static' && imgData.url) imageUrl = imgData.url;
+      const el = document.createElement('div');
+      el.style.cssText = `
+        position: absolute; left: ${imgData.x}px; top: ${imgData.y}px;
+        width: ${imgData.width}px; height: ${imgData.height}px;
+        background-image: url("${imageUrl}");
+        background-size: cover; background-position: center; background-repeat: no-repeat;
+      `;
+      pdfPage.appendChild(el);
+    });
+  }
+
+  return pdfPage;
+}
+
+async function cotGeneratePDF() {
+  const lotValues = cotBuildLotValues();
+  if (!lotValues) { alert('Error: datos de lote no disponibles.'); return; }
+
+  const balancer = cotGetBalancer();
+  const balancerValue = parseFloat(document.getElementById(balancer).value) || 0;
+  if (balancerValue < 0) { alert('Los porcentajes exceden 100%. Ajuste los valores.'); return; }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 999999;
+  `;
+  overlay.innerHTML = `
+    <div style="background:white; padding:32px 48px; border-radius:12px; text-align:center; font-family:Arial,sans-serif;">
+      <div style="font-size:18px; font-weight:600; margin-bottom:16px;">Generando PDF...</div>
+      <div id="cot-progress-text" style="font-size:14px; color:#666; margin-bottom:12px;">Cargando plantilla...</div>
+      <div style="width:200px; height:8px; background:#eee; border-radius:4px; overflow:hidden;">
+        <div id="cot-progress-bar" style="width:0%; height:100%; background:#8f5e38; transition:width 0.3s;"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const progressText = document.getElementById('cot-progress-text');
+  const progressBar = document.getElementById('cot-progress-bar');
+
+  try {
+    const response = await fetch('/cpi/pdf/pdf-template-especial.json');
+    const template = await response.json();
+    progressBar.style.width = '5%';
+
+    progressText.textContent = 'Cargando imágenes...';
+    const imagePromises = [];
+    for (let i = 1; i <= 8; i++) {
+      const pageNum = String(i).padStart(3, '0');
+      imagePromises.push(new Promise(resolve => {
+        const img = new Image(); img.crossOrigin = 'anonymous';
+        img.onload = resolve; img.onerror = resolve;
+        img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
+      }));
+    }
+    const lotNum = lotValues['lot.number'];
+    if (lotNum) {
+      ['landscape', 'map'].forEach(type => {
+        imagePromises.push(new Promise(resolve => {
+          const img = new Image(); img.crossOrigin = 'anonymous';
+          img.onload = resolve; img.onerror = resolve;
+          img.src = `/cpi/pdf/lotcpi1-${lotNum}_${type}.jpg`;
+        }));
+      });
+    }
+    Object.values(template.pages || {}).forEach(pageData => {
+      (pageData.images || []).forEach(imgData => {
+        if (imgData.type === 'static' && imgData.url) {
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image(); img.crossOrigin = 'anonymous';
+            img.onload = resolve; img.onerror = resolve; img.src = imgData.url;
+          }));
+        }
+      });
+    });
+    await Promise.all(imagePromises);
+    progressBar.style.width = '40%';
+
+    const pdfContainer = document.createElement('div');
+    pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+    document.body.appendChild(pdfContainer);
+
+    progressText.textContent = 'Generando PDF...';
+    const worker = html2pdf().set({
+      margin: 0,
+      filename: 'CPI-cotizacion-especial.pdf',
+      image: { type: 'jpeg', quality: 1 },
+      html2canvas: { scale: 1, useCORS: true, scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
+    });
+
+    for (let i = 1; i <= 8; i++) {
+      progressText.textContent = `Renderizando página ${i} de 8`;
+      progressBar.style.width = `${40 + (i / 8) * 55}%`;
+      const pageNum = String(i).padStart(3, '0');
+      const page = cotCreatePage(pageNum, template, lotValues);
+      pdfContainer.innerHTML = '';
+      pdfContainer.appendChild(page);
+      if (i === 1) {
+        await worker.from(page).toContainer().toCanvas().toPdf();
+      } else {
+        await worker.get('pdf').then(pdf => { pdf.addPage([1224, 1584], 'portrait'); });
+        await worker.from(page).toContainer().toCanvas().toPdf();
+      }
+    }
+
+    progressText.textContent = 'Descargando...';
+    progressBar.style.width = '100%';
+    await worker.save();
+    document.body.removeChild(pdfContainer);
+  } catch (err) {
+    console.error('PDF generation error:', err);
+    alert('Error generando PDF: ' + err.message);
+  } finally {
+    document.body.removeChild(overlay);
+  }
+
+  // After PDF, collapse back to detail view
+  const modal = document.getElementById('lotModal');
+  document.getElementById('cotizadorPanel').style.display = 'none';
+  document.getElementById('lotDetails').style.display = 'block';
+  modal.classList.remove('expanded');
+}
+
+function openCotizadorInModal(lot) {
+  cotCurrentLot = lot;
+  const modal = document.getElementById('lotModal');
+
+  const size = parseFloat(String(lot.size || lot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+  const pm2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+
+  const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+  const uniquePrices = [...new Set(allLotsData.map(l =>
+    parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+  ))].filter(p => p > 0).sort((a, b) => b - a);
+  const categories = ['AAA+', 'AAA', 'AA', 'A'];
+  const priceIndex = uniquePrices.findIndex(p => Math.abs(p - pm2) < 0.01);
+  const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+  document.getElementById('cotLotNumber').value = lot.number || '';
+  document.getElementById('cotLotCategory').value = category;
+  document.getElementById('cotLotSize').value = cotFormatNumber(size) + ' m²';
+  document.getElementById('cotPriceM2').value = cotFormatCurrency(pm2);
+
+  // Reset form defaults
+  document.getElementById('cotDescuentoPct').value = '0';
+  document.getElementById('cotClientName').value = 'Estimada Familia';
+  document.getElementById('cotSeparacionPct').value = '0';
+  document.getElementById('cotEnganchePct').value = '20';
+  document.getElementById('cotNumEnganche').value = '1';
+  document.getElementById('cotMensualidadesPct').value = '30';
+  document.getElementById('cotNumMensualidades').value = '24';
+  document.getElementById('cotAnualidadesPct').value = '0';
+  document.getElementById('cotNumAnualidades').value = '2';
+  document.getElementById('cotEscrituracionPct').value = '50';
+  document.getElementById('cotBalancerField').value = 'cotEscrituracionPct';
+  cotOnBalancerChange();
+
+  // Swap content
+  document.getElementById('lotDetails').style.display = 'none';
+  document.getElementById('cotizadorPanel').style.display = 'block';
+  modal.classList.add('expanded');
+
+  cotRecalculate();
+}
+
+// Wire up cotizador event listeners
+document.getElementById('cotBalancerField').addEventListener('change', cotOnBalancerChange);
+document.getElementById('cotDescuentoPct').addEventListener('input', cotRecalculate);
+document.getElementById('cotNumEnganche').addEventListener('input', cotRecalculate);
+document.getElementById('cotNumMensualidades').addEventListener('input', cotRecalculate);
+document.getElementById('cotNumAnualidades').addEventListener('input', cotRecalculate);
+COT_PCT_FIELDS.forEach(id => {
+  document.getElementById(id).addEventListener('input', cotRecalculate);
+});
+document.getElementById('cotGenerateBtn').addEventListener('click', cotGeneratePDF);
 
 
 
@@ -7618,6 +8295,10 @@ function closeModal() {
   // --- 1) Kill special modes / embeds
   modal.classList.remove('info-mode', 'pin-mode', 'expanded', 'lot-mode');
   hideCalendlyEmbed();
+  const cotPanel = document.getElementById('cotizadorPanel');
+  if (cotPanel) { cotPanel.style.display = 'none'; }
+  const lotDetailsEl = document.getElementById('lotDetails');
+  if (lotDetailsEl) { lotDetailsEl.style.display = 'block'; }
   window.isDetailOpen = false;
 
   // Hide share button when exiting detail mode
