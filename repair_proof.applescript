@@ -3,23 +3,22 @@
 --
 -- BEFORE RUNNING:
 --   1. System Settings > Privacy & Security > Accessibility → enable Script Editor (or Terminal)
---   2. Adjust the two paths below
---   3. Run: osascript repair_proof.applescript
+--   2. Run: osascript repair_proof.applescript
 
--- CONFIGURATION
-set imagePath to "/Users/andresmtzc/Documents/GitHub/geepeeX/frames/1/frame_001.png"
-set maskPath to "/Users/andresmtzc/Downloads/mask.png"
+-- Pick files
+set imageFile to choose file with prompt "Select the image to repair:" of type {"public.image"}
+set maskFile to choose file with prompt "Select the mask PNG (transparent = keep, opaque = repair):" of type {"public.image"}
 
 -- Step 1: Open the image
 tell application "Pixelmator Pro"
 	activate
-	open (POSIX file imagePath)
+	open imageFile
 	delay 1
 end tell
 
 -- Step 2: Add mask as a new layer (open, copy, paste approach)
 tell application "Pixelmator Pro"
-	open (POSIX file maskPath)
+	open maskFile
 	delay 0.5
 	tell front document
 		select all
