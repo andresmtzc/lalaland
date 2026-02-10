@@ -93,7 +93,7 @@ tell application "Pixelmator Pro"
 	delay 0.3
 	-- Export in the same format as the original
 	if ext is "jpg" or ext is "jpeg" or ext is "JPG" or ext is "JPEG" then
-		export front document to exportFile as JPEG with properties {quality:95}
+		export front document to exportFile as JPEG
 	else
 		export front document to exportFile as PNG
 	end if
