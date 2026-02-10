@@ -52,38 +52,28 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 5: Select the Repair tool and click "Repair Selection"
+-- Step 5: Select the Repair tool
 tell application "System Events"
 	tell process "Pixelmator Pro"
-		-- Open the Repair tool — try keyboard shortcut first
-		-- In Pixelmator Pro, Repair tool shortcut is typically "R"
 		keystroke "r"
 		delay 0.5
-
-		-- Click "Repair Selection" button in the tool options (right panel)
-		-- This is the ML inpaint on the current selection
-		try
-			click button "Repair Selection" of group 1 of scroll area 1 of group 1 of window 1
-		on error
-			-- If that path doesn't work, try clicking by name anywhere in the window
-			try
-				click button "Repair Selection" of window 1
-			on error
-				-- Last resort: look for it in the tool options bar
-				try
-					click button "Repair Selection" of toolbar 1 of window 1
-				end try
-			end try
-		end try
-		delay 2
 	end tell
 end tell
 
--- Step 6: Deselect
-tell application "Pixelmator Pro"
-	tell front document
-		deselect
-	end tell
-end tell
+-- Step 6: Open Accessibility Inspector and pause so you can find the "Repair Selection" button path
+tell application "Accessibility Inspector" to activate
+delay 1
 
-display dialog "Done! Check the image in Pixelmator Pro." buttons {"OK"} default button "OK"
+display dialog "Accessibility Inspector is open." & return & return & ¬
+	"1. Click the target icon (crosshair) in Accessibility Inspector" & return & ¬
+	"2. Hover over the \"Repair Selection\" button in Pixelmator Pro" & return & ¬
+	"3. Note the element hierarchy shown in the inspector" & return & return & ¬
+	"Click OK when done inspecting." buttons {"OK"} default button "OK"
+
+-- Bring Pixelmator back to front
+tell application "Pixelmator Pro" to activate
+delay 0.3
+
+-- TODO: Replace this with the real element path from Accessibility Inspector
+-- Example: click button "Repair Selection" of group X of scroll area Y of window 1
+display dialog "Paste the element path here in the script, then re-run." buttons {"OK"} default button "OK"
