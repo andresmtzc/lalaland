@@ -83,6 +83,7 @@ set ext to last item of pathParts
 set basePath to (items 1 thru -2 of pathParts) as text
 set AppleScript's text item delimiters to ""
 set exportPath to basePath & "_repaired." & ext
+set exportFile to POSIX file exportPath
 
 tell application "Pixelmator Pro"
 	tell front document
@@ -90,8 +91,8 @@ tell application "Pixelmator Pro"
 		set visible of layer 1 to false
 	end tell
 	delay 0.3
-	-- Export as PNG
-	export front document to file exportPath as PNG
+	-- Export as PNG using a proper file reference
+	export front document to exportFile as PNG
 	delay 0.5
 	close front document without saving
 end tell
