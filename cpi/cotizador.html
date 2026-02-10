@@ -94,6 +94,18 @@
       font-size: 14px;
       white-space: nowrap;
     }
+    .balancer-select {
+      padding: 6px 10px;
+      border: 2px solid #8f5e38;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #8f5e38;
+      font-weight: 600;
+      background: white;
+      cursor: pointer;
+      outline: none;
+    }
     .btn-generate {
       display: block;
       width: 100%;
@@ -191,13 +203,26 @@
 
       <!-- Payment -->
       <div class="card">
-        <div class="card-title">Esquema de Pago</div>
+        <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+          Esquema de Pago
+          <div style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400; color:#5d5d5d;">
+            Ajustar:
+            <select id="balancerField" class="balancer-select">
+              <option value="separacionPct">Separación</option>
+              <option value="enganchePct">Enganche</option>
+              <option value="mensualidadesPct">Mensualidades</option>
+              <option value="anualidadesPct">Anualidades</option>
+              <option value="escrituracionPct" selected>Escrituración</option>
+            </select>
+          </div>
+        </div>
 
         <div class="field-row">
           <label>Separación</label>
           <div class="pct-row">
-            <span class="unit">$</span>
-            <input type="number" id="separacion" value="0" min="0" step="1000">
+            <input type="number" id="separacionPct" value="0" min="0" max="100" step="0.5">
+            <span class="unit">%</span>
+            <span class="amount" id="separacionDisplay">$0.00</span>
           </div>
         </div>
 
@@ -206,7 +231,7 @@
           <div class="pct-row">
             <input type="number" id="enganchePct" value="20" min="0" max="100" step="0.5">
             <span class="unit">%</span>
-            <span class="amount" id="engancheAmountDisplay">$0.00</span>
+            <span class="amount" id="engancheDisplay">$0.00</span>
           </div>
         </div>
 
@@ -222,35 +247,31 @@
         <div class="field-row">
           <label>Núm. Mensualidades</label>
           <input type="number" id="numMensualidades" value="24" min="1" max="120" style="width:80px; flex:0 0 80px;">
+          <span class="unit" style="flex:0 0 auto;">→</span>
+          <span class="amount" id="mensualidadMesDisplay" style="font-weight:700; color:#8f5e38; font-size:14px;">$0.00/mes</span>
         </div>
 
         <div class="field-row">
-          <label>Mensualidad / mes</label>
-          <input type="text" id="mensualidadMes" readonly>
-        </div>
-
-        <div class="field-row">
-          <label>Núm. Anualidades</label>
-          <input type="number" id="numAnualidades" value="2" min="0" max="10" style="width:80px; flex:0 0 80px;">
-        </div>
-
-        <div class="field-row">
-          <label>Monto por Anualidad</label>
+          <label>Anualidades</label>
           <div class="pct-row">
-            <span class="unit">$</span>
-            <input type="number" id="anualidad" value="0" min="0" step="1000">
+            <input type="number" id="anualidadesPct" value="0" min="0" max="100" step="0.5">
+            <span class="unit">%</span>
+            <span class="amount" id="anualidadesTotalDisplay">$0.00</span>
           </div>
         </div>
 
         <div class="field-row">
-          <label>Total Anualidades</label>
-          <input type="text" id="anualidadesTotalDisplay" readonly>
+          <label>Núm. Anualidades</label>
+          <input type="number" id="numAnualidades" value="2" min="1" max="10" style="width:80px; flex:0 0 80px;">
+          <span class="unit" style="flex:0 0 auto;">→</span>
+          <span class="amount" id="anualidadDisplay" style="font-weight:700; color:#8f5e38; font-size:14px;">$0.00/pago</span>
         </div>
 
         <div class="field-row">
           <label>Escrituración</label>
           <div class="pct-row">
-            <span class="amount" id="escrituracionPctDisplay">50%</span>
+            <input type="number" id="escrituracionPct" value="50" min="0" max="100" step="0.5">
+            <span class="unit">%</span>
             <span class="amount" id="escrituracionDisplay">$0.00</span>
           </div>
         </div>
@@ -274,6 +295,9 @@
 
     let allLots = [];
     let lotMap = {};
+
+    // The 5 payment fields that must sum to 100%
+    const PCT_FIELDS = ['separacionPct', 'enganchePct', 'mensualidadesPct', 'anualidadesPct', 'escrituracionPct'];
 
     // --- Utilities ---
 
@@ -312,6 +336,25 @@
       });
     }
 
+    // --- Balancer ---
+
+    function getBalancer() {
+      return document.getElementById('balancerField').value;
+    }
+
+    function onBalancerChange() {
+      const balancer = getBalancer();
+      PCT_FIELDS.forEach(id => {
+        const input = document.getElementById(id);
+        if (id === balancer) {
+          input.readOnly = true;
+        } else {
+          input.readOnly = false;
+        }
+      });
+      recalculate();
+    }
+
     // --- Lot selection ---
 
     function onLotChange() {
@@ -345,43 +388,51 @@
       const descuentoAmount = totalPrice * (descuentoPct / 100);
       const precioFinal = totalPrice - descuentoAmount;
 
-      const separacion = parseFloat(document.getElementById('separacion').value) || 0;
-      const anualidad = parseFloat(document.getElementById('anualidad').value) || 0;
-      const numAnualidades = parseInt(document.getElementById('numAnualidades').value) || 0;
-      const anualidadesTotal = anualidad * numAnualidades;
+      // Calculate balancer field
+      const balancer = getBalancer();
+      const otherSum = PCT_FIELDS
+        .filter(id => id !== balancer)
+        .reduce((sum, id) => sum + (parseFloat(document.getElementById(id).value) || 0), 0);
+      const balancerValue = 100 - otherSum;
+      document.getElementById(balancer).value = balancerValue;
 
-      const remaining = precioFinal - separacion - anualidadesTotal;
-
+      // Read all percentages
+      const separacionPct = parseFloat(document.getElementById('separacionPct').value) || 0;
       const enganchePct = parseFloat(document.getElementById('enganchePct').value) || 0;
       const mensualidadesPct = parseFloat(document.getElementById('mensualidadesPct').value) || 0;
+      const anualidadesPct = parseFloat(document.getElementById('anualidadesPct').value) || 0;
+      const escrituracionPct = parseFloat(document.getElementById('escrituracionPct').value) || 0;
+
       const numMensualidades = parseInt(document.getElementById('numMensualidades').value) || 1;
+      const numAnualidades = parseInt(document.getElementById('numAnualidades').value) || 1;
 
-      const engancheAmount = remaining * (enganchePct / 100);
-      const mensualidadesTotal = remaining * (mensualidadesPct / 100);
+      // Calculate amounts
+      const separacion = precioFinal * (separacionPct / 100);
+      const engancheAmount = precioFinal * (enganchePct / 100);
+      const mensualidadesTotal = precioFinal * (mensualidadesPct / 100);
       const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
-
-      const escrituracionPct = 100 - enganchePct - mensualidadesPct;
-      const escrituracion = remaining * (escrituracionPct / 100);
+      const anualidadesTotal = precioFinal * (anualidadesPct / 100);
+      const anualidad = numAnualidades > 0 ? anualidadesTotal / numAnualidades : 0;
+      const escrituracion = precioFinal * (escrituracionPct / 100);
 
       // Update UI
       document.getElementById('totalPrice').value = formatCurrency(totalPrice);
       document.getElementById('descuentoAmountDisplay').textContent = formatCurrency(descuentoAmount);
       document.getElementById('precioFinal').value = formatCurrency(precioFinal);
-      document.getElementById('engancheAmountDisplay').textContent = formatCurrency(engancheAmount);
+
+      document.getElementById('separacionDisplay').textContent = formatCurrency(separacion);
+      document.getElementById('engancheDisplay').textContent = formatCurrency(engancheAmount);
       document.getElementById('mensualidadesTotalDisplay').textContent = formatCurrency(mensualidadesTotal);
-      document.getElementById('mensualidadMes').value = formatCurrency(mensualidadMes);
-      document.getElementById('anualidadesTotalDisplay').value = formatCurrency(anualidadesTotal);
-      document.getElementById('escrituracionPctDisplay').textContent = escrituracionPct.toFixed(1) + '%';
+      document.getElementById('mensualidadMesDisplay').textContent = formatCurrency(mensualidadMes) + '/mes';
+      document.getElementById('anualidadesTotalDisplay').textContent = formatCurrency(anualidadesTotal);
+      document.getElementById('anualidadDisplay').textContent = formatCurrency(anualidad) + '/pago';
       document.getElementById('escrituracionDisplay').textContent = formatCurrency(escrituracion);
       document.getElementById('totalDisplay').value = formatCurrency(precioFinal);
 
       // Validation
       const errorMsg = document.getElementById('errorMsg');
-      if (escrituracionPct < 0) {
-        errorMsg.textContent = 'Error: Enganche% + Mensualidades% excede 100%';
-        errorMsg.style.display = 'block';
-      } else if (remaining < 0) {
-        errorMsg.textContent = 'Error: Separación + Anualidades exceden el Precio Final';
+      if (balancerValue < 0) {
+        errorMsg.textContent = 'Error: Los porcentajes exceden 100%';
         errorMsg.style.display = 'block';
       } else {
         errorMsg.style.display = 'none';
@@ -534,23 +585,22 @@
       const descuentoAmount = totalPrice * (descuentoPct / 100);
       const precioFinal = totalPrice - descuentoAmount;
 
-      const separacion = parseFloat(document.getElementById('separacion').value) || 0;
-      const anualidad = parseFloat(document.getElementById('anualidad').value) || 0;
-      const numAnualidades = parseInt(document.getElementById('numAnualidades').value) || 0;
-      const anualidadesTotal = anualidad * numAnualidades;
-
-      const remaining = precioFinal - separacion - anualidadesTotal;
-
+      const separacionPct = parseFloat(document.getElementById('separacionPct').value) || 0;
       const enganchePct = parseFloat(document.getElementById('enganchePct').value) || 0;
       const mensualidadesPct = parseFloat(document.getElementById('mensualidadesPct').value) || 0;
+      const anualidadesPct = parseFloat(document.getElementById('anualidadesPct').value) || 0;
+      const escrituracionPct = parseFloat(document.getElementById('escrituracionPct').value) || 0;
+
       const numMensualidades = parseInt(document.getElementById('numMensualidades').value) || 1;
+      const numAnualidades = parseInt(document.getElementById('numAnualidades').value) || 1;
 
-      const engancheAmount = remaining * (enganchePct / 100);
-      const mensualidadesTotal = remaining * (mensualidadesPct / 100);
+      const separacion = precioFinal * (separacionPct / 100);
+      const engancheAmount = precioFinal * (enganchePct / 100);
+      const mensualidadesTotal = precioFinal * (mensualidadesPct / 100);
       const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
-
-      const escrituracionPct = 100 - enganchePct - mensualidadesPct;
-      const escrituracion = remaining * (escrituracionPct / 100);
+      const anualidadesTotal = precioFinal * (anualidadesPct / 100);
+      const anualidad = numAnualidades > 0 ? anualidadesTotal / numAnualidades : 0;
+      const escrituracion = precioFinal * (escrituracionPct / 100);
 
       const clientName = document.getElementById('clientName').value || 'Estimada Familia';
 
@@ -565,6 +615,7 @@
         'lot.descuentoAmount': formatCurrency(descuentoAmount),
         'lot.precioFinal': formatCurrency(precioFinal),
         'lot.clientName': clientName,
+        'lot.separacionPct': separacionPct + '%',
         'lot.separacion': formatCurrency(separacion),
         'lot.enganchePct': enganchePct + '%',
         'lot.engancheAmount': formatCurrency(engancheAmount),
@@ -572,10 +623,11 @@
         'lot.mensualidadesTotal': formatCurrency(mensualidadesTotal),
         'lot.numMensualidades': numMensualidades.toString(),
         'lot.mensualidadMes': formatCurrency(mensualidadMes),
+        'lot.anualidadesPct': anualidadesPct + '%',
         'lot.anualidad': formatCurrency(anualidad),
         'lot.numAnualidades': numAnualidades.toString(),
         'lot.anualidadesTotal': formatCurrency(anualidadesTotal),
-        'lot.escrituracionPct': escrituracionPct.toFixed(1) + '%',
+        'lot.escrituracionPct': escrituracionPct + '%',
         'lot.escrituracion': formatCurrency(escrituracion)
       };
     }
@@ -588,10 +640,10 @@
       }
 
       // Validation
-      const enganchePct = parseFloat(document.getElementById('enganchePct').value) || 0;
-      const mensualidadesPct = parseFloat(document.getElementById('mensualidadesPct').value) || 0;
-      if (enganchePct + mensualidadesPct > 100) {
-        alert('Enganche% + Mensualidades% no puede exceder 100%');
+      const balancer = getBalancer();
+      const balancerValue = parseFloat(document.getElementById(balancer).value) || 0;
+      if (balancerValue < 0) {
+        alert('Los porcentajes exceden 100%. Ajuste los valores.');
         return;
       }
 
@@ -650,7 +702,6 @@
           });
         }
 
-        // Preload static images from template
         Object.values(template.pages || {}).forEach(pageData => {
           (pageData.images || []).forEach(imgData => {
             if (imgData.type === 'static' && imgData.url) {
@@ -668,9 +719,9 @@
         await Promise.all(imagePromises);
         progressBar.style.width = '40%';
 
-        // PDF container
+        // PDF container - use position:fixed to avoid page content offset
         const pdfContainer = document.createElement('div');
-        pdfContainer.style.cssText = 'position:absolute; left:-9999px; top:0;';
+        pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
         document.body.appendChild(pdfContainer);
 
         // Generate pages
@@ -782,6 +833,9 @@
           }
         }
 
+        // Initialize balancer
+        onBalancerChange();
+
         // Show form
         document.getElementById('loadingMsg').style.display = 'none';
         document.getElementById('formContent').style.display = 'block';
@@ -794,8 +848,11 @@
 
     // Event listeners
     document.getElementById('lotNumber').addEventListener('change', onLotChange);
-    ['descuentoPct', 'separacion', 'enganchePct', 'mensualidadesPct',
-     'numMensualidades', 'anualidad', 'numAnualidades'].forEach(id => {
+    document.getElementById('balancerField').addEventListener('change', onBalancerChange);
+    document.getElementById('descuentoPct').addEventListener('input', recalculate);
+    document.getElementById('numMensualidades').addEventListener('input', recalculate);
+    document.getElementById('numAnualidades').addEventListener('input', recalculate);
+    PCT_FIELDS.forEach(id => {
       document.getElementById(id).addEventListener('input', recalculate);
     });
 
