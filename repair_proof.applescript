@@ -43,18 +43,14 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 4: Dump menu bar names so we can find the right menu for deleting a layer
+-- Step 4: Delete the mask layer (selection stays active, focus drops to image layer)
 tell application "System Events"
 	tell process "Pixelmator Pro"
-		set menuNames to name of every menu of menu bar 1
+		-- Press Delete key to remove the selected mask layer
+		key code 51 -- backspace/delete key
+		delay 0.3
 	end tell
 end tell
-set menuList to ""
-repeat with m in menuNames
-	set menuList to menuList & m & return
-end repeat
-display dialog "Menus:" & return & menuList buttons {"OK"} default button "OK"
-return -- stop here so we can see the menus
 
 -- Step 5: Select the Repair tool
 tell application "System Events"
