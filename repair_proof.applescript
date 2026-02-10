@@ -103,7 +103,7 @@ end tell
 
 -- Recompress JPEG to match typical camera quality (~85%)
 if ext is "jpg" or ext is "jpeg" or ext is "JPG" or ext is "JPEG" then
-	do shell script "sips -s formatOptions 85 " & quoted form of exportPath
+	do shell script "sips -s formatOptions 75 " & quoted form of exportPath
 end if
 
 display dialog "Done! Exported to:" & return & exportPath buttons {"OK"} default button "OK"
