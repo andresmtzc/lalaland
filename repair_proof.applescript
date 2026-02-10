@@ -43,10 +43,10 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 4: Select the image layer (the first/bottom layer) via native scripting
+-- Step 4: Select the image layer (bottom layer) via native scripting
 tell application "Pixelmator Pro"
 	tell front document
-		set current layer to layer 1
+		set current layer to last layer
 	end tell
 	delay 0.3
 end tell
