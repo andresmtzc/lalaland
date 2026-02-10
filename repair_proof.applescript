@@ -43,14 +43,20 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 4: Delete the mask layer (selection stays active, focus drops to image layer)
+-- Step 4: Dump Arrange menu items to find the layer delete command
 tell application "System Events"
 	tell process "Pixelmator Pro"
-		-- Press Delete key to remove the selected mask layer
-		key code 51 -- backspace/delete key
-		delay 0.3
+		set arrangeItems to name of every menu item of menu "Arrange" of menu bar 1
 	end tell
 end tell
+set itemList to ""
+repeat with i in arrangeItems
+	if i is not missing value then
+		set itemList to itemList & i & return
+	end if
+end repeat
+display dialog "Arrange menu items:" & return & itemList buttons {"OK"} default button "OK"
+return -- stop here
 
 -- Step 5: Select the Repair tool
 tell application "System Events"
