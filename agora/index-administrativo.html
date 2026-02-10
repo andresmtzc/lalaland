@@ -6443,6 +6443,19 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
 
   console.log('updateBulkPriceM2 - oldPriceM2:', oldPriceM2, 'oldValue:', oldValue, 'newValue:', newValue);
 
+  // Prevent bracket collision: block if new price matches another existing bracket
+  const otherBracketPrices = [...new Set(
+    lotData
+      .filter(lot => lot.priceM2 || lot.priceM2 === 0)
+      .map(lot => cleanNumber(lot.priceM2))
+      .filter(p => p > 0 && Math.abs(p - oldValue) >= 0.01)
+  )];
+  if (otherBracketPrices.some(p => Math.abs(p - newValue) < 0.01)) {
+    showToaster('Ese precio ya pertenece a otro bracket. Elige un precio diferente.');
+    render();
+    return;
+  }
+
   // Find all affected lots in local data
   const affectedLots = lotData.filter(lot => {
     if (!lot.priceM2 && lot.priceM2 !== 0) return false;
