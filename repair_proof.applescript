@@ -1,5 +1,5 @@
 -- Single Image Repair — Proof of Concept
--- Flow: open image → add mask layer → load selection → switch to image layer → repair selection
+-- Flow: open image → add mask layer → load selection → switch to image layer → repair → export
 --
 -- BEFORE RUNNING:
 --   1. System Settings > Privacy & Security > Accessibility → enable Script Editor (or Terminal)
@@ -74,4 +74,26 @@ tell application "Pixelmator Pro"
 	end tell
 end tell
 
-display dialog "Done! Check the result in Pixelmator Pro." buttons {"OK"} default button "OK"
+-- Step 8: Hide the mask layer and export
+-- Build export path: same folder as original, with "_repaired" suffix
+set imagePath to POSIX path of imageFile
+set AppleScript's text item delimiters to "."
+set pathParts to text items of imagePath
+set ext to last item of pathParts
+set basePath to (items 1 thru -2 of pathParts) as text
+set AppleScript's text item delimiters to ""
+set exportPath to basePath & "_repaired." & ext
+
+tell application "Pixelmator Pro"
+	tell front document
+		-- Hide the mask layer (layer 1 = topmost)
+		set visible of layer 1 to false
+	end tell
+	delay 0.3
+	-- Export as PNG
+	export front document to file exportPath as PNG
+	delay 0.5
+	close front document without saving
+end tell
+
+display dialog "Done! Exported to:" & return & exportPath buttons {"OK"} default button "OK"
