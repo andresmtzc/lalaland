@@ -43,12 +43,12 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 4: Switch to the image layer below the mask layer (Option + [)
-tell application "System Events"
-	tell process "Pixelmator Pro"
-		key code 33 using {option down} -- Option + [ = select layer below
-		delay 0.3
+-- Step 4: Select the image layer (the first/bottom layer) via native scripting
+tell application "Pixelmator Pro"
+	tell front document
+		set current layer to layer 1
 	end tell
+	delay 0.3
 end tell
 
 -- Step 5: Select the Repair tool
