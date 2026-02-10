@@ -91,8 +91,12 @@ tell application "Pixelmator Pro"
 		set visible of layer 1 to false
 	end tell
 	delay 0.3
-	-- Export as PNG using a proper file reference
-	export front document to exportFile as PNG
+	-- Export in the same format as the original
+	if ext is "jpg" or ext is "jpeg" or ext is "JPG" or ext is "JPEG" then
+		export front document to exportFile as JPEG with properties {quality:95}
+	else
+		export front document to exportFile as PNG
+	end if
 	delay 0.5
 	close front document without saving
 end tell
