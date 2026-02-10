@@ -60,60 +60,19 @@ tell application "System Events"
 	end tell
 end tell
 
--- Step 6: Dump the UI hierarchy to find the "Repair Selection" button
--- No Accessibility Inspector needed — this writes to a file on your Desktop
+-- Step 6: Click "Repair Selection" in the tool options panel
 tell application "System Events"
 	tell process "Pixelmator Pro"
-		set frontmost to true
-		delay 0.3
-
-		-- Walk the entire window and collect every UI element's role + name
-		set uiDump to ""
-		set win to window 1
-		set uiDump to my dumpElements(win, 0)
+		click button "Repair Selection" of group 1 of group 2 of window 1
+		delay 2
 	end tell
 end tell
 
--- Write the dump to Desktop so you can send it to me
-set dumpPath to (POSIX path of (path to desktop)) & "pixelmator_ui_dump.txt"
-do shell script "echo " & quoted form of uiDump & " > " & quoted form of dumpPath
-
-display dialog "UI dump saved to:" & return & dumpPath & return & return & "Send me the contents of that file and I'll wire up the last step." buttons {"OK"} default button "OK"
-
--- Helper: recursively dump UI element tree
-on dumpElements(parentElement, depth)
-	set indent to ""
-	repeat depth times
-		set indent to indent & "  "
-	end repeat
-
-	set output to ""
-	tell application "System Events"
-		try
-			set elemRole to role of parentElement
-		on error
-			set elemRole to "?"
-		end try
-		try
-			set elemName to name of parentElement
-		on error
-			set elemName to ""
-		end try
-		try
-			set elemDesc to description of parentElement
-		on error
-			set elemDesc to ""
-		end try
-
-		set output to output & indent & elemRole & " | " & elemName & " | " & elemDesc & "
-"
-
-		try
-			set childElements to UI elements of parentElement
-			repeat with child in childElements
-				set output to output & my dumpElements(child, depth + 1)
-			end repeat
-		end try
+-- Step 7: Deselect
+tell application "Pixelmator Pro"
+	tell front document
+		deselect
 	end tell
-	return output
-end dumpElements
+end tell
+
+display dialog "Done! Check the result in Pixelmator Pro." buttons {"OK"} default button "OK"
