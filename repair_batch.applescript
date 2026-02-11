@@ -25,25 +25,39 @@ if modeChoice is "Test First" then
 	if processCount > totalCount then set processCount to totalCount
 end if
 
-tell application "Pixelmator Pro" to activate
-delay 0.5
-
--- Copy mask to clipboard once
-tell application "Pixelmator Pro"
-	open maskFile
-	delay 0.5
-	tell front document
-		select all
-		copy
+-- Handler to (re)launch Pixelmator Pro and copy mask to clipboard
+on prepareMask(maskFile)
+	tell application "Pixelmator Pro" to activate
+	delay 1
+	tell application "Pixelmator Pro"
+		open maskFile
+		delay 0.5
+		tell front document
+			select all
+			copy
+		end tell
+		close front document without saving
 	end tell
-	close front document without saving
-end tell
+end prepareMask
+
+-- How often to restart Pixelmator Pro to prevent degradation
+set restartEvery to 50
+
+prepareMask(maskFile)
 
 set processedCount to 0
+set startTime to current date
 
 repeat with i from 1 to processCount
 	set imageName to item i of imageNames
 	set imagePath to POSIX path of imageFolder & imageName
+
+	-- Restart Pixelmator Pro periodically to prevent memory/performance degradation
+	if processedCount > 0 and processedCount mod restartEvery = 0 then
+		tell application "Pixelmator Pro" to quit
+		delay 2
+		prepareMask(maskFile)
+	end if
 
 	-- Build export path with _repaired suffix
 	set AppleScript's text item delimiters to "."
@@ -129,4 +143,15 @@ repeat with i from 1 to processCount
 	set processedCount to processedCount + 1
 end repeat
 
-display dialog "Done! Processed " & processedCount & " of " & totalCount & " images." buttons {"OK"} default button "OK"
+set endTime to current date
+set elapsedSecs to (endTime - startTime)
+set elapsedMin to elapsedSecs div 60
+set elapsedRemSecs to elapsedSecs mod 60
+set avgSecs to 0
+if processedCount > 0 then set avgSecs to (round (elapsedSecs / processedCount) rounding to nearest)
+
+set summary to "Processed " & processedCount & " of " & totalCount & " images." & return
+set summary to summary & "Total time: " & elapsedMin & "m " & elapsedRemSecs & "s" & return
+set summary to summary & "Avg per image: " & avgSecs & "s"
+
+display dialog summary buttons {"OK"} default button "OK"
