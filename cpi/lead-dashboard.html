@@ -326,6 +326,7 @@
       </div>
       <div class="auth-section">
         <span class="user-email" id="userEmail"></span>
+        <button onclick="exportCSV()" style="background: #2d8a4e;">Exportar CSV</button>
         <button onclick="logout()">Cerrar Sesión</button>
       </div>
     </div>
@@ -376,14 +377,16 @@
           <tr>
             <th class="sortable" data-column="attended">Nuevo</th>
             <th class="sortable" data-column="created_at">Capturado</th>
-            <th>🏳️</th>
-            <th class="sortable" data-column="phone">Teléfono</th>
-            <th class="sortable" data-column="state">Estado</th>
             <th class="sortable" data-column="name">Nombre</th>
+            <th class="sortable" data-column="phone">Teléfono</th>
+            <th>🏳️</th>
+            <th class="sortable" data-column="state">Estado</th>
             <th class="sortable" data-column="visits">Visitas</th>
             <th class="sortable" data-column="days">Días</th>
             <th class="sortable" data-column="saved">Guardados</th>
             <th class="sortable sorted-desc" data-column="score">Score</th>
+            <th>Exportado</th>
+            <th>Campaña</th>
             <th>WhatsApp</th>
           </tr>
         </thead>
@@ -968,14 +971,16 @@
           <tr>
             ${attendCell}
             <td>${formatMexicoCentralTime(lead.created_at)}</td>
-            <td style="text-align: center;">${getCountryFlag(lead.phone)}</td>
-            <td>${formatPhone(lead.phone)}</td>
-            <td>${getMexicanState(lead.phone)}</td>
             <td>${fullName}</td>
+            <td>${formatPhone(lead.phone)}</td>
+            <td style="text-align: center;">${getCountryFlag(lead.phone)}</td>
+            <td>${getMexicanState(lead.phone)}</td>
             <td>${lead.visits}</td>
             <td>${lead.uniqueDays}</td>
             ${savedLotsCell}
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
+            <td style="text-align: center;">${lead.exported ? 'Sí' : 'No'}</td>
+            <td>${lead.campaign || 'pietra'}</td>
             <td><a href="${waLink}" target="_blank" class="whatsapp-btn">💬 WhatsApp</a></td>
           </tr>
         `;
@@ -1087,6 +1092,60 @@
     async function logout() {
       await supabaseClient.auth.signOut();
       window.location.reload();
+    }
+
+    async function exportCSV() {
+      if (allLeads.length === 0) {
+        alert('No hay leads para exportar.');
+        return;
+      }
+
+      const headers = ['Nombre', 'Teléfono', 'País', 'Estado', 'Capturado', 'Visitas', 'Días', 'Guardados', 'Score', 'Exportado', 'Campaña'];
+      const escapeCSV = (val) => {
+        const str = String(val ?? '');
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+      };
+
+      const rows = allLeads.map(lead => {
+        const fullName = `${lead.name || ''} ${lead.last_name || ''}`.trim() || '-';
+        return [
+          fullName,
+          formatPhone(lead.phone),
+          getCountryFlag(lead.phone),
+          getMexicanState(lead.phone),
+          formatMexicoCentralTime(lead.created_at),
+          lead.visits,
+          lead.uniqueDays,
+          lead.savedCount,
+          lead.score,
+          lead.exported ? 'Sí' : 'No',
+          lead.campaign || 'pietra'
+        ].map(escapeCSV).join(',');
+      });
+
+      const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `leads_${CURRENT_CLIENT}_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Mark all exported leads as exported in Supabase
+      const leadIds = allLeads.filter(l => !l.exported).map(l => l.id);
+      if (leadIds.length > 0) {
+        await supabaseClient
+          .from('leads')
+          .update({ exported: true })
+          .in('id', leadIds);
+
+        allLeads.forEach(l => l.exported = true);
+        renderTable();
+      }
     }
 
     function showError(message) {

@@ -363,9 +363,10 @@
       }
     }
 
-    // Check URL params for error
+    // Check URL params for error and UTM
     const urlParams = new URLSearchParams(window.location.search);
     const errorParam = urlParams.get('error');
+    const utmCampaign = urlParams.get('utm_campaign');
 
     if (errorParam === 'claimed') {
       document.getElementById('errorMessage').textContent =
@@ -485,14 +486,17 @@
             ? (existingLead.link_request_count || 0) + 1
             : 1;
 
-          await supabaseClient
-            .from('leads')
-            .update({
+          const updateData = {
               last_seen_at: new Date().toISOString(),
               last_link_requested_at: new Date().toISOString(),
               link_request_count: newCount,
               client_id: CURRENT_CLIENT
-            })
+            };
+          if (utmCampaign) updateData.campaign = utmCampaign;
+
+          await supabaseClient
+            .from('leads')
+            .update(updateData)
             .eq('id', leadId);
         } else {
           // Create new lead
@@ -502,7 +506,8 @@
               phone,
               client_id: CURRENT_CLIENT,
               last_link_requested_at: new Date().toISOString(),
-              link_request_count: 1
+              link_request_count: 1,
+              campaign: utmCampaign || 'pietra'
             })
             .select('id')
             .single();
