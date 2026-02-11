@@ -387,6 +387,7 @@
             <th class="sortable sorted-desc" data-column="score">Score</th>
             <th>Exportado</th>
             <th>Campaña</th>
+            <th>Agente</th>
             <th>WhatsApp</th>
           </tr>
         </thead>
@@ -414,6 +415,7 @@
               <th>Teléfono</th>
               <th>Cotizaciones</th>
               <th>Última Actividad</th>
+              <th>Agente</th>
               <th>WhatsApp</th>
             </tr>
           </thead>
@@ -546,7 +548,7 @@
           .from('leads')
           .select('*')
           .contains('client_id', [CURRENT_CLIENT])
-          .or('is_agent.is.null,is_agent.eq.false')
+          .or(`is_agent.is.null,not.is_agent.cs.{"${CURRENT_CLIENT}"}`)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -625,8 +627,8 @@
         const { data: agents, error } = await supabaseClient
           .from('leads')
           .select('*')
-          .eq('client_id', CURRENT_CLIENT)
-          .eq('is_agent', true)
+          .contains('client_id', [CURRENT_CLIENT])
+          .contains('is_agent', [CURRENT_CLIENT])
           .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -668,11 +670,9 @@
         allAgents = agentsWithStats;
         renderAgents();
 
-        // Show agents section if there are agents
-        if (allAgents.length > 0) {
-          document.getElementById('agentsDivider').style.display = 'block';
-          document.getElementById('agentsSection').style.display = 'block';
-        }
+        // Show/hide agents section
+        document.getElementById('agentsDivider').style.display = allAgents.length > 0 ? 'block' : 'none';
+        document.getElementById('agentsSection').style.display = allAgents.length > 0 ? 'block' : 'none';
 
       } catch (error) {
         console.error('Error loading agents:', error);
@@ -693,6 +693,7 @@
             <td>${formatPhone(agent.phone)}</td>
             <td>${agent.uniqueQuotes}</td>
             <td>${formatMexicoCentralTime(agent.lastActivity)}</td>
+            <td><button onclick="toggleAgent('${agent.id}', false)" style="background:#c0392b;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;">Quitar Agente</button></td>
             <td><a href="${waLink}" target="_blank" class="whatsapp-btn">💬 WhatsApp</a></td>
           </tr>
         `;
@@ -982,6 +983,7 @@
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
             <td style="text-align: center;">${lead.exported ? 'Sí' : 'No'}</td>
             <td>${lead.campaign || 'pietra'}</td>
+            <td><button onclick="toggleAgent('${lead.id}', true)" style="background:#6b5b3e;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;">Hacer Agente</button></td>
             <td><a href="${waLink}" target="_blank" class="whatsapp-btn">💬 WhatsApp</a></td>
           </tr>
         `;
@@ -1093,6 +1095,44 @@
     async function logout() {
       await supabaseClient.auth.signOut();
       window.location.reload();
+    }
+
+    async function toggleAgent(leadId, makeAgent) {
+      try {
+        // Get current is_agent array
+        const { data: lead, error: fetchErr } = await supabaseClient
+          .from('leads')
+          .select('is_agent')
+          .eq('id', leadId)
+          .single();
+        if (fetchErr) throw fetchErr;
+
+        let currentArr = lead.is_agent || [];
+
+        if (makeAgent) {
+          // Add CURRENT_CLIENT to array
+          if (!currentArr.includes(CURRENT_CLIENT)) {
+            currentArr.push(CURRENT_CLIENT);
+          }
+        } else {
+          // Remove CURRENT_CLIENT from array
+          currentArr = currentArr.filter(c => c !== CURRENT_CLIENT);
+          if (currentArr.length === 0) currentArr = null;
+        }
+
+        const { error } = await supabaseClient
+          .from('leads')
+          .update({ is_agent: currentArr })
+          .eq('id', leadId);
+        if (error) throw error;
+
+        // Reload both tables
+        await loadLeads();
+        await loadAgents();
+      } catch (err) {
+        console.error('Error toggling agent:', err);
+        alert('Error al cambiar estado de agente');
+      }
     }
 
     async function exportCSV() {
