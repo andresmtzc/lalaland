@@ -430,7 +430,7 @@
         // Check if lead exists and get rate limit info
         let { data: existingLead } = await supabaseClient
           .from('leads')
-          .select('id, last_link_requested_at, link_request_count')
+          .select('id, last_link_requested_at, link_request_count, client_id')
           .eq('phone', phone)
           .single();
 
@@ -471,9 +471,13 @@
           const updateData = {
               last_seen_at: new Date().toISOString(),
               last_link_requested_at: new Date().toISOString(),
-              link_request_count: newCount,
-              client_id: CURRENT_CLIENT
+              link_request_count: newCount
             };
+          // Append current client to array if not already present
+          const currentClients = existingLead.client_id || [];
+          if (!currentClients.includes(CURRENT_CLIENT)) {
+            updateData.client_id = [...currentClients, CURRENT_CLIENT];
+          }
           if (utmCampaign) updateData.campaign = utmCampaign;
 
           await supabaseClient
@@ -486,7 +490,7 @@
             .from('leads')
             .insert({
               phone,
-              client_id: CURRENT_CLIENT,
+              client_id: [CURRENT_CLIENT],
               last_link_requested_at: new Date().toISOString(),
               link_request_count: 1,
               campaign: utmCampaign || 'pietra'
