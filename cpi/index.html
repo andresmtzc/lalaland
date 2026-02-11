@@ -7755,20 +7755,24 @@ function cotRecalculate() {
   const descuentoAmount = totalPrice * (descuentoPct / 100);
   const precioFinal = totalPrice - descuentoAmount;
 
-  // Auto-adjust balancer: read other fields converting $ if needed
+  // Read non-balancer fields once, keep full precision in a map
   const balancer = cotGetBalancer();
-  const otherSum = COT_PCT_FIELDS
-    .filter(id => id !== balancer)
-    .reduce((sum, id) => sum + cotReadPct(id, totalPrice, precioFinal), 0);
+  const pctMap = {};
+  COT_PCT_FIELDS.forEach(id => {
+    if (id !== balancer) pctMap[id] = cotReadPct(id, totalPrice, precioFinal);
+  });
+  const otherSum = Object.values(pctMap).reduce((s, v) => s + v, 0);
   const balancerValue = 100 - otherSum;
-  document.getElementById(balancer).value = balancerValue.toFixed(1);
+  pctMap[balancer] = balancerValue;
+  // Display rounded value in the balancer input (display only)
+  document.getElementById(balancer).value = Math.round(balancerValue * 10) / 10;
 
-  // Read final pct values (converting $ toggles)
-  const separacionPct = cotReadPct('cotSeparacionPct', totalPrice, precioFinal);
-  const enganchePct = cotReadPct('cotEnganchePct', totalPrice, precioFinal);
-  const mensualidadesPct = cotReadPct('cotMensualidadesPct', totalPrice, precioFinal);
-  const anualidadesPct = cotReadPct('cotAnualidadesPct', totalPrice, precioFinal);
-  const escrituracionPct = cotReadPct('cotEscrituracionPct', totalPrice, precioFinal);
+  // Use pctMap directly — never re-read from DOM — so math is exact
+  const separacionPct = pctMap['cotSeparacionPct'];
+  const enganchePct = pctMap['cotEnganchePct'];
+  const mensualidadesPct = pctMap['cotMensualidadesPct'];
+  const anualidadesPct = pctMap['cotAnualidadesPct'];
+  const escrituracionPct = pctMap['cotEscrituracionPct'];
 
   const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
   const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
@@ -7834,11 +7838,20 @@ function cotBuildLotValues() {
   const descuentoAmount = totalPrice * (descuentoPct / 100);
   const precioFinal = totalPrice - descuentoAmount;
 
-  const separacionPct = cotReadPct('cotSeparacionPct', totalPrice, precioFinal);
-  const enganchePct = cotReadPct('cotEnganchePct', totalPrice, precioFinal);
-  const mensualidadesPct = cotReadPct('cotMensualidadesPct', totalPrice, precioFinal);
-  const anualidadesPct = cotReadPct('cotAnualidadesPct', totalPrice, precioFinal);
-  const escrituracionPct = cotReadPct('cotEscrituracionPct', totalPrice, precioFinal);
+  // Use same pctMap approach as cotRecalculate — full precision, no DOM round-trip
+  const balancerId = cotGetBalancer();
+  const pctMap = {};
+  COT_PCT_FIELDS.forEach(id => {
+    if (id !== balancerId) pctMap[id] = cotReadPct(id, totalPrice, precioFinal);
+  });
+  const otherSum = Object.values(pctMap).reduce((s, v) => s + v, 0);
+  pctMap[balancerId] = 100 - otherSum;
+
+  const separacionPct = pctMap['cotSeparacionPct'];
+  const enganchePct = pctMap['cotEnganchePct'];
+  const mensualidadesPct = pctMap['cotMensualidadesPct'];
+  const anualidadesPct = pctMap['cotAnualidadesPct'];
+  const escrituracionPct = pctMap['cotEscrituracionPct'];
 
   const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
   const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
