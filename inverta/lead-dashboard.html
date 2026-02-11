@@ -502,9 +502,10 @@
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
-          table: 'leads',
-          filter: `client_id=eq.${CURRENT_CLIENT}`
+          table: 'leads'
         }, (payload) => {
+          // Filter client-side (realtime doesn't support array contains)
+          if (!payload.new.client_id || !payload.new.client_id.includes(CURRENT_CLIENT)) return;
           console.log('🔔 New lead:', payload.new.phone);
           const newLead = {
             ...payload.new,
@@ -522,9 +523,9 @@
         .on('postgres_changes', {
           event: 'UPDATE',
           schema: 'public',
-          table: 'leads',
-          filter: `client_id=eq.${CURRENT_CLIENT}`
+          table: 'leads'
         }, (payload) => {
+          if (!payload.new.client_id || !payload.new.client_id.includes(CURRENT_CLIENT)) return;
           const idx = allLeads.findIndex(l => l.id === payload.new.id);
           if (idx !== -1) {
             allLeads[idx] = { ...allLeads[idx], ...payload.new };
@@ -544,7 +545,7 @@
         const { data: leads, error } = await supabaseClient
           .from('leads')
           .select('*')
-          .eq('client_id', CURRENT_CLIENT)
+          .contains('client_id', [CURRENT_CLIENT])
           .or('is_agent.is.null,is_agent.eq.false')
           .order('created_at', { ascending: false });
 
