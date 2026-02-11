@@ -326,6 +326,7 @@
       </div>
       <div class="auth-section">
         <span class="user-email" id="userEmail"></span>
+        <button onclick="exportCSV()" style="background: #2d8a4e;">Exportar CSV</button>
         <button onclick="logout()">Cerrar Sesión</button>
       </div>
     </div>
@@ -376,12 +377,16 @@
           <tr>
             <th class="sortable" data-column="attended">Nuevo</th>
             <th class="sortable" data-column="created_at">Capturado</th>
-            <th class="sortable" data-column="phone">Teléfono</th>
             <th class="sortable" data-column="name">Nombre</th>
+            <th class="sortable" data-column="phone">Teléfono</th>
+            <th>🏳️</th>
+            <th class="sortable" data-column="state">Estado</th>
             <th class="sortable" data-column="visits">Visitas</th>
             <th class="sortable" data-column="days">Días</th>
             <th class="sortable" data-column="saved">Guardados</th>
             <th class="sortable sorted-desc" data-column="score">Score</th>
+            <th>Exportado</th>
+            <th>Campaña</th>
             <th>WhatsApp</th>
           </tr>
         </thead>
@@ -497,9 +502,10 @@
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
-          table: 'leads',
-          filter: `client_id=eq.${CURRENT_CLIENT}`
+          table: 'leads'
         }, (payload) => {
+          // Filter client-side (realtime doesn't support array contains)
+          if (!payload.new.client_id || !payload.new.client_id.includes(CURRENT_CLIENT)) return;
           console.log('🔔 New lead:', payload.new.phone);
           const newLead = {
             ...payload.new,
@@ -517,9 +523,9 @@
         .on('postgres_changes', {
           event: 'UPDATE',
           schema: 'public',
-          table: 'leads',
-          filter: `client_id=eq.${CURRENT_CLIENT}`
+          table: 'leads'
         }, (payload) => {
+          if (!payload.new.client_id || !payload.new.client_id.includes(CURRENT_CLIENT)) return;
           const idx = allLeads.findIndex(l => l.id === payload.new.id);
           if (idx !== -1) {
             allLeads[idx] = { ...allLeads[idx], ...payload.new };
@@ -539,7 +545,7 @@
         const { data: leads, error } = await supabaseClient
           .from('leads')
           .select('*')
-          .eq('client_id', CURRENT_CLIENT)
+          .contains('client_id', [CURRENT_CLIENT])
           .or('is_agent.is.null,is_agent.eq.false')
           .order('created_at', { ascending: false });
 
@@ -733,6 +739,106 @@
       return `+${digits}`;
     }
 
+    function getCountryFlag(phone) {
+      if (!phone) return '🏳️';
+      const digits = phone.replace(/\D/g, '');
+
+      if (digits.startsWith('52') || digits.length === 10) return '🇲🇽';
+      if (digits.startsWith('1')) return '🇺🇸';
+      if (digits.startsWith('34')) return '🇪🇸';
+      if (digits.startsWith('44')) return '🇬🇧';
+      if (digits.startsWith('49')) return '🇩🇪';
+      if (digits.startsWith('33')) return '🇫🇷';
+      if (digits.startsWith('39')) return '🇮🇹';
+      if (digits.startsWith('55')) return '🇧🇷';
+      if (digits.startsWith('54')) return '🇦🇷';
+      if (digits.startsWith('57')) return '🇨🇴';
+      if (digits.startsWith('56')) return '🇨🇱';
+      return '🌐';
+    }
+
+    function getMexicanState(phone) {
+      if (!phone) return '-';
+      const digits = phone.replace(/\D/g, '');
+
+      // Get the lada (area code) - first 2-3 digits after country code
+      let lada = '';
+      if (digits.startsWith('521') && digits.length === 13) {
+        lada = digits.slice(3, 5); // Try 2 digits first
+      } else if (digits.startsWith('52') && digits.length === 12) {
+        lada = digits.slice(2, 4);
+      } else if (digits.length === 10) {
+        lada = digits.slice(0, 2);
+      } else {
+        return '-'; // Not a Mexican number
+      }
+
+      // Lada to state mapping (2-digit codes)
+      const ladaMap = {
+        '55': 'CDMX', '56': 'CDMX',
+        '33': 'JAL', '32': 'JAL', '34': 'JAL', '37': 'JAL',
+        '81': 'NL', '82': 'NL', '83': 'TAMPS', '84': 'COAH',
+        '66': 'BC', '68': 'BC',
+        '44': 'QRO', '46': 'GTO', '47': 'GTO',
+        '61': 'CHIH', '62': 'SON', '64': 'SON',
+        '66': 'SIN', '67': 'SIN',
+        '22': 'PUE', '22': 'VER',
+        '99': 'YUC', '98': 'QR',
+        '74': 'GRO', '75': 'MOR',
+        '72': 'MEX', '71': 'HGO',
+        '95': 'OAX', '96': 'CHIS',
+        '43': 'MICH', '45': 'MICH',
+        '49': 'ZAC', '48': 'SLP',
+        '86': 'TAMPS', '87': 'COAH',
+        '99': 'TAB', '98': 'CAMP'
+      };
+
+      // Try 2-digit match first
+      if (ladaMap[lada]) return ladaMap[lada];
+
+      // Try 3-digit lada for more specific areas
+      let lada3 = '';
+      if (digits.startsWith('521') && digits.length === 13) {
+        lada3 = digits.slice(3, 6);
+      } else if (digits.startsWith('52') && digits.length === 12) {
+        lada3 = digits.slice(2, 5);
+      } else if (digits.length === 10) {
+        lada3 = digits.slice(0, 3);
+      }
+
+      const lada3Map = {
+        '664': 'BC', '665': 'BC', '686': 'BC',
+        '612': 'BCS', '624': 'BCS',
+        '614': 'CHIH', '656': 'CHIH',
+        '662': 'SON', '644': 'SON',
+        '667': 'SIN', '669': 'SIN',
+        '618': 'DGO',
+        '442': 'QRO', '477': 'GTO', '462': 'GTO', '473': 'GTO',
+        '449': 'AGS',
+        '844': 'COAH', '871': 'COAH',
+        '833': 'TAMPS', '834': 'TAMPS',
+        '229': 'VER', '228': 'VER', '272': 'VER',
+        '222': 'PUE',
+        '771': 'HGO',
+        '722': 'MEX',
+        '443': 'MICH', '351': 'MICH',
+        '492': 'ZAC',
+        '444': 'SLP',
+        '951': 'OAX',
+        '961': 'CHIS',
+        '981': 'CAMP',
+        '993': 'TAB',
+        '998': 'QR', '984': 'QR',
+        '999': 'YUC',
+        '744': 'GRO', '747': 'GRO',
+        '777': 'MOR',
+        '312': 'COL',
+        '311': 'NAY'
+      };
+
+      return lada3Map[lada3] || '-';
+    }
+
     function getWhatsAppLink(phone) {
       if (!phone) return '#';
       const digits = phone.replace(/\D/g, '');
@@ -816,6 +922,9 @@
         } else if (col === 'attended') {
           aVal = a.attended_at ? 1 : 0;
           bVal = b.attended_at ? 1 : 0;
+        } else if (col === 'state') {
+          aVal = getMexicanState(a.phone);
+          bVal = getMexicanState(b.phone);
         }
 
         if (currentSort.direction === 'asc') {
@@ -863,12 +972,16 @@
           <tr>
             ${attendCell}
             <td>${formatMexicoCentralTime(lead.created_at)}</td>
-            <td>${formatPhone(lead.phone)}</td>
             <td>${fullName}</td>
+            <td>${formatPhone(lead.phone)}</td>
+            <td style="text-align: center;">${getCountryFlag(lead.phone)}</td>
+            <td>${getMexicanState(lead.phone)}</td>
             <td>${lead.visits}</td>
             <td>${lead.uniqueDays}</td>
             ${savedLotsCell}
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
+            <td style="text-align: center;">${lead.exported ? 'Sí' : 'No'}</td>
+            <td>${lead.campaign || 'pietra'}</td>
             <td><a href="${waLink}" target="_blank" class="whatsapp-btn">💬 WhatsApp</a></td>
           </tr>
         `;
@@ -980,6 +1093,60 @@
     async function logout() {
       await supabaseClient.auth.signOut();
       window.location.reload();
+    }
+
+    async function exportCSV() {
+      if (allLeads.length === 0) {
+        alert('No hay leads para exportar.');
+        return;
+      }
+
+      const headers = ['Nombre', 'Teléfono', 'País', 'Estado', 'Capturado', 'Visitas', 'Días', 'Guardados', 'Score', 'Exportado', 'Campaña'];
+      const escapeCSV = (val) => {
+        const str = String(val ?? '');
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+      };
+
+      const rows = allLeads.map(lead => {
+        const fullName = `${lead.name || ''} ${lead.last_name || ''}`.trim() || '-';
+        return [
+          fullName,
+          formatPhone(lead.phone),
+          getCountryFlag(lead.phone),
+          getMexicanState(lead.phone),
+          formatMexicoCentralTime(lead.created_at),
+          lead.visits,
+          lead.uniqueDays,
+          lead.savedCount,
+          lead.score,
+          lead.exported ? 'Sí' : 'No',
+          lead.campaign || 'pietra'
+        ].map(escapeCSV).join(',');
+      });
+
+      const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `leads_${CURRENT_CLIENT}_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Mark all exported leads as exported in Supabase
+      const leadIds = allLeads.filter(l => !l.exported).map(l => l.id);
+      if (leadIds.length > 0) {
+        await supabaseClient
+          .from('leads')
+          .update({ exported: true })
+          .in('id', leadIds);
+
+        allLeads.forEach(l => l.exported = true);
+        renderTable();
+      }
     }
 
     function showError(message) {
