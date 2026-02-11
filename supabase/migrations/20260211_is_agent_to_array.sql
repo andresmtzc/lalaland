@@ -6,6 +6,9 @@
 -- For existing agents (is_agent = true), copy their client_id array into is_agent
 -- so they remain agents for all clients they currently belong to.
 
+-- Drop the boolean default before converting type
+ALTER TABLE public.leads ALTER COLUMN is_agent DROP DEFAULT;
+
 ALTER TABLE public.leads
   ALTER COLUMN is_agent TYPE TEXT[]
   USING CASE
