@@ -25,19 +25,25 @@ if modeChoice is "Test First" then
 	if processCount > totalCount then set processCount to totalCount
 end if
 
-tell application "Pixelmator Pro" to activate
-delay 0.5
-
--- Copy mask to clipboard once
-tell application "Pixelmator Pro"
-	open maskFile
-	delay 0.5
-	tell front document
-		select all
-		copy
+-- Handler to (re)launch Pixelmator Pro and copy mask to clipboard
+on prepareMask(maskFile)
+	tell application "Pixelmator Pro" to activate
+	delay 1
+	tell application "Pixelmator Pro"
+		open maskFile
+		delay 0.5
+		tell front document
+			select all
+			copy
+		end tell
+		close front document without saving
 	end tell
-	close front document without saving
-end tell
+end prepareMask
+
+-- How often to restart Pixelmator Pro to prevent degradation
+set restartEvery to 50
+
+prepareMask(maskFile)
 
 set processedCount to 0
 set startTime to current date
@@ -45,6 +51,13 @@ set startTime to current date
 repeat with i from 1 to processCount
 	set imageName to item i of imageNames
 	set imagePath to POSIX path of imageFolder & imageName
+
+	-- Restart Pixelmator Pro periodically to prevent memory/performance degradation
+	if processedCount > 0 and processedCount mod restartEvery = 0 then
+		tell application "Pixelmator Pro" to quit
+		delay 2
+		prepareMask(maskFile)
+	end if
 
 	-- Build export path with _repaired suffix
 	set AppleScript's text item delimiters to "."
