@@ -7768,20 +7768,24 @@ function cotRecalculate() {
   const descuentoAmount = totalPrice * (descuentoPct / 100);
   const precioFinal = totalPrice - descuentoAmount;
 
-  // Auto-adjust balancer: read other fields converting $ if needed
+  // Read non-balancer fields once, keep full precision in a map
   const balancer = cotGetBalancer();
-  const otherSum = COT_PCT_FIELDS
-    .filter(id => id !== balancer)
-    .reduce((sum, id) => sum + cotReadPct(id, totalPrice, precioFinal), 0);
+  const pctMap = {};
+  COT_PCT_FIELDS.forEach(id => {
+    if (id !== balancer) pctMap[id] = cotReadPct(id, totalPrice, precioFinal);
+  });
+  const otherSum = Object.values(pctMap).reduce((s, v) => s + v, 0);
   const balancerValue = 100 - otherSum;
-  document.getElementById(balancer).value = balancerValue.toFixed(2);
+  pctMap[balancer] = balancerValue;
+  // Display rounded value in the balancer input (display only)
+  document.getElementById(balancer).value = Math.round(balancerValue * 10) / 10;
 
-  // Read final pct values (converting $ toggles)
-  const separacionPct = cotReadPct('cotSeparacionPct', totalPrice, precioFinal);
-  const enganchePct = cotReadPct('cotEnganchePct', totalPrice, precioFinal);
-  const mensualidadesPct = cotReadPct('cotMensualidadesPct', totalPrice, precioFinal);
-  const anualidadesPct = cotReadPct('cotAnualidadesPct', totalPrice, precioFinal);
-  const escrituracionPct = cotReadPct('cotEscrituracionPct', totalPrice, precioFinal);
+  // Use pctMap directly — never re-read from DOM — so math is exact
+  const separacionPct = pctMap['cotSeparacionPct'];
+  const enganchePct = pctMap['cotEnganchePct'];
+  const mensualidadesPct = pctMap['cotMensualidadesPct'];
+  const anualidadesPct = pctMap['cotAnualidadesPct'];
+  const escrituracionPct = pctMap['cotEscrituracionPct'];
 
   const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
   const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
@@ -7799,23 +7803,23 @@ function cotRecalculate() {
   document.getElementById('cotTotalPrice').value = cotFormatCurrency(totalPrice);
   // Descuento: show opposite value ($ mode → show %, % mode → show $)
   document.getElementById('cotDescuentoAmountDisplay').textContent =
-    cotIsToggleDollar('cotDescuentoPct') ? descuentoPct.toFixed(2) + '%' : cotFormatCurrency(descuentoAmount);
+    cotIsToggleDollar('cotDescuentoPct') ? descuentoPct.toFixed(1) + '%' : cotFormatCurrency(descuentoAmount);
   document.getElementById('cotPrecioFinal').value = cotFormatCurrency(precioFinal);
 
   // Payment fields: show opposite value on right side
   document.getElementById('cotSeparacionDisplay').textContent =
-    cotIsToggleDollar('cotSeparacionPct') ? separacionPct.toFixed(2) + '%' : cotFormatCurrency(separacion);
+    cotIsToggleDollar('cotSeparacionPct') ? separacionPct.toFixed(1) + '%' : cotFormatCurrency(separacion);
   document.getElementById('cotEngancheDisplay').textContent =
-    cotIsToggleDollar('cotEnganchePct') ? enganchePct.toFixed(2) + '%' : cotFormatCurrency(engancheAmount);
+    cotIsToggleDollar('cotEnganchePct') ? enganchePct.toFixed(1) + '%' : cotFormatCurrency(engancheAmount);
   document.getElementById('cotEnganchePerPayDisplay').textContent = cotFormatCurrency(enganche) + '/pago';
   document.getElementById('cotMensualidadesTotalDisplay').textContent =
-    cotIsToggleDollar('cotMensualidadesPct') ? mensualidadesPct.toFixed(2) + '%' : cotFormatCurrency(mensualidadesTotal);
+    cotIsToggleDollar('cotMensualidadesPct') ? mensualidadesPct.toFixed(1) + '%' : cotFormatCurrency(mensualidadesTotal);
   document.getElementById('cotMensualidadMesDisplay').textContent = cotFormatCurrency(mensualidadMes) + '/mes';
   document.getElementById('cotAnualidadesTotalDisplay').textContent =
-    cotIsToggleDollar('cotAnualidadesPct') ? anualidadesPct.toFixed(2) + '%' : cotFormatCurrency(anualidadesTotal);
+    cotIsToggleDollar('cotAnualidadesPct') ? anualidadesPct.toFixed(1) + '%' : cotFormatCurrency(anualidadesTotal);
   document.getElementById('cotAnualidadDisplay').textContent = cotFormatCurrency(anualidad) + '/pago';
   document.getElementById('cotEscrituracionDisplay').textContent =
-    cotIsToggleDollar('cotEscrituracionPct') ? escrituracionPct.toFixed(2) + '%' : cotFormatCurrency(escrituracion);
+    cotIsToggleDollar('cotEscrituracionPct') ? escrituracionPct.toFixed(1) + '%' : cotFormatCurrency(escrituracion);
   document.getElementById('cotTotalDisplay').value = cotFormatCurrency(precioFinal);
 
   const errorMsg = document.getElementById('cotErrorMsg');
@@ -7847,11 +7851,20 @@ function cotBuildLotValues() {
   const descuentoAmount = totalPrice * (descuentoPct / 100);
   const precioFinal = totalPrice - descuentoAmount;
 
-  const separacionPct = cotReadPct('cotSeparacionPct', totalPrice, precioFinal);
-  const enganchePct = cotReadPct('cotEnganchePct', totalPrice, precioFinal);
-  const mensualidadesPct = cotReadPct('cotMensualidadesPct', totalPrice, precioFinal);
-  const anualidadesPct = cotReadPct('cotAnualidadesPct', totalPrice, precioFinal);
-  const escrituracionPct = cotReadPct('cotEscrituracionPct', totalPrice, precioFinal);
+  // Use same pctMap approach as cotRecalculate — full precision, no DOM round-trip
+  const balancerId = cotGetBalancer();
+  const pctMap = {};
+  COT_PCT_FIELDS.forEach(id => {
+    if (id !== balancerId) pctMap[id] = cotReadPct(id, totalPrice, precioFinal);
+  });
+  const otherSum = Object.values(pctMap).reduce((s, v) => s + v, 0);
+  pctMap[balancerId] = 100 - otherSum;
+
+  const separacionPct = pctMap['cotSeparacionPct'];
+  const enganchePct = pctMap['cotEnganchePct'];
+  const mensualidadesPct = pctMap['cotMensualidadesPct'];
+  const anualidadesPct = pctMap['cotAnualidadesPct'];
+  const escrituracionPct = pctMap['cotEscrituracionPct'];
 
   const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
   const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
@@ -7883,25 +7896,25 @@ function cotBuildLotValues() {
     'lot.size': cotFormatNumber(size) + ' m²',
     'lot.pricePerM2': cotFormatCurrency(pm2),
     'lot.totalPrice': cotFormatCurrency(totalPrice),
-    'lot.descuentoPct': descuentoPct.toFixed(2) + '%',
+    'lot.descuentoPct': descuentoPct.toFixed(1) + '%',
     'lot.descuentoAmount': cotFormatCurrency(descuentoAmount),
     'lot.precioFinal': cotFormatCurrency(precioFinal),
     'lot.clientName': clientName,
-    'lot.separacionPct': separacionPct.toFixed(2) + '%',
+    'lot.separacionPct': separacionPct.toFixed(1) + '%',
     'lot.separacion': cotFormatCurrency(separacion),
-    'lot.enganchePct': enganchePct.toFixed(2) + '%',
+    'lot.enganchePct': enganchePct.toFixed(1) + '%',
     'lot.engancheAmount': cotFormatCurrency(engancheAmount),
     'lot.numEnganche': numEnganche.toString(),
     'lot.enganche': cotFormatCurrency(enganche),
-    'lot.mensualidadesPct': mensualidadesPct.toFixed(2) + '%',
+    'lot.mensualidadesPct': mensualidadesPct.toFixed(1) + '%',
     'lot.mensualidadesTotal': cotFormatCurrency(mensualidadesTotal),
     'lot.numMensualidades': numMensualidades.toString(),
     'lot.mensualidadMes': cotFormatCurrency(mensualidadMes),
-    'lot.anualidadesPct': anualidadesPct.toFixed(2) + '%',
+    'lot.anualidadesPct': anualidadesPct.toFixed(1) + '%',
     'lot.anualidad': cotFormatCurrency(anualidad),
     'lot.numAnualidades': numAnualidades.toString(),
     'lot.anualidadesTotal': cotFormatCurrency(anualidadesTotal),
-    'lot.escrituracionPct': escrituracionPct.toFixed(2) + '%',
+    'lot.escrituracionPct': escrituracionPct.toFixed(1) + '%',
     'lot.escrituracion': cotFormatCurrency(escrituracion),
     ...fechaValues
   };
