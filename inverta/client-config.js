@@ -146,7 +146,7 @@ const CLIENT_CONFIGS = {
         position: 2,
         searchMenuId: 'positionFour',
         apartarEnabled: true,
-        framesBase: 'https://andresmtzc.github.io/street/barcelona/'
+        framesBase: 'https://andresmtzc.github.io/barcelona/frames/'
       },
 
       marsella: {
@@ -159,7 +159,7 @@ const CLIENT_CONFIGS = {
         position: 1,
         searchMenuId: 'positionThree',
         apartarEnabled: true,
-        framesBase: 'https://andresmtzc.github.io/geepeeX/marsella/frames/'
+        framesBase: 'https://andresmtzc.github.io/marsella/frames/'
       },
 
       sierraalta: {
@@ -172,7 +172,7 @@ const CLIENT_CONFIGS = {
         position: 7,
         searchMenuId: 'positionTwo',
         apartarEnabled: true,
-        framesBase: 'https://andresmtzc.github.io/geepeeX/sierraalta/frames/'
+        framesBase: 'https://andresmtzc.github.io/sierraalta/frames/'
       },
 
       sierrabaja: {
