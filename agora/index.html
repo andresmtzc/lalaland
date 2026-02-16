@@ -4114,12 +4114,9 @@ map.on('click', 'lots-final-click', (e) => {
       type: 'line',
       source: 'lots-final',
       paint: {
-        'line-color': CONFIG.colors.white,
-        'line-width': ["interpolate", ["linear"], ["zoom"],
-          16, 3,  // At zoom 16: 3px
-          19, 4   // At zoom 19+: 4px (same as available lots)
-        ],
-        'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
+        'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.hover.outline.color),
+        'line-width': lotStyleWidth(CONFIG.lotStyles.hover.outline.width),
+        'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], CONFIG.lotStyles.hover.outline.opacity, 0]
       }
     });
 
@@ -4876,6 +4873,9 @@ function parseLots(text) {
 <script>
 // ========== DRAW X ON SOLD LOTS ==========
 function addSoldXs(map, soldLots, fadeDuration = 500) {
+  // Skip if xMark is disabled in config
+  if (!CONFIG.lotStyles.sold.xMark.enabled) return;
+
   if (!map.getSource('sold-x')) {
     map.addSource('sold-x', {
       type: 'geojson',
@@ -4888,8 +4888,8 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
       source: 'sold-x',
       layout: {},
       paint: {
-        'line-color': CONFIG.colors.white,
-        'line-width': 1,
+        'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.xMark.color),
+        'line-width': CONFIG.lotStyles.sold.xMark.width,
         'line-opacity': 0,
         'line-opacity-transition': { duration: fadeDuration }
       }
@@ -4907,7 +4907,7 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
 
   // ⏳ Fade in after tiny delay to ensure features are added first
   setTimeout(() => {
-    map.setPaintProperty('sold-x-layer', 'line-opacity', 0.49);
+    map.setPaintProperty('sold-x-layer', 'line-opacity', CONFIG.lotStyles.sold.xMark.opacity);
   }, 10);
 }
 
@@ -5044,20 +5044,20 @@ function animateLots(map, cb) {
       type: "line",
       source: `lot-group-${i}`,
       paint: {
-        "line-color": CONFIG.colors.white,
+        "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.available.outline.color),
         "line-width": 1,
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
       },
       filter: ["!=", ["get", "availability"], "Sold"]
     });
-    
+
     map.addLayer({
-      id: `lot-group-${i}-sold`, 
+      id: `lot-group-${i}-sold`,
       type: "line",
       source: `lot-group-${i}`,
       paint: {
-        "line-color": CONFIG.colors.white,
+        "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.outline.color),
         "line-width": 1,
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
@@ -5124,11 +5124,8 @@ function animateLots(map, cb) {
     source: "lots-final",
     layout: { visibility: "visible" },
     paint: {
-      "line-color": CONFIG.colors.white,
-      "line-width": ["interpolate", ["linear"], ["zoom"],
-        16, 1.5,  // At zoom 16: 1.5px (starting point)
-        19, 4     // At zoom 19+: 4px (max width)
-      ],
+      "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.available.outline.color),
+      "line-width": lotStyleWidth(CONFIG.lotStyles.available.outline.width),
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
@@ -5141,13 +5138,45 @@ function animateLots(map, cb) {
     source: "lots-final",
     layout: { visibility: "visible" },
     paint: {
-      "line-color": CONFIG.colors.white,
-      "line-width": 1,
+      "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.outline.color),
+      "line-width": lotStyleWidth(CONFIG.lotStyles.sold.outline.width),
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
     filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
   });
+
+  // Optional fill layer for available lots (only added when fill.color is set)
+  if (CONFIG.lotStyles.available.fill.color) {
+    map.addLayer({
+      id: "lots-final-available-fill",
+      type: "fill",
+      source: "lots-final",
+      layout: { visibility: "visible" },
+      paint: {
+        "fill-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.available.fill.color),
+        "fill-opacity": 0,
+        "fill-opacity-transition": { duration: fadeDuration },
+      },
+      filter: ["!=", ["get", "availability"], "Sold"]
+    });
+  }
+
+  // Optional fill layer for sold lots (only added when fill.color is set)
+  if (CONFIG.lotStyles.sold.fill.color) {
+    map.addLayer({
+      id: "lots-final-sold-fill",
+      type: "fill",
+      source: "lots-final",
+      layout: { visibility: "visible" },
+      paint: {
+        "fill-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.fill.color),
+        "fill-opacity": 0,
+        "fill-opacity-transition": { duration: fadeDuration },
+      },
+      filter: ["==", ["get", "availability"], "Sold"]
+    });
+  }
 
   map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
     id: "lots-final-click",
@@ -5204,9 +5233,11 @@ function animateLots(map, cb) {
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
-    // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
-    map.setPaintProperty("lots-final-available", "line-opacity", 1);
-    map.setPaintProperty("lots-final-sold", "line-opacity", 0.25); // ⬅️ 0.25 for final layer during transition
+    // Fade in final lots - sold lots get half opacity during transition (group+final overlap)
+    map.setPaintProperty("lots-final-available", "line-opacity", CONFIG.lotStyles.available.outline.opacity);
+    map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // half during transition
+    if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
+    if (map.getLayer("lots-final-sold-fill")) map.setPaintProperty("lots-final-sold-fill", "fill-opacity", CONFIG.lotStyles.sold.fill.opacity);
     // Labels now fade based on zoom level (see text-opacity interpolate expression)
 
     setTimeout(() => {
@@ -5221,7 +5252,7 @@ function animateLots(map, cb) {
 
       // AFTER group layers fade out, update final sold layer to full 0.49
       setTimeout(() => {
-        map.setPaintProperty("lots-final-sold", "line-opacity", 0.49); // ⬅️ UPDATE TO FULL 0.49
+        map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity); // full opacity after groups removed
          
         // Remove all lot groups
         groupArr.forEach((_, i) => {
@@ -5541,13 +5572,13 @@ function addFeaturedLotsLayer(map, onComplete) {
     }
   });
 
-  // Orange fill with pulsating opacity - insert above lots-final-available
+  // Featured fill with pulsating opacity - insert above lots-final-available
   map.addLayer({
     id: 'featured-lots-layer',
     type: 'fill',
     source: 'featured-lots',
     paint: {
-      'fill-color': CONFIG.colors.primary,
+      'fill-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.fill.color),
       'fill-opacity': ['get', 'opacity']
     }
   }, 'lots-final-available'); // ← CHANGED FROM 'lots-final' to 'lots-final-available'
@@ -5564,15 +5595,15 @@ function addFeaturedLotsLayer(map, onComplete) {
     }
   }
 
-  // Add the orange outline above lots-final-click
+  // Add the featured outline above lots-final-click
   map.addLayer({
     id: 'featured-lots-outline',
     type: 'line',
     source: 'featured-lots',
     paint: {
-      'line-color': CONFIG.colors.primary,
-      'line-width': 2,
-      'line-opacity': 1
+      'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+      'line-width': CONFIG.lotStyles.featured.outline.width,
+      'line-opacity': CONFIG.lotStyles.featured.outline.opacity
     }
   }, 'lots-final-click');  
   
@@ -5588,6 +5619,9 @@ function startPolygonPulse(map, onComplete) {
   let t = 0;
   let initialPulseCompleted = false;
   const PULSE_DURATION = 2.0; // seconds
+  const _pulseOp = CONFIG.lotStyles.featured.fill.opacity;
+  const _pulseBase = Array.isArray(_pulseOp) ? _pulseOp[0] : _pulseOp;
+  const _pulseAmp  = Array.isArray(_pulseOp) ? _pulseOp[1] : 0;
 
   function frame() {
     t += 0.05; // SLOWER: was 0.05, now 0.02 for slower animation
@@ -5599,7 +5633,7 @@ function startPolygonPulse(map, onComplete) {
       ...source._data,
       features: source._data.features.map(f => {
         const phase = f.properties?.phase ?? 0;
-        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        const opacity = _pulseBase + Math.sin(t + phase) * _pulseAmp;
         return {
           ...f,
           properties: {
