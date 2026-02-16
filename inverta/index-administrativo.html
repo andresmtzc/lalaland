@@ -3723,12 +3723,9 @@ map.on('click', 'lots-final-click', (e) => {
       type: 'line',
       source: 'lots-final',
       paint: {
-        'line-color': CONFIG.colors.white,
-        'line-width': ["interpolate", ["linear"], ["zoom"],
-          16, 3,  // At zoom 16: 3px
-          19, 4   // At zoom 19+: 4px (same as available lots)
-        ],
-        'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
+        'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.hover.outline.color),
+        'line-width': lotStyleWidth(CONFIG.lotStyles.hover.outline.width),
+        'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], CONFIG.lotStyles.hover.outline.opacity, 0]
       }
     });
 
@@ -3888,12 +3885,9 @@ map.on('click', 'lots-final-click', (e) => {
           type: 'line',
           source: 'lots-final',
           paint: {
-            'line-color': CONFIG.colors.primary,
-            'line-width': ["interpolate", ["linear"], ["zoom"],
-              16, 3,  // At zoom 16: 3px
-              19, 4   // At zoom 19+: 4px (same as available lots)
-            ],
-            'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
+            'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.hover.outline.color),
+            'line-width': lotStyleWidth(CONFIG.lotStyles.hover.outline.width),
+            'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], CONFIG.lotStyles.hover.outline.opacity, 0]
           }
         });
 
@@ -4485,6 +4479,7 @@ function parseLots(text) {
 <script>
 // ========== DRAW X ON SOLD LOTS ==========
 function addSoldXs(map, soldLots, fadeDuration = 500) {
+  if (!CONFIG.lotStyles.sold.xMark.enabled) return;
   if (!map.getSource('sold-x')) {
     map.addSource('sold-x', {
       type: 'geojson',
@@ -4497,8 +4492,8 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
       source: 'sold-x',
       layout: {},
       paint: {
-        'line-color': CONFIG.colors.white,
-        'line-width': 1,
+        'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.xMark.color),
+        'line-width': CONFIG.lotStyles.sold.xMark.width,
         'line-opacity': 0,
         'line-opacity-transition': { duration: fadeDuration }
       }
@@ -4516,7 +4511,7 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
 
   // ⏳ Fade in after tiny delay to ensure features are added first
   setTimeout(() => {
-    map.setPaintProperty('sold-x-layer', 'line-opacity', 0.49);
+    map.setPaintProperty('sold-x-layer', 'line-opacity', CONFIG.lotStyles.sold.xMark.opacity);
   }, 10);
 }
 
@@ -4653,20 +4648,20 @@ function animateLots(map, cb) {
       type: "line",
       source: `lot-group-${i}`,
       paint: {
-        "line-color": CONFIG.colors.white,
+        "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.available.outline.color),
         "line-width": 1,
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
       },
       filter: ["!=", ["get", "availability"], "Sold"]
     });
-    
+
     map.addLayer({
-      id: `lot-group-${i}-sold`, 
+      id: `lot-group-${i}-sold`,
       type: "line",
       source: `lot-group-${i}`,
       paint: {
-        "line-color": CONFIG.colors.white,
+        "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.outline.color),
         "line-width": 1,
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
@@ -4733,11 +4728,8 @@ function animateLots(map, cb) {
     source: "lots-final",
     layout: { visibility: "visible" },
     paint: {
-      "line-color": CONFIG.colors.white,
-      "line-width": ["interpolate", ["linear"], ["zoom"],
-        16, 1.5,  // At zoom 16: 1.5px (starting point)
-        19, 4     // At zoom 19+: 4px (max width)
-      ],
+      "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.available.outline.color),
+      "line-width": lotStyleWidth(CONFIG.lotStyles.available.outline.width),
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
@@ -4750,13 +4742,45 @@ function animateLots(map, cb) {
     source: "lots-final",
     layout: { visibility: "visible" },
     paint: {
-      "line-color": CONFIG.colors.white,
-      "line-width": 1,
+      "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.outline.color),
+      "line-width": lotStyleWidth(CONFIG.lotStyles.sold.outline.width),
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
     filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
   });
+
+  // Optional fill layer for available lots (only added when fill.color is set)
+  if (CONFIG.lotStyles.available.fill.color) {
+    map.addLayer({
+      id: "lots-final-available-fill",
+      type: "fill",
+      source: "lots-final",
+      layout: { visibility: "visible" },
+      paint: {
+        "fill-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.available.fill.color),
+        "fill-opacity": 0,
+        "fill-opacity-transition": { duration: fadeDuration },
+      },
+      filter: ["!=", ["get", "availability"], "Sold"]
+    });
+  }
+
+  // Optional fill layer for sold lots (only added when fill.color is set)
+  if (CONFIG.lotStyles.sold.fill.color) {
+    map.addLayer({
+      id: "lots-final-sold-fill",
+      type: "fill",
+      source: "lots-final",
+      layout: { visibility: "visible" },
+      paint: {
+        "fill-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.fill.color),
+        "fill-opacity": 0,
+        "fill-opacity-transition": { duration: fadeDuration },
+      },
+      filter: ["==", ["get", "availability"], "Sold"]
+    });
+  }
 
   map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
     id: "lots-final-click",
@@ -5156,7 +5180,7 @@ function addFeaturedLotsLayer(map, onComplete) {
     type: 'fill',
     source: 'featured-lots',
     paint: {
-      'fill-color': CONFIG.colors.primary,
+      'fill-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.fill.color),
       'fill-opacity': ['get', 'opacity']
     }
   }, 'lots-final-available'); // ← CHANGED FROM 'lots-final' to 'lots-final-available'

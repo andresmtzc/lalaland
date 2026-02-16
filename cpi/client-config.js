@@ -216,6 +216,59 @@ const CLIENT_CONFIGS = {
       debugYellow: '#ffff00'           // Pure yellow - debugging
     },
 
+    // ----- LOT STYLES -----
+    // Customize how lots appear on the map
+    // Colors can be hex/rgba values OR keys from the colors section (e.g., 'primary')
+    // Width can be a number (constant) or [min, max] array (zoom-interpolated 16→19)
+    lotStyles: {
+      available: {
+        outline: {
+          color: '#ffffff',
+          width: [1.5, 4],       // [zoomMin, zoomMax] → 1.5px at zoom 16, 4px at zoom 19
+          opacity: 1,
+        },
+        fill: {
+          color: null,           // null = no fill layer added
+          opacity: 0,
+        },
+      },
+      sold: {
+        outline: {
+          color: '#ffffff',
+          width: 1,
+          opacity: 0.49,
+        },
+        fill: {
+          color: null,
+          opacity: 0,
+        },
+        xMark: {
+          enabled: true,
+          color: '#ffffff',
+          width: 1,
+          opacity: 0.49,
+        },
+      },
+      featured: {
+        outline: {
+          color: 'primary',      // resolves to CONFIG.colors.primary
+          width: 2,
+          opacity: 1,
+        },
+        fill: {
+          color: 'primary',
+          opacity: [0.3, 0.2],   // [base, amplitude] → oscillates base ± amplitude
+        },
+      },
+      hover: {
+        outline: {
+          color: '#ffffff',
+          width: [3, 4],
+          opacity: 1,
+        },
+      },
+    },
+
     // ----- MISCELLANEOUS -----
     misc: {
       // Font family for the site (used in CSS and inline styles)
@@ -440,6 +493,31 @@ function applyColorsToCSS(clientName) {
   console.log('✅ Colors applied to CSS variables');
 }
 
+/**
+ * Resolve a lot style color value — if it matches a key in config.colors, returns that color.
+ * Otherwise returns the raw value (hex, rgba, etc.).
+ * @param {object} config - The client config object
+ * @param {string} colorValue - Color key (e.g., 'primary') or raw color (e.g., '#fff')
+ * @returns {string} Resolved color value
+ */
+function resolveLotStyleColor(config, colorValue) {
+  if (!colorValue) return colorValue;
+  return (config.colors && config.colors[colorValue]) || colorValue;
+}
+
+/**
+ * Convert a lot style width value to a Mapbox paint expression.
+ * Array [min, max] becomes zoom-interpolated (16→19); number stays as-is.
+ * @param {number|array} widthValue - Width number or [minZoom, maxZoom] array
+ * @returns {number|array} Mapbox-compatible width expression
+ */
+function lotStyleWidth(widthValue) {
+  if (Array.isArray(widthValue)) {
+    return ["interpolate", ["linear"], ["zoom"], 16, widthValue[0], 19, widthValue[1]];
+  }
+  return widthValue;
+}
+
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -452,6 +530,8 @@ if (typeof module !== 'undefined' && module.exports) {
     buildShareText,
     extractLotNumber,
     getColor,
-    applyColorsToCSS
+    applyColorsToCSS,
+    resolveLotStyleColor,
+    lotStyleWidth
   };
 }
