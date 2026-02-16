@@ -346,7 +346,7 @@ const CLIENT_CONFIGS = {
       },
       hover: {
         outline: {
-          color: '#ffffff',
+          color: 'primary',
           width: [3, 4],
           opacity: 1,
         },
