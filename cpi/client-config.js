@@ -137,7 +137,7 @@ const CLIENT_CONFIGS = {
     // All colors used throughout the site for easy customization
     colors: {
       // Primary brand colors
-      primary: '#8f5e38',        // Orange - main CTA and accent color
+      primary: '#9A6940',        // Orange - main CTA and accent color
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
@@ -231,7 +231,7 @@ const CLIENT_CONFIGS = {
         },
         fill: {
           color: '#E0D7C4',           // null = no fill layer added
-          opacity: 0.2,
+          opacity: 0.45,
         },
       },
       sold: {
