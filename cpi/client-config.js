@@ -35,7 +35,8 @@ const CLIENT_CONFIGS = {
         // For marsella & barcelona
         url: 'https://la-la.land/cpi/senterra.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/inverta/lomasmediterraneo_black.png', // Black version for cards
-        communities: ['senterra']
+        communities: ['senterra'],
+        detailZoom: 18.8,  // must be >= minZoomForDimensions for dimensions to show
       }
     },
 
