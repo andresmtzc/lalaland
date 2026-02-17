@@ -898,8 +898,8 @@ function updateNavigationRing(instant = false) {
   // Detect position in track (including anti-marriage blocks)
   const isFirst = marbleIndex === 0;
   const isLast = marbleIndex === total - 1;
-  const nextBlocked = !isLast && areAntiMarried(selectedMarbleId, track.marbles[marbleIndex + 1]?.id);
-  const prevBlocked = !isFirst && areAntiMarried(selectedMarbleId, track.marbles[marbleIndex - 1]?.id);
+  const nextBlocked = !isLast && isAntiMarriageBlocked(selectedMarbleId, 'forward', track);
+  const prevBlocked = !isFirst && isAntiMarriageBlocked(selectedMarbleId, 'backward', track);
   const canForward = !isLast && !nextBlocked;
   const canBackward = !isFirst && !prevBlocked;
 
@@ -1371,6 +1371,26 @@ function areAntiMarried(marbleId1, marbleId2) {
   return false;
 }
 
+// Check if navigation is blocked by anti-marriage in a given direction
+// Works for both adjacent and non-adjacent anti-married pairs (wall behavior)
+function isAntiMarriageBlocked(marbleId, direction, track) {
+  const myId = getMarbleIdentifier(marbleId);
+  if (!myId) return false;
+  const myIdx = track.marbles.findIndex(m => m.id === marbleId);
+  if (myIdx < 0) return false;
+  for (const pair of antiMarriageGroups) {
+    if (!pair.includes(myId)) continue;
+    const otherId = pair[0] === myId ? pair[1] : pair[0];
+    const other = findMarbleByIdentifier(otherId);
+    if (!other || other.track !== track) continue;
+    const otherIdx = track.marbles.findIndex(m => m.id === other.marble.id);
+    if (otherIdx < 0) continue;
+    if (direction === 'forward' && otherIdx > myIdx) return true;
+    if (direction === 'backward' && otherIdx < myIdx) return true;
+  }
+  return false;
+}
+
 // Preload images for all married marbles
 function preloadMarriedMarbleImages() {
   const imagesToPreload = new Set();
@@ -1643,8 +1663,8 @@ function nextImage() {
   if (!track || !selectedMarbleId) { updateViewerUI(); return; }
   const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
   if (marbleIndex < 0 || marbleIndex >= track.marbles.length - 1) { updateViewerUI(); return; }
+  if (isAntiMarriageBlocked(selectedMarbleId, 'forward', track)) { updateViewerUI(); return; }
   const nextMarble = track.marbles[marbleIndex + 1];
-  if (areAntiMarried(selectedMarbleId, nextMarble.id)) { updateViewerUI(); return; }
   if (nextMarble.assignedImage !== null && nextMarble.assignedImage !== undefined) {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
     selectMarble(nextMarble.id);
@@ -1661,8 +1681,8 @@ function previousImage() {
   if (!track || !selectedMarbleId) { updateViewerUI(); return; }
   const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
   if (marbleIndex <= 0) { updateViewerUI(); return; }
+  if (isAntiMarriageBlocked(selectedMarbleId, 'backward', track)) { updateViewerUI(); return; }
   const prevMarble = track.marbles[marbleIndex - 1];
-  if (areAntiMarried(selectedMarbleId, prevMarble.id)) { updateViewerUI(); return; }
   if (prevMarble.assignedImage !== null && prevMarble.assignedImage !== undefined) {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
     selectMarble(prevMarble.id);
