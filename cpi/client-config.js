@@ -283,10 +283,6 @@ const CLIENT_CONFIGS = {
       // Allow clicking on sold lots (independent of skipListModal)
       soldLotsClickable: false,
 
-      // Zoom level the map flies to when opening lot detail view
-      // Must be >= minZoomForDimensions so dimension labels are visible on arrival
-      detailZoom: 18.8,
-
       // Minimum zoom level to show lot dimensions (lower = show at farther zoom)
       minZoomForDimensions: 17.9,
 
