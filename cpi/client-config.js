@@ -225,18 +225,18 @@ const CLIENT_CONFIGS = {
     lotStyles: {
       available: {
         outline: {
-          color: '#ffffff',
+          color: '#EFEAE0',
           width: [1.5, 4],       // [zoomMin, zoomMax] → 1.5px at zoom 16, 4px at zoom 19
           opacity: 1,
         },
         fill: {
-          color: null,           // null = no fill layer added
-          opacity: 0,
+          color: '#E0D7C4',           // null = no fill layer added
+          opacity: 0.2,
         },
       },
       sold: {
         outline: {
-          color: '#ffffff',
+          color: '#EFEAE0',
           width: 1,
           opacity: 0.49,
         },
@@ -246,7 +246,7 @@ const CLIENT_CONFIGS = {
         },
         xMark: {
           enabled: true,
-          color: '#ffffff',
+          color: '#EFEAE0',
           width: 1,
           opacity: 0.49,
         },
