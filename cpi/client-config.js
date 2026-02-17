@@ -36,7 +36,8 @@ const CLIENT_CONFIGS = {
         url: 'https://la-la.land/cpi/senterra.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/inverta/lomasmediterraneo_black.png', // Black version for cards
         communities: ['senterra'],
-        detailZoom: 18.8,  // must be >= minZoomForDimensions for dimensions to show
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 17.9, // minimum zoom to show lot dimension labels
       }
     },
 

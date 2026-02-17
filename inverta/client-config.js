@@ -38,7 +38,8 @@ const CLIENT_CONFIGS = {
         communities: ['marsella', 'barcelona'],
         center: [-96.036711, 19.0485],
         zoom: 15,
-        detailZoom: 18.8,  // must be >= minZoomForDimensions for dimensions to show
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       },
       'puntolomas': {
         // For sierraalta & sierrabaja
@@ -47,7 +48,8 @@ const CLIENT_CONFIGS = {
         communities: ['sierraalta', 'sierrabaja'],
         center: [-96.090537, 19.073336],
         zoom: 15.2,
-        detailZoom: 18.8,  // must be >= minZoomForDimensions for dimensions to show
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       },
           'arborea': {
         // For sierraalta & sierrabaja
@@ -56,7 +58,8 @@ const CLIENT_CONFIGS = {
         communities: ['cortezia', 'ebano', 'verdalia', 'frondia'],
         center: [-110.908304, 29.123942],
         zoom: 14.9,
-        detailZoom: 18.8,  // must be >= minZoomForDimensions for dimensions to show
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       },
                 'almaterra': {
         // For sierraalta & sierrabaja
@@ -65,7 +68,8 @@ const CLIENT_CONFIGS = {
         communities: ['almaterra'],
         center: [-100.06265, 25.314019],
         zoom: 14.5,
-        detailZoom: 18.8,  // must be >= minZoomForDimensions for dimensions to show
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       }
     },
 
