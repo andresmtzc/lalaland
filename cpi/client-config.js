@@ -361,6 +361,28 @@ function getCommunityLogo(clientName, fraccName, forCard = false) {
 }
 
 /**
+ * Get the community group name for a given fraccionamiento
+ * @param {string} clientName - The client identifier
+ * @param {string} fraccName - The fraccionamiento/community name
+ * @returns {string|null} Group name or null
+ */
+function getCommunityGroup(clientName, fraccName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.communityLogos) return null;
+
+  const fracc = fraccName.toLowerCase().trim();
+
+  // Search through community logo groups
+  for (const [groupName, logoData] of Object.entries(config.communityLogos)) {
+    if (logoData.communities && logoData.communities.includes(fracc)) {
+      return groupName;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Get community data by fracc name
  * @param {string} clientName - The client identifier
  * @param {string} fraccName - The fraccionamiento/community name
