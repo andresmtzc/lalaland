@@ -327,6 +327,7 @@
       <div class="auth-section">
         <span class="user-email" id="userEmail"></span>
         <button onclick="exportCSV()" style="background: #2d8a4e;">Exportar CSV</button>
+        <button onclick="syncToHubspot()" style="background: #ff7a59;">Sync HubSpot</button>
         <button onclick="logout()">Cerrar Sesión</button>
       </div>
     </div>
@@ -433,6 +434,10 @@
   <script>
     const CURRENT_CLIENT = 'cpi';
     applyColorsToCSS(CURRENT_CLIENT);
+
+    // HubSpot Forms API config
+    const HUBSPOT_PORTAL_ID = 'XXXXXXXX';
+    const HUBSPOT_FORM_GUID = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
 
     let supabaseClient;
     let currentUser = null;
@@ -1189,6 +1194,69 @@
         allLeads.forEach(l => l.exported = true);
         renderLeads();
       }
+    }
+
+    async function syncToHubspot() {
+      const unsynced = allLeads.filter(l => !l.exported);
+
+      if (unsynced.length === 0) {
+        alert('No hay leads nuevos para sincronizar.');
+        return;
+      }
+
+      if (!confirm(`Sincronizar ${unsynced.length} lead(s) a HubSpot?`)) return;
+
+      const syncedIds = [];
+      let failed = 0;
+
+      for (const lead of unsynced) {
+        try {
+          const res = await fetch(
+            `https://api.hsforms.com/submissions/v3/integration/submit/${HUBSPOT_PORTAL_ID}/${HUBSPOT_FORM_GUID}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fields: [
+                  { name: 'email',     value: lead.email || `${lead.phone}@noemail.com` },
+                  { name: 'firstname', value: lead.name || '' },
+                  { name: 'lastname',  value: lead.last_name || '' },
+                  { name: 'phone',     value: lead.phone || '' },
+                  { name: 'state',     value: getMexicanState(lead.phone) },
+                ],
+                context: {
+                  pageUri: window.location.href,
+                  pageName: 'CPI Lead Dashboard'
+                }
+              })
+            }
+          );
+
+          if (res.ok) {
+            syncedIds.push(lead.id);
+          } else {
+            const err = await res.json();
+            console.error('HubSpot error for', lead.phone, err);
+            failed++;
+          }
+        } catch (e) {
+          console.error('Network error for', lead.phone, e);
+          failed++;
+        }
+      }
+
+      // Mark successfully synced leads as exported in Supabase
+      if (syncedIds.length > 0) {
+        await supabaseClient
+          .from('leads')
+          .update({ exported: true })
+          .in('id', syncedIds);
+
+        allLeads.forEach(l => { if (syncedIds.includes(l.id)) l.exported = true; });
+        renderLeads();
+      }
+
+      alert(`${syncedIds.length} sincronizados a HubSpot${failed > 0 ? `\n${failed} fallaron (ver consola)` : ''}`);
     }
 
     function showError(message) {
