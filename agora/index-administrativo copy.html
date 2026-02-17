@@ -50,7 +50,7 @@
 <script src="client-config.js"></script>
 <script>
 // ===== CLIENT CONFIG =====
-const CURRENT_CLIENT = 'inverta';
+const CURRENT_CLIENT = 'agora';
 const CONFIG = getClientConfig(CURRENT_CLIENT);
 
 // Validate config loaded
@@ -161,7 +161,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <div class="logoinv-wrapper">
    <a href="#" onclick="event.preventDefault(); window.location.reload(true);" title="Reload Site">
-  <img id="mainClientLogo" src="" alt=""></a>
+  <img id="mainClientLogo" src="" alt="" style="height:40px;"></a>
 </div>
 <script>
   // Set main logo from config
@@ -179,7 +179,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 </script>
 
 <!-- Conditional community logo -->
-<div class="community-logo-wrapper" id="communityLogo">
+<div class="community-logo-wrapper" id="communityLogo" style="top:70px;">
   <img id="communityLogoImg" src="" alt="Community Logo">
 </div>
 <script>
@@ -453,11 +453,9 @@ let viewerInitialized = false;
 let selectedMarbleId = null;
 // Marriage system
 let marriageGroups = []; // Array of arrays: [["gpxName.gpx:15", "gpxName2.gpx:42"], ...]
-let antiMarriageGroups = []; // Array of arrays: pairs that block navigation between them
 let lastHopBearingDeg = null;
 let currentImages = [];
 let currentImageIndex = -1;
-let imageNumberToArrayIndex = {}; // Maps original image number (from filename) to currentImages array position
 let preloadedImages = {};
 let viewConeMarker = null;
 let isSwitchingTrack = false;
@@ -695,7 +693,7 @@ function initThreeJSViewer() {
     powerPreference: 'high-performance'
   });
   
-  const dpr = Math.min(window.devicePixelRatio, 2);
+const dpr = Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height, false);
   
@@ -856,13 +854,11 @@ function updateNavigationRing(instant = false) {
   const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
   const total = track.marbles.length;
 
-  // Detect position in track (including anti-marriage blocks)
+  // Detect position in track
   const isFirst = marbleIndex === 0;
   const isLast = marbleIndex === total - 1;
-  const nextBlocked = !isLast && areAntiMarried(selectedMarbleId, track.marbles[marbleIndex + 1]?.id);
-  const prevBlocked = !isFirst && areAntiMarried(selectedMarbleId, track.marbles[marbleIndex - 1]?.id);
-  const canForward = !isLast && !nextBlocked;
-  const canBackward = !isFirst && !prevBlocked;
+  const canForward = !isLast;
+  const canBackward = !isFirst;
 
   // Branch only available if marble has married partners
   const canBranch = hasMarriedPartners(selectedMarbleId);
@@ -995,12 +991,6 @@ async function loadGPXFromManifest() {
         if (manifest.marriages && Array.isArray(manifest.marriages)) {
           marriageGroups = marriageGroups.concat(manifest.marriages);
           console.log("Marriages loaded from:", framesBase);
-        }
-
-        // Merge anti-marriages if present
-        if (manifest.antiMarriages && Array.isArray(manifest.antiMarriages)) {
-          antiMarriageGroups = antiMarriageGroups.concat(manifest.antiMarriages);
-          console.log("Anti-marriages loaded from:", framesBase);
         }
 
         // Get GPX files from manifest
@@ -1319,18 +1309,6 @@ function hasMarriedPartners(marbleId) {
   return getMarriedPartners(marbleId).length > 0;
 }
 
-// Check if two marbles are anti-married (navigation blocked between them)
-function areAntiMarried(marbleId1, marbleId2) {
-  if (!marbleId1 || !marbleId2) return false;
-  const id1 = getMarbleIdentifier(marbleId1);
-  const id2 = getMarbleIdentifier(marbleId2);
-  if (!id1 || !id2) return false;
-  for (const group of antiMarriageGroups) {
-    if ((group.includes(id1) && group.includes(id2))) return true;
-  }
-  return false;
-}
-
 // Preload images for all married marbles
 function preloadMarriedMarbleImages() {
   const imagesToPreload = new Set();
@@ -1544,22 +1522,10 @@ function applyImageToSphere(img, imageData) {
 }
 
 function preloadAdjacentImages() {
-  // Preload adjacent marble images (not sequential array indices)
-  const track = getCurrentTrack();
-  if (!track || !selectedMarbleId) return;
-  const marbleIdx = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  const neighbors = [marbleIdx - 1, marbleIdx + 1, marbleIdx - 2, marbleIdx + 2];
-  for (const ni of neighbors) {
-    if (ni >= 0 && ni < track.marbles.length) {
-      const m = track.marbles[ni];
-      if (m.assignedImage !== null && m.assignedImage !== undefined) {
-        const arrIdx = imageNumberToArrayIndex.hasOwnProperty(m.assignedImage) ? imageNumberToArrayIndex[m.assignedImage] : m.assignedImage;
-        if (arrIdx >= 0 && arrIdx < currentImages.length && !preloadedImages[currentImages[arrIdx].url]) {
-          preloadOne(arrIdx);
-        }
-      }
-    }
-  }
+  const prev = currentImageIndex - 1;
+  const next = currentImageIndex + 1;
+  if (prev >= 0 && !preloadedImages[currentImages[prev].url]) preloadOne(prev);
+  if (next < currentImages.length && !preloadedImages[currentImages[next].url]) preloadOne(next);
 }
 
 function preloadOne(index) {
@@ -1599,47 +1565,32 @@ function getMarblePositionByImageIndex(imageIndex) {
 }
 
 function nextImage() {
-  const track = getCurrentTrack();
-  if (!track || !selectedMarbleId) { updateViewerUI(); return; }
-  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  if (marbleIndex < 0 || marbleIndex >= track.marbles.length - 1) { updateViewerUI(); return; }
-  const nextMarble = track.marbles[marbleIndex + 1];
-  if (areAntiMarried(selectedMarbleId, nextMarble.id)) { updateViewerUI(); return; }
-  if (nextMarble.assignedImage !== null && nextMarble.assignedImage !== undefined) {
+  if (currentImageIndex < currentImages.length - 1) {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
-    selectMarble(nextMarble.id);
-    showImageByIndex(nextMarble.assignedImage);
+    currentImageIndex++;
+    showImageByIndex(currentImageIndex);
     updateNavigationRing(true);
-    const newPos = nextMarble.position;
+    const newPos = getMarblePositionByImageIndex(currentImageIndex);
     panMapToFollowMarble(oldPos, newPos);
   }
   updateViewerUI();
 }
 
 function previousImage() {
-  const track = getCurrentTrack();
-  if (!track || !selectedMarbleId) { updateViewerUI(); return; }
-  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  if (marbleIndex <= 0) { updateViewerUI(); return; }
-  const prevMarble = track.marbles[marbleIndex - 1];
-  if (areAntiMarried(selectedMarbleId, prevMarble.id)) { updateViewerUI(); return; }
-  if (prevMarble.assignedImage !== null && prevMarble.assignedImage !== undefined) {
+  if (currentImageIndex > 0) {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
-    selectMarble(prevMarble.id);
-    showImageByIndex(prevMarble.assignedImage);
+    currentImageIndex--;
+    showImageByIndex(currentImageIndex);
     updateNavigationRing(true);
-    const newPos = prevMarble.position;
+    const newPos = getMarblePositionByImageIndex(currentImageIndex);
     panMapToFollowMarble(oldPos, newPos);
   }
   updateViewerUI();
 }
 
 function showImageByIndex(index) {
-  // index = marble's assignedImage (original image number, may have gaps)
-  // Use lookup map to find actual position in currentImages array
-  const arrayIdx = imageNumberToArrayIndex.hasOwnProperty(index) ? imageNumberToArrayIndex[index] : index;
-  if (arrayIdx < 0 || arrayIdx >= currentImages.length) return;
-  const image = currentImages[arrayIdx];
+  if (index < 0 || index >= currentImages.length) return;
+  const image = currentImages[index];
   if (preloadedImages[image.url]) {
     applyImageToSphere(preloadedImages[image.url], image);
     currentImageIndex = index;
@@ -1655,12 +1606,8 @@ function showImageByIndex(index) {
 }
 
 function updateViewerUI() {
-  const track = getCurrentTrack();
-  const marbleIdx = track ? track.marbles.findIndex(m => m.id === selectedMarbleId) : -1;
-  const total = track ? track.marbles.length : currentImages.length;
-  const display = marbleIdx >= 0 ? marbleIdx + 1 : currentImageIndex + 1;
-  document.getElementById('time').textContent = `${display}/${total}`;
-  document.getElementById('viewer-info').textContent = `Image ${display}/${total}`;
+  document.getElementById('time').textContent = `${currentImageIndex+1}/${currentImages.length}`;
+  document.getElementById('viewer-info').textContent = `Image ${currentImageIndex+1}/${currentImages.length}`;
 }
 
 // Set up navigation button event listeners
@@ -1729,16 +1676,15 @@ async function load360Images() {
 }
   
 async function createImagesFromFramesFolder() {
-  const track = getCurrentTrack();
-  const framesBase = track.framesBase || getFramesBase();
   currentImages = [];
-  currentImageIndex = -1; 
-  if (!track) { 
-    showToaster('No track selected'); 
-    return; 
+  currentImageIndex = -1;
+  const track = getCurrentTrack();
+  if (!track) {
+    showToaster('No track selected');
+    return;
   }
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
-    if (!gpxName) {
+  if (!gpxName) {
     showToaster('GPX name missing');
     return;
   }
@@ -1746,6 +1692,10 @@ async function createImagesFromFramesFolder() {
   const gpxNameLC = gpxName.toLowerCase();
   const prefixHyphen = gpxNameLC + '-';
   const prefixUnderscore = gpxNameLC + '_';
+
+  // Use the track's own framesBase (set at GPX load time), fall back to dynamic lookup
+  const framesBase = track.framesBase || getFramesBase();
+
   let list;
   try {
     const res = await fetch(framesBase + 'index.json', { cache: 'no-store' });
@@ -1769,27 +1719,16 @@ async function createImagesFromFramesFolder() {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   if (!matches.length) {
     showToaster(`No frames for "${gpxName}"`);
-    return; 
+    return;
   }
 
   currentImages = matches.map((filename, i) => ({
-    url: framesBase + filename,
-    index: i,
-    filename,
-    timestamp: filename,
+    url: framesBase + filename, 
+    index: i, 
+    filename, 
+    timestamp: filename, 
     sequence: i
   }));
-
-  // Build lookup: original image number (from filename) → array position
-  // e.g. "track-4.jpg" → image number 3 (0-based) → array position 2 (if track-3 was removed)
-  imageNumberToArrayIndex = {};
-  currentImages.forEach((img, i) => {
-    const numMatch = img.filename.match(/[-_](\d+)\.[^.]+$/);
-    if (numMatch) {
-      const originalImageNumber = parseInt(numMatch[1]) - 1; // 1-based filename → 0-based index
-      imageNumberToArrayIndex[originalImageNumber] = i;
-    }
-  });
 }
 
 // Background preload
@@ -1981,7 +1920,7 @@ function close360ViewerInModal(targetBaseIndex = null) {
       const scrollTarget = (targetBaseIndex !== null && typeof targetBaseIndex === 'number') 
         ? targetBaseIndex 
         : (typeof targetBaseIndex === 'string' 
-          ? baseLots.findIndex(l => l.number === targetBaseIndex)
+          ? baseLots.findIndex(l => l.name === targetBaseIndex)
           : lastOpenedBaseIndex);
           
       if (typeof scrollTarget === 'number' && scrollTarget !== -1) {
@@ -3832,9 +3771,9 @@ map.on('click', 'lots-final-click', (e) => {
     let targetBaseIndex = null;
     if (lot) {
       targetBaseIndex = baseLots.findIndex(l => l.name === lot.name);
-      // If baseLots is empty (data not loaded yet), store the lot number for later
+      // If baseLots is empty (data not loaded yet), store the lot name for later
       if (targetBaseIndex === -1 && !isDataLoaded) {
-        targetBaseIndex = extractLotNumber(lot.name);
+        targetBaseIndex = lot.name;
       }
     }
     
@@ -4913,9 +4852,11 @@ function animateLots(map, cb) {
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
-    // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
-    map.setPaintProperty("lots-final-available", "line-opacity", 1);
-    map.setPaintProperty("lots-final-sold", "line-opacity", 0.25); // ⬅️ 0.25 for final layer during transition
+    // Fade in final lots - sold lots get partial opacity during transition
+    map.setPaintProperty("lots-final-available", "line-opacity", CONFIG.lotStyles.available.outline.opacity);
+    map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // ⬅️ partial for final layer during transition
+    if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
+    if (map.getLayer("lots-final-sold-fill")) map.setPaintProperty("lots-final-sold-fill", "fill-opacity", CONFIG.lotStyles.sold.fill.opacity);
     // Labels now fade based on zoom level (see text-opacity interpolate expression)
 
     setTimeout(() => {
@@ -4930,7 +4871,7 @@ function animateLots(map, cb) {
 
       // AFTER group layers fade out, update final sold layer to full 0.49
       setTimeout(() => {
-        map.setPaintProperty("lots-final-sold", "line-opacity", 0.49); // ⬅️ UPDATE TO FULL 0.49
+        map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity); // ⬅️ UPDATE TO FULL opacity
          
         // Remove all lot groups
         groupArr.forEach((_, i) => {
@@ -5279,9 +5220,9 @@ function addFeaturedLotsLayer(map, onComplete) {
     type: 'line',
     source: 'featured-lots',
     paint: {
-      'line-color': CONFIG.colors.primary,
-      'line-width': 2,
-      'line-opacity': 1
+      'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+      'line-width': CONFIG.lotStyles.featured.outline.width,
+      'line-opacity': CONFIG.lotStyles.featured.outline.opacity
     }
   }, 'lots-final-click');  
   
@@ -5297,6 +5238,9 @@ function startPolygonPulse(map, onComplete) {
   let t = 0;
   let initialPulseCompleted = false;
   const PULSE_DURATION = 2.0; // seconds
+  const _pulseOp = CONFIG.lotStyles.featured.fill.opacity;
+  const _pulseBase = Array.isArray(_pulseOp) ? _pulseOp[0] : _pulseOp;
+  const _pulseAmp  = Array.isArray(_pulseOp) ? _pulseOp[1] : 0;
 
   function frame() {
     t += 0.05; // SLOWER: was 0.05, now 0.02 for slower animation
@@ -5308,7 +5252,7 @@ function startPolygonPulse(map, onComplete) {
       ...source._data,
       features: source._data.features.map(f => {
         const phase = f.properties?.phase ?? 0;
-        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        const opacity = _pulseBase + Math.sin(t + phase) * _pulseAmp;
         return {
           ...f,
           properties: {
@@ -5772,7 +5716,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   // Update community logo for this lot's fraccionamiento
   modalEl.dataset.fracc = lot.fraccionamiento;
-  currentFraccionamiento = lot.fraccionamiento;
+  currentFraccionamiento = lot.fraccionamiento; // Update for dynamic frames loading
   if (window.updateCommunityLogo) window.updateCommunityLogo();
 
   const status = String(lot.availability || '').toLowerCase();
@@ -5869,29 +5813,18 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     ? getCommunityPricing(CURRENT_CLIENT, lot.fraccionamiento)
     : null;
 
-  // Build down payment options HTML
-  let downPaymentOptionsHtml = '';
-  if (pricingConfig) {
-    const { min, max, step } = pricingConfig.downPayment;
-    for (let pct = min; pct <= max; pct += step) {
-      downPaymentOptionsHtml += `<option value="${pct}">${pct}%</option>`;
-    }
-  }
-
-  // Build installments options HTML and INTEREST_RATES object
-  let installmentsOptionsHtml = '';
-  const INTEREST_RATES = {};
-  if (pricingConfig) {
-    const terms = pricingConfig.terms;
-    terms.forEach((term, idx) => {
-      const selected = idx === terms.length - 1 ? ' selected' : '';
-      installmentsOptionsHtml += `<option value="${term.months}"${selected}>${term.months}</option>`;
-      INTEREST_RATES[term.months] = term.interest / 100;
+  // Build plan options HTML (plan-based pricing)
+  let planOptionsHtml = '';
+  if (pricingConfig && pricingConfig.plans) {
+    pricingConfig.plans.forEach((plan, idx) => {
+      planOptionsHtml += `<option value="${idx}">${plan.name}</option>`;
     });
   }
 
-  // Default interest rate (last term's rate or 0)
-  const defaultInterestRate = pricingConfig ? pricingConfig.terms[pricingConfig.terms.length - 1].interest : 0;
+  // Get first plan defaults for initial display
+  const defaultPlan = pricingConfig && pricingConfig.plans ? pricingConfig.plans[0] : null;
+  const defaultDiscountedPrice = defaultPlan ? totalPrice * (1 - defaultPlan.discount / 100) : totalPrice;
+  const defaultEnganche = defaultPlan ? defaultDiscountedPrice * (defaultPlan.downPayment / 100) : 0;
 
   detailRow.innerHTML = `
   <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
@@ -5912,48 +5845,46 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     </div>
 
     <!-- Big total price with more space above -->
-    <div style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
+    <div id="bigTotalPrice" style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
       $${totalPriceFormatted}<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>
     </div>
     <div style="font-size: 13px; color: ${CONFIG.colors.textLight}; text-align: right; width: 100%; margin-top: -8px;">
-      Precio de contado
+      Precio del plan
     </div>
     <div style="width: 100%; height: 1px; background: ${CONFIG.colors.grayLight}; margin: 0px;"></div>
 
-    ${pricingConfig ? `
-    <!-- Financing Calculator -->
+    ${pricingConfig && pricingConfig.plans ? `
+    <!-- Plan-based Financing -->
     <div style="margin-top: 6px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; position: relative;">
-      <!-- Row 1: Down payment % + Enganche amount -->
+      <!-- Row 1: Plan dropdown + Enganche amount -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="downPaymentCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${downPaymentOptionsHtml}
+        <div style="width: 110px;">
+          <select id="downPaymentCalc" style="width: 110px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
+            ${planOptionsHtml}
           </select>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * (pricingConfig.downPayment.min / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${defaultEnganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       </div>
 
-      <!-- Row 2: Months + Monthly payment -->
+      <!-- Row 2: Discount display + Mensualidades -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="installmentsCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${installmentsOptionsHtml}
-          </select>
+        <div style="width: 110px; text-align: center; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight};">
+          <span id="discountDisplay">${defaultPlan.discount}%</span>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
+          <span id="paymentLabel">${defaultPlan.installments.count} Meses</span>: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span id="paymentSuffix" style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
         </div>
       </div>
 
-      <!-- Tasa and Precio financiado on same line -->
+      <!-- Row 3: Descuento label + Escrituración (conditional) -->
       <div style="width: 100%; display: flex; justify-content: space-between; margin-top: -4px; font-size: 13px; color: ${CONFIG.colors.textLight};">
-        <div style="width: 80px; text-align: center;">
-          <span>Tasa <span id="financingRate">${defaultInterestRate}</span>%</span>
+        <div style="width: 110px; text-align: center;" class="descuento-label">
+          <span>Descuento</span>
         </div>
-        <div style="text-align: right;">
-          <span>Financiado: <span id="financingTotalPrice">$0.00</span></span>
+        <div style="text-align: right;" id="financingInfo">
+          <span>Escrituración: <span id="financingTotalPrice">$0.00</span></span>
         </div>
       </div>
     </div>
@@ -5970,59 +5901,70 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   detailContainer.appendChild(detailRow);
 
-  // Initialize calculator (only if pricing config exists)
-  if (pricingConfig) {
+  // Initialize plan-based calculator (only if pricing config with plans exists)
+  if (pricingConfig && pricingConfig.plans) {
     const totalPriceNum = totalPrice;
+    const plans = pricingConfig.plans;
 
-    function calculateMonthlyPayment(principal, annualRate, months) {
-      const monthlyRate = annualRate / 12;
-      if (monthlyRate === 0) return principal / months;
-      const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-      const denominator = Math.pow(1 + monthlyRate, months) - 1;
-      return numerator / denominator;
+    function updatePlanCalculations() {
+      const planIndex = parseInt(document.getElementById('downPaymentCalc').value);
+      const plan = plans[planIndex];
+      if (!plan) return;
+
+      const discountedPrice = totalPriceNum * (1 - plan.discount / 100);
+      const enganche = discountedPrice * (plan.downPayment / 100);
+      const installmentTotal = discountedPrice * (plan.installments.pct / 100);
+      const mensualidad = installmentTotal / plan.installments.count;
+      const escrituracion = discountedPrice * (plan.escrituracion / 100);
+
+      // Update enganche
+      document.getElementById('downPaymentAmount').textContent = '$' + enganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      // Update discount display — hide when 0%
+      const discountEl = document.getElementById('discountDisplay');
+      discountEl.textContent = plan.discount + '%';
+      discountEl.parentElement.style.visibility = plan.discount > 0 ? 'visible' : 'hidden';
+
+      // Update mensualidades
+      document.getElementById('paymentLabel').textContent = plan.installments.count + ' Meses';
+      document.getElementById('monthlyPayment').textContent = '$' + mensualidad.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('paymentSuffix').textContent = '/MES';
+
+      // Update escrituración row
+      const financingInfo = document.getElementById('financingInfo');
+      if (plan.escrituracion > 0) {
+        financingInfo.style.visibility = 'visible';
+        financingInfo.innerHTML = '<span>Escrituración: <span id="financingTotalPrice">$' + escrituracion.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</span></span>';
+      } else {
+        financingInfo.style.visibility = 'hidden';
+      }
+
+      // Update descuento label visibility
+      const descuentoLabel = document.querySelector('.descuento-label');
+      if (descuentoLabel) {
+        descuentoLabel.style.visibility = plan.discount > 0 ? 'visible' : 'hidden';
+      }
+
+      // Update big total price to show discounted price when discount > 0
+      const bigTotalPrice = document.getElementById('bigTotalPrice');
+      if (bigTotalPrice) {
+        bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+      }
+
     }
 
-    function updateCalculations() {
-      const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
-      const months = parseInt(document.getElementById('installmentsCalc').value);
-      const interestRate = INTEREST_RATES[months] || 0;
-
-      const downPaymentAmount = totalPriceNum * downPaymentPercent;
-      const amountFinanced = totalPriceNum - downPaymentAmount;
-      const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
-
-      const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
-
-      document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
-
-      // Update financing header
-      document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
-      document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    // Add event listeners
+    // Add event listener
     setTimeout(() => {
-      // Check URL parameters and set values if present
-      // Support both new short params (a, m, i) and old long params for backwards compatibility
       const urlParams = new URLSearchParams(window.location.search);
-      const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
-      const monthsParam = urlParams.get('m') || urlParams.get('months');
+      const planParam = urlParams.get('plan');
 
-      const downPaymentSelect = document.getElementById('downPaymentCalc');
-      const installmentsSelect = document.getElementById('installmentsCalc');
-
-      if (downpaymentParam && downPaymentSelect) {
-        downPaymentSelect.value = downpaymentParam;
-      }
-      if (monthsParam && installmentsSelect) {
-        installmentsSelect.value = monthsParam;
+      const planSelect = document.getElementById('downPaymentCalc');
+      if (planParam !== null && planSelect) {
+        planSelect.value = planParam;
       }
 
-      downPaymentSelect?.addEventListener('change', updateCalculations);
-      installmentsSelect?.addEventListener('change', updateCalculations);
-      updateCalculations(); // Initial calculation with URL params
+      planSelect?.addEventListener('change', updatePlanCalculations);
+      updatePlanCalculations(); // Initial calculation
     }, 100);
   }
 
@@ -6112,12 +6054,10 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       if (lot && window.generateMultiPagePDF) {
         const dynamicText = prompt('Ingrese el texto para el PDF:');
         if (dynamicText !== null) {
-          // Get selected financing options from the calculator dropdowns
-          const downPaymentSelect = document.getElementById('downPaymentCalc');
-          const installmentsSelect = document.getElementById('installmentsCalc');
+          // Get selected plan index from the plan dropdown
+          const planSelect = document.getElementById('downPaymentCalc');
           const financingOptions = {
-            downpaymentPercent: downPaymentSelect ? parseInt(downPaymentSelect.value) : 30,
-            installmentMonths: installmentsSelect ? parseInt(installmentsSelect.value) : 48
+            planIndex: planSelect ? parseInt(planSelect.value) : 0
           };
           window.generateMultiPagePDF(lot, dynamicText, financingOptions);
         }
@@ -10002,10 +9942,10 @@ function getCurrentFraccZoom() {
                       // 🟢 HIDE THE PLUS BUTTON
                       const plusButton = document.querySelector('.plus-button');
                       if (plusButton) plusButton.style.display = 'none';
-                      
+
                       // 🟢 SHOW DETAIL VIEW (this will handle dimensions internally)
                       showDetailViewForLot(baseIndex + cloneCount);
-                      
+
                       // 🟢 UPDATE CURRENT LOT INDEX
                       const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                       if (lotMapIndex !== -1) {
@@ -10286,7 +10226,7 @@ setTimeout(() => {
                   if (baseIndex !== -1) {
                     const plusButton = document.querySelector('.plus-button');
                     if (plusButton) plusButton.style.display = 'none';
-                    
+
                     const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                     if (lotMapIndex !== -1) {
                       currentLotIndex = lotMapIndex;
@@ -10394,9 +10334,8 @@ function shareCurrentLot() {
     return;
   }
   
-  // Get financing calculator values
-  const downPaymentPercent = document.getElementById('downPaymentCalc')?.value || '20';
-  const installments = document.getElementById('installmentsCalc')?.value || '72';
+  // Get selected plan index
+  const selectedPlan = document.getElementById('downPaymentCalc')?.value || '0';
 
   // Get community from modal dataset (current selected fracc), fallback to lot data, then default
   const modal = document.getElementById('lotModal');
@@ -10411,11 +10350,11 @@ function shareCurrentLot() {
   const communitySlug = community.toLowerCase().replace(/\s+/g, '-');
   const communityCapitalized = community.charAt(0).toUpperCase() + community.slice(1);
 
-  // Create share URL with community prefix and short params (a=anticipo, m=mensualidades)
+  // Create share URL with community prefix and plan param
   const shareUrl = `${window.location.origin}${CONFIG.share.urlTemplate
     .replace('{slug}', CONFIG.slug)
     .replace('{communitySlug}', communitySlug)
-    .replace('{lotNumber}', lotNumber)}?a=${downPaymentPercent}&m=${installments}`;
+    .replace('{lotNumber}', lotNumber)}?plan=${selectedPlan}`;
   const shareText = CONFIG.share.textTemplate
     .replace('{lotNumber}', lotNumber)
     .replace('{community}', communityCapitalized)
@@ -10580,7 +10519,7 @@ function setupChatButton() {
     chatButton.addEventListener('click', function(e) {
       e.preventDefault();
       e.stopPropagation();
-      window.open('https://wa.me/5212292233911', '_blank');
+      window.open('https://wa.me/5218185261819', '_blank');
     });
   }
 }
@@ -11766,7 +11705,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     // Determine community group from fraccionamiento
     const fraccionamiento = lot.fraccionamiento || lot.community || '';
-    const communityGroup = getCommunityGroup('inverta', fraccionamiento);
+    const communityGroup = getCommunityGroup('agora', fraccionamiento);
 
     if (!communityGroup) {
       console.error('Could not determine community group for:', fraccionamiento);
@@ -11954,8 +11893,8 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     // Function to create a page with template elements
     function createPage(pageNum, template, lotValues, settings) {
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/inverta/pdf/${communityGroup}/`;
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
       const lotImagePrefix = settings.lotImagePrefix || '';
       const pageWidth = settings.pageWidth || 1224;
       const pageHeight = settings.pageHeight || 1584;
@@ -12119,7 +12058,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     try {
       // Step 1: Fetch template for this community group
       progressText.textContent = 'Cargando plantilla...';
-      const templatePath = `/inverta/pdf/${communityGroup}/pdf-template.json`;
+      const templatePath = `/agora/pdf/${communityGroup}/pdf-template.json`;
 
       let template = { pages: {}, settings: {} };
       try {
@@ -12148,8 +12087,8 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       progressText.textContent = 'Cargando imágenes...';
       progressBar.style.width = '10%';
 
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/inverta/pdf/${communityGroup}/`;
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
       const lotImagePrefix = settings.lotImagePrefix || '';
 
       const imagePromises = [];
@@ -12208,7 +12147,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
       const worker = html2pdf().set({
         margin: 0,
-        filename: `Inverta-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
+        filename: `Agora-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
         image: { type: 'jpeg', quality: 1 },
         html2canvas: { scale: 1, useCORS: true },
         jsPDF: { unit: 'px', format: [pageWidth, pageHeight], orientation: orientation }

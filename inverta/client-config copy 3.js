@@ -13,17 +13,17 @@
 const CLIENT_CONFIGS = {
 
   // ===== INVERTA CLIENT CONFIGURATION =====
-  cpi: {
+  inverta: {
 
     // ----- BASIC INFO -----
-    name: 'CPI',
-    displayName: 'CPI - La-La Land',
-    slug: 'cpi', // URL path slug (e.g., /inverta/)
-    defaultCommunity: 'senterra',
+    name: 'INVERTA',
+    displayName: 'INVERTA - La-La Land',
+    slug: 'inverta', // URL path slug (e.g., /inverta/)
+    defaultCommunity: 'marsella',
 
     // ----- BRANDING -----
     branding: {
-      mainLogo: 'https://la-la.land/cpi/cpi.png',
+      mainLogo: 'https://la-la.land/inverta/inverta.svg',
       mainLogoAlt: 'Logo',
       favicon: 'favicon.ico',
     },
@@ -31,13 +31,21 @@ const CLIENT_CONFIGS = {
     // ----- COMMUNITY LOGOS -----
     // Maps community groups to their respective logos
     communityLogos: {
-      'senterra': {
+      'mediterraneo': {
         // For marsella & barcelona
-        url: 'https://la-la.land/cpi/senterra.png', // Original for index.html
+        url: 'https://la-la.land/inverta/lomasmediterraneo.png', // Original for index.html
         cardLogoUrl: 'https://la-la.land/inverta/lomasmediterraneo_black.png', // Black version for cards
-        communities: ['senterra'],
-        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
-        minZoomForDimensions: 17.9, // minimum zoom to show lot dimension labels
+        communities: ['marsella', 'barcelona'],
+        center: [-96.036711, 19.0485],
+        zoom: 15
+      },
+      'puntolomas': {
+        // For sierraalta & sierrabaja
+        url: 'https://la-la.land/inverta/puntolomas.png', // Original for index.html
+        cardLogoUrl: 'https://la-la.land/inverta/puntolomas_black.png', // Black version for cards
+        communities: ['sierraalta', 'sierrabaja'],
+        center: [-96.090537, 19.073336],
+        zoom: 15.2
       }
     },
 
@@ -48,23 +56,35 @@ const CLIENT_CONFIGS = {
 
       // Initial map view (can be overridden by default community)
       initialView: {
-        center: [-99.9490, 25.1474], // Senterra center
-        zoom: 14.1
+        center: [-96.063523, 19.073323], // Marsella center
+        zoom: 12.0
       }
     },
 
     // ----- AERIAL/SATELLITE IMAGES -----
     aerialImages: [
       {
-        url: 'https://la-la.land/cpi/cpiearth.png',
+        url: 'https://la-la.land/inverta/invertaearth.png',
         layerId: 'drone-satellite-layer-1',
         sourceId: 'drone-satellite-1',
-        message: "Cargamos la imágen aérea más actual — (enero 2026)",
+        message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
         bounds: [
-[-99.957219, 25.155959],
-[-99.939253, 25.155959],
-[-99.939253, 25.139696],
-[-99.957219, 25.139696]
+          [-96.041238, 19.0556],
+          [-96.031988, 19.055425],
+          [-96.032264, 19.042404],
+          [-96.041515, 19.04258]
+        ]
+      },
+      {
+        url: 'https://la-la.land/inverta/invertaearth2.png',
+        layerId: 'drone-satellite-layer-2',
+        sourceId: 'drone-satellite-2',
+        message: "Cargamos la imágen aérea más actual — (diciembre 2025)",
+        bounds: [
+          [-96.093978, 19.076367],
+          [-96.086683, 19.076449],
+          [-96.086602, 19.070002],
+          [-96.093896, 19.06992]
         ]
       }
     ],
@@ -73,36 +93,64 @@ const CLIENT_CONFIGS = {
     // Each community has center coordinates, zoom level, and display info
     communities: {
 
-      senterra: {
-        id: 'senterra',
-        name: 'Senterra',
-        displayName: 'Senterra',
-        fracc: 'senterra',
-        center: [-99.9490, 25.1474],
-        zoom: 14.1,
-        position: 0, // Position in community selector
-        // Alternative reference for search menu:
-        searchMenuId: 'positionOne',
-        apartarEnabled: false,
-        framesBase: 'https://andresmtzc.github.io/geepeeX/senterra/frames/'
+      barcelona: {
+        id: 'barcelona',
+        name: 'Barcelona',
+        displayName: 'Barcelona',
+        fracc: 'barcelona',
+        center: [-96.035362, 19.046467],
+        zoom: 16.2,
+        position: 2,
+        searchMenuId: 'positionFour'
+      },
+
+      marsella: {
+        id: 'marsella',
+        name: 'Marsella',
+        displayName: 'Marsella',
+        fracc: 'marsella',
+        center: [-96.038468, 19.047346],
+        zoom: 16.3,
+        position: 1,
+        searchMenuId: 'positionThree'
+      },
+
+      sierraalta: {
+        id: 'sierraalta',
+        name: 'Sierra Alta',
+        displayName: 'Sierra Alta',
+        fracc: 'sierraalta',
+        center: [-96.090324, 19.072938],
+        zoom: 15.6,
+        position: 7,
+        searchMenuId: 'positionTwo'
+      },
+
+      sierrabaja: {
+        id: 'sierrabaja',
+        name: 'Sierra Baja',
+        displayName: 'Sierra Baja',
+        fracc: 'sierrabaja',
+        center: [-96.091763, 19.074588],
+        zoom: 16.8,
+        position: 6,
+        searchMenuId: 'positionOne'
       }
-
-
 
     },
 
     // ----- DATA SOURCES -----
     data: {
-      lotsFile: 'https://la-la.land/cpi/lots.txt',
-      framesBase: 'https://andresmtzc.github.io/geepeeX/senterra/frames/'
+      lotsFile: 'https://la-la.land/inverta/lots.txt',
+      framesBase: 'https://la-la.land/inverta/frames/'
     },
 
     // ----- LOT NAMING CONVENTIONS -----
     // Prefixes used in lot IDs
     lotPrefixes: {
-      standard: 'lotcpi1-',  // e.g., lotinverta10-1
-      premium: 'lotcpip1-',  // e.g., lotinvertap10-1
-      base: 'cpi1-'          // Used in some contexts
+      standard: 'lotinverta',  // e.g., lotinverta10-1
+      premium: 'lotinvertap',  // e.g., lotinvertap10-1
+      base: 'inverta'          // Used in some contexts
     },
 
     // ----- CONTACT & CTA -----
@@ -117,7 +165,7 @@ const CLIENT_CONFIGS = {
       },
 
       // Bank account info message (displayed in modals)
-      paymentMessage: '(se te proporcionarán las cuentas bancarias oficiales de CPI a través de WhatsApp).'
+      paymentMessage: '(se te proporcionarán las cuentas bancarias oficiales de INVERTA a través de WhatsApp).'
     },
 
     // ----- SHARE SETTINGS -----
@@ -137,7 +185,7 @@ const CLIENT_CONFIGS = {
     // All colors used throughout the site for easy customization
     colors: {
       // Primary brand colors
-      primary: '#8f5e38',        // Orange - main CTA and accent color
+      primary: '#2ac6f4',        // Orange - main CTA and accent color
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
@@ -218,78 +266,10 @@ const CLIENT_CONFIGS = {
       debugYellow: '#ffff00'           // Pure yellow - debugging
     },
 
-    // ----- LOT STYLES -----
-    // Customize how lots appear on the map
-    // Colors can be hex/rgba values OR keys from the colors section (e.g., 'primary')
-    // Width can be a number (constant) or [min, max] array (zoom-interpolated 16→19)
-    lotStyles: {
-      available: {
-        outline: {
-          color: '#EFEAE0',
-          width: [1.5, 4],       // [zoomMin, zoomMax] → 1.5px at zoom 16, 4px at zoom 19
-          opacity: 1,
-        },
-        fill: {
-          color: '#E0D7C4',           // null = no fill layer added
-          opacity: 0.2,
-        },
-      },
-      sold: {
-        outline: {
-          color: '#EFEAE0',
-          width: 1,
-          opacity: 0.49,
-        },
-        fill: {
-          color: null,
-          opacity: 0,
-        },
-        xMark: {
-          enabled: true,
-          color: '#EFEAE0',
-          width: 1,
-          opacity: 0.49,
-        },
-      },
-      featured: {
-        outline: {
-          color: 'primary',      // resolves to CONFIG.colors.primary
-          width: 2,
-          opacity: 1,
-        },
-        fill: {
-          color: 'primary',
-          opacity: [0.3, 0.2],   // [base, amplitude] → oscillates base ± amplitude
-        },
-      },
-      hover: {
-        outline: {
-          color: 'primary',
-          width: [3, 4],
-          opacity: 1,
-        },
-      },
-    },
-
     // ----- MISCELLANEOUS -----
     misc: {
-      // Font family for the site (used in CSS and inline styles)
+      // Font family for the site
       fontFamily: 'Barlow Condensed',
-
-      // Font family for Mapbox map labels (usually requires "Regular" suffix)
-      mapboxFont: 'Barlow Condensed Regular',
-
-      // Skip list modal and go directly to detail view when clicking a lot
-      skipListModal: true,
-
-      // Allow clicking on sold lots (independent of skipListModal)
-      soldLotsClickable: false,
-
-      // Minimum zoom level to show lot dimensions (lower = show at farther zoom)
-      minZoomForDimensions: 17.9,
-
-      // Merge consecutive segments shorter than this (meters) into one label
-      dimensionMergeThreshold: 21,
 
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
@@ -371,16 +351,7 @@ function getCommunityByFracc(clientName, fraccName) {
   if (!config) return null;
 
   const fracc = fraccName.toLowerCase().trim();
-
-  // First try direct key lookup
-  if (config.communities[fracc]) return config.communities[fracc];
-
-  // Then search by fracc property
-  for (const comm of Object.values(config.communities)) {
-    if (comm.fracc && comm.fracc.toLowerCase().trim() === fracc) return comm;
-  }
-
-  return null;
+  return config.communities[fracc] || null;
 }
 
 /**
@@ -495,31 +466,6 @@ function applyColorsToCSS(clientName) {
   console.log('✅ Colors applied to CSS variables');
 }
 
-/**
- * Resolve a lot style color value — if it matches a key in config.colors, returns that color.
- * Otherwise returns the raw value (hex, rgba, etc.).
- * @param {object} config - The client config object
- * @param {string} colorValue - Color key (e.g., 'primary') or raw color (e.g., '#fff')
- * @returns {string} Resolved color value
- */
-function resolveLotStyleColor(config, colorValue) {
-  if (!colorValue) return colorValue;
-  return (config.colors && config.colors[colorValue]) || colorValue;
-}
-
-/**
- * Convert a lot style width value to a Mapbox paint expression.
- * Array [min, max] becomes zoom-interpolated (16→19); number stays as-is.
- * @param {number|array} widthValue - Width number or [minZoom, maxZoom] array
- * @returns {number|array} Mapbox-compatible width expression
- */
-function lotStyleWidth(widthValue) {
-  if (Array.isArray(widthValue)) {
-    return ["interpolate", ["linear"], ["zoom"], 16, widthValue[0], 19, widthValue[1]];
-  }
-  return widthValue;
-}
-
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -532,8 +478,6 @@ if (typeof module !== 'undefined' && module.exports) {
     buildShareText,
     extractLotNumber,
     getColor,
-    applyColorsToCSS,
-    resolveLotStyleColor,
-    lotStyleWidth
+    applyColorsToCSS
   };
 }

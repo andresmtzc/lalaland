@@ -27,15 +27,49 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- ===== LEAD AUTH CHECK (runs first) ===== -->
+  <script>
+    (function() {
+      const CURRENT_CLIENT = 'inverta';
+
+      // Cookie helpers
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+      }
+
+      function setCookie(name, value, days) {
+        const expires = new Date(Date.now() + days * 864e5).toUTCString();
+        document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+      }
+
+      // Check if URL has ?token= query parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('token');
+
+      // Check for session cookie
+      const sessionToken = getCookie('lead_session_' + CURRENT_CLIENT);
+
+      // If no token in URL and no session, redirect to registro
+      if (!urlToken && !sessionToken) {
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+        // Stop execution
+        throw new Error('Redirecting to registro');
+      }
+
+      // Store token for later validation (after Supabase loads)
+      window.__leadAuthToken = urlToken;
+      window.__leadSessionToken = sessionToken;
+      window.__leadClient = CURRENT_CLIENT;
+    })();
+  </script>
+
   <title></title>
   <link rel="icon" href="favicon.ico" type="image/x-icon">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700" rel="stylesheet">
-<!-- STIX Two Text for PDF generation -->
-<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
-<!-- Custom fonts for PDF generation -->
-<link rel="stylesheet" href="/fonts/fonts.css">
-<!-- html2pdf for PDF generation -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
@@ -43,6 +77,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="stylesheet" href="https://la-la.land/styles.css">
 <link rel="stylesheet" href="https://la-la.land/street-view-nav.css">
 
@@ -86,15 +121,6 @@ window.clientAccessCache = window.clientAccessCache || {};
       document.body.classList.add('fonts-loaded'); // Fallback if fonts fail
     });
   </script>
-
-  <script>
-    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group identify setPersonProperties setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags resetGroups onFeatureFlags addFeatureFlagsHandler onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
-    posthog.init('phc_gVIOdluBMP7Mshnq3isBacO9uSRCXbk9JxiKEZNFp0a', {
-        api_host: 'https://us.i.posthog.com',
-        defaults: '2025-11-30'
-    })
-</script>
-
 </head>
  
 <body>
@@ -136,10 +162,23 @@ window.clientAccessCache = window.clientAccessCache || {};
   })();
 </script>
 
-<!-- Login button in top right -->
-<button id="globe-login-btn" class="globe-login-button" title="Login">
-  Login
-</button>
+<!-- Lead greeting in top right -->
+<div id="lead-greeting" class="lead-greeting">
+  Hola, <span id="lead-name"></span>
+</div>
+
+<!-- Name Modal (shown when lead has no name) -->
+<div id="nameModal" class="name-modal">
+  <div class="name-modal-content">
+    <h2>¡Bienvenido!</h2>
+    <p>¿Cómo te llamas?</p>
+    <form id="nameForm">
+      <input type="text" id="leadNameInput" placeholder="Nombre" required>
+      <input type="text" id="leadLastNameInput" placeholder="Apellido" required>
+      <button type="submit">EMPEZAR</button>
+    </form>
+  </div>
+</div>
 
 <!-- Dashboard button - bottom left above mapbox logo, only visible when authenticated -->
 <button id="dashboard-btn" class="dashboard-button" title="Dashboard">
@@ -453,11 +492,9 @@ let viewerInitialized = false;
 let selectedMarbleId = null;
 // Marriage system
 let marriageGroups = []; // Array of arrays: [["gpxName.gpx:15", "gpxName2.gpx:42"], ...]
-let antiMarriageGroups = []; // Array of arrays: pairs that block navigation between them
 let lastHopBearingDeg = null;
 let currentImages = [];
 let currentImageIndex = -1;
-let imageNumberToArrayIndex = {}; // Maps original image number (from filename) to currentImages array position
 let preloadedImages = {};
 let viewConeMarker = null;
 let isSwitchingTrack = false;
@@ -695,7 +732,7 @@ function initThreeJSViewer() {
     powerPreference: 'high-performance'
   });
   
-  const dpr = Math.min(window.devicePixelRatio, 2);
+const dpr = Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height, false);
   
@@ -856,13 +893,11 @@ function updateNavigationRing(instant = false) {
   const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
   const total = track.marbles.length;
 
-  // Detect position in track (including anti-marriage blocks)
+  // Detect position in track
   const isFirst = marbleIndex === 0;
   const isLast = marbleIndex === total - 1;
-  const nextBlocked = !isLast && areAntiMarried(selectedMarbleId, track.marbles[marbleIndex + 1]?.id);
-  const prevBlocked = !isFirst && areAntiMarried(selectedMarbleId, track.marbles[marbleIndex - 1]?.id);
-  const canForward = !isLast && !nextBlocked;
-  const canBackward = !isFirst && !prevBlocked;
+  const canForward = !isLast;
+  const canBackward = !isFirst;
 
   // Branch only available if marble has married partners
   const canBranch = hasMarriedPartners(selectedMarbleId);
@@ -995,12 +1030,6 @@ async function loadGPXFromManifest() {
         if (manifest.marriages && Array.isArray(manifest.marriages)) {
           marriageGroups = marriageGroups.concat(manifest.marriages);
           console.log("Marriages loaded from:", framesBase);
-        }
-
-        // Merge anti-marriages if present
-        if (manifest.antiMarriages && Array.isArray(manifest.antiMarriages)) {
-          antiMarriageGroups = antiMarriageGroups.concat(manifest.antiMarriages);
-          console.log("Anti-marriages loaded from:", framesBase);
         }
 
         // Get GPX files from manifest
@@ -1319,18 +1348,6 @@ function hasMarriedPartners(marbleId) {
   return getMarriedPartners(marbleId).length > 0;
 }
 
-// Check if two marbles are anti-married (navigation blocked between them)
-function areAntiMarried(marbleId1, marbleId2) {
-  if (!marbleId1 || !marbleId2) return false;
-  const id1 = getMarbleIdentifier(marbleId1);
-  const id2 = getMarbleIdentifier(marbleId2);
-  if (!id1 || !id2) return false;
-  for (const group of antiMarriageGroups) {
-    if ((group.includes(id1) && group.includes(id2))) return true;
-  }
-  return false;
-}
-
 // Preload images for all married marbles
 function preloadMarriedMarbleImages() {
   const imagesToPreload = new Set();
@@ -1544,22 +1561,10 @@ function applyImageToSphere(img, imageData) {
 }
 
 function preloadAdjacentImages() {
-  // Preload adjacent marble images (not sequential array indices)
-  const track = getCurrentTrack();
-  if (!track || !selectedMarbleId) return;
-  const marbleIdx = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  const neighbors = [marbleIdx - 1, marbleIdx + 1, marbleIdx - 2, marbleIdx + 2];
-  for (const ni of neighbors) {
-    if (ni >= 0 && ni < track.marbles.length) {
-      const m = track.marbles[ni];
-      if (m.assignedImage !== null && m.assignedImage !== undefined) {
-        const arrIdx = imageNumberToArrayIndex.hasOwnProperty(m.assignedImage) ? imageNumberToArrayIndex[m.assignedImage] : m.assignedImage;
-        if (arrIdx >= 0 && arrIdx < currentImages.length && !preloadedImages[currentImages[arrIdx].url]) {
-          preloadOne(arrIdx);
-        }
-      }
-    }
-  }
+  const prev = currentImageIndex - 1;
+  const next = currentImageIndex + 1;
+  if (prev >= 0 && !preloadedImages[currentImages[prev].url]) preloadOne(prev);
+  if (next < currentImages.length && !preloadedImages[currentImages[next].url]) preloadOne(next);
 }
 
 function preloadOne(index) {
@@ -1599,47 +1604,32 @@ function getMarblePositionByImageIndex(imageIndex) {
 }
 
 function nextImage() {
-  const track = getCurrentTrack();
-  if (!track || !selectedMarbleId) { updateViewerUI(); return; }
-  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  if (marbleIndex < 0 || marbleIndex >= track.marbles.length - 1) { updateViewerUI(); return; }
-  const nextMarble = track.marbles[marbleIndex + 1];
-  if (areAntiMarried(selectedMarbleId, nextMarble.id)) { updateViewerUI(); return; }
-  if (nextMarble.assignedImage !== null && nextMarble.assignedImage !== undefined) {
+  if (currentImageIndex < currentImages.length - 1) {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
-    selectMarble(nextMarble.id);
-    showImageByIndex(nextMarble.assignedImage);
+    currentImageIndex++;
+    showImageByIndex(currentImageIndex);
     updateNavigationRing(true);
-    const newPos = nextMarble.position;
+    const newPos = getMarblePositionByImageIndex(currentImageIndex);
     panMapToFollowMarble(oldPos, newPos);
   }
   updateViewerUI();
 }
 
 function previousImage() {
-  const track = getCurrentTrack();
-  if (!track || !selectedMarbleId) { updateViewerUI(); return; }
-  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  if (marbleIndex <= 0) { updateViewerUI(); return; }
-  const prevMarble = track.marbles[marbleIndex - 1];
-  if (areAntiMarried(selectedMarbleId, prevMarble.id)) { updateViewerUI(); return; }
-  if (prevMarble.assignedImage !== null && prevMarble.assignedImage !== undefined) {
+  if (currentImageIndex > 0) {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
-    selectMarble(prevMarble.id);
-    showImageByIndex(prevMarble.assignedImage);
+    currentImageIndex--;
+    showImageByIndex(currentImageIndex);
     updateNavigationRing(true);
-    const newPos = prevMarble.position;
+    const newPos = getMarblePositionByImageIndex(currentImageIndex);
     panMapToFollowMarble(oldPos, newPos);
   }
   updateViewerUI();
 }
 
 function showImageByIndex(index) {
-  // index = marble's assignedImage (original image number, may have gaps)
-  // Use lookup map to find actual position in currentImages array
-  const arrayIdx = imageNumberToArrayIndex.hasOwnProperty(index) ? imageNumberToArrayIndex[index] : index;
-  if (arrayIdx < 0 || arrayIdx >= currentImages.length) return;
-  const image = currentImages[arrayIdx];
+  if (index < 0 || index >= currentImages.length) return;
+  const image = currentImages[index];
   if (preloadedImages[image.url]) {
     applyImageToSphere(preloadedImages[image.url], image);
     currentImageIndex = index;
@@ -1655,12 +1645,8 @@ function showImageByIndex(index) {
 }
 
 function updateViewerUI() {
-  const track = getCurrentTrack();
-  const marbleIdx = track ? track.marbles.findIndex(m => m.id === selectedMarbleId) : -1;
-  const total = track ? track.marbles.length : currentImages.length;
-  const display = marbleIdx >= 0 ? marbleIdx + 1 : currentImageIndex + 1;
-  document.getElementById('time').textContent = `${display}/${total}`;
-  document.getElementById('viewer-info').textContent = `Image ${display}/${total}`;
+  document.getElementById('time').textContent = `${currentImageIndex+1}/${currentImages.length}`;
+  document.getElementById('viewer-info').textContent = `Image ${currentImageIndex+1}/${currentImages.length}`;
 }
 
 // Set up navigation button event listeners
@@ -1729,14 +1715,14 @@ async function load360Images() {
 }
   
 async function createImagesFromFramesFolder() {
-  const track = getCurrentTrack();
-  const framesBase = track.framesBase || getFramesBase();
   currentImages = [];
-  currentImageIndex = -1; 
-  if (!track) { 
-    showToaster('No track selected'); 
+  currentImageIndex = -1;
+  const track = getCurrentTrack();
+  if (!track) {
+    showToaster('No track selected');
     return; 
   }
+  const framesBase = track.framesBase || getFramesBase();
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
     if (!gpxName) {
     showToaster('GPX name missing');
@@ -1775,21 +1761,10 @@ async function createImagesFromFramesFolder() {
   currentImages = matches.map((filename, i) => ({
     url: framesBase + filename,
     index: i,
-    filename,
-    timestamp: filename,
+    filename, 
+    timestamp: filename, 
     sequence: i
   }));
-
-  // Build lookup: original image number (from filename) → array position
-  // e.g. "track-4.jpg" → image number 3 (0-based) → array position 2 (if track-3 was removed)
-  imageNumberToArrayIndex = {};
-  currentImages.forEach((img, i) => {
-    const numMatch = img.filename.match(/[-_](\d+)\.[^.]+$/);
-    if (numMatch) {
-      const originalImageNumber = parseInt(numMatch[1]) - 1; // 1-based filename → 0-based index
-      imageNumberToArrayIndex[originalImageNumber] = i;
-    }
-  });
 }
 
 // Background preload
@@ -2180,6 +2155,20 @@ ctaobserver.observe(ctaToaster, {
         // If lot just became sold, add X mark
         if (wasAvailable && nowSold && typeof addSoldXs === 'function') {
           addSoldXs(map, [lot], 300);
+
+          // Auto-remove sold lots from lead's saved lots
+          if (window.currentLead && window.leadSavedLots?.has(lot.name)) {
+            window.leadSavedLots.delete(lot.name);
+            // Remove from database
+            window.supabaseClient?.from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lot.name)
+              .eq('client', CURRENT_CLIENT)
+              .then(() => console.log('🗑️ Auto-removed sold lot from favorites:', lot.name));
+            // Refresh map layer
+            if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          }
         }
       }
 
@@ -2243,7 +2232,340 @@ ctaobserver.observe(ctaToaster, {
   });
 </script>
 
+<!-- ===== LEAD TOKEN AUTH VALIDATION ===== -->
+<script>
+(async function validateLeadAuth() {
+  const CURRENT_CLIENT = window.__leadClient || 'inverta';
 
+  // Cookie helpers
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+  }
+
+  function setCookie(name, value, days) {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+  }
+
+  // Wait for Supabase
+  await window.supabaseReady;
+
+  const urlToken = window.__leadAuthToken;
+  const sessionToken = window.__leadSessionToken;
+
+  // If we have a URL token, validate and claim it
+  if (urlToken) {
+    try {
+      // Look up the token
+      const { data: tokenData, error: tokenError } = await window.supabaseClient
+        .from('lead_tokens')
+        .select('id, lead_id, claimed, leads(id, phone, name, last_name, is_agent)')
+        .eq('token', urlToken)
+        .single();
+
+      if (tokenError || !tokenData) {
+        // Invalid token
+        console.error('Invalid token:', urlToken);
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
+        return;
+      }
+
+      if (tokenData.claimed) {
+        // Token already claimed by another device
+        console.error('Token already claimed:', urlToken);
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=claimed';
+        return;
+      }
+
+      // Claim the token
+      await window.supabaseClient
+        .from('lead_tokens')
+        .update({ claimed: true, claimed_at: new Date().toISOString() })
+        .eq('id', tokenData.id);
+
+      // Update lead's last_seen_at
+      await window.supabaseClient
+        .from('leads')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', tokenData.lead_id);
+
+      // Save session cookie (365 days)
+      setCookie('lead_session_' + CURRENT_CLIENT, urlToken, 365);
+
+      // Store lead info globally
+      window.currentLead = {
+        id: tokenData.lead_id,
+        phone: tokenData.leads?.phone,
+        name: tokenData.leads?.name,
+        lastName: tokenData.leads?.last_name,
+        token: urlToken,
+        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT)
+      };
+
+      // Set global agent flag
+      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+
+      console.log('✅ Lead authenticated via token:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
+
+      // Start session tracking
+      await startLeadSession();
+
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
+      }
+
+      // Clean URL (remove /m/token, keep just /client/)
+      const cleanUrl = window.location.origin + '/' + CURRENT_CLIENT + '/index-m.html';
+      window.history.replaceState({}, '', cleanUrl);
+
+    } catch (err) {
+      console.error('Token validation error:', err);
+      window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
+      return;
+    }
+  }
+  // If we have a session cookie, validate it
+  else if (sessionToken) {
+    try {
+      const { data: tokenData, error: tokenError } = await window.supabaseClient
+        .from('lead_tokens')
+        .select('id, lead_id, leads(id, phone, name, last_name, is_agent)')
+        .eq('token', sessionToken)
+        .single();
+
+      if (tokenError || !tokenData) {
+        // Session token no longer valid
+        console.error('Session token invalid');
+        document.cookie = 'lead_session_' + CURRENT_CLIENT + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+        return;
+      }
+
+      // Update lead's last_seen_at
+      await window.supabaseClient
+        .from('leads')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', tokenData.lead_id);
+
+      // Store lead info globally
+      window.currentLead = {
+        id: tokenData.lead_id,
+        phone: tokenData.leads?.phone,
+        name: tokenData.leads?.name,
+        lastName: tokenData.leads?.last_name,
+        token: sessionToken,
+        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT)
+      };
+
+      // Set global agent flag
+      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+
+      console.log('✅ Lead authenticated via session:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
+
+      // Start session tracking
+      await startLeadSession();
+
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
+      }
+
+    } catch (err) {
+      console.error('Session validation error:', err);
+      window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+      return;
+    }
+  }
+
+  // ===== SESSION TRACKING =====
+  window.currentSessionId = null;
+  window.sessionStartTime = null;
+
+  async function startLeadSession() {
+    if (!window.currentLead || !window.supabaseClient) return;
+
+    try {
+      window.sessionStartTime = new Date();
+
+      const { data, error } = await window.supabaseClient
+        .from('lead_sessions')
+        .insert({
+          lead_id: window.currentLead.id,
+          client_id: CURRENT_CLIENT,
+          started_at: window.sessionStartTime.toISOString(),
+          page_url: window.location.href,
+          user_agent: navigator.userAgent
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Failed to create session:', error);
+        return;
+      }
+
+      window.currentSessionId = data.id;
+      console.log('📊 Session started:', window.currentSessionId);
+
+      // Set up session end tracking
+      setupSessionEndTracking();
+    } catch (err) {
+      console.error('Session tracking error:', err);
+    }
+  }
+
+  async function endLeadSession() {
+    if (!window.currentSessionId || !window.sessionStartTime || !window.supabaseClient) return;
+
+    try {
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      await window.supabaseClient
+        .from('lead_sessions')
+        .update({
+          ended_at: endTime.toISOString(),
+          duration_seconds: durationSeconds
+        })
+        .eq('id', window.currentSessionId);
+
+      console.log(`📊 Session ended: ${durationSeconds}s`);
+    } catch (err) {
+      console.error('Failed to end session:', err);
+    }
+  }
+
+  function setupSessionEndTracking() {
+    // Track when user leaves the page
+    window.addEventListener('beforeunload', () => {
+      if (!window.currentSessionId) return;
+
+      // Use sendBeacon for reliable delivery during page unload
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      // We can't use async/await in beforeunload, so use sendBeacon
+      // But Supabase doesn't support sendBeacon directly, so we do best effort with fetch keepalive
+      if (window.supabaseClient) {
+        window.supabaseClient
+          .from('lead_sessions')
+          .update({
+            ended_at: endTime.toISOString(),
+            duration_seconds: durationSeconds
+          })
+          .eq('id', window.currentSessionId)
+          .then(() => console.log('📊 Session ended on unload'))
+          .catch(err => console.error('Failed to end session on unload:', err));
+      }
+    });
+
+    // Also track visibility changes (tab switches, minimizing)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // User switched away - update session
+        endLeadSession();
+      }
+    });
+  }
+
+  // Helper function to update lead greeting
+  function updateLeadGreeting() {
+    const leadNameEl = document.getElementById('lead-name');
+    if (leadNameEl && window.currentLead) {
+      const fullName = `${window.currentLead.name || ''} ${window.currentLead.lastName || ''}`.trim();
+      leadNameEl.textContent = fullName || 'Usuario';
+    }
+  }
+
+  // Show name modal
+  function showNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.add('show');
+    }
+  }
+
+  // Hide name modal
+  function hideNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.remove('show');
+    }
+  }
+
+  // Handle name form submission
+  const nameForm = document.getElementById('nameForm');
+  if (nameForm) {
+    nameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nameInput = document.getElementById('leadNameInput');
+      const lastNameInput = document.getElementById('leadLastNameInput');
+      const submitBtn = nameForm.querySelector('button');
+
+      const name = nameInput.value.trim();
+      const lastName = lastNameInput.value.trim();
+
+      if (!name || !lastName) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Guardando...';
+
+      try {
+        // Update lead in Supabase
+        await window.supabaseClient
+          .from('leads')
+          .update({ name, last_name: lastName })
+          .eq('id', window.currentLead.id);
+
+        // Update local state
+        window.currentLead.name = name;
+        window.currentLead.lastName = lastName;
+
+        // Update greeting
+        updateLeadGreeting();
+
+        // Hide modal
+        hideNameModal();
+
+      } catch (err) {
+        console.error('Error saving name:', err);
+        alert('Error al guardar. Intenta de nuevo.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continuar';
+      }
+    });
+  }
+
+  // Load saved lots for this lead
+  if (window.currentLead) {
+    try {
+      const { data: savedLots } = await window.supabaseClient
+        .from('lead_saved_lots')
+        .select('lot_name')
+        .eq('lead_id', window.currentLead.id)
+        .eq('client', CURRENT_CLIENT);
+
+      window.leadSavedLots = new Set(savedLots?.map(s => s.lot_name) || []);
+      console.log('✅ Loaded', window.leadSavedLots.size, 'saved lots for lead');
+
+      // Add saved lots layer to map if map is already loaded
+      if (window.map && typeof addSavedLotsLayer === 'function') {
+        addSavedLotsLayer(window.map);
+      }
+    } catch (err) {
+      console.error('Error loading saved lots:', err);
+      window.leadSavedLots = new Set();
+    }
+  }
+})();
+</script>
 
 
 <script>
@@ -3469,7 +3791,12 @@ fetch(mapboxTokenUrl)
           await loadManzanaLabels(map);
           addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
-    
+
+    // Add saved lots layer for leads
+    if (window.currentLead && window.leadSavedLots) {
+      addSavedLotsLayer(map);
+    }
+
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
 
         // ===== COMMUNITY SEARCH CIRCULAR MENU =====
@@ -4555,7 +4882,6 @@ function parseLots(text) {
 <script>
 // ========== DRAW X ON SOLD LOTS ==========
 function addSoldXs(map, soldLots, fadeDuration = 500) {
-  if (!CONFIG.lotStyles.sold.xMark.enabled) return;
   if (!map.getSource('sold-x')) {
     map.addSource('sold-x', {
       type: 'geojson',
@@ -4568,8 +4894,8 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
       source: 'sold-x',
       layout: {},
       paint: {
-        'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.xMark.color),
-        'line-width': CONFIG.lotStyles.sold.xMark.width,
+        'line-color': CONFIG.colors.white,
+        'line-width': 1,
         'line-opacity': 0,
         'line-opacity-transition': { duration: fadeDuration }
       }
@@ -4587,7 +4913,7 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
 
   // ⏳ Fade in after tiny delay to ensure features are added first
   setTimeout(() => {
-    map.setPaintProperty('sold-x-layer', 'line-opacity', CONFIG.lotStyles.sold.xMark.opacity);
+    map.setPaintProperty('sold-x-layer', 'line-opacity', 0.49);
   }, 10);
 }
 
@@ -4731,7 +5057,7 @@ function animateLots(map, cb) {
       },
       filter: ["!=", ["get", "availability"], "Sold"]
     });
-
+    
     map.addLayer({
       id: `lot-group-${i}-sold`,
       type: "line",
@@ -4916,6 +5242,8 @@ function animateLots(map, cb) {
     // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
     map.setPaintProperty("lots-final-available", "line-opacity", 1);
     map.setPaintProperty("lots-final-sold", "line-opacity", 0.25); // ⬅️ 0.25 for final layer during transition
+    if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
+    if (map.getLayer("lots-final-sold-fill")) map.setPaintProperty("lots-final-sold-fill", "fill-opacity", CONFIG.lotStyles.sold.fill.opacity);
     // Labels now fade based on zoom level (see text-opacity interpolate expression)
 
     setTimeout(() => {
@@ -5279,9 +5607,9 @@ function addFeaturedLotsLayer(map, onComplete) {
     type: 'line',
     source: 'featured-lots',
     paint: {
-      'line-color': CONFIG.colors.primary,
-      'line-width': 2,
-      'line-opacity': 1
+      'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+      'line-width': CONFIG.lotStyles.featured.outline.width,
+      'line-opacity': CONFIG.lotStyles.featured.outline.opacity
     }
   }, 'lots-final-click');  
   
@@ -5334,7 +5662,141 @@ function startPolygonPulse(map, onComplete) {
 
   requestAnimationFrame(frame);
 }
-</script> 
+
+// ===== SAVED LOTS LAYER (for leads) =====
+function savedPolygonFeature(lot) {
+  const coords = [...lot.coords];
+  if (
+    coords.length < 3 ||
+    coords[0][0] !== coords[coords.length - 1][0] ||
+    coords[0][1] !== coords[coords.length - 1][1]
+  ) {
+    coords.push(coords[0]); // Ensure closed polygon
+  }
+
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coords]
+    },
+    properties: {
+      name: lot.name,
+      phase: Math.random() * Math.PI * 2,
+      opacity: 0.5
+    }
+  };
+}
+
+function addSavedLotsLayer(map) {
+  if (!window.currentLead || !window.leadSavedLots || window.leadSavedLots.size === 0) {
+    return;
+  }
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  if (savedLots.length === 0) return;
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  if (map.getSource('saved-lots')) {
+    map.getSource('saved-lots').setData({
+      type: 'FeatureCollection',
+      features
+    });
+    return;
+  }
+
+  map.addSource('saved-lots', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features
+    }
+  });
+
+  // Primary fill with pulsating opacity
+  map.addLayer({
+    id: 'saved-lots-layer',
+    type: 'fill',
+    source: 'saved-lots',
+    paint: {
+      'fill-color': CONFIG.colors.primary,
+      'fill-opacity': ['get', 'opacity']
+    }
+  }, 'lots-final-available');
+
+  // Primary color outline
+  map.addLayer({
+    id: 'saved-lots-outline',
+    type: 'line',
+    source: 'saved-lots',
+    paint: {
+      'line-color': CONFIG.colors.primary,
+      'line-width': 2,
+      'line-opacity': 1
+    }
+  }, 'lots-final-click');
+
+  // Start animation
+  startSavedLotsPulse(map);
+}
+
+function refreshSavedLotsLayer() {
+  if (!window.map) return;
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots?.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  const source = window.map.getSource('saved-lots');
+  if (source) {
+    source.setData({
+      type: 'FeatureCollection',
+      features
+    });
+  } else if (savedLots.length > 0) {
+    addSavedLotsLayer(window.map);
+  }
+}
+
+function startSavedLotsPulse(map) {
+  let t = 0;
+
+  function frame() {
+    t += 0.05;
+
+    const source = map.getSource('saved-lots');
+    if (!source || !source._data) return;
+
+    const updated = {
+      ...source._data,
+      features: source._data.features.map(f => {
+        const phase = f.properties?.phase ?? 0;
+        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            opacity
+          }
+        };
+      })
+    };
+
+    source.setData(updated);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+}
+</script>
 
 
 
@@ -5772,7 +6234,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   // Update community logo for this lot's fraccionamiento
   modalEl.dataset.fracc = lot.fraccionamiento;
-  currentFraccionamiento = lot.fraccionamiento;
+  currentFraccionamiento = lot.fraccionamiento; // Update for dynamic frames loading
   if (window.updateCommunityLogo) window.updateCommunityLogo();
 
   const status = String(lot.availability || '').toLowerCase();
@@ -6043,12 +6505,16 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'cta-buttons-row';
   buttonsRow.style.position = 'relative';
-  // Show COTIZAR button when authenticated, CÓMO LLEGAR otherwise
+  // Show COTIZAR when authenticated OR agent, CÓMO LLEGAR otherwise
   const isAuthenticated = window.isUserAuthenticated === true;
+  const isAgent = window.isAgent === true;
   const apartarEnabled = getCommunityByFracc(CURRENT_CLIENT, lot.fraccionamiento)?.apartarEnabled === true;
   buttonsRow.innerHTML = `
     <button class="cta-button first" id="separarBtn" translate="no"${!apartarEnabled ? ' disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>APARTAR</button>
-    ${isAuthenticated ? '<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>' : '<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>'}
+    ${(isAuthenticated || isAgent)
+      ? `<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>`
+      : `<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>`
+    }
     <button class="cta-button second" id="chatearBtn" translate="no">CHATEAR</button>
   `;
 
@@ -6082,6 +6548,37 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       } else {
         console.error('Payment view not available or lot data missing');
       }
+    } else if (e.target.id === 'descargarPdfBtn') {
+      // Generate PDF quote
+      e.stopPropagation();
+
+      // Prompt user for dynamic text
+      const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
+      if (!dynamicText) return; // User cancelled
+
+      // Track agent quote if this is an agent
+      if (window.isAgent && window.currentLead?.phone) {
+        window.supabaseClient
+          .from('agent_quotes')
+          .insert({
+            agent_phone: window.currentLead.phone,
+            client_id: CURRENT_CLIENT,
+            lot_name: lot?.name || null,
+            lead_name: dynamicText
+          })
+          .then(({ error }) => {
+            if (error) console.error('Error tracking agent quote:', error);
+            else console.log('✅ Agent quote tracked:', dynamicText);
+          });
+      }
+
+      // Generate PDF if function is available
+      if (lot && window.generateMultiPagePDF) {
+        window.generateMultiPagePDF(lot, dynamicText, {});
+      } else {
+        console.error('PDF generation not available or lot data missing');
+        window.showToaster?.('PDF generation not available');
+      }
     } else if (e.target.id === 'visitarBtn') {
       // Open driving directions to this lot
       e.stopPropagation();
@@ -6106,25 +6603,6 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       // Example: open WhatsApp
       // window.open('https://wa.me/5218185261819', '_blank');
       e.stopPropagation();
-    } else if (e.target.id === 'descargarPdfBtn') {
-      // Generate PDF quote
-      e.stopPropagation();
-      if (lot && window.generateMultiPagePDF) {
-        const dynamicText = prompt('Ingrese el texto para el PDF:');
-        if (dynamicText !== null) {
-          // Get selected financing options from the calculator dropdowns
-          const downPaymentSelect = document.getElementById('downPaymentCalc');
-          const installmentsSelect = document.getElementById('installmentsCalc');
-          const financingOptions = {
-            downpaymentPercent: downPaymentSelect ? parseInt(downPaymentSelect.value) : 30,
-            installmentMonths: installmentsSelect ? parseInt(installmentsSelect.value) : 48
-          };
-          window.generateMultiPagePDF(lot, dynamicText, financingOptions);
-        }
-      } else {
-        console.error('PDF generation not available or lot data missing');
-        window.showToaster?.('Error al generar PDF');
-      }
     }
   });
 
@@ -6331,7 +6809,9 @@ const calculatedPriceFormatted = calculatedPrice.toString().replace(/\B(?=(\d{3}
 // Format price per m2 from Supabase
 const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '');
 
+    const isSaved = window.currentLead && window.leadSavedLots?.has(lot.name);
     if (isFeatured) row.classList.add('info-row--featured');
+    if (isSaved && !isSold) row.classList.add('info-row--saved');
 
 row.innerHTML = `
   <div class="lot-left">
@@ -6375,6 +6855,12 @@ row.innerHTML = `
               <path d="M23 4L23 10 17 10M1 20L1 14 7 14M3.51 9a9 9 0 0114.85-3.36L23 10M20.49 15a9 9 0 01-14.85 3.36L1 14"/>
             </svg>
           </button>
+        ` : (window.currentLead && !isSold) ? `
+          <button class="row-action-btn heart-btn ${window.leadSavedLots?.has(lot.name) ? 'saved' : ''}" title="Guardar" data-lot-name="${lot.name}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="${window.leadSavedLots?.has(lot.name) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+          </button>
         ` : ''}
       </div>
 
@@ -6399,6 +6885,22 @@ row.innerHTML = `
       const label = document.createElement('div');
       label.classList.add('featured-label');
       label.textContent = 'SELECCIÓN LA-LA LAND';
+      row.appendChild(label);
+    }
+
+    // Add saved lot styling (similar to featured but with heart)
+    if (isSaved && !isSold && !isFeatured) {
+      const left = document.createElement('div');
+      left.classList.add('border-left', 'border-left--saved');
+      row.appendChild(left);
+
+      const top = document.createElement('div');
+      top.classList.add('border-top', 'border-top--saved');
+      row.appendChild(top);
+
+      const label = document.createElement('div');
+      label.classList.add('saved-label');
+      label.innerHTML = 'FAVORITO';
       row.appendChild(label);
     }
 
@@ -6517,6 +7019,60 @@ function setupRowActionButtons() {
         if (typeof window.cycleSelectedLotAvailability === 'function') {
           window.cycleSelectedLotAvailability();
         }
+        return;
+      }
+
+      // Handle heart button clicks (save lot for leads)
+      const heartBtn = e.target.closest('.row-action-btn.heart-btn');
+      if (heartBtn) {
+        e.stopPropagation();
+        const lotName = heartBtn.dataset.lotName;
+
+        if (!window.currentLead || !window.supabaseClient) {
+          console.error('Lead not authenticated');
+          return;
+        }
+
+        const isSaved = window.leadSavedLots?.has(lotName);
+
+        try {
+          if (isSaved) {
+            // Remove from saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lotName)
+              .eq('client', CURRENT_CLIENT);
+
+            window.leadSavedLots.delete(lotName);
+            heartBtn.classList.remove('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'none');
+            showToaster('Removed from favorites');
+          } else {
+            // Add to saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .insert({
+                lead_id: window.currentLead.id,
+                lot_name: lotName,
+                client: CURRENT_CLIENT
+              });
+
+            window.leadSavedLots.add(lotName);
+            heartBtn.classList.add('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'currentColor');
+            showToaster('Saved to favorites');
+          }
+
+          // Refresh map layer and list
+          if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          if (typeof render === 'function') render();
+        } catch (err) {
+          console.error('Error saving lot:', err);
+          showToaster('Error saving');
+        }
+        return;
       }
     });
   }
@@ -6764,6 +7320,18 @@ function highlightCenter(isClamping = false) {
           void row.offsetWidth;
           row.classList.add('animate-featured');
           animatedFeaturedLots.add(featureIndex);
+        } else {
+          row.classList.add('animate-featured');
+        }
+      }
+
+      // Animate saved lots (same as featured)
+      if (row.classList.contains('info-row--saved')) {
+        const savedIndex = row.dataset.index;
+        if (!animatedFeaturedLots.has('saved-' + savedIndex)) {
+          void row.offsetWidth;
+          row.classList.add('animate-featured');
+          animatedFeaturedLots.add('saved-' + savedIndex);
         } else {
           row.classList.add('animate-featured');
         }
@@ -11395,21 +11963,6 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     return text.split('\n').map(line => `<div>${line || '&nbsp;'}</div>`).join('');
   }
 
-  function updateLogo(logoUrl) {
-    const communityLogo = document.getElementById('communityLogo');
-    const communityLogoImg = document.getElementById('communityLogoImg');
-
-    if (!communityLogo || !communityLogoImg) return;
-
-    if (logoUrl && logoUrl.trim() !== '') {
-      communityLogo.style.display = 'block';
-      communityLogoImg.src = logoUrl;
-    } else {
-      communityLogo.style.display = 'none';
-      communityLogoImg.src = '';
-    }
-  }
-
   function applyConfig() {
     setCSSVar('--orbit-radius', config.radius);
     setCSSVar('--dot', config.dotSize + 'px');
@@ -11429,6 +11982,21 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     // Initialize logo on page load
     updateLogo(config.defaultLogo || '');
+  }
+
+  function updateLogo(logoUrl) {
+    const communityLogo = document.getElementById('communityLogo');
+    const communityLogoImg = document.getElementById('communityLogoImg');
+
+    if (!communityLogo || !communityLogoImg) return;
+
+    if (logoUrl && logoUrl.trim() !== '') {
+      communityLogo.style.display = 'block';
+      communityLogoImg.src = logoUrl;
+    } else {
+      communityLogo.style.display = 'none';
+      communityLogoImg.src = '';
+    }
   }
 
   function buildDots() {
@@ -11746,7 +12314,6 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 })();
 </script>
 
-<!-- ===== PDF GENERATION COMPONENT ===== -->
 <script>
 (function() {
   // PDF Generation for Inverta - Multi-template support based on community group

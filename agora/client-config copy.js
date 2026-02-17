@@ -13,17 +13,17 @@
 const CLIENT_CONFIGS = {
 
   // ===== INVERTA CLIENT CONFIGURATION =====
-  cpi: {
+  agora: {
 
     // ----- BASIC INFO -----
-    name: 'CPI',
-    displayName: 'CPI - La-La Land',
-    slug: 'cpi', // URL path slug (e.g., /inverta/)
-    defaultCommunity: 'senterra',
+    name: 'AGORA',
+    displayName: 'AGORA - La-La Land',
+    slug: 'agora', // URL path slug (e.g., /inverta/)
+    defaultCommunity: 'amani-pietra',
 
     // ----- BRANDING -----
     branding: {
-      mainLogo: 'https://la-la.land/cpi/cpi.png',
+      mainLogo: 'https://la-la.land/agora/agora.png',
       mainLogoAlt: 'Logo',
       favicon: 'favicon.ico',
     },
@@ -31,13 +31,64 @@ const CLIENT_CONFIGS = {
     // ----- COMMUNITY LOGOS -----
     // Maps community groups to their respective logos
     communityLogos: {
-      'senterra': {
-        // For marsella & barcelona
-        url: 'https://la-la.land/cpi/senterra.png', // Original for index.html
-        cardLogoUrl: 'https://la-la.land/inverta/lomasmediterraneo_black.png', // Black version for cards
-        communities: ['senterra'],
+      'amani-pietra': {
+        url: 'https://la-la.land/agora/pietra.png',
+        cardLogoUrl: 'https://la-la.land/agora/lomasmediterraneo_black.png',
+        communities: ['amani-pietra'],
+        center: [-100.189895, 25.428123],
+        zoom: 16.3,
         detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
-        minZoomForDimensions: 17.9, // minimum zoom to show lot dimension labels
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
+      },
+      'amani-aqua': {
+        url: 'https://la-la.land/agora/aqua.png',
+        cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png',
+        communities: ['amani-aqua'],
+        center: [-100.179293, 25.436671],
+        zoom: 15.6,
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
+      },
+      'cañadas-vergel': {
+        url: 'https://la-la.land/agora/canadas.png',
+        cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png',
+        communities: ['cañadas-vergel'],
+        center: [-100.178178, 25.441325],
+        zoom: 16.4,
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
+      }
+    },
+
+    // ----- COMMUNITY PRICING -----
+    // Plan-based pricing: each fraccionamiento has fixed plans (A, B, C, D)
+    // Discount applies first, then percentages split the discounted price
+    // down + installments.pct + escrituracion must equal 100
+    communityPricing: {
+      'amani-pietra': {
+        communities: ['amani-pietra'],
+        plans: [
+          { name: '30/70', downPayment: 30, installments: { count: 12, pct: 70 }, escrituracion: 0, discount: 0 },
+          { name: '50/50', downPayment: 50, installments: { count: 12, pct: 50 }, escrituracion: 0, discount: 5 },
+          { name: '30/70-3M', downPayment: 30, installments: { count: 3,  pct: 70 }, escrituracion: 0, discount: 10 }
+        ]
+      },
+      'amani-aqua': {
+        communities: ['amani-aqua'],
+        plans: [
+          { name: '20/80', downPayment: 20, installments: { count: 12, pct: 80 }, escrituracion: 0,  discount: 0 },
+          { name: '20/20/60', downPayment: 20, installments: { count: 6,  pct: 20 }, escrituracion: 60, discount: 5 },
+          { name: '20/20/60-3M', downPayment: 20, installments: { count: 3,  pct: 20 }, escrituracion: 60, discount: 10 }
+        ]
+      },
+      'cañadas-vergel': {
+        communities: ['cañadas-vergel'],
+        plans: [
+          { name: '30/20/50', downPayment: 30, installments: { count: 12, pct: 20 }, escrituracion: 50, discount: 0 },
+          { name: '20/60/20', downPayment: 20, installments: { count: 12, pct: 60 }, escrituracion: 20, discount: 2 },
+          { name: '20/60/20-6M', downPayment: 20, installments: { count: 6,  pct: 60 }, escrituracion: 20, discount: 5 },
+          { name: '20/60/20-3M', downPayment: 20, installments: { count: 3,  pct: 60 }, escrituracion: 20, discount: 10 }
+        ]
       }
     },
 
@@ -48,23 +99,35 @@ const CLIENT_CONFIGS = {
 
       // Initial map view (can be overridden by default community)
       initialView: {
-        center: [-99.9490, 25.1474], // Senterra center
-        zoom: 14.1
+        center: [-100.178178, 25.441325], // Marsella center-100.1534, 25.4255 - 12
+        zoom: 16.4
       }
     },
 
     // ----- AERIAL/SATELLITE IMAGES -----
     aerialImages: [
       {
-        url: 'https://la-la.land/cpi/cpiearth.png',
+        url: 'https://la-la.land/agora/agoraearth.png',
         layerId: 'drone-satellite-layer-1',
         sourceId: 'drone-satellite-1',
-        message: "Cargamos la imágen aérea más actual — (enero 2026)",
+        message: "Cargamos la imágen aérea más actual — (agosto 2025)",
         bounds: [
-[-99.957219, 25.155959],
-[-99.939253, 25.155959],
-[-99.939253, 25.139696],
-[-99.957219, 25.139696]
+[-100.18295, 25.440142],
+[-100.176083, 25.440142],
+[-100.176083, 25.433941],
+[-100.18295, 25.433941]
+        ]
+      },
+      {
+        url: 'https://la-la.land/agora/agoraearth2.png',
+        layerId: 'drone-satellite-layer-2',
+        sourceId: 'drone-satellite-2',
+        message: "Cargamos la imágen aérea más actual — (agosto 2025)",
+        bounds: [
+[-96.097133, 19.079015],
+[-96.0834, 19.079015],
+[-96.0834, 19.066035],
+[-96.097133, 19.066035]
         ]
       }
     ],
@@ -73,36 +136,61 @@ const CLIENT_CONFIGS = {
     // Each community has center coordinates, zoom level, and display info
     communities: {
 
-      senterra: {
-        id: 'senterra',
-        name: 'Senterra',
-        displayName: 'Senterra',
-        fracc: 'senterra',
-        center: [-99.9490, 25.1474],
-        zoom: 14.1,
-        position: 0, // Position in community selector
-        // Alternative reference for search menu:
-        searchMenuId: 'positionOne',
+      'amani-pietra': {
+        id: 'amani-pietra',
+        name: 'Amani Pietra',
+        displayName: 'Amani Pietra',
+        fracc: 'pietra',
+        center: [-100.189895, 25.428123],
+        zoom: 16.3,
+        position: 2,
+        searchMenuId: 'positionFour',
         apartarEnabled: false,
-        framesBase: 'https://andresmtzc.github.io/geepeeX/senterra/frames/'
+        framesBase: 'https://andresmtzc.github.io/geepeeX/pietra/frames/'
+      },
+
+      'amani-aqua': {
+        id: 'amani-aqua',
+        name: 'Amani Aqua',
+        displayName: 'Amani Aqua',
+        fracc: 'aqua',
+        center: [-100.179293, 25.436671],
+        zoom: 15.6,
+        position: 1,
+        searchMenuId: 'positionThree',
+        apartarEnabled: false,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/aqua/frames/'
+      },
+
+      'cañadas-vergel': {
+        id: 'cañadas-vergel',
+        name: 'Cañadas Vergel',
+        displayName: 'Cañadas Vergel',
+        fracc: 'canadas',
+        center: [-100.178178, 25.441325],
+        zoom: 16.4,
+        position: 7,
+        searchMenuId: 'positionTwo',
+        apartarEnabled: false,
+        framesBase: 'https://andresmtzc.github.io/geepeeX/canadas/frames/'
       }
-
-
 
     },
 
     // ----- DATA SOURCES -----
     data: {
-      lotsFile: 'https://la-la.land/cpi/lots.txt',
-      framesBase: 'https://andresmtzc.github.io/geepeeX/senterra/frames/'
+      lotsFile: 'https://la-la.land/agora/lots.txt',
+      framesBase: 'https://la-la.land/agora/frames/'
     },
 
     // ----- LOT NAMING CONVENTIONS -----
     // Prefixes used in lot IDs
     lotPrefixes: {
-      standard: 'lotcpi1-',  // e.g., lotinverta10-1
-      premium: 'lotcpip1-',  // e.g., lotinvertap10-1
-      base: 'cpi1-'          // Used in some contexts
+      a: 'lotagora',
+      'amani-pietra': 'lotagorap',
+      'cañadas-vergel': 'lotagorac',
+      'amani-aqua': 'lotagoraq',
+      base: 'agora'
     },
 
     // ----- CONTACT & CTA -----
@@ -117,7 +205,7 @@ const CLIENT_CONFIGS = {
       },
 
       // Bank account info message (displayed in modals)
-      paymentMessage: '(se te proporcionarán las cuentas bancarias oficiales de CPI a través de WhatsApp).'
+      paymentMessage: '(se te proporcionarán las cuentas bancarias oficiales de AGORA a través de WhatsApp).'
     },
 
     // ----- SHARE SETTINGS -----
@@ -137,7 +225,7 @@ const CLIENT_CONFIGS = {
     // All colors used throughout the site for easy customization
     colors: {
       // Primary brand colors
-      primary: '#8f5e38',        // Orange - main CTA and accent color
+      primary: '#e91843',        // Orange - main CTA and accent color
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
@@ -225,18 +313,18 @@ const CLIENT_CONFIGS = {
     lotStyles: {
       available: {
         outline: {
-          color: '#EFEAE0',
+          color: '#ffffff',
           width: [1.5, 4],       // [zoomMin, zoomMax] → 1.5px at zoom 16, 4px at zoom 19
           opacity: 1,
         },
         fill: {
-          color: '#E0D7C4',           // null = no fill layer added
-          opacity: 0.2,
+          color: null,           // null = no fill layer added
+          opacity: 0,
         },
       },
       sold: {
         outline: {
-          color: '#EFEAE0',
+          color: '#ffffff',
           width: 1,
           opacity: 0.49,
         },
@@ -246,7 +334,7 @@ const CLIENT_CONFIGS = {
         },
         xMark: {
           enabled: true,
-          color: '#EFEAE0',
+          color: '#ffffff',
           width: 1,
           opacity: 0.49,
         },
@@ -280,16 +368,16 @@ const CLIENT_CONFIGS = {
       mapboxFont: 'Barlow Condensed Regular',
 
       // Skip list modal and go directly to detail view when clicking a lot
-      skipListModal: true,
+      skipListModal: false,
 
       // Allow clicking on sold lots (independent of skipListModal)
-      soldLotsClickable: false,
+      soldLotsClickable: true,
 
       // Minimum zoom level to show lot dimensions (lower = show at farther zoom)
-      minZoomForDimensions: 17.9,
+      minZoomForDimensions: 18.8,
 
       // Merge consecutive segments shorter than this (meters) into one label
-      dimensionMergeThreshold: 21,
+      dimensionMergeThreshold: 7,
 
       // Default CTA message
       ctaMessage: '¡Fácil, rápido y sin complicaciones!',
@@ -354,10 +442,32 @@ function getCommunityLogo(clientName, fraccName, forCard = false) {
     }
   }
 
-  // Return first logo as default
-  const firstLogo = Object.values(config.communityLogos)[0];
-  if (!firstLogo) return null;
-  return forCard ? (firstLogo.cardLogoUrl || firstLogo.url) : firstLogo.url;
+  // No match found - return null so logo stays unchanged
+  return null;
+}
+
+/**
+ * Get community pricing configuration based on fracc
+ * @param {string} clientName - The client identifier
+ * @param {string} fraccName - The fraccionamiento/community name
+ * @returns {object|null} Pricing config with downPayment and terms, or null if not found
+ */
+function getCommunityPricing(clientName, fraccName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.communityPricing) return null;
+
+  const fracc = (fraccName || '').toLowerCase().trim();
+  if (!fracc) return null;
+
+  // Search through community pricing groups
+  for (const [groupName, pricingData] of Object.entries(config.communityPricing)) {
+    if (pricingData.communities.includes(fracc)) {
+      return pricingData;
+    }
+  }
+
+  // No match found - return null (show "contact for pricing")
+  return null;
 }
 
 /**
@@ -479,6 +589,29 @@ function getColor(clientName, colorKey) {
 }
 
 /**
+ * Get community group name for a fraccionamiento
+ * Used for determining which PDF template to use
+ * @param {string} clientName - The client identifier
+ * @param {string} fraccName - The fraccionamiento/community name
+ * @returns {string|null} Community group name (e.g., 'mediterraneo', 'puntolomas') or null if not found
+ */
+function getCommunityGroup(clientName, fraccName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.communityLogos) return null;
+
+  const fracc = fraccName.toLowerCase().trim();
+
+  // Search through community logo groups
+  for (const [groupName, logoData] of Object.entries(config.communityLogos)) {
+    if (logoData.communities && logoData.communities.includes(fracc)) {
+      return groupName;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Apply colors from config to CSS custom properties (CSS variables)
  * Call this function early in your page load to make colors available as CSS variables
  * @param {string} clientName - The client identifier
@@ -526,7 +659,9 @@ if (typeof module !== 'undefined' && module.exports) {
     CLIENT_CONFIGS,
     getClientConfig,
     getCommunityLogo,
+    getCommunityPricing,
     getCommunityByFracc,
+    getCommunityGroup,
     getAllCommunities,
     buildShareUrl,
     buildShareText,

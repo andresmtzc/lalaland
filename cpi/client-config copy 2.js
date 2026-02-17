@@ -137,7 +137,7 @@ const CLIENT_CONFIGS = {
     // All colors used throughout the site for easy customization
     colors: {
       // Primary brand colors
-      primary: '#8f5e38',        // Orange - main CTA and accent color
+      primary: '#9A6940',        // Orange - main CTA and accent color
       primaryLight: '#ff6b6b',   // Coral - view cone outlines
       cream: '#fcfaf3',          // Cream/Beige - backgrounds and button text
 
@@ -231,7 +231,7 @@ const CLIENT_CONFIGS = {
         },
         fill: {
           color: '#E0D7C4',           // null = no fill layer added
-          opacity: 0.2,
+          opacity: 0.45,
         },
       },
       sold: {
@@ -358,6 +358,28 @@ function getCommunityLogo(clientName, fraccName, forCard = false) {
   const firstLogo = Object.values(config.communityLogos)[0];
   if (!firstLogo) return null;
   return forCard ? (firstLogo.cardLogoUrl || firstLogo.url) : firstLogo.url;
+}
+
+/**
+ * Get the community group name for a given fraccionamiento
+ * @param {string} clientName - The client identifier
+ * @param {string} fraccName - The fraccionamiento/community name
+ * @returns {string|null} Group name or null
+ */
+function getCommunityGroup(clientName, fraccName) {
+  const config = getClientConfig(clientName);
+  if (!config || !config.communityLogos) return null;
+
+  const fracc = fraccName.toLowerCase().trim();
+
+  // Search through community logo groups
+  for (const [groupName, logoData] of Object.entries(config.communityLogos)) {
+    if (logoData.communities && logoData.communities.includes(fracc)) {
+      return groupName;
+    }
+  }
+
+  return null;
 }
 
 /**

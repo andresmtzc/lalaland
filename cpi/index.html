@@ -499,9 +499,11 @@ let viewerInitialized = false;
 let selectedMarbleId = null;
 // Marriage system
 let marriageGroups = []; // Array of arrays: [["gpxName.gpx:15", "gpxName2.gpx:42"], ...]
+let antiMarriageGroups = []; // Array of arrays: pairs that block navigation between them
 let lastHopBearingDeg = null;
 let currentImages = [];
 let currentImageIndex = -1;
+let imageNumberToArrayIndex = {}; // Maps original image number (from filename) to currentImages array position
 let preloadedImages = {};
 let viewConeMarker = null;
 let isSwitchingTrack = false;
@@ -900,11 +902,13 @@ function updateNavigationRing(instant = false) {
   const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
   const total = track.marbles.length;
 
-  // Detect position in track
+  // Detect position in track (including anti-marriage blocks)
   const isFirst = marbleIndex === 0;
   const isLast = marbleIndex === total - 1;
-  const canForward = !isLast;
-  const canBackward = !isFirst;
+  const nextBlocked = !isLast && areAntiMarried(selectedMarbleId, track.marbles[marbleIndex + 1]?.id);
+  const prevBlocked = !isFirst && areAntiMarried(selectedMarbleId, track.marbles[marbleIndex - 1]?.id);
+  const canForward = !isLast && !nextBlocked;
+  const canBackward = !isFirst && !prevBlocked;
 
   // Branch only available if marble has married partners
   const canBranch = hasMarriedPartners(selectedMarbleId);
@@ -1037,6 +1041,12 @@ async function loadGPXFromManifest() {
         if (manifest.marriages && Array.isArray(manifest.marriages)) {
           marriageGroups = marriageGroups.concat(manifest.marriages);
           console.log("Marriages loaded from:", framesBase);
+        }
+
+        // Merge anti-marriages if present
+        if (manifest.antiMarriages && Array.isArray(manifest.antiMarriages)) {
+          antiMarriageGroups = antiMarriageGroups.concat(manifest.antiMarriages);
+          console.log("Anti-marriages loaded from:", framesBase);
         }
 
         // Get GPX files from manifest
@@ -1355,6 +1365,18 @@ function hasMarriedPartners(marbleId) {
   return getMarriedPartners(marbleId).length > 0;
 }
 
+// Check if two marbles are anti-married (navigation blocked between them)
+function areAntiMarried(marbleId1, marbleId2) {
+  if (!marbleId1 || !marbleId2) return false;
+  const id1 = getMarbleIdentifier(marbleId1);
+  const id2 = getMarbleIdentifier(marbleId2);
+  if (!id1 || !id2) return false;
+  for (const group of antiMarriageGroups) {
+    if ((group.includes(id1) && group.includes(id2))) return true;
+  }
+  return false;
+}
+
 // Preload images for all married marbles
 function preloadMarriedMarbleImages() {
   const imagesToPreload = new Set();
@@ -1568,10 +1590,22 @@ function applyImageToSphere(img, imageData) {
 }
 
 function preloadAdjacentImages() {
-  const prev = currentImageIndex - 1;
-  const next = currentImageIndex + 1;
-  if (prev >= 0 && !preloadedImages[currentImages[prev].url]) preloadOne(prev);
-  if (next < currentImages.length && !preloadedImages[currentImages[next].url]) preloadOne(next);
+  // Preload adjacent marble images (not sequential array indices)
+  const track = getCurrentTrack();
+  if (!track || !selectedMarbleId) return;
+  const marbleIdx = track.marbles.findIndex(m => m.id === selectedMarbleId);
+  const neighbors = [marbleIdx - 1, marbleIdx + 1, marbleIdx - 2, marbleIdx + 2];
+  for (const ni of neighbors) {
+    if (ni >= 0 && ni < track.marbles.length) {
+      const m = track.marbles[ni];
+      if (m.assignedImage !== null && m.assignedImage !== undefined) {
+        const arrIdx = imageNumberToArrayIndex.hasOwnProperty(m.assignedImage) ? imageNumberToArrayIndex[m.assignedImage] : m.assignedImage;
+        if (arrIdx >= 0 && arrIdx < currentImages.length && !preloadedImages[currentImages[arrIdx].url]) {
+          preloadOne(arrIdx);
+        }
+      }
+    }
+  }
 }
 
 function preloadOne(index) {
@@ -1611,32 +1645,47 @@ function getMarblePositionByImageIndex(imageIndex) {
 }
 
 function nextImage() {
-  if (currentImageIndex < currentImages.length - 1) {
+  const track = getCurrentTrack();
+  if (!track || !selectedMarbleId) { updateViewerUI(); return; }
+  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+  if (marbleIndex < 0 || marbleIndex >= track.marbles.length - 1) { updateViewerUI(); return; }
+  const nextMarble = track.marbles[marbleIndex + 1];
+  if (areAntiMarried(selectedMarbleId, nextMarble.id)) { updateViewerUI(); return; }
+  if (nextMarble.assignedImage !== null && nextMarble.assignedImage !== undefined) {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
-    currentImageIndex++;
-    showImageByIndex(currentImageIndex);
+    selectMarble(nextMarble.id);
+    showImageByIndex(nextMarble.assignedImage);
     updateNavigationRing(true);
-    const newPos = getMarblePositionByImageIndex(currentImageIndex);
+    const newPos = nextMarble.position;
     panMapToFollowMarble(oldPos, newPos);
   }
   updateViewerUI();
 }
 
 function previousImage() {
-  if (currentImageIndex > 0) {
+  const track = getCurrentTrack();
+  if (!track || !selectedMarbleId) { updateViewerUI(); return; }
+  const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
+  if (marbleIndex <= 0) { updateViewerUI(); return; }
+  const prevMarble = track.marbles[marbleIndex - 1];
+  if (areAntiMarried(selectedMarbleId, prevMarble.id)) { updateViewerUI(); return; }
+  if (prevMarble.assignedImage !== null && prevMarble.assignedImage !== undefined) {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
-    currentImageIndex--;
-    showImageByIndex(currentImageIndex);
+    selectMarble(prevMarble.id);
+    showImageByIndex(prevMarble.assignedImage);
     updateNavigationRing(true);
-    const newPos = getMarblePositionByImageIndex(currentImageIndex);
+    const newPos = prevMarble.position;
     panMapToFollowMarble(oldPos, newPos);
   }
   updateViewerUI();
 }
 
 function showImageByIndex(index) {
-  if (index < 0 || index >= currentImages.length) return;
-  const image = currentImages[index];
+  // index = marble's assignedImage (original image number, may have gaps)
+  // Use lookup map to find actual position in currentImages array
+  const arrayIdx = imageNumberToArrayIndex.hasOwnProperty(index) ? imageNumberToArrayIndex[index] : index;
+  if (arrayIdx < 0 || arrayIdx >= currentImages.length) return;
+  const image = currentImages[arrayIdx];
   if (preloadedImages[image.url]) {
     applyImageToSphere(preloadedImages[image.url], image);
     currentImageIndex = index;
@@ -1652,8 +1701,12 @@ function showImageByIndex(index) {
 }
 
 function updateViewerUI() {
-  document.getElementById('time').textContent = `${currentImageIndex+1}/${currentImages.length}`;
-  document.getElementById('viewer-info').textContent = `Image ${currentImageIndex+1}/${currentImages.length}`;
+  const track = getCurrentTrack();
+  const marbleIdx = track ? track.marbles.findIndex(m => m.id === selectedMarbleId) : -1;
+  const total = track ? track.marbles.length : currentImages.length;
+  const display = marbleIdx >= 0 ? marbleIdx + 1 : currentImageIndex + 1;
+  document.getElementById('time').textContent = `${display}/${total}`;
+  document.getElementById('viewer-info').textContent = `Image ${display}/${total}`;
 }
 
 // Set up navigation button event listeners
@@ -1775,6 +1828,17 @@ async function createImagesFromFramesFolder() {
     timestamp: filename,
     sequence: i
   }));
+
+  // Build lookup: original image number (from filename) → array position
+  // e.g. "track-4.jpg" → image number 3 (0-based) → array position 2 (if track-3 was removed)
+  imageNumberToArrayIndex = {};
+  currentImages.forEach((img, i) => {
+    const numMatch = img.filename.match(/[-_](\d+)\.[^.]+$/);
+    if (numMatch) {
+      const originalImageNumber = parseInt(numMatch[1]) - 1; // 1-based filename → 0-based index
+      imageNumberToArrayIndex[originalImageNumber] = i;
+    }
+  });
 }
 
 // Background preload
