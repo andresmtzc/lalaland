@@ -1,0 +1,3285 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Mapbox Viewer — Advanced Path Editing</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Instrument+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; font-family: 'Instrument Sans', sans-serif; overflow: hidden; background: #000; }
+    #main-container { display: flex; flex-direction: column; height: 100vh; position: relative; }
+
+    #viewer-section { height: 50%; background: #111; position: relative; display: flex; flex-direction: column; border-bottom: 2px solid #333; margin-left: 280px; }
+    #viewer-header { padding: 8px 15px; background: #222; color: white; display: flex; justify-content: space-between; align-items: center; font-size: 13px; z-index: 10; }
+    #viewer-body { flex-grow: 1; position: relative; background: #0b1020; }
+
+    #canvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      touch-action: none; pointer-events: auto;
+      -webkit-user-select: none; user-select: none;
+    }
+
+    #map-section { height: 50%; position: relative; display: flex; margin-left: 280px; }
+    #left-panel {
+      position: absolute; top: 0; left: 0; bottom: 0;
+      width: 280px; background: linear-gradient(180deg, #1a1a1a 0%, #0f0f0f 100%);
+      border-right: 1px solid #333; overflow-y: auto; z-index: 100;
+      box-shadow: 4px 0 12px rgba(0,0,0,0.5);
+    }
+    #map { flex: 1; height: 100%; }
+
+    .panel-section { border-bottom: 1px solid #2a2a2a; padding: 16px; }
+
+    .section-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+      color: #666; text-transform: uppercase; margin-bottom: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .checkbox-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 0; cursor: pointer;
+      border-radius: 4px; margin: 0 -6px; padding-left: 6px;
+    }
+    .checkbox-row:hover { background: rgba(255,255,255,0.03); }
+    .checkbox-row input[type="checkbox"] { accent-color: #1fb6ff; cursor: pointer; }
+    .checkbox-row label { color: #ccc; font-size: 13px; cursor: pointer; flex: 1; }
+
+    .btn {
+      width: 100%; padding: 10px 14px;
+      background: linear-gradient(135deg, #1fb6ff 0%, #0d8fd9 100%);
+      border: none; border-radius: 6px; color: white;
+      font-weight: 600; font-size: 12px; cursor: pointer; margin: 8px 0;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:disabled { background: #2a2a2a; color: #666; cursor: not-allowed; transform: none; }
+    .btn-danger { background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%); }
+
+    /* Control Point Markers (still DOM-based) */
+    .control-point-marker {
+      width: 14px; height: 14px; background: #ffeb3b;
+      border: 2px solid #000; transform: rotate(45deg);
+      cursor: move; box-shadow: 0 0 8px rgba(255,235,59,0.6);
+      z-index: 30;
+    }
+
+    #ui-overlay {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(0,0,0,0.85); padding: 12px; border-radius: 8px;
+      display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+      color: white; z-index: 20; border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    /* ===== THREE.JS VIEWER STYLES ===== */
+    .image-controls {
+      position: absolute; bottom: 10px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center;
+      z-index: 20; pointer-events: none;
+    }
+
+    .navigation-ring {
+      position: relative; width: 160px; height: 160px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      user-select: none;
+      transition: transform 0.3s ease;
+      pointer-events: none;
+    }
+
+    .nav-button.ring-button {
+      position: absolute; width: 40px; height: 40px;
+      border: none; border-radius: 50%;
+      background: rgba(0,0,0,0);
+      color: #fcfaf3;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; cursor: pointer;
+      transform: translateX(-50%);
+      pointer-events: auto;
+      z-index: 21;
+    }
+
+    #nextImageBtn.ring-button { top: 15px; left: 50%; }
+    #prevImageBtn.ring-button { bottom: 15px; left: 50%; }
+
+    /* Branch button positions based on geographic direction */
+    #branchBtn.ring-button,
+    .navigation-ring.branch-right #branchBtn.ring-button {
+      right: 15px; top: 50%; left: auto; bottom: auto;
+      transform: translateY(-50%);
+    }
+    .navigation-ring.branch-left #branchBtn.ring-button {
+      left: 15px; top: 50%; right: auto; bottom: auto;
+      transform: translateY(-50%) rotate(180deg);
+    }
+    .navigation-ring.branch-top #branchBtn.ring-button {
+      top: 15px; left: 50%; right: auto; bottom: auto;
+      transform: translateX(-50%) rotate(-90deg);
+    }
+    .navigation-ring.branch-bottom #branchBtn.ring-button {
+      bottom: 15px; left: 50%; right: auto; top: auto;
+      transform: translateX(-50%) rotate(90deg);
+    }
+
+    .nav-button.ring-button:hover {
+      transform: translateX(-50%) scale(1.2);
+    }
+    #branchBtn.ring-button:hover {
+      transform: translateY(-50%) scale(1.2);
+    }
+
+    .time {
+      position: absolute; right: 20px; bottom: 20px;
+      color: #22d3ee; font-weight: 600; font-size: 14px;
+      z-index: 25;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .zoom-controls {
+      position: absolute; right: 10px; top: 10px;
+      display: flex; flex-direction: column; gap: 8px;
+      z-index: 5;
+    }
+
+    .zoom-btn {
+      width: 36px; height: 36px;
+      background: rgba(0,0,0,0.7); border: 1px solid #555;
+      color: white; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; cursor: pointer;
+    }
+    .zoom-btn:hover { background: rgba(0,0,0,0.9); }
+
+    #viewer-loading {
+      display: none; position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      z-index: 100; background: rgba(0,0,0,0.7);
+      padding: 20px; border-radius: 10px;
+      text-align: center; color: white;
+    }
+
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid rgba(255,255,255,0.1);
+      border-radius: 50%; border-top: 4px solid #22d3ee;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    #empty-msg {
+      height: 100%; display: flex; justify-content: center;
+      align-items: center; color: #555;
+      position: absolute; top: 0; left: 0; width: 100%;
+      z-index: 5; pointer-events: none;
+    }
+
+    /* ===== TRACK LIST STYLES ===== */
+    .track-list { max-height: 180px; overflow-y: auto; }
+    .track-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; cursor: pointer; border-radius: 4px;
+      margin-bottom: 2px; font-size: 12px; color: #ccc;
+      border: 1px solid transparent;
+    }
+    .track-item:hover { background: rgba(255,255,255,0.05); }
+    .track-item.active { background: rgba(31,182,255,0.15); border-color: rgba(31,182,255,0.3); }
+    .track-color-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .track-item-name {
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .track-item-count {
+      font-size: 10px; color: #666; font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap;
+    }
+    .track-remove-btn {
+      background: none; border: none; color: #666; cursor: pointer;
+      font-size: 14px; padding: 0 4px; line-height: 1;
+    }
+    .track-remove-btn:hover { color: #ff4444; }
+
+  </style>
+</head>
+<body>
+
+<div id="main-container">
+  <div id="viewer-section">
+    <div id="viewer-header">
+      <div><b id="viewer-title">Street View</b> <span id="viewer-meta" style="margin-left:10px; opacity:0.7;"></span></div>
+      <div style="font-size:10px; color:#777; font-family:'JetBrains Mono',monospace; display:flex; gap:10px; flex-wrap:wrap;">
+        <span><kbd style="background:#333;padding:1px 4px;border-radius:3px;color:#ccc;border:1px solid #555;">D</kbd> Drag</span>
+        <span><kbd style="background:#333;padding:1px 4px;border-radius:3px;color:#ccc;border:1px solid #555;">L</kbd> Lock</span>
+        <span><kbd style="background:#333;padding:1px 4px;border-radius:3px;color:#ccc;border:1px solid #555;">M</kbd> Move CPs</span>
+        <span><kbd style="background:#333;padding:1px 4px;border-radius:3px;color:#FF00FF;border:1px solid #555;">R</kbd> Marry</span>
+        <span><kbd style="background:#333;padding:1px 4px;border-radius:3px;color:#ccc;border:1px solid #555;">⌘Z</kbd> Undo</span>
+        <span><kbd style="background:#333;padding:1px 4px;border-radius:3px;color:#ccc;border:1px solid #555;">⌘⇧Z</kbd> Redo</span>
+      </div>
+    </div>
+    <div id="viewer-body">
+      <canvas id="canvas"></canvas>
+      <div id="empty-msg">Load data to begin</div>
+
+      <!-- Loading spinner -->
+      <div id="viewer-loading">
+        <div class="spinner"></div>
+        <div id="loading-text">Loading 360 image...</div>
+      </div>
+
+      <!-- Navigation ring -->
+      <div class="image-controls">
+        <div class="navigation-ring">
+          <button class="nav-button ring-button" id="nextImageBtn">&#9651;</button>
+          <button class="nav-button ring-button" id="prevImageBtn">&#9661;</button>
+          <button class="nav-button ring-button" id="branchBtn" style="opacity:0; pointer-events:none;">&#9655;</button>
+        </div>
+      </div>
+
+      <!-- Image counter -->
+      <div class="time" id="time">-/-</div>
+
+      <!-- Zoom controls -->
+      <div class="zoom-controls">
+        <button class="zoom-btn" id="zoomInBtn">+</button>
+        <button class="zoom-btn" id="zoomOutBtn">&minus;</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="left-panel">
+    <div class="panel-section">
+      <button class="btn btn-danger" id="clearAllBtn">Clear All</button>
+      <div style="display: flex; gap: 4px; margin-top: 4px;">
+        <button class="btn" id="undoBtn" disabled style="background: linear-gradient(135deg, #666 0%, #444 100%); margin: 0; flex: 1; font-size: 11px;">Undo</button>
+        <button class="btn" id="redoBtn" disabled style="background: linear-gradient(135deg, #666 0%, #444 100%); margin: 0; flex: 1; font-size: 11px;">Redo</button>
+      </div>
+      <div id="undoHint" style="font-size: 9px; color: #555; text-align: center; margin-top: 2px; font-family: 'JetBrains Mono', monospace;"></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">Tracks</div>
+      <div class="track-list" id="tracks-list">
+        <div style="text-align:center; color:#555; font-size:11px; padding:10px;">No tracks loaded</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">View Controls</div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showBlueDots" checked>
+        <label for="showBlueDots">Show Blue Dots</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showRedDots" checked>
+        <label for="showRedDots">Show Red Dots</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showBlueTrack" checked>
+        <label for="showBlueTrack">Show Blue Track</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showRedTrack" checked>
+        <label for="showRedTrack">Show Red Track</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showControlPoints" checked>
+        <label for="showControlPoints">Show Diamond CPs</label>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">Yaw Fix</div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <input type="range" id="yawFixSlider" min="-180" max="180" step="5" value="0" style="flex:1; accent-color:#1fb6ff;">
+        <span id="yawFixValue" style="font-size:11px; color:#1fb6ff; font-weight:600; min-width:36px; text-align:right;">0°</span>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">Smoothing</div>
+      <button class="btn" id="generateRedBtn">Generate Red Track</button>
+      <div style="margin-top: 8px;">
+        <div class="checkbox-row">
+          <input type="checkbox" id="addCPMode">
+          <label for="addCPMode">Add CP Mode</label>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="removeCPMode">
+          <label for="removeCPMode">Remove CP Mode</label>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="moveAllCPs">
+          <label for="moveAllCPs">Move All CPs</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">Editing</div>
+      <button class="btn" id="projectPointsBtn" disabled>Project Points to Red</button>
+
+      <div style="margin: 12px 0;">
+        <div class="checkbox-row">
+          <input type="checkbox" id="dragMode">
+          <label for="dragMode" style="color:#1fb6ff; font-weight:bold;">Drag Mode</label>
+        </div>
+        <div style="font-size: 10px; color: #666; padding-left: 28px; margin-bottom:5px;">
+          Drag Red dots along curve
+        </div>
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="lockMode">
+          <label for="lockMode" style="color:#ffeb3b; font-weight:bold;">Lock Mode</label>
+        </div>
+        <div style="font-size: 10px; color: #666; padding-left: 28px; margin-bottom:5px;">
+          Click Red dot to toggle lock (yellow)
+        </div>
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="removePointMode">
+          <label for="removePointMode" style="color:#ff4444; font-weight:bold;">Remove Point Mode</label>
+        </div>
+        <div style="font-size: 10px; color: #666; padding-left: 28px;">
+          Click Red dot to delete & re-index
+        </div>
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="marryMode">
+          <label for="marryMode" style="color:#FF00FF; font-weight:bold;">Marry Mode</label>
+        </div>
+        <div style="font-size: 10px; color: #666; padding-left: 28px;" id="marryHelp">
+          Click red dots to select, uncheck to marry
+        </div>
+        <div id="marrySelectionInfo" style="font-size: 10px; color: #FF00FF; padding-left: 28px; display:none;">
+          Selected: <span id="marrySelectionCount">0</span> pts
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="antiMarryMode">
+          <label for="antiMarryMode" style="color:#39FF14; font-weight:bold;">Antimarry Mode</label>
+        </div>
+        <div style="font-size: 10px; color: #666; padding-left: 28px;" id="antiMarryHelp">
+          Click 2 red dots, uncheck to antimarry
+        </div>
+        <div id="antiMarrySelectionInfo" style="font-size: 10px; color: #39FF14; padding-left: 28px; display:none;">
+          Selected: <span id="antiMarrySelectionCount">0</span> pts
+        </div>
+      </div>
+
+      <button class="btn btn-danger" id="exportBtn" disabled>Export JSON</button>
+      <button class="btn" id="exportGpxBtn" disabled style="background: linear-gradient(135deg, #26a269 0%, #1a7f4f 100%);">Export GPX</button>
+      <button class="btn" id="exportIndexBtn" style="background: linear-gradient(135deg, #9b59b6 0%, #6c3483 100%); margin-top:2px;">Export Index</button>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">Status</div>
+      <div style="font-size: 11px; color: #999;">
+        <div>Blue Points: <span id="blueCount" style="color: #2b6df6; font-weight: 600;">0</span></div>
+        <div>Red Points: <span id="projectedCount" style="color: #ff4444; font-weight: 600;">0</span></div>
+        <div>Marriages: <span id="marriageCount" style="color: #FF00FF; font-weight: 600;">0</span></div>
+        <div>Antimarriages: <span id="antiMarriageCount" style="color: #39FF14; font-weight: 600;">0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="map-section">
+    <div id="map"></div>
+
+    <div id="ui-overlay">
+      <div style="display:flex; flex-direction:column; gap:4px; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 6px;">
+        <label style="font-size:10px; font-weight:bold; color:#26a269;">CREATE BLUE POINTS</label>
+        <input id="gpxInput" type="file" accept=".gpx" multiple style="font-size:11px; max-width: 180px;"/>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <input id="numPointsInput" type="number" min="2" value="10" style="width:50px; font-size:11px; padding:2px 4px; background:#222; border:1px solid #444; color:white; border-radius:3px;"/>
+          <span style="font-size:10px; color:#999;">points</span>
+        </div>
+        <button id="generateFromGpxBtn" disabled style="background:#26a269; color:white; border:none; padding:4px 8px; font-size:10px; border-radius:4px; cursor:pointer;">Regenerate Points</button>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:10px; font-weight:bold; color:#ff4444;">IMPORT RED PATH</label>
+        <input id="importRedInput" type="file" accept=".json" multiple style="font-size:11px; max-width: 180px;"/>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:10px; font-weight:bold; color:#1fb6ff;">LOCAL IMAGES</label>
+        <input id="imagesInput" type="file" webkitdirectory directory multiple style="font-size:11px; max-width: 180px;"/>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <label style="font-size:10px; font-weight:bold; color:#9b59b6;">IMPORT INDEX</label>
+        <input id="importIndexInput" type="file" accept=".json" style="font-size:11px; max-width: 180px;"/>
+      </div>
+      <button id="fitBtn" style="background:#333; color:white; border:none; padding:4px 8px; font-size:10px; border-radius:4px; cursor:pointer;">Recenter</button>
+      <div style="border-top:1px solid #333; padding-top:8px; margin-top:2px; max-width:180px;">
+        <label style="font-size:10px; font-weight:bold; color:#1fb6ff;">MAP LAYER</label>
+        <input type="text" id="overlayUrl" placeholder="Image URL" style="width:180px; font-size:9px; padding:3px 5px; background:#222; border:1px solid #444; color:#ccc; border-radius:3px; font-family:'JetBrains Mono',monospace; margin-top:4px;">
+        <input type="text" id="overlayCoords" placeholder="[lng,lat] x4 corners" style="width:180px; font-size:9px; padding:3px 5px; background:#222; border:1px solid #444; color:#ccc; border-radius:3px; font-family:'JetBrains Mono',monospace; margin-top:3px;">
+        <div style="display:flex; gap:4px; margin-top:4px;">
+          <button id="loadOverlayBtn" style="background:#1fb6ff; color:white; border:none; padding:3px 8px; font-size:9px; border-radius:3px; cursor:pointer; flex:1;">Load</button>
+          <button id="removeOverlayBtn" style="background:#444; color:white; border:none; padding:3px 8px; font-size:9px; border-radius:3px; cursor:pointer; display:none;">Remove</button>
+        </div>
+        <div id="overlayControls" style="display:none; margin-top:4px;">
+          <input type="range" id="overlayOpacity" min="0" max="100" value="80" style="width:100%; accent-color:#1fb6ff;">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+mapboxgl.accessToken = "pk.eyJ1IjoiYW5kcmVzbXR6YyIsImEiOiJjbWl5eWQ0a2gwbDRlM2RweTN6ZXY1MmRsIn0.RDhU90VJPV_Bcjt1tab-MQ";
+
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/satellite-streets-v12',
+  center: [-100.3483, 25.6752],
+  zoom: 15
+});
+
+/* ========================
+   TRACK COLORS
+======================== */
+const trackColors = [
+  '#2b6df6', '#EA4335', '#34A853', '#FBBC05', '#FF6D01',
+  '#46BDC6', '#9334E6', '#E67C73', '#109D58', '#3F51B5'
+];
+
+/* ========================
+   MULTI-TRACK STATE
+======================== */
+let tracks = new Map();
+let currentTrackId = null;
+let nextTrackId = 1;
+
+/* ========================
+   VIEWER STATE
+======================== */
+let currentIdx = -1;
+
+// Three.js Viewer State
+let scene, camera, renderer, sphere, panoGroup;
+let currentYaw = 0, currentPitch = 0, currentFov = 75, currentYawFix = 0;
+let viewerInitialized = false;
+let preloadedImages = {};
+
+// Mode State
+let addCPModeActive = false;
+let removeCPModeActive = false;
+let moveAllCPsActive = false;
+let dragModeActive = false;
+let removePointModeActive = false;
+let lockModeActive = false;
+let marryModeActive = false;
+let marrySelection = new Set(); // Set of "trackId:imageIndex" strings
+
+let antiMarryModeActive = false;
+let antiMarrySelection = new Set();
+
+// Marriage State
+let marriageGroups = []; // Array of arrays: [["track-1:5", "track-2:12"], ...]
+let antiMarriageGroups = []; // Array of pairs: [["track:85", "track:93"], ...]
+const marriageColors = [
+  '#FF00FF', '#00FFFF', '#FFD700', '#FF6347', '#7B68EE',
+  '#00FA9A', '#FF69B4', '#32CD32', '#FF4500', '#1E90FF',
+  '#ADFF2F', '#DC143C'
+];
+
+// Marriage identifier: "trackName:imageIndex" — matches gpx.html format
+// e.g. "sierraalta0:142" — portable across sessions
+function markerKey(trackOrName, imageIndex) {
+  // Accept either a track object or a name string
+  const name = typeof trackOrName === 'string' ? trackOrName : trackOrName.name;
+  return `${name}:${imageIndex}`;
+}
+
+// Undo / Redo System
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 20;
+
+/* ========================
+   CATMULL-ROM SPLINE
+======================== */
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return [
+    0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
+    0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
+  ];
+}
+
+function generateCatmullRomCurve(controlPts, segmentsPerSection = 20) {
+  if (controlPts.length < 2) return controlPts;
+  const curve = [];
+  const n = controlPts.length;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = i === 0 ? controlPts[i] : controlPts[i - 1];
+    const p1 = controlPts[i];
+    const p2 = controlPts[i + 1];
+    const p3 = i === n - 2 ? controlPts[i + 1] : controlPts[i + 2];
+    for (let j = 0; j < segmentsPerSection; j++) {
+      curve.push(catmullRom(p0, p1, p2, p3, j / segmentsPerSection));
+    }
+  }
+  curve.push(controlPts[n - 1]);
+  return curve;
+}
+
+/* ========================
+   TRACK MANAGEMENT
+======================== */
+function createTrackData(name) {
+  const id = `track-${nextTrackId++}`;
+  return {
+    id: id,
+    name: name,
+    color: trackColors[(nextTrackId - 2) % trackColors.length],
+    gpxLine: null,
+    rawPoints: [],
+    imagesByIndex: {},
+    redMarkers: [],           // Array of { lon, lat, sequentialIndex, imageIndex }
+    controlPointMarkers: [],  // DOM markers (need dragging)
+    controlPoints: [],
+    redTrackLine: null,
+    yawFix: 0,
+  };
+}
+
+function getCurrentTrack() {
+  return currentTrackId ? tracks.get(currentTrackId) : null;
+}
+
+function findTrackByName(name) {
+  const nameLower = name.toLowerCase();
+  for (const [id, track] of tracks) {
+    if (track.name.toLowerCase() === nameLower) return track;
+  }
+  return null;
+}
+
+/* ========================
+   UNDO SYSTEM
+======================== */
+function updateUndoUI() {
+  const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
+  const hint = document.getElementById('undoHint');
+
+  undoBtn.disabled = undoStack.length === 0;
+  redoBtn.disabled = redoStack.length === 0;
+
+  if (undoStack.length > 0) {
+    const top = undoStack[undoStack.length - 1];
+    hint.textContent = 'undo: ' + (top.action || 'last change');
+  } else if (redoStack.length > 0) {
+    const top = redoStack[redoStack.length - 1];
+    hint.textContent = 'redo: ' + (top.action || 'last change');
+  } else {
+    hint.textContent = '';
+  }
+}
+
+function captureCurrentState(track, action) {
+  return {
+    trackId: track.id,
+    action: action || '',
+    controlPointPositions: track.controlPointMarkers.map(m => {
+      const ll = m.getLngLat();
+      return [ll.lng, ll.lat];
+    }),
+    redMarkers: track.redMarkers.map(m => ({
+      lon: m.lon,
+      lat: m.lat,
+      sequentialIndex: m.sequentialIndex,
+      imageIndex: m.imageIndex,
+      distanceAlongRoute: m.distanceAlongRoute,
+      isLocked: m.isLocked || false
+    }))
+  };
+}
+
+function saveUndoState(track, action) {
+  if (!track) track = getCurrentTrack();
+  if (!track) return;
+
+  undoStack.push(captureCurrentState(track, action));
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  // New action invalidates redo history
+  redoStack.length = 0;
+  updateUndoUI();
+}
+
+function restoreState(state, track) {
+  // Select the track if not current
+  if (currentTrackId !== state.trackId) selectTrack(state.trackId);
+
+  // Restore control point positions
+  if (state.controlPointPositions.length === track.controlPointMarkers.length) {
+    state.controlPointPositions.forEach((pos, i) => {
+      track.controlPointMarkers[i].setLngLat(pos);
+    });
+    updateRedTrackLine(track);
+  } else {
+    track.controlPointMarkers.forEach(m => m.remove());
+    track.controlPointMarkers = [];
+    state.controlPointPositions.forEach(pos => {
+      createCPMarker(pos, track);
+    });
+    updateRedTrackLine(track);
+  }
+
+  // Restore red markers
+  track.redMarkers = state.redMarkers.map(m => ({
+    lon: m.lon,
+    lat: m.lat,
+    sequentialIndex: m.sequentialIndex,
+    imageIndex: m.imageIndex,
+    distanceAlongRoute: m.distanceAlongRoute,
+    isLocked: m.isLocked
+  }));
+
+  updateRedMarkersSource();
+  updateStatus();
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+
+  const state = undoStack.pop();
+  const track = tracks.get(state.trackId);
+  if (!track) { updateUndoUI(); return; }
+
+  // Save current state to redo stack before restoring
+  redoStack.push(captureCurrentState(track, state.action));
+
+  restoreState(state, track);
+  updateUndoUI();
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+
+  const state = redoStack.pop();
+  const track = tracks.get(state.trackId);
+  if (!track) { updateUndoUI(); return; }
+
+  // Save current state to undo stack before restoring
+  undoStack.push(captureCurrentState(track, state.action));
+
+  restoreState(state, track);
+  updateUndoUI();
+}
+
+/* ========================
+   CP MID-LINE INSERTION HELPERS
+======================== */
+function distanceToSegment(point, segStart, segEnd) {
+  // Returns perpendicular distance from point to line segment
+  const dx = segEnd[0] - segStart[0];
+  const dy = segEnd[1] - segStart[1];
+  const lenSq = dx * dx + dy * dy;
+
+  if (lenSq === 0) {
+    // Segment is a point
+    const ex = point[0] - segStart[0];
+    const ey = point[1] - segStart[1];
+    return Math.sqrt(ex * ex + ey * ey);
+  }
+
+  let t = ((point[0] - segStart[0]) * dx + (point[1] - segStart[1]) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+
+  const projX = segStart[0] + t * dx;
+  const projY = segStart[1] + t * dy;
+  const ex = point[0] - projX;
+  const ey = point[1] - projY;
+  return Math.sqrt(ex * ex + ey * ey);
+}
+
+function findBestCPInsertIndex(coord, controlPointMarkers) {
+  // Find which segment between consecutive CPs the new point is closest to
+  if (controlPointMarkers.length < 2) return controlPointMarkers.length;
+
+  let bestDist = Infinity;
+  let bestIdx = controlPointMarkers.length; // default: append
+
+  for (let i = 0; i < controlPointMarkers.length - 1; i++) {
+    const a = controlPointMarkers[i].getLngLat();
+    const b = controlPointMarkers[i + 1].getLngLat();
+    const d = distanceToSegment(coord, [a.lng, a.lat], [b.lng, b.lat]);
+    if (d < bestDist) {
+      bestDist = d;
+      bestIdx = i + 1; // insert after segment start
+    }
+  }
+
+  return bestIdx;
+}
+
+/* ========================
+   MARBLE REDISTRIBUTION
+======================== */
+function redistributeMarbles(track, dragIdx) {
+  if (!track || !track.redTrackLine) return;
+
+  const markers = track.redMarkers;
+  if (markers.length < 3) return;
+
+  // distanceAlongRoute for the dragged marker is already set by the drag handler.
+  // Do NOT re-snap here — nearestPointOnLine can jump to wrong segment on curves.
+
+  // Find previous locked boundary (or start)
+  let prevBound = 0;
+  for (let i = dragIdx - 1; i >= 0; i--) {
+    if (markers[i].isLocked) { prevBound = i; break; }
+  }
+
+  // Find next locked boundary (or end)
+  let nextBound = markers.length - 1;
+  for (let i = dragIdx + 1; i < markers.length; i++) {
+    if (markers[i].isLocked) { nextBound = i; break; }
+  }
+
+  // Redistribute unlocked marbles between prevBound and dragIdx
+  if (dragIdx - prevBound > 1) {
+    const startDist = markers[prevBound].distanceAlongRoute;
+    const endDist = markers[dragIdx].distanceAlongRoute;
+    const count = dragIdx - prevBound - 1;
+
+    for (let i = 1; i <= count; i++) {
+      const idx = prevBound + i;
+      if (markers[idx].isLocked) continue;
+      const ratio = i / (count + 1);
+      const dist = startDist + ratio * (endDist - startDist);
+      const pt = turf.along(track.redTrackLine, dist);
+      markers[idx].lon = pt.geometry.coordinates[0];
+      markers[idx].lat = pt.geometry.coordinates[1];
+      markers[idx].distanceAlongRoute = dist;
+    }
+  }
+
+  // Redistribute unlocked marbles between dragIdx and nextBound
+  if (nextBound - dragIdx > 1) {
+    const startDist = markers[dragIdx].distanceAlongRoute;
+    const endDist = markers[nextBound].distanceAlongRoute;
+    const count = nextBound - dragIdx - 1;
+
+    for (let i = 1; i <= count; i++) {
+      const idx = dragIdx + i;
+      if (markers[idx].isLocked) continue;
+      const ratio = i / (count + 1);
+      const dist = startDist + ratio * (endDist - startDist);
+      const pt = turf.along(track.redTrackLine, dist);
+      markers[idx].lon = pt.geometry.coordinates[0];
+      markers[idx].lat = pt.geometry.coordinates[1];
+      markers[idx].distanceAlongRoute = dist;
+    }
+  }
+}
+
+/* ========================
+   CIRCLE LAYER SOURCES
+======================== */
+function updateBlueMarkersSource() {
+  if (!map.getSource('blue-markers')) return;
+
+  const features = [];
+  tracks.forEach((track) => {
+    track.rawPoints.forEach((p) => {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+        properties: {
+          trackId: track.id,
+          trackColor: track.color,
+          index: p.index,
+          hasImage: !!track.imagesByIndex[p.index],
+          isActive: (track.id === currentTrackId && p.index === currentIdx)
+        }
+      });
+    });
+  });
+
+  map.getSource('blue-markers').setData({
+    type: 'FeatureCollection',
+    features: features
+  });
+}
+
+function getMarkerMarriageInfo(key) {
+  for (let i = 0; i < marriageGroups.length; i++) {
+    if (marriageGroups[i].includes(key)) {
+      return { isMarried: true, groupIndex: i, color: marriageColors[i % marriageColors.length] };
+    }
+  }
+  return { isMarried: false, groupIndex: -1, color: '#ff4444' };
+}
+
+function getMarkerAntiMarriageInfo(key) {
+  for (let i = 0; i < antiMarriageGroups.length; i++) {
+    if (antiMarriageGroups[i].includes(key)) {
+      return { isAntiMarried: true, groupIndex: i };
+    }
+  }
+  return { isAntiMarried: false, groupIndex: -1 };
+}
+
+function areAntiMarried(key1, key2) {
+  return antiMarriageGroups.some(pair =>
+    (pair[0] === key1 && pair[1] === key2) || (pair[0] === key2 && pair[1] === key1)
+  );
+}
+
+function updateRedMarkersSource() {
+  if (!map.getSource('red-markers')) return;
+
+  const features = [];
+
+  // Show red markers from ALL tracks (so married dots on other tracks are visible)
+  tracks.forEach((track) => {
+    track.redMarkers.forEach((m) => {
+      const key = markerKey(track.name, m.imageIndex);
+      const mInfo = getMarkerMarriageInfo(key);
+      const amInfo = getMarkerAntiMarriageInfo(key);
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [m.lon, m.lat] },
+        properties: {
+          markerKey: key,
+          trackId: track.id,
+          sequentialIndex: m.sequentialIndex,
+          imageIndex: m.imageIndex,
+          isActive: (track.id === currentTrackId && m.imageIndex === currentIdx),
+          isLocked: m.isLocked || false,
+          isMarrySelected: marrySelection.has(key),
+          isAntiMarrySelected: antiMarrySelection.has(key),
+          isMarried: mInfo.isMarried,
+          marriageColor: mInfo.color,
+          isAntiMarried: amInfo.isAntiMarried
+        }
+      });
+    });
+  });
+
+  map.getSource('red-markers').setData({
+    type: 'FeatureCollection',
+    features: features
+  });
+}
+
+/* ========================
+   INIT MARKER LAYERS
+======================== */
+function initMarkerLayers() {
+  // === BLUE MARKERS ===
+  map.addSource('blue-markers', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] }
+  });
+
+  map.addLayer({
+    id: 'blue-markers-layer',
+    type: 'circle',
+    source: 'blue-markers',
+    paint: {
+      'circle-radius': ['case',
+        ['==', ['get', 'isActive'], true], 9,
+        6
+      ],
+      'circle-color': ['case',
+        ['==', ['get', 'isActive'], true], '#00ffff',
+        ['==', ['get', 'hasImage'], true], '#26a269',
+        ['get', 'trackColor']
+      ],
+      'circle-stroke-width': ['case',
+        ['==', ['get', 'isActive'], true], 2,
+        1.5
+      ],
+      'circle-stroke-color': ['case',
+        ['==', ['get', 'isActive'], true], '#000000',
+        '#ffffff'
+      ]
+    }
+  });
+
+  map.addLayer({
+    id: 'blue-markers-labels',
+    type: 'symbol',
+    source: 'blue-markers',
+    layout: {
+      'text-field': ['to-string', ['get', 'index']],
+      'text-size': 9,
+      'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true
+    },
+    paint: {
+      'text-color': '#ffffff',
+      'text-halo-color': 'rgba(0,0,0,0.8)',
+      'text-halo-width': 1
+    }
+  });
+
+  map.addLayer({
+    id: 'blue-markers-click',
+    type: 'circle',
+    source: 'blue-markers',
+    paint: {
+      'circle-radius': 14,
+      'circle-opacity': 0
+    }
+  });
+
+  // === RED MARKERS ===
+  map.addSource('red-markers', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] }
+  });
+
+  map.addLayer({
+    id: 'red-markers-layer',
+    type: 'circle',
+    source: 'red-markers',
+    paint: {
+      'circle-radius': ['case',
+        ['==', ['get', 'isActive'], true], 9,
+        ['==', ['get', 'isAntiMarrySelected'], true], 8,
+        ['==', ['get', 'isMarrySelected'], true], 8,
+        ['==', ['get', 'isAntiMarried'], true], 8,
+        ['==', ['get', 'isMarried'], true], 8,
+        6
+      ],
+      'circle-color': ['case',
+        ['==', ['get', 'isActive'], true], '#00ffff',
+        ['==', ['get', 'isAntiMarrySelected'], true], '#39FF14',
+        ['==', ['get', 'isMarrySelected'], true], '#00FFFF',
+        ['==', ['get', 'isMarried'], true], ['get', 'marriageColor'],
+        ['==', ['get', 'isLocked'], true], '#ffeb3b',
+        '#ff4444'
+      ],
+      'circle-stroke-width': ['case',
+        ['==', ['get', 'isActive'], true], 2,
+        ['==', ['get', 'isAntiMarrySelected'], true], 3,
+        ['==', ['get', 'isMarrySelected'], true], 3,
+        ['==', ['get', 'isAntiMarried'], true], 3,
+        ['==', ['get', 'isMarried'], true], 2,
+        1.5
+      ],
+      'circle-stroke-color': ['case',
+        ['==', ['get', 'isActive'], true], '#000000',
+        ['==', ['get', 'isAntiMarrySelected'], true], '#39FF14',
+        ['==', ['get', 'isMarrySelected'], true], '#FF00FF',
+        ['==', ['get', 'isAntiMarried'], true], '#39FF14',
+        ['==', ['get', 'isMarried'], true], '#ffffff',
+        '#ffffff'
+      ]
+    }
+  });
+
+  map.addLayer({
+    id: 'red-markers-labels',
+    type: 'symbol',
+    source: 'red-markers',
+    layout: {
+      'text-field': ['to-string', ['get', 'imageIndex']],
+      'text-size': 9,
+      'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true
+    },
+    paint: {
+      'text-color': '#ffffff',
+      'text-halo-color': 'rgba(0,0,0,0.8)',
+      'text-halo-width': 1
+    }
+  });
+
+  map.addLayer({
+    id: 'red-markers-click',
+    type: 'circle',
+    source: 'red-markers',
+    paint: {
+      'circle-radius': 14,
+      'circle-opacity': 0
+    }
+  });
+}
+
+/* ========================
+   MARKER CLICK / DRAG / HOVER EVENTS
+======================== */
+function setupMarkerEvents() {
+  // --- Blue marker click ---
+  map.on('click', 'blue-markers-click', (e) => {
+    e.originalEvent.stopPropagation();
+    const f = e.features[0].properties;
+    if (currentTrackId !== f.trackId) selectTrack(f.trackId);
+    openViewer(f.index);
+  });
+
+  // --- Red marker click ---
+  map.on('click', 'red-markers-click', (e) => {
+    e.originalEvent.stopPropagation();
+    const f = e.features[0].properties;
+
+    if (marryModeActive) {
+      const key = f.markerKey;
+      if (marrySelection.has(key)) {
+        marrySelection.delete(key);
+      } else {
+        marrySelection.add(key);
+      }
+      updateMarrySelectionUI();
+      updateRedMarkersSource();
+      return;
+    }
+
+    if (antiMarryModeActive) {
+      const key = f.markerKey;
+      if (antiMarrySelection.has(key)) {
+        antiMarrySelection.delete(key);
+      } else {
+        antiMarrySelection.add(key);
+      }
+      updateAntiMarrySelectionUI();
+      updateRedMarkersSource();
+      return;
+    }
+
+    if (lockModeActive) {
+      const track = getCurrentTrack();
+      if (track) {
+        const idx = f.sequentialIndex;
+        const m = track.redMarkers[idx];
+        if (!m) return;
+        saveUndoState(track, 'toggle lock');
+        m.isLocked = !m.isLocked;
+        updateRedMarkersSource();
+      }
+      return;
+    }
+    if (removePointModeActive) {
+      deleteRedPoint(f.sequentialIndex);
+      return;
+    }
+    if (!dragModeActive) {
+      if (currentTrackId !== f.trackId) selectTrack(f.trackId);
+      openViewer(f.imageIndex);
+    }
+  });
+
+  // --- Hover cursors ---
+  map.on('mouseenter', 'blue-markers-click', () => {
+    if (!addCPModeActive) map.getCanvas().style.cursor = 'pointer';
+  });
+  map.on('mouseleave', 'blue-markers-click', () => {
+    if (!addCPModeActive && !dragModeActive) map.getCanvas().style.cursor = '';
+  });
+  map.on('mouseenter', 'red-markers-click', () => {
+    if (marryModeActive || antiMarryModeActive) map.getCanvas().style.cursor = 'crosshair';
+    else if (dragModeActive) map.getCanvas().style.cursor = 'move';
+    else if (lockModeActive) map.getCanvas().style.cursor = 'pointer';
+    else if (removePointModeActive) map.getCanvas().style.cursor = 'not-allowed';
+    else map.getCanvas().style.cursor = 'pointer';
+  });
+  map.on('mouseleave', 'red-markers-click', () => {
+    if (!addCPModeActive && !dragModeActive) map.getCanvas().style.cursor = '';
+  });
+
+  // --- Red marker drag ---
+  map.on('mousedown', 'red-markers-click', (e) => {
+    if (!dragModeActive) return;
+    e.preventDefault();
+
+    const seqIdx = e.features[0].properties.sequentialIndex;
+    const track = getCurrentTrack();
+    if (!track || !track.redTrackLine) return;
+
+    // Can't drag locked markers
+    if (track.redMarkers[seqIdx] && track.redMarkers[seqIdx].isLocked) return;
+
+    saveUndoState(track, 'drag red dot');
+
+    // Always re-snap distanceAlongRoute from current lon/lat positions
+    const totalLen = turf.length(track.redTrackLine);
+    track.redMarkers.forEach(m => {
+      const pt = turf.point([m.lon, m.lat]);
+      const snap = turf.nearestPointOnLine(track.redTrackLine, pt);
+      m.distanceAlongRoute = snap.properties.location;
+    });
+
+    // Find boundary distances for constraining drag
+    let prevBoundDist = 0;
+    let nextBoundDist = totalLen;
+
+    for (let i = seqIdx - 1; i >= 0; i--) {
+      if (track.redMarkers[i].isLocked) {
+        prevBoundDist = track.redMarkers[i].distanceAlongRoute;
+        break;
+      }
+    }
+    for (let i = seqIdx + 1; i < track.redMarkers.length; i++) {
+      if (track.redMarkers[i].isLocked) {
+        nextBoundDist = track.redMarkers[i].distanceAlongRoute;
+        break;
+      }
+    }
+
+    map.getCanvas().style.cursor = 'grabbing';
+    map.dragPan.disable();
+
+    function onMove(ev) {
+      if (!track.redTrackLine || !track.redMarkers[seqIdx]) return;
+      const point = turf.point([ev.lngLat.lng, ev.lngLat.lat]);
+      const snapped = turf.nearestPointOnLine(track.redTrackLine, point);
+      let dist = snapped.properties.location;
+
+      // Constrain between locked boundaries
+      dist = Math.max(prevBoundDist, Math.min(nextBoundDist, dist));
+
+      const constrained = turf.along(track.redTrackLine, dist);
+      track.redMarkers[seqIdx].lon = constrained.geometry.coordinates[0];
+      track.redMarkers[seqIdx].lat = constrained.geometry.coordinates[1];
+      track.redMarkers[seqIdx].distanceAlongRoute = dist;
+
+      // Redistribute unlocked neighbors
+      redistributeMarbles(track, seqIdx);
+      updateRedMarkersSource();
+    }
+
+    function onUp() {
+      map.getCanvas().style.cursor = dragModeActive ? 'move' : '';
+      map.dragPan.enable();
+      map.off('mousemove', onMove);
+      map.off('mouseup', onUp);
+    }
+
+    map.on('mousemove', onMove);
+    map.on('mouseup', onUp);
+  });
+}
+
+/* ========================
+   TRACK SELECTION
+======================== */
+function selectTrack(trackId) {
+  if (currentTrackId === trackId) return;
+
+  const prevTrack = getCurrentTrack();
+
+  // Hide previous track's control points (CPs are per-track editing, only show current)
+  if (prevTrack) {
+    prevTrack.controlPointMarkers.forEach(m => m.getElement().style.display = 'none');
+  }
+
+  currentTrackId = trackId;
+  const track = getCurrentTrack();
+  if (!track) return;
+
+  // Show current track's control points
+  const showCP = document.getElementById('showControlPoints').checked;
+  track.controlPointMarkers.forEach(m => m.getElement().style.display = showCP ? 'block' : 'none');
+
+  // Update marker sources (active state + red markers switch)
+  updateBlueMarkersSource();
+  updateRedMarkersSource();
+
+  // Update button states
+  document.getElementById('projectPointsBtn').disabled = !track.redTrackLine;
+  document.getElementById('exportBtn').disabled = track.redMarkers.length === 0;
+  document.getElementById('exportGpxBtn').disabled = track.redMarkers.length === 0;
+  document.getElementById('generateFromGpxBtn').disabled = !track.gpxLine;
+
+
+  // Sync yaw fix slider to this track
+  document.getElementById('yawFixSlider').value = track.yawFix || 0;
+  document.getElementById('yawFixValue').textContent = `${track.yawFix || 0}°`;
+  currentYawFix = THREE.MathUtils.degToRad(track.yawFix || 0);
+  if (sphere) {
+    sphere.rotation.y = currentYaw + currentYawFix;
+  }
+
+  // Reset modes
+  dragModeActive = false;
+  removePointModeActive = false;
+  lockModeActive = false;
+  document.getElementById('dragMode').checked = false;
+  document.getElementById('removePointMode').checked = false;
+  document.getElementById('lockMode').checked = false;
+
+  updateTracksList();
+  updateStatus();
+  updateDotsVisibility();
+
+  // Open first point of this track in viewer
+  if (track.rawPoints.length > 0) {
+    openViewer(track.rawPoints[0].index);
+  }
+}
+
+function removeTrack(trackId) {
+  const track = tracks.get(trackId);
+  if (!track) return;
+
+  // Remove per-track map layers (track lines only)
+  if (map.getLayer(`blue-track-${trackId}`)) map.removeLayer(`blue-track-${trackId}`);
+  if (map.getSource(`blue-track-${trackId}`)) map.removeSource(`blue-track-${trackId}`);
+  if (map.getLayer(`red-track-${trackId}`)) map.removeLayer(`red-track-${trackId}`);
+  if (map.getSource(`red-track-${trackId}`)) map.removeSource(`red-track-${trackId}`);
+
+  // Remove control point DOM markers
+  track.controlPointMarkers.forEach(m => m.remove());
+
+  // Clean up marriages referencing this track's markers
+  track.redMarkers.forEach(m => {
+    divorceMarkerByKey(markerKey(track.name, m.imageIndex));
+  });
+
+  // Revoke blob URLs
+  Object.values(track.imagesByIndex).forEach(url => {
+    if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
+  });
+
+  tracks.delete(trackId);
+
+  if (currentTrackId === trackId) {
+    currentTrackId = null;
+    if (tracks.size > 0) {
+      selectTrack(tracks.keys().next().value);
+    } else {
+      updateBlueMarkersSource();
+      updateRedMarkersSource();
+      updateTracksList();
+      updateStatus();
+      document.getElementById('empty-msg').style.display = 'flex';
+      document.getElementById('empty-msg').textContent = 'Load data to begin';
+      document.getElementById('viewer-title').textContent = 'Street View';
+      document.getElementById('viewer-meta').textContent = '';
+      document.getElementById('time').textContent = '-/-';
+      currentIdx = -1;
+    }
+  } else {
+    updateBlueMarkersSource();
+    updateTracksList();
+    updateStatus();
+  }
+}
+
+function updateTracksList() {
+  const list = document.getElementById('tracks-list');
+
+  if (tracks.size === 0) {
+    list.innerHTML = '<div style="text-align:center; color:#555; font-size:11px; padding:10px;">No tracks loaded</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  tracks.forEach((track, trackId) => {
+    const item = document.createElement('div');
+    item.className = `track-item ${trackId === currentTrackId ? 'active' : ''}`;
+
+    const imgCount = Object.keys(track.imagesByIndex).length;
+
+    item.innerHTML = `
+      <div class="track-color-dot" style="background:${track.color}"></div>
+      <div class="track-item-name" title="${track.name}">${track.name}</div>
+      <div class="track-item-count">${track.rawPoints.length}pt${imgCount ? ' · ' + imgCount + 'img' : ''}</div>
+      <button class="track-remove-btn" data-track-id="${trackId}" title="Remove">&times;</button>
+    `;
+
+    item.addEventListener('click', (e) => {
+      if (e.target.classList.contains('track-remove-btn')) {
+        removeTrack(e.target.dataset.trackId);
+        return;
+      }
+      selectTrack(trackId);
+    });
+
+    list.appendChild(item);
+  });
+}
+
+/* ========================
+   GPX PARSING & POINT GENERATION
+======================== */
+function parseGpxFile(gpxText) {
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(gpxText, 'application/xml');
+  const trkpts = xml.querySelectorAll('trkpt');
+
+  if (trkpts.length === 0) {
+    alert('No track points found in GPX file');
+    return null;
+  }
+
+  const coordinates = [];
+  trkpts.forEach(pt => {
+    const lat = parseFloat(pt.getAttribute('lat'));
+    const lon = parseFloat(pt.getAttribute('lon'));
+    if (!isNaN(lat) && !isNaN(lon)) {
+      coordinates.push([lon, lat]);
+    }
+  });
+
+  if (coordinates.length < 2) {
+    alert('GPX file must have at least 2 valid track points');
+    return null;
+  }
+
+  return turf.lineString(coordinates);
+}
+
+function generatePointsFromGpx(trackLine, numPoints) {
+  if (!trackLine || numPoints < 2) return [];
+
+  const totalLength = turf.length(trackLine);
+  const points = [];
+
+  for (let i = 0; i < numPoints; i++) {
+    const distance = (i / (numPoints - 1)) * totalLength;
+    const pointOnLine = turf.along(trackLine, distance);
+    const coord = pointOnLine.geometry.coordinates;
+
+    points.push({
+      index: i + 1,
+      lat: coord[1],
+      lon: coord[0]
+    });
+  }
+
+  return points;
+}
+
+/* ========================
+   PROCESS RAW POINTS (per-track)
+======================== */
+function processRawPoints(track) {
+  track.rawPoints.sort((a, b) => a.index - b.index);
+
+  // Remove old blue track layer
+  if (map.getLayer(`blue-track-${track.id}`)) map.removeLayer(`blue-track-${track.id}`);
+  if (map.getSource(`blue-track-${track.id}`)) map.removeSource(`blue-track-${track.id}`);
+
+  // Draw Blue Track line with track color (below cone, above drone overlay)
+  const beforeLayer = map.getLayer('view-cone-fill') ? 'view-cone-fill' : (map.getLayer('blue-markers-layer') ? 'blue-markers-layer' : undefined);
+  map.addSource(`blue-track-${track.id}`, {
+    type: 'geojson',
+    data: { type: 'Feature', geometry: { type: 'LineString', coordinates: track.rawPoints.map(p => [p.lon, p.lat]) } }
+  });
+  map.addLayer({
+    id: `blue-track-${track.id}`, type: 'line', source: `blue-track-${track.id}`,
+    paint: { 'line-color': track.color, 'line-width': 3, 'line-opacity': 0.6 }
+  }, beforeLayer);
+
+  // Update shared blue markers source
+  updateBlueMarkersSource();
+  updateDotsVisibility();
+  updateStatus();
+}
+
+/* ========================
+   RED TRACK GENERATION (per-track)
+======================== */
+function generateRedTrack() {
+  const track = getCurrentTrack();
+  if (!track || track.rawPoints.length === 0) return;
+
+  const cpCount = Math.max(4, Math.round(track.rawPoints.length / 5));
+  const step = Math.floor(track.rawPoints.length / (cpCount - 1));
+
+  track.controlPointMarkers.forEach(m => m.remove());
+  track.controlPointMarkers = [];
+  track.controlPoints = [];
+
+  for (let i = 0; i < track.rawPoints.length; i += step) {
+    track.controlPoints.push([track.rawPoints[i].lon, track.rawPoints[i].lat]);
+    if (track.controlPoints.length >= cpCount - 1) break;
+  }
+  const lastP = track.rawPoints[track.rawPoints.length - 1];
+  track.controlPoints.push([lastP.lon, lastP.lat]);
+
+  track.controlPoints.forEach(cp => createCPMarker(cp, track));
+
+  updateRedTrackLine(track);
+  document.getElementById('showRedTrack').checked = true;
+  document.getElementById('projectPointsBtn').disabled = false;
+  updateStatus();
+}
+
+function createCPMarker(lngLat, track, insertIndex) {
+  if (!track) track = getCurrentTrack();
+  if (!track) return;
+
+  const el = document.createElement('div');
+  el.className = 'control-point-marker';
+
+  const marker = new mapboxgl.Marker({ element: el, draggable: true })
+    .setLngLat(lngLat)
+    .addTo(map);
+
+  el.onclick = (e) => {
+    if (removeCPModeActive && track.controlPointMarkers.length > 3) {
+      e.stopPropagation();
+      saveUndoState(track, 'remove CP');
+      marker.remove();
+      track.controlPointMarkers = track.controlPointMarkers.filter(m => m !== marker);
+      updateRedTrackLine(track);
+    }
+  };
+
+  let _dragStartPositions = null;
+  let _dragStartSelf = null;
+  let _preDragSnapshot = null;
+
+  // Capture true pre-drag positions BEFORE mapbox moves anything
+  const capturePreDrag = () => {
+    _dragStartSelf = marker.getLngLat();
+    _dragStartPositions = track.controlPointMarkers.map(m => m.getLngLat());
+    _preDragSnapshot = {
+      trackId: track.id,
+      action: 'drag CP',
+      controlPointPositions: track.controlPointMarkers.map(m => {
+        const ll = m.getLngLat(); return [ll.lng, ll.lat];
+      }),
+      redMarkers: track.redMarkers.map(m => ({
+        lon: m.lon, lat: m.lat,
+        sequentialIndex: m.sequentialIndex, imageIndex: m.imageIndex,
+        distanceAlongRoute: m.distanceAlongRoute, isLocked: m.isLocked || false
+      }))
+    };
+  };
+  el.addEventListener('mousedown', capturePreDrag);
+  el.addEventListener('touchstart', capturePreDrag);
+
+  marker.on('dragstart', () => {
+    // Push the snapshot captured at mousedown (true pre-drag state)
+    if (_preDragSnapshot) {
+      undoStack.push(_preDragSnapshot);
+      if (undoStack.length > MAX_UNDO) undoStack.shift();
+      redoStack.length = 0;
+      updateUndoUI();
+      _preDragSnapshot = null;
+    } else {
+      saveUndoState(track, 'drag CP');
+    }
+  });
+  marker.on('drag', () => {
+    if (moveAllCPsActive && _dragStartPositions) {
+      const now = marker.getLngLat();
+      const dLng = now.lng - _dragStartSelf.lng;
+      const dLat = now.lat - _dragStartSelf.lat;
+      track.controlPointMarkers.forEach((m, i) => {
+        if (m !== marker) {
+          m.setLngLat([_dragStartPositions[i].lng + dLng, _dragStartPositions[i].lat + dLat]);
+        }
+      });
+    }
+    updateRedTrackLine(track);
+  });
+  marker.on('dragend', () => {
+    _dragStartPositions = null;
+    _dragStartSelf = null;
+    _preDragSnapshot = null;
+    const oldRedLen = track.redTrackLine ? turf.length(track.redTrackLine) : 0;
+    updateRedTrackLine(track);
+    if (track.rawPoints.length > 0 && track.redMarkers.length > 0) {
+      repositionRedMarkers(track, oldRedLen);
+    }
+  });
+
+  if (insertIndex !== undefined && insertIndex < track.controlPointMarkers.length) {
+    track.controlPointMarkers.splice(insertIndex, 0, marker);
+  } else {
+    track.controlPointMarkers.push(marker);
+  }
+  updateControlsVisibility();
+}
+
+function updateRedTrackLine(track) {
+  if (!track) track = getCurrentTrack();
+  if (!track) return;
+
+  track.controlPoints = track.controlPointMarkers.map(m => { const ll = m.getLngLat(); return [ll.lng, ll.lat]; });
+
+  const smoothCurve = generateCatmullRomCurve(track.controlPoints, 30);
+  track.redTrackLine = turf.lineString(smoothCurve);
+
+  const layerId = `red-track-${track.id}`;
+  const sourceId = `red-track-${track.id}`;
+
+  if (map.getLayer(layerId)) map.removeLayer(layerId);
+  if (map.getSource(sourceId)) map.removeSource(sourceId);
+
+  const beforeLayer = map.getLayer('view-cone-fill') ? 'view-cone-fill' : (map.getLayer('blue-markers-layer') ? 'blue-markers-layer' : undefined);
+  map.addSource(sourceId, {
+    type: 'geojson',
+    data: { type: 'Feature', geometry: { type: 'LineString', coordinates: smoothCurve } }
+  });
+
+  map.addLayer({
+    id: layerId, type: 'line', source: sourceId,
+    paint: { 'line-color': '#ff4444', 'line-width': 3, 'line-opacity': 0.8 },
+    layout: { 'visibility': document.getElementById('showRedTrack').checked ? 'visible' : 'none' }
+  }, beforeLayer);
+}
+
+/* ========================
+   REPOSITION EXISTING RED MARKERS (preserves deletions)
+======================== */
+function repositionRedMarkers(track, oldRedLen) {
+  if (!track) track = getCurrentTrack();
+  if (!track || !track.redTrackLine || track.redMarkers.length === 0) return;
+
+  const newRedLen = turf.length(track.redTrackLine);
+
+  // Build a blue track line from the raw points
+  const blueCoords = track.rawPoints.map(p => [p.lon, p.lat]);
+  if (blueCoords.length < 2) return;
+  const blueTrack = turf.lineString(blueCoords);
+  const blueLen = turf.length(blueTrack);
+
+  // Compute cumulative distances along blue track for each rawPoint by index
+  const blueDists = {};
+  let cumDist = 0;
+  track.rawPoints.forEach((p, idx) => {
+    if (idx > 0) {
+      const prev = track.rawPoints[idx - 1];
+      cumDist += turf.distance([prev.lon, prev.lat], [p.lon, p.lat]);
+    }
+    blueDists[p.index] = cumDist;
+  });
+
+  // Sort markers by imageIndex to ensure correct ordering
+  const sorted = [...track.redMarkers].sort((a, b) => a.imageIndex - b.imageIndex);
+
+  // 1) Compute locked positions first (anchors) — they keep their % on the red line
+  sorted.forEach(m => {
+    if (m.isLocked && oldRedLen > 0) {
+      m._dist = (m.distanceAlongRoute / oldRedLen) * newRedLen;
+    } else {
+      m._dist = null; // will be filled in step 2
+    }
+  });
+
+  // 2) Distribute unlocked markers within segments bounded by locked anchors (and line ends)
+  //    This ensures unlocked points never cross past locked ones.
+  let segStart = 0; // segment start distance on red line
+  let i = 0;
+  while (i < sorted.length) {
+    // Collect a run of unlocked markers
+    const unlocked = [];
+    while (i < sorted.length && sorted[i]._dist === null) {
+      unlocked.push(sorted[i]);
+      i++;
+    }
+    // The segment end is the next locked marker, or the end of the line
+    const segEnd = (i < sorted.length) ? sorted[i]._dist : newRedLen;
+
+    if (unlocked.length > 0) {
+      // Compute raw blue-track ratios for these unlocked markers
+      const rawDists = unlocked.map(m => {
+        const d = blueDists[m.imageIndex];
+        return (d !== undefined && blueLen > 0) ? (d / blueLen) * newRedLen : null;
+      });
+      // Find the min/max raw positions to map into the segment
+      const valid = rawDists.filter(d => d !== null);
+      if (valid.length > 0) {
+        const rawMin = Math.min(...valid);
+        const rawMax = Math.max(...valid);
+        const rawSpan = rawMax - rawMin;
+        // Add small padding so markers don't sit exactly on anchors
+        const pad = (segEnd - segStart) * 0.02;
+        const fitStart = segStart + pad;
+        const fitEnd = segEnd - pad;
+        const fitSpan = fitEnd - fitStart;
+        unlocked.forEach((m, j) => {
+          if (rawDists[j] === null) {
+            // fallback: evenly space
+            m._dist = fitStart + (fitSpan * (j + 1)) / (unlocked.length + 1);
+          } else if (rawSpan === 0) {
+            // all same position — evenly space within segment
+            m._dist = fitStart + (fitSpan * (j + 1)) / (unlocked.length + 1);
+          } else {
+            // linearly map raw position into segment
+            m._dist = fitStart + ((rawDists[j] - rawMin) / rawSpan) * fitSpan;
+          }
+        });
+      } else {
+        // no valid blue dists — evenly space
+        const pad = (segEnd - segStart) * 0.02;
+        unlocked.forEach((m, j) => {
+          m._dist = (segStart + pad) + ((segEnd - segStart - 2 * pad) * (j + 1)) / (unlocked.length + 1);
+        });
+      }
+    }
+
+    // Advance past the locked marker that ended this segment
+    if (i < sorted.length) {
+      segStart = sorted[i]._dist;
+      i++;
+    }
+  }
+
+  // 3) Apply computed distances to all markers
+  sorted.forEach(m => {
+    const distAlongRed = Math.max(0, Math.min(m._dist, newRedLen));
+    const pt = turf.along(track.redTrackLine, distAlongRed);
+    m.lon = pt.geometry.coordinates[0];
+    m.lat = pt.geometry.coordinates[1];
+    m.distanceAlongRoute = distAlongRed;
+    delete m._dist;
+  });
+
+  updateRedMarkersSource();
+}
+
+/* ========================
+   PROJECT TO RED DOTS (per-track)
+======================== */
+function projectPointsToRed(track) {
+  if (!track) track = getCurrentTrack();
+  if (!track || !track.redTrackLine) return;
+
+  saveUndoState(track, 'project to red');
+
+  track.redMarkers = [];
+
+  const blueTrack = turf.lineString(track.rawPoints.map(p => [p.lon, p.lat]));
+  const blueLen = turf.length(blueTrack);
+  const redLen = turf.length(track.redTrackLine);
+
+  let cumulativeDist = 0;
+
+  track.rawPoints.forEach((p, idx) => {
+    if (idx > 0) {
+      const prev = track.rawPoints[idx - 1];
+      cumulativeDist += turf.distance([prev.lon, prev.lat], [p.lon, p.lat]);
+    }
+
+    const ratio = blueLen > 0 ? cumulativeDist / blueLen : 0;
+    const distAlongRed = ratio * redLen;
+    const pointOnRed = turf.along(track.redTrackLine, distAlongRed);
+    const coord = pointOnRed.geometry.coordinates;
+
+    const isEndpoint = (idx === 0 || idx === track.rawPoints.length - 1);
+
+    track.redMarkers.push({
+      lon: coord[0],
+      lat: coord[1],
+      sequentialIndex: idx,
+      imageIndex: p.index,
+      distanceAlongRoute: distAlongRed,
+      isLocked: isEndpoint
+    });
+  });
+
+  updateRedMarkersSource();
+
+  document.getElementById('showRedDots').checked = true;
+  document.getElementById('dragMode').disabled = false;
+  document.getElementById('exportBtn').disabled = false;
+  document.getElementById('exportGpxBtn').disabled = false;
+  updateDotsVisibility();
+  updateStatus();
+}
+
+/* ========================
+   DELETE & RE-INDEX RED DOTS
+======================== */
+function deleteRedPoint(sequentialIndex) {
+  const track = getCurrentTrack();
+  if (!track) return;
+
+  // Don't delete locked markers
+  if (track.redMarkers[sequentialIndex] && track.redMarkers[sequentialIndex].isLocked) return;
+
+  saveUndoState(track, 'delete red dot');
+
+  // Clean up any marriages referencing this marker
+  const deletedMarker = track.redMarkers[sequentialIndex];
+  if (deletedMarker) {
+    divorceMarkerByKey(markerKey(track.name, deletedMarker.imageIndex));
+  }
+
+  track.redMarkers.splice(sequentialIndex, 1);
+
+  // Re-index and ensure new endpoints are locked
+  track.redMarkers.forEach((m, idx) => {
+    m.sequentialIndex = idx;
+  });
+  if (track.redMarkers.length > 0) {
+    track.redMarkers[0].isLocked = true;
+    track.redMarkers[track.redMarkers.length - 1].isLocked = true;
+  }
+
+  updateRedMarkersSource();
+  updateStatus();
+}
+
+/* ========================
+   UI & TOGGLES
+======================== */
+function updateDotsVisibility() {
+  const showBlue = document.getElementById('showBlueDots').checked;
+  const showRed = document.getElementById('showRedDots').checked;
+
+  const blueVis = showBlue ? 'visible' : 'none';
+  const redVis = showRed ? 'visible' : 'none';
+
+  if (map.getLayer('blue-markers-layer')) map.setLayoutProperty('blue-markers-layer', 'visibility', blueVis);
+  if (map.getLayer('blue-markers-labels')) map.setLayoutProperty('blue-markers-labels', 'visibility', blueVis);
+  if (map.getLayer('blue-markers-click')) map.setLayoutProperty('blue-markers-click', 'visibility', blueVis);
+
+  if (map.getLayer('red-markers-layer')) map.setLayoutProperty('red-markers-layer', 'visibility', redVis);
+  if (map.getLayer('red-markers-labels')) map.setLayoutProperty('red-markers-labels', 'visibility', redVis);
+  if (map.getLayer('red-markers-click')) map.setLayoutProperty('red-markers-click', 'visibility', redVis);
+}
+
+function updateControlsVisibility() {
+  const show = document.getElementById('showControlPoints').checked;
+  const ct = getCurrentTrack();
+  if (ct) {
+    ct.controlPointMarkers.forEach(m => m.getElement().style.display = show ? 'block' : 'none');
+  }
+}
+
+function updateStatus() {
+  const ct = getCurrentTrack();
+  document.getElementById('marriageCount').innerText = marriageGroups.length;
+  document.getElementById('antiMarriageCount').innerText = antiMarriageGroups.length;
+  if (!ct) {
+    document.getElementById('blueCount').innerText = '0';
+    document.getElementById('projectedCount').innerText = '0';
+    document.getElementById('viewer-meta').textContent = '';
+    return;
+  }
+
+  const imgCount = ct.rawPoints.filter(p => ct.imagesByIndex[p.index]).length;
+  document.getElementById('blueCount').innerText = `${ct.rawPoints.length} (${imgCount} imgs)`;
+  document.getElementById('projectedCount').innerText = ct.redMarkers.length;
+
+  if (ct.redMarkers.length > 0) {
+    const firstImage = ct.redMarkers[0].imageIndex;
+    const lastImage = ct.redMarkers[ct.redMarkers.length - 1].imageIndex;
+    document.getElementById('viewer-meta').textContent =
+      `${ct.name} · ${firstImage} → ${lastImage} (${ct.redMarkers.length} pts)`;
+  } else {
+    document.getElementById('viewer-meta').textContent = ct.name;
+  }
+}
+
+document.getElementById('showBlueDots').onchange = updateDotsVisibility;
+document.getElementById('showRedDots').onchange = updateDotsVisibility;
+
+document.getElementById('showBlueTrack').onchange = (e) => {
+  tracks.forEach(track => {
+    if (map.getLayer(`blue-track-${track.id}`)) {
+      map.setLayoutProperty(`blue-track-${track.id}`, 'visibility', e.target.checked ? 'visible' : 'none');
+    }
+  });
+};
+document.getElementById('showRedTrack').onchange = (e) => {
+  tracks.forEach(track => {
+    if (map.getLayer(`red-track-${track.id}`)) {
+      map.setLayoutProperty(`red-track-${track.id}`, 'visibility', e.target.checked ? 'visible' : 'none');
+    }
+  });
+};
+document.getElementById('showControlPoints').onchange = updateControlsVisibility;
+
+// YAW FIX SLIDER
+document.getElementById('yawFixSlider').oninput = (e) => {
+  const deg = parseInt(e.target.value);
+  document.getElementById('yawFixValue').textContent = `${deg}°`;
+  const track = getCurrentTrack();
+  if (track) {
+    track.yawFix = deg;
+  }
+  currentYawFix = THREE.MathUtils.degToRad(deg);
+  if (sphere) {
+    sphere.rotation.y = currentYaw + currentYawFix;
+  }
+};
+
+// MODES
+document.getElementById('addCPMode').onchange = (e) => {
+  addCPModeActive = e.target.checked;
+  removeCPModeActive = false; document.getElementById('removeCPMode').checked = false;
+  map.getCanvas().style.cursor = addCPModeActive ? 'crosshair' : '';
+};
+
+document.getElementById('removeCPMode').onchange = (e) => {
+  removeCPModeActive = e.target.checked;
+  addCPModeActive = false; document.getElementById('addCPMode').checked = false;
+  map.getCanvas().style.cursor = '';
+};
+
+document.getElementById('moveAllCPs').onchange = (e) => {
+  moveAllCPsActive = e.target.checked;
+};
+
+document.getElementById('dragMode').onchange = (e) => {
+  dragModeActive = e.target.checked;
+  removePointModeActive = false; document.getElementById('removePointMode').checked = false;
+  lockModeActive = false; document.getElementById('lockMode').checked = false;
+  marryModeActive = false; document.getElementById('marryMode').checked = false;
+  marrySelection.clear(); updateMarrySelectionUI();
+};
+
+document.getElementById('lockMode').onchange = (e) => {
+  lockModeActive = e.target.checked;
+  dragModeActive = false; document.getElementById('dragMode').checked = false;
+  removePointModeActive = false; document.getElementById('removePointMode').checked = false;
+  marryModeActive = false; document.getElementById('marryMode').checked = false;
+  marrySelection.clear(); updateMarrySelectionUI();
+};
+
+document.getElementById('removePointMode').onchange = (e) => {
+  removePointModeActive = e.target.checked;
+  dragModeActive = false; document.getElementById('dragMode').checked = false;
+  lockModeActive = false; document.getElementById('lockMode').checked = false;
+  marryModeActive = false; document.getElementById('marryMode').checked = false;
+  marrySelection.clear(); updateMarrySelectionUI();
+};
+
+document.getElementById('marryMode').onchange = (e) => {
+  if (e.target.checked) {
+    // Turning ON marry mode
+    marryModeActive = true;
+    marrySelection.clear();
+    updateMarrySelectionUI();
+    // Disable conflicting modes
+    dragModeActive = false; document.getElementById('dragMode').checked = false;
+    removePointModeActive = false; document.getElementById('removePointMode').checked = false;
+    lockModeActive = false; document.getElementById('lockMode').checked = false;
+    antiMarryModeActive = false; document.getElementById('antiMarryMode').checked = false;
+    antiMarrySelection.clear(); updateAntiMarrySelectionUI();
+  } else {
+    // Turning OFF marry mode — commit the marriage or divorce
+    marryModeActive = false;
+    if (marrySelection.size >= 2) {
+      // Check if any selected are already married — if so, divorce them
+      let alreadyMarried = false;
+      for (const key of marrySelection) {
+        const info = getMarkerMarriageInfo(key);
+        if (info.isMarried) { alreadyMarried = true; break; }
+      }
+      if (alreadyMarried) {
+        // Divorce: remove all selected from their groups
+        for (const key of marrySelection) {
+          divorceMarkerByKey(key);
+        }
+      } else {
+        // Marry: create new group
+        marriageGroups.push([...marrySelection]);
+      }
+    } else if (marrySelection.size === 1) {
+      // Single selection — divorce it if married
+      const key = [...marrySelection][0];
+      divorceMarkerByKey(key);
+    }
+    marrySelection.clear();
+    updateMarrySelectionUI();
+    updateRedMarkersSource();
+    updateStatus();
+  }
+};
+
+function updateMarrySelectionUI() {
+  const info = document.getElementById('marrySelectionInfo');
+  const count = document.getElementById('marrySelectionCount');
+  if (marryModeActive) {
+    info.style.display = 'block';
+    count.textContent = marrySelection.size;
+  } else {
+    info.style.display = 'none';
+  }
+}
+
+document.getElementById('antiMarryMode').onchange = (e) => {
+  if (e.target.checked) {
+    antiMarryModeActive = true;
+    antiMarrySelection.clear();
+    updateAntiMarrySelectionUI();
+    // Disable conflicting modes
+    dragModeActive = false; document.getElementById('dragMode').checked = false;
+    removePointModeActive = false; document.getElementById('removePointMode').checked = false;
+    lockModeActive = false; document.getElementById('lockMode').checked = false;
+    marryModeActive = false; document.getElementById('marryMode').checked = false;
+    marrySelection.clear(); updateMarrySelectionUI();
+  } else {
+    // Turning OFF antimarry mode — commit antimarriage or divorce
+    antiMarryModeActive = false;
+    if (antiMarrySelection.size === 2) {
+      const keys = [...antiMarrySelection];
+      // Check if already antimarried — if so, divorce them
+      if (areAntiMarried(keys[0], keys[1])) {
+        divorceMarkerByKey(keys[0]);
+        divorceMarkerByKey(keys[1]);
+      } else {
+        antiMarriageGroups.push(keys);
+      }
+    } else if (antiMarrySelection.size === 1) {
+      // Single selection — divorce it if antimarried
+      const key = [...antiMarrySelection][0];
+      divorceMarkerByKey(key);
+    }
+    antiMarrySelection.clear();
+    updateAntiMarrySelectionUI();
+    updateRedMarkersSource();
+    updateStatus();
+  }
+};
+
+function updateAntiMarrySelectionUI() {
+  const info = document.getElementById('antiMarrySelectionInfo');
+  const count = document.getElementById('antiMarrySelectionCount');
+  if (antiMarryModeActive) {
+    info.style.display = 'block';
+    count.textContent = antiMarrySelection.size;
+  } else {
+    info.style.display = 'none';
+  }
+}
+
+function divorceMarkerByKey(key) {
+  let found = false;
+  for (let i = 0; i < marriageGroups.length; i++) {
+    const idx = marriageGroups[i].indexOf(key);
+    if (idx !== -1) {
+      marriageGroups[i].splice(idx, 1);
+      if (marriageGroups[i].length < 2) {
+        marriageGroups.splice(i, 1);
+      }
+      found = true;
+      break;
+    }
+  }
+  // Also remove from antimarriage groups
+  for (let i = antiMarriageGroups.length - 1; i >= 0; i--) {
+    if (antiMarriageGroups[i].includes(key)) {
+      antiMarriageGroups.splice(i, 1);
+      found = true;
+    }
+  }
+  return found;
+}
+
+/* ========================
+   MARRIAGE NAVIGATION HELPERS
+======================== */
+function findMarkerByKey(key) {
+  const [trackName, imgIdxStr] = key.split(':');
+  const imgIdx = parseInt(imgIdxStr);
+  for (const [trackId, track] of tracks) {
+    if (track.name === trackName) {
+      const marker = track.redMarkers.find(m => m.imageIndex === imgIdx);
+      return marker ? { marker, track, trackId } : null;
+    }
+  }
+  return null;
+}
+
+function getMarriedPartners(key) {
+  for (const group of marriageGroups) {
+    if (group.includes(key)) {
+      return group.filter(id => id !== key).map(id => {
+        const result = findMarkerByKey(id);
+        return result ? { ...result, key: id } : null;
+      }).filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function getCurrentMarkerKey() {
+  const track = getCurrentTrack();
+  if (!track) return null;
+  const marker = track.redMarkers.find(m => m.imageIndex === currentIdx);
+  return marker ? markerKey(track.name, marker.imageIndex) : null;
+}
+
+function calculateBranchPosition(currentMarker, partnerMarker, track) {
+  // Get path bearing (direction of travel)
+  const seqIdx = currentMarker.sequentialIndex;
+  let pathBearing = 0;
+
+  if (seqIdx < track.redMarkers.length - 1) {
+    const next = track.redMarkers[seqIdx + 1];
+    pathBearing = bearingDeg([currentMarker.lon, currentMarker.lat], [next.lon, next.lat]);
+  } else if (seqIdx > 0) {
+    const prev = track.redMarkers[seqIdx - 1];
+    pathBearing = bearingDeg([prev.lon, prev.lat], [currentMarker.lon, currentMarker.lat]);
+  }
+
+  // Bearing to partner
+  const bearingToPartner = bearingDeg(
+    [currentMarker.lon, currentMarker.lat],
+    [partnerMarker.lon, partnerMarker.lat]
+  );
+
+  // Relative angle: positive = right, negative = left
+  let relativeAngle = bearingToPartner - pathBearing;
+  while (relativeAngle > 180) relativeAngle -= 360;
+  while (relativeAngle < -180) relativeAngle += 360;
+
+  return relativeAngle < 0 ? 'left' : 'right';
+}
+
+/* ========================
+   MAP EVENTS
+======================== */
+map.on('click', (e) => {
+  if (addCPModeActive) {
+    // Don't add CP when clicking on a marker
+    const features = map.queryRenderedFeatures(e.point, { layers: ['blue-markers-click', 'red-markers-click'] });
+    if (features.length > 0) return;
+
+    const ct = getCurrentTrack();
+    if (ct && ct.redTrackLine) {
+      saveUndoState(ct, 'add CP');
+      const point = turf.point([e.lngLat.lng, e.lngLat.lat]);
+      const snapped = turf.nearestPointOnLine(ct.redTrackLine, point);
+      const coord = snapped.geometry.coordinates;
+      const insertIdx = findBestCPInsertIndex(coord, ct.controlPointMarkers);
+      createCPMarker(coord, ct, insertIdx);
+      updateRedTrackLine(ct);
+    }
+  }
+});
+
+/* ========================
+   BEARING & GEOMETRY HELPERS
+======================== */
+function bearingDeg(a, b) {
+  const toRad = d => d * Math.PI / 180;
+  const toDeg = r => r * 180 / Math.PI;
+  const lat1 = toRad(a[1]), lat2 = toRad(b[1]);
+  const lon1 = toRad(a[0]), lon2 = toRad(b[0]);
+  const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function degToRad(d) { return d * Math.PI / 180; }
+function radToDeg(r) { return r * 180 / Math.PI; }
+
+function destFromBearingDistance(lat, lon, brngDeg, distMeters) {
+  const R = 6378137;
+  const brng = degToRad(brngDeg);
+  const lat1 = degToRad(lat), lon1 = degToRad(lon);
+  const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distMeters / R) +
+    Math.cos(lat1) * Math.sin(distMeters / R) * Math.cos(brng));
+  const lon2 = lon1 + Math.atan2(
+    Math.sin(brng) * Math.sin(distMeters / R) * Math.cos(lat1),
+    Math.cos(distMeters / R) - Math.sin(lat1) * Math.sin(lat2)
+  );
+  return [radToDeg(lon2), radToDeg(lat2)];
+}
+
+/* ========================
+   NAVIGATION HELPERS
+======================== */
+function getActivePoints() {
+  const track = getCurrentTrack();
+  if (!track) return [];
+
+  if (track.redMarkers.length > 0) {
+    return track.redMarkers.map(m => ({
+      index: m.imageIndex,
+      lon: m.lon,
+      lat: m.lat
+    }));
+  }
+  return track.rawPoints;
+}
+
+function getCurrentPointPosition() {
+  const pts = getActivePoints();
+  const pt = pts.find(p => p.index === currentIdx);
+  return pt ? [pt.lon, pt.lat] : null;
+}
+
+function getNextPointPosition() {
+  const pts = getActivePoints();
+  const curPos = pts.findIndex(p => p.index === currentIdx);
+  if (curPos >= 0 && curPos < pts.length - 1) {
+    const next = pts[curPos + 1];
+    return [next.lon, next.lat];
+  }
+  return null;
+}
+
+function getPrevPointPosition() {
+  const pts = getActivePoints();
+  const curPos = pts.findIndex(p => p.index === currentIdx);
+  if (curPos > 0) {
+    const prev = pts[curPos - 1];
+    return [prev.lon, prev.lat];
+  }
+  return null;
+}
+
+function isAntiMarriedNavigation(fromIndex, toIndex) {
+  const track = getCurrentTrack();
+  if (!track) return false;
+  const key1 = markerKey(track.name, fromIndex);
+  const key2 = markerKey(track.name, toIndex);
+  return areAntiMarried(key1, key2);
+}
+
+function navigateForward() {
+  const pts = getActivePoints();
+  const curPos = pts.findIndex(p => p.index === currentIdx);
+  if (curPos >= 0 && curPos < pts.length - 1) {
+    if (isAntiMarriedNavigation(pts[curPos].index, pts[curPos + 1].index)) return;
+    openViewer(pts[curPos + 1].index);
+  }
+}
+
+function navigateBackward() {
+  const pts = getActivePoints();
+  const curPos = pts.findIndex(p => p.index === currentIdx);
+  if (curPos > 0) {
+    if (isAntiMarriedNavigation(pts[curPos].index, pts[curPos - 1].index)) return;
+    openViewer(pts[curPos - 1].index);
+  }
+}
+
+function navigateBranch() {
+  const mKey = getCurrentMarkerKey();
+  if (!mKey) return;
+  const partners = getMarriedPartners(mKey);
+  if (partners.length === 0) return;
+
+  const target = partners[0];
+  // Switch track if needed, then open the partner's image
+  if (target.trackId !== currentTrackId) {
+    selectTrack(target.trackId);
+  }
+  openViewer(target.marker.imageIndex);
+}
+
+/* ========================
+   THREE.JS VIEWER
+======================== */
+function initThreeJSViewer() {
+  if (viewerInitialized) return;
+
+  scene = new THREE.Scene();
+  panoGroup = new THREE.Group();
+  scene.add(panoGroup);
+
+  const canvas = document.getElementById('canvas');
+  camera = new THREE.PerspectiveCamera(currentFov, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+  camera.position.set(0, 0, 0.1);
+
+  renderer = new THREE.WebGLRenderer({
+    canvas: canvas,
+    antialias: true,
+    alpha: false,
+    powerPreference: 'high-performance'
+  });
+
+  const dpr = Math.min(window.devicePixelRatio || 2, 3);
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+
+  setupViewerEventListeners();
+  animateViewer();
+  viewerInitialized = true;
+}
+
+function animateViewer() {
+  requestAnimationFrame(animateViewer);
+  updateNavigationRing();
+  if (renderer && scene && camera) {
+    renderer.render(scene, camera);
+  }
+}
+
+function resizeViewer() {
+  if (!renderer || !camera) return;
+  const canvas = document.getElementById('canvas');
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (w === 0 || h === 0) return;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false);
+}
+
+window.addEventListener('resize', resizeViewer);
+
+/* ========================
+   NAVIGATION RING
+======================== */
+function updateNavigationRing() {
+  const ring = document.querySelector('.navigation-ring');
+  const nextBtn = document.getElementById('nextImageBtn');
+  const prevBtn = document.getElementById('prevImageBtn');
+  const branchBtnEl = document.getElementById('branchBtn');
+  if (!ring || !sphere) return;
+
+  const yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
+  ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
+
+  const pts = getActivePoints();
+  const curPos = pts.findIndex(p => p.index === currentIdx);
+
+  let canForward = curPos >= 0 && curPos < pts.length - 1;
+  let canBackward = curPos > 0;
+
+  // Block navigation at antimarried boundaries
+  if (canForward && isAntiMarriedNavigation(pts[curPos].index, pts[curPos + 1].index)) {
+    canForward = false;
+  }
+  if (canBackward && isAntiMarriedNavigation(pts[curPos].index, pts[curPos - 1].index)) {
+    canBackward = false;
+  }
+
+  if (nextBtn) {
+    nextBtn.style.opacity = canForward ? 1 : 0;
+    nextBtn.style.pointerEvents = canForward ? 'auto' : 'none';
+  }
+  if (prevBtn) {
+    prevBtn.style.opacity = canBackward ? 1 : 0;
+    prevBtn.style.pointerEvents = canBackward ? 'auto' : 'none';
+  }
+
+  // Branch button — show if current marble has married partners
+  const mKey = getCurrentMarkerKey();
+  const partners = mKey ? getMarriedPartners(mKey) : [];
+  const canBranch = partners.length > 0;
+
+  // Clear branch position classes
+  ring.classList.remove('branch-left', 'branch-right', 'branch-top', 'branch-bottom');
+
+  if (canBranch) {
+    const track = getCurrentTrack();
+    const currentMarker = track.redMarkers.find(m => m.imageIndex === currentIdx);
+    const partnerMarker = partners[0].marker;
+
+    if (curPos === 0 && !canBackward) {
+      ring.classList.add('branch-bottom');
+    } else if (curPos === pts.length - 1 && !canForward) {
+      ring.classList.add('branch-top');
+    } else {
+      const side = calculateBranchPosition(currentMarker, partnerMarker, track);
+      ring.classList.add(side === 'left' ? 'branch-left' : 'branch-right');
+    }
+  }
+
+  if (branchBtnEl) {
+    branchBtnEl.style.opacity = canBranch ? 1 : 0;
+    branchBtnEl.style.pointerEvents = canBranch ? 'auto' : 'none';
+  }
+}
+
+/* ========================
+   SPHERE IMAGE DISPLAY
+======================== */
+function applyImageToSphere(img) {
+  if (sphere) {
+    panoGroup.remove(sphere);
+    if (sphere.geometry) sphere.geometry.dispose();
+    if (sphere.material) {
+      if (sphere.material.map) sphere.material.map.dispose();
+      sphere.material.dispose();
+    }
+  }
+
+  const geometry = new THREE.SphereGeometry(100, 60, 40);
+  geometry.scale(-1, 1, 1);
+  geometry.rotateY(Math.PI);
+
+  const texture = new THREE.Texture(img);
+  texture.needsUpdate = true;
+
+  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+  sphere = new THREE.Mesh(geometry, material);
+
+  sphere.rotation.y = currentYaw + currentYawFix;
+  sphere.rotation.x = currentPitch;
+
+  panoGroup.add(sphere);
+  updateNavigationRing();
+}
+
+function loadImageToViewer(imageUrl) {
+  if (!viewerInitialized) {
+    initThreeJSViewer();
+  }
+
+  if (preloadedImages[imageUrl]) {
+    applyImageToSphere(preloadedImages[imageUrl]);
+    hideViewerLoading();
+    preloadAdjacentImages();
+    return;
+  }
+
+  showViewerLoading('Loading 360 image...');
+
+  const img = new Image();
+  img.crossOrigin = 'Anonymous';
+
+  img.onload = function() {
+    preloadedImages[imageUrl] = img;
+    hideViewerLoading();
+    applyImageToSphere(img);
+    preloadAdjacentImages();
+  };
+
+  img.onerror = function() {
+    hideViewerLoading();
+    console.error('Failed to load image:', imageUrl);
+  };
+
+  if (imageUrl.startsWith('blob:')) {
+    img.src = imageUrl;
+  } else {
+    img.src = imageUrl + (imageUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+  }
+}
+
+/* ========================
+   IMAGE PRELOADING
+======================== */
+function preloadAdjacentImages() {
+  const track = getCurrentTrack();
+  if (!track) return;
+
+  const pts = getActivePoints();
+  const curPos = pts.findIndex(p => p.index === currentIdx);
+  if (curPos < 0) return;
+
+  [-1, 1, -2, 2].forEach(offset => {
+    const idx = curPos + offset;
+    if (idx >= 0 && idx < pts.length) {
+      const imgUrl = track.imagesByIndex[pts[idx].index];
+      if (imgUrl && !preloadedImages[imgUrl]) {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => { preloadedImages[imgUrl] = img; };
+        img.onerror = () => {};
+        img.src = imgUrl.startsWith('blob:') ? imgUrl : imgUrl + '?t=' + Date.now();
+      }
+    }
+  });
+}
+
+/* ========================
+   VIEWER LOADING STATES
+======================== */
+function showViewerLoading(msg) {
+  const el = document.getElementById('viewer-loading');
+  const txt = document.getElementById('loading-text');
+  if (el && txt) { txt.textContent = msg; el.style.display = 'block'; }
+}
+
+function hideViewerLoading() {
+  const el = document.getElementById('viewer-loading');
+  if (el) el.style.display = 'none';
+}
+
+/* ========================
+   VIEWER EVENT LISTENERS
+======================== */
+function setupViewerEventListeners() {
+  const canvas = document.getElementById('canvas');
+
+  let isDragging = false;
+  let lastX = 0, lastY = 0;
+
+  canvas.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    disableNavButtons();
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.style.cursor = 'grabbing';
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (isDragging && sphere) {
+      const deltaX = e.clientX - lastX;
+      const deltaY = e.clientY - lastY;
+
+      currentYaw -= deltaX * 0.01;
+      currentPitch -= deltaY * 0.01;
+      currentPitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, currentPitch));
+
+      sphere.rotation.y = currentYaw + currentYawFix;
+      sphere.rotation.x = currentPitch;
+
+      lastX = e.clientX;
+      lastY = e.clientY;
+
+      updateNavigationRing();
+      updateViewCone();
+    }
+  });
+
+  canvas.addEventListener('mouseup', () => {
+    isDragging = false;
+    setTimeout(enableNavButtons, 50);
+    canvas.style.cursor = 'grab';
+  });
+
+  canvas.addEventListener('mouseenter', () => { canvas.style.cursor = 'grab'; });
+  canvas.addEventListener('mouseleave', () => { isDragging = false; canvas.style.cursor = 'default'; });
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const zoomSpeed = e.deltaMode === 0 ? 2 : 60;
+    const delta = e.deltaY > 0 ? zoomSpeed : -zoomSpeed;
+    const oldFov = currentFov;
+    currentFov = Math.max(30, Math.min(120, currentFov + delta));
+    if (currentFov !== oldFov) {
+      camera.fov = currentFov;
+      camera.updateProjectionMatrix();
+      updateViewCone();
+    }
+  }, { passive: false });
+
+  setupTouchGestures(canvas);
+
+  document.getElementById('nextImageBtn').addEventListener('click', navigateForward);
+  document.getElementById('prevImageBtn').addEventListener('click', navigateBackward);
+  document.getElementById('branchBtn').addEventListener('click', navigateBranch);
+
+  document.getElementById('zoomInBtn').addEventListener('click', () => {
+    if (currentFov > 30) {
+      currentFov -= 5;
+      camera.fov = currentFov;
+      camera.updateProjectionMatrix();
+      updateViewCone();
+    }
+  });
+  document.getElementById('zoomOutBtn').addEventListener('click', () => {
+    if (currentFov < 120) {
+      currentFov += 5;
+      camera.fov = currentFov;
+      camera.updateProjectionMatrix();
+      updateViewCone();
+    }
+  });
+}
+
+function setupTouchGestures(canvas) {
+  let touchStartDistance = 0;
+  let touchStartFov = currentFov;
+  let isTouching = false;
+  let lastTouchX = 0, lastTouchY = 0;
+
+  function getTouchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      isTouching = true;
+      lastTouchX = e.touches[0].clientX;
+      lastTouchY = e.touches[0].clientY;
+      e.preventDefault();
+    } else if (e.touches.length === 2) {
+      touchStartDistance = getTouchDistance(e.touches);
+      touchStartFov = currentFov;
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1 && isTouching && sphere) {
+      const deltaX = e.touches[0].clientX - lastTouchX;
+      const deltaY = e.touches[0].clientY - lastTouchY;
+
+      currentYaw -= deltaX * 0.01;
+      currentPitch -= deltaY * 0.01;
+      currentPitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, currentPitch));
+
+      sphere.rotation.y = currentYaw + currentYawFix;
+      sphere.rotation.x = currentPitch;
+
+      lastTouchX = e.touches[0].clientX;
+      lastTouchY = e.touches[0].clientY;
+
+      updateViewCone();
+      updateNavigationRing();
+      e.preventDefault();
+    } else if (e.touches.length === 2) {
+      const currentDistance = getTouchDistance(e.touches);
+      const scale = touchStartDistance / currentDistance;
+      const newFov = Math.max(30, Math.min(120, touchStartFov * scale));
+      if (newFov !== currentFov) {
+        currentFov = newFov;
+        camera.fov = currentFov;
+        camera.updateProjectionMatrix();
+        updateViewCone();
+      }
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', (e) => {
+    if (e.touches.length === 0) {
+      isTouching = false;
+      touchStartDistance = 0;
+    } else if (e.touches.length === 1) {
+      lastTouchX = e.touches[0].clientX;
+      lastTouchY = e.touches[0].clientY;
+    }
+  }, { passive: false });
+}
+
+function disableNavButtons() {
+  document.querySelectorAll('.nav-button.ring-button').forEach(b => { b.style.pointerEvents = 'none'; });
+}
+
+function enableNavButtons() {
+  document.querySelectorAll('.nav-button.ring-button').forEach(b => { b.style.pointerEvents = 'auto'; });
+}
+
+/* ========================
+   VIEW CONE ON MAP
+======================== */
+let lastPathBearing = 0;
+
+function initConeSystem() {
+  if (!map.getSource('view-cone')) {
+    map.addSource('view-cone', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[0,0],[0,0],[0,0]]] } }
+    });
+
+    const beforeLayer = map.getLayer('blue-markers-layer') ? 'blue-markers-layer' : undefined;
+
+    map.addLayer({
+      id: 'view-cone-fill', type: 'fill', source: 'view-cone',
+      paint: { 'fill-color': '#ff8400', 'fill-opacity': 0.5 }
+    }, beforeLayer);
+
+    map.addLayer({
+      id: 'view-cone-outline', type: 'line', source: 'view-cone',
+      paint: { 'line-color': '#ff6b6b', 'line-width': 2, 'line-opacity': 0 }
+    }, beforeLayer);
+  }
+}
+
+function getHorizontalFovDeg() {
+  if (!camera) return 90;
+  const vRad = THREE.MathUtils.degToRad(currentFov);
+  const hRad = 2 * Math.atan(Math.tan(vRad / 2) * camera.aspect);
+  return THREE.MathUtils.radToDeg(hRad);
+}
+
+function makeViewConeRing(lat, lon, headingDeg, fovDeg, radiusMeters, steps) {
+  radiusMeters = radiusMeters || 15;
+  steps = steps || 24;
+  const half = Math.max(0, Math.min(89, fovDeg / 2));
+  const start = headingDeg - half;
+  const end = headingDeg + half;
+
+  const ring = [[lon, lat]];
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const brg = start + (end - start) * t;
+    ring.push(destFromBearingDistance(lat, lon, brg, radiusMeters));
+  }
+  ring.push([lon, lat]);
+  return ring;
+}
+
+function updateViewCone() {
+  if (!map || !map.getSource('view-cone')) return;
+
+  const pos = getCurrentPointPosition();
+  if (!pos) return;
+
+  const nextPos = getNextPointPosition();
+  const prevPos = getPrevPointPosition();
+  let pathBearing = lastPathBearing;
+
+  if (nextPos) {
+    pathBearing = bearingDeg(pos, nextPos);
+  } else if (prevPos) {
+    pathBearing = bearingDeg(prevPos, pos);
+  }
+
+  if (lastPathBearing !== undefined) {
+    let diff = pathBearing - lastPathBearing;
+    if (Math.abs(diff) > 180) {
+      pathBearing += diff > 0 ? -360 : 360;
+    }
+  }
+  lastPathBearing = pathBearing;
+
+  const userYawDeg = THREE.MathUtils.radToDeg(currentYaw);
+  const finalHeading = (pathBearing + userYawDeg + 360) % 360;
+
+  const fovH = getHorizontalFovDeg();
+  const ring = makeViewConeRing(pos[1], pos[0], finalHeading, fovH, 15, 24);
+
+  map.getSource('view-cone').setData({
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [ring] }
+  });
+}
+
+function hideViewCone() {
+  if (map && map.getSource('view-cone')) {
+    map.getSource('view-cone').setData({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [[[0,0],[0,0],[0,0]]] }
+    });
+  }
+}
+
+map.on('zoom', () => { if (currentIdx >= 0) updateViewCone(); });
+map.on('move', () => { if (currentIdx >= 0) updateViewCone(); });
+
+/* ========================
+   VIEWER & NAVIGATION
+======================== */
+function openViewer(id) {
+  const track = getCurrentTrack();
+  if (!track) return;
+
+  const p = track.rawPoints.find(rp => rp.index === id);
+  if (!p) return;
+
+  currentIdx = id;
+
+  document.getElementById('empty-msg').style.display = 'none';
+
+  if (track.imagesByIndex[id]) {
+    loadImageToViewer(track.imagesByIndex[id]);
+  } else {
+    if (!viewerInitialized) initThreeJSViewer();
+  }
+
+  // Update counter
+  const pts = getActivePoints();
+  const curPos = pts.findIndex(pt => pt.index === id);
+  document.getElementById('time').textContent = curPos >= 0
+    ? `${curPos + 1}/${pts.length}`
+    : `-/-`;
+
+  // Update marker sources (for active state highlighting)
+  updateBlueMarkersSource();
+  updateRedMarkersSource();
+
+  map.easeTo({ center: [p.lon, p.lat] });
+  document.getElementById('viewer-title').innerText = `${track.name} · Point ${id}`;
+
+  updateViewCone();
+}
+
+function fitToTrack() {
+  const ct = getCurrentTrack();
+  if (ct && ct.rawPoints.length > 0) {
+    const b = new mapboxgl.LngLatBounds();
+    ct.rawPoints.forEach(p => b.extend([p.lon, p.lat]));
+    map.fitBounds(b, { padding: 50 });
+    return;
+  }
+  fitToAllTracks();
+}
+
+function fitToAllTracks() {
+  const b = new mapboxgl.LngLatBounds();
+  let hasPoints = false;
+  tracks.forEach(t => {
+    t.rawPoints.forEach(p => { b.extend([p.lon, p.lat]); hasPoints = true; });
+  });
+  if (hasPoints) map.fitBounds(b, { padding: 50 });
+}
+
+/* ========================
+   BUTTON LISTENERS
+======================== */
+document.getElementById('generateRedBtn').onclick = generateRedTrack;
+document.getElementById('projectPointsBtn').onclick = () => projectPointsToRed();
+document.getElementById('fitBtn').onclick = fitToTrack;
+
+document.getElementById('exportBtn').onclick = () => {
+  const track = getCurrentTrack();
+  if (!track) return;
+
+  const exportData = {
+    yawFix: track.yawFix || 0,
+    rawPoints: track.rawPoints.map(p => ({
+      index: p.index,
+      lat: p.lat,
+      lon: p.lon,
+      imageUrl: track.imagesByIndex[p.index]
+    })),
+    controlPoints: track.controlPointMarkers.map(m => {
+      const ll = m.getLngLat();
+      return { lon: ll.lng, lat: ll.lat };
+    }),
+    redMarkers: track.redMarkers.map(m => ({
+      sequentialIndex: m.sequentialIndex,
+      originalImageIndex: m.imageIndex,
+      lat: m.lat,
+      lon: m.lon,
+      distanceAlongRoute: m.distanceAlongRoute,
+      isLocked: m.isLocked || false
+    })),
+    marriages: marriageGroups,
+    antiMarriages: antiMarriageGroups
+  };
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${track.name}_smoothed_path.json`;
+  a.click();
+};
+
+document.getElementById('exportGpxBtn').onclick = () => {
+  const track = getCurrentTrack();
+  if (!track || !track.redTrackLine || track.redMarkers.length === 0) return;
+
+  const curveCoords = track.redTrackLine.geometry.coordinates;
+
+  let gpx = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  gpx += '<gpx version="1.1" creator="Quickview Editor" xmlns="http://www.topografix.com/GPX/1/1">\n';
+  gpx += '  <trk>\n';
+  gpx += `    <name>${track.name}_smoothed</name>\n`;
+  gpx += '    <trkseg>\n';
+
+  curveCoords.forEach(coord => {
+    gpx += `      <trkpt lat="${coord[1]}" lon="${coord[0]}"></trkpt>\n`;
+  });
+
+  gpx += '    </trkseg>\n';
+  gpx += '  </trk>\n';
+
+  track.redMarkers.forEach((m, idx) => {
+    gpx += `  <wpt lat="${m.lat}" lon="${m.lon}">\n`;
+    gpx += `    <name>Photo_${idx + 1} - Image ${m.imageIndex}</name>\n`;
+    gpx += `    <desc>Marble position along route - Image ${m.imageIndex}</desc>\n`;
+    gpx += `  </wpt>\n`;
+  });
+
+  gpx += '</gpx>';
+
+  const blob = new Blob([gpx], {type: 'application/gpx+xml'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${track.name}_smoothed.gpx`;
+  a.click();
+};
+
+document.getElementById('exportIndexBtn').onclick = () => {
+  // Build files list: trackname-imageIndex.jpg for every red marker across all tracks
+  const files = [];
+  const gpxFiles = [];
+  const yawfixes = {};
+
+  tracks.forEach(track => {
+    gpxFiles.push(track.name + '.gpx');
+    yawfixes[track.name + '.gpx'] = track.yawFix || 0;
+    track.redMarkers.forEach(m => {
+      files.push(`${track.name}-${m.imageIndex}.jpg`);
+    });
+  });
+
+  // Build marriages in portable format: "trackname.gpx:imageIndex"
+  const marriages = marriageGroups.map(group =>
+    group.map(key => {
+      const parts = key.split(':');
+      return parts[0] + '.gpx:' + parts[1];
+    })
+  );
+
+  // Build antimarriages in portable format
+  const antiMarriages = antiMarriageGroups.map(pair =>
+    pair.map(key => {
+      const parts = key.split(':');
+      return parts[0] + '.gpx:' + parts[1];
+    })
+  );
+
+  const indexData = { files, gpxFiles, yawfixes, marriages, antiMarriages };
+
+  const blob = new Blob([JSON.stringify(indexData, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'index.json';
+  a.click();
+};
+
+/* ========================
+   INDEX JSON IMPORT (marriages)
+======================== */
+document.getElementById('importIndexInput').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const indexData = JSON.parse(await file.text());
+
+  if (indexData.marriages && Array.isArray(indexData.marriages)) {
+    // Convert from portable format "trackName.gpx:imageIndex" → internal "trackName:imageIndex"
+    indexData.marriages.forEach(group => {
+      const converted = group.map(key => {
+        // "sierraalta0.gpx:142" → "sierraalta0:142"
+        return key.replace(/\.gpx:/i, ':');
+      });
+      if (converted.length >= 2) {
+        marriageGroups.push(converted);
+      }
+    });
+
+    updateRedMarkersSource();
+    updateStatus();
+  }
+
+  if (indexData.antiMarriages && Array.isArray(indexData.antiMarriages)) {
+    indexData.antiMarriages.forEach(pair => {
+      const converted = pair.map(key => key.replace(/\.gpx:/i, ':'));
+      if (converted.length === 2) {
+        antiMarriageGroups.push(converted);
+      }
+    });
+    updateRedMarkersSource();
+    updateStatus();
+  }
+
+  e.target.value = '';
+};
+
+/* ========================
+   GPX LOADING (multi-file)
+======================== */
+document.getElementById('gpxInput').onchange = async (e) => {
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
+
+  const numPoints = parseInt(document.getElementById('numPointsInput').value) || 10;
+
+  for (const f of files) {
+    const gpxText = await f.text();
+    const gpxLine = parseGpxFile(gpxText);
+    if (!gpxLine) continue;
+
+    const name = f.name.replace(/\.gpx$/i, '');
+    const track = createTrackData(name);
+    track.gpxLine = gpxLine;
+
+    const points = generatePointsFromGpx(gpxLine, numPoints);
+    if (points.length > 0) {
+      track.rawPoints = points;
+      tracks.set(track.id, track);
+      processRawPoints(track);
+    }
+  }
+
+  // Select first track if none selected
+  if (!currentTrackId && tracks.size > 0) {
+    selectTrack(tracks.keys().next().value);
+  }
+
+  updateTracksList();
+  fitToAllTracks();
+
+  document.getElementById('generateFromGpxBtn').disabled = false;
+
+};
+
+/* ========================
+   REGENERATE POINTS (current track)
+======================== */
+document.getElementById('generateFromGpxBtn').onclick = () => {
+  const track = getCurrentTrack();
+  if (!track || !track.gpxLine) return;
+
+  const numPoints = parseInt(document.getElementById('numPointsInput').value) || 10;
+  if (numPoints < 2) {
+    alert('Minimum 2 points required');
+    return;
+  }
+
+  // Clear existing editing state for this track
+  track.redMarkers = [];
+  updateRedMarkersSource();
+
+  track.controlPointMarkers.forEach(m => m.remove());
+  track.controlPointMarkers = [];
+  track.controlPoints = [];
+  if (map.getLayer(`red-track-${track.id}`)) map.removeLayer(`red-track-${track.id}`);
+  if (map.getSource(`red-track-${track.id}`)) map.removeSource(`red-track-${track.id}`);
+  track.redTrackLine = null;
+
+  const points = generatePointsFromGpx(track.gpxLine, numPoints);
+  track.rawPoints = points;
+  processRawPoints(track);
+  updateTracksList();
+
+  document.getElementById('projectPointsBtn').disabled = true;
+  document.getElementById('exportBtn').disabled = true;
+  document.getElementById('exportGpxBtn').disabled = true;
+};
+
+
+
+/* ========================
+   JSON LOAD (creates new track)
+======================== */
+/* ========================
+   IMAGE LOADING (multi-track aware)
+======================== */
+document.getElementById('imagesInput').onchange = (ev) => {
+  const files = Array.from(ev.target.files).filter(f =>
+    !f.name.startsWith('.') && /\.(jpg|jpeg|png)$/i.test(f.name)
+  );
+
+  if (files.length === 0) return;
+
+  // Multi-track pattern: {trackname}{tracknum}-{imagenum}.ext
+  const trackPattern = /^(.+?)(\d+)-(\d+)\.[^.]+$/;
+  let multiCount = 0;
+  let singleCount = 0;
+
+  files.forEach(f => {
+    const multiMatch = f.name.match(trackPattern);
+    if (multiMatch) {
+      const trackName = multiMatch[1] + multiMatch[2];
+      const imageNum = parseInt(multiMatch[3]);
+      const track = findTrackByName(trackName);
+      if (track) {
+        track.imagesByIndex[imageNum] = URL.createObjectURL(f);
+        multiCount++;
+      }
+      // Multi-track pattern matched but track not loaded — skip (don't fallback)
+      return;
+    }
+
+    // Fallback: simple number -> assign to current track (only for non-multi-track filenames)
+    const simpleMatch = f.name.match(/(\d+)\.[^.]+$/);
+    if (simpleMatch) {
+      const ct = getCurrentTrack();
+      if (ct) {
+        ct.imagesByIndex[parseInt(simpleMatch[1])] = URL.createObjectURL(f);
+        singleCount++;
+      }
+    }
+  });
+
+  console.log(`Loaded images: ${multiCount} multi-track, ${singleCount} single-track`);
+
+  // Regenerate points on each track to match its image count
+  tracks.forEach(track => {
+    const imageCount = Object.keys(track.imagesByIndex).length;
+    if (imageCount >= 2 && track.gpxLine) {
+      // Clear existing editing state
+      track.redMarkers = [];
+      track.controlPointMarkers.forEach(m => m.remove());
+      track.controlPointMarkers = [];
+      track.controlPoints = [];
+      if (map.getLayer(`red-track-${track.id}`)) map.removeLayer(`red-track-${track.id}`);
+      if (map.getSource(`red-track-${track.id}`)) map.removeSource(`red-track-${track.id}`);
+      track.redTrackLine = null;
+
+      const points = generatePointsFromGpx(track.gpxLine, imageCount);
+      track.rawPoints = points;
+      processRawPoints(track);
+      console.log(`Regenerated ${track.name}: ${imageCount} points from ${imageCount} images`);
+    }
+  });
+
+  // Update marker source to refresh hasImage property
+  updateBlueMarkersSource();
+  updateRedMarkersSource();
+  updateTracksList();
+  updateStatus();
+
+  // Reload current viewer image if available
+  const ct = getCurrentTrack();
+  if (ct && currentIdx >= 0 && ct.imagesByIndex[currentIdx]) {
+    loadImageToViewer(ct.imagesByIndex[currentIdx]);
+  }
+
+  // Reset so user can pick another folder and accumulate images
+  ev.target.value = '';
+};
+
+/* ========================
+   CLEAR ALL
+======================== */
+function clearAll() {
+  // Remove all track map layers and control point markers
+  tracks.forEach((track, trackId) => {
+    if (map.getLayer(`blue-track-${trackId}`)) map.removeLayer(`blue-track-${trackId}`);
+    if (map.getSource(`blue-track-${trackId}`)) map.removeSource(`blue-track-${trackId}`);
+    if (map.getLayer(`red-track-${trackId}`)) map.removeLayer(`red-track-${trackId}`);
+    if (map.getSource(`red-track-${trackId}`)) map.removeSource(`red-track-${trackId}`);
+
+    track.controlPointMarkers.forEach(m => m.remove());
+
+    Object.values(track.imagesByIndex).forEach(url => {
+      if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
+    });
+  });
+
+  tracks.clear();
+  currentTrackId = null;
+  currentIdx = -1;
+
+  // Clear shared marker sources
+  updateBlueMarkersSource();
+  updateRedMarkersSource();
+
+  // Clean up Three.js
+  if (sphere) {
+    panoGroup.remove(sphere);
+    if (sphere.geometry) sphere.geometry.dispose();
+    if (sphere.material) {
+      if (sphere.material.map) sphere.material.map.dispose();
+      sphere.material.dispose();
+    }
+    sphere = null;
+  }
+  currentYaw = 0;
+  currentPitch = 0;
+  currentFov = 75;
+  currentYawFix = 0;
+  preloadedImages = {};
+
+  document.getElementById('empty-msg').style.display = 'flex';
+  document.getElementById('empty-msg').textContent = 'Load data to begin';
+  document.getElementById('viewer-title').textContent = 'Street View';
+  document.getElementById('viewer-meta').textContent = '';
+  document.getElementById('time').textContent = '-/-';
+
+  document.getElementById('projectPointsBtn').disabled = true;
+  document.getElementById('exportBtn').disabled = true;
+  document.getElementById('exportGpxBtn').disabled = true;
+  document.getElementById('dragMode').disabled = true;
+
+  document.getElementById('generateFromGpxBtn').disabled = true;
+
+  addCPModeActive = false;
+  removeCPModeActive = false;
+  moveAllCPsActive = false;
+  dragModeActive = false;
+  removePointModeActive = false;
+  lockModeActive = false;
+  marryModeActive = false;
+  marrySelection.clear();
+  marriageGroups = [];
+  document.getElementById('addCPMode').checked = false;
+  document.getElementById('removeCPMode').checked = false;
+  document.getElementById('moveAllCPs').checked = false;
+  document.getElementById('dragMode').checked = false;
+  document.getElementById('removePointMode').checked = false;
+  document.getElementById('lockMode').checked = false;
+  document.getElementById('marryMode').checked = false;
+  document.getElementById('marrySelectionInfo').style.display = 'none';
+
+  undoStack.length = 0;
+  redoStack.length = 0;
+  updateUndoUI();
+
+  // Reset file inputs so re-selecting the same file triggers onchange
+  document.getElementById('gpxInput').value = '';
+  document.getElementById('imagesInput').value = '';
+  document.getElementById('importRedInput').value = '';
+
+  hideViewCone();
+  updateTracksList();
+  updateStatus();
+}
+
+document.getElementById('clearAllBtn').onclick = clearAll;
+document.getElementById('undoBtn').onclick = undo;
+document.getElementById('redoBtn').onclick = redo;
+
+/* ========================
+   IMPORT RED PATH (creates new track)
+======================== */
+document.getElementById('importRedInput').onchange = async (e) => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+
+  let lastTrack = null;
+
+  for (const f of files) {
+    const data = JSON.parse(await f.text());
+    const name = f.name.replace(/\.json$/i, '');
+    const track = createTrackData(name);
+    if (data.yawFix !== undefined) track.yawFix = data.yawFix;
+
+    if (data.rawPoints && data.rawPoints.length > 0) {
+      data.rawPoints.forEach(p => {
+        if (p.imageUrl && !p.imageUrl.startsWith('blob:')) {
+          track.imagesByIndex[p.index] = p.imageUrl;
+        }
+      });
+      track.rawPoints = data.rawPoints;
+    }
+
+    tracks.set(track.id, track);
+    processRawPoints(track);
+
+    if (data.controlPoints && data.controlPoints.length > 0) {
+      data.controlPoints.forEach(cp => {
+        createCPMarker([cp.lon, cp.lat], track);
+      });
+      updateRedTrackLine(track);
+    }
+
+    if (data.redMarkers && data.redMarkers.length > 0) {
+      data.redMarkers.forEach((p, idx) => {
+        const isEndpoint = (idx === 0 || idx === data.redMarkers.length - 1);
+        track.redMarkers.push({
+          lon: p.lon,
+          lat: p.lat,
+          sequentialIndex: p.sequentialIndex,
+          imageIndex: p.originalImageIndex,
+          distanceAlongRoute: p.distanceAlongRoute,
+          isLocked: p.isLocked !== undefined ? p.isLocked : isEndpoint
+        });
+      });
+      updateRedMarkersSource();
+    }
+
+    // Load marriages if present
+    if (data.marriages && Array.isArray(data.marriages)) {
+      data.marriages.forEach(group => {
+        marriageGroups.push(group);
+      });
+    }
+
+    if (data.antiMarriages && Array.isArray(data.antiMarriages)) {
+      data.antiMarriages.forEach(pair => {
+        antiMarriageGroups.push(pair);
+      });
+    }
+
+    lastTrack = track;
+  }
+
+  if (lastTrack) {
+    selectTrack(lastTrack.id);
+    document.getElementById('showRedTrack').checked = true;
+    document.getElementById('projectPointsBtn').disabled = false;
+    document.getElementById('showRedDots').checked = true;
+    document.getElementById('dragMode').disabled = false;
+    document.getElementById('exportBtn').disabled = false;
+    document.getElementById('exportGpxBtn').disabled = false;
+  }
+
+  updateTracksList();
+  updateStatus();
+  e.target.value = '';
+};
+
+/* ========================
+   INIT ON MAP LOAD
+======================== */
+map.on('load', () => {
+  initMarkerLayers();
+  initConeSystem();
+  setupMarkerEvents();
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  // Ctrl+Z undo, Ctrl+Shift+Z / Ctrl+Y redo
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') {
+    e.preventDefault();
+    redo();
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault();
+    undo();
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+    e.preventDefault();
+    redo();
+  } else if (e.key === 'd') {
+    const cb = document.getElementById('dragMode');
+    cb.checked = !cb.checked;
+    cb.onchange({ target: cb });
+  } else if (e.key === 'l') {
+    const cb = document.getElementById('lockMode');
+    cb.checked = !cb.checked;
+    cb.onchange({ target: cb });
+  } else if (e.key === 'm') {
+    const cb = document.getElementById('moveAllCPs');
+    cb.checked = !cb.checked;
+    cb.onchange({ target: cb });
+  } else if (e.key === 'r') {
+    const cb = document.getElementById('marryMode');
+    cb.checked = !cb.checked;
+    cb.onchange({ target: cb });
+  } else if (e.key === 't') {
+    const cb = document.getElementById('antiMarryMode');
+    cb.checked = !cb.checked;
+    cb.onchange({ target: cb });
+  }
+});
+
+// --- Map Layer Overlay ---
+document.getElementById('loadOverlayBtn').addEventListener('click', function() {
+  const url = document.getElementById('overlayUrl').value.trim();
+  const rawCoords = document.getElementById('overlayCoords').value.trim();
+  if (!url || !rawCoords) return;
+
+  // Parse coordinates: accept [lng,lat],[lng,lat],... format
+  const nums = rawCoords.match(/-?\d+\.?\d*/g);
+  if (!nums || nums.length < 8) { alert('Need 4 coordinate pairs [lng,lat]'); return; }
+  const coordinates = [
+    [parseFloat(nums[0]), parseFloat(nums[1])],
+    [parseFloat(nums[2]), parseFloat(nums[3])],
+    [parseFloat(nums[4]), parseFloat(nums[5])],
+    [parseFloat(nums[6]), parseFloat(nums[7])]
+  ];
+
+  // Remove existing overlay if any
+  if (map.getLayer('drone-overlay-layer')) map.removeLayer('drone-overlay-layer');
+  if (map.getSource('drone-overlay')) map.removeSource('drone-overlay');
+
+  map.addSource('drone-overlay', { type: 'image', url: url, coordinates: coordinates });
+  // Insert at bottom of custom layers: drone-overlay → tracks → cone → markers
+  // Find the lowest custom layer (any track line, cone, or marker layer)
+  const allLayers = map.getStyle().layers;
+  const customIds = new Set(['view-cone-fill', 'view-cone-outline', 'blue-markers-layer', 'blue-markers-labels', 'blue-markers-click', 'red-markers-layer', 'red-markers-labels', 'red-markers-click']);
+  const firstCustom = allLayers.find(l => customIds.has(l.id) || l.id.startsWith('blue-track-') || l.id.startsWith('red-track-'));
+  map.addLayer({ id: 'drone-overlay-layer', type: 'raster', source: 'drone-overlay', paint: { 'raster-opacity': 0.8 } }, firstCustom ? firstCustom.id : undefined);
+
+  document.getElementById('overlayControls').style.display = 'block';
+  document.getElementById('removeOverlayBtn').style.display = '';
+  document.getElementById('overlayOpacity').value = 80;
+});
+
+document.getElementById('overlayOpacity').addEventListener('input', function() {
+  if (map.getLayer('drone-overlay-layer')) {
+    map.setPaintProperty('drone-overlay-layer', 'raster-opacity', this.value / 100);
+  }
+});
+
+document.getElementById('removeOverlayBtn').addEventListener('click', function() {
+  if (map.getLayer('drone-overlay-layer')) map.removeLayer('drone-overlay-layer');
+  if (map.getSource('drone-overlay')) map.removeSource('drone-overlay');
+  document.getElementById('overlayControls').style.display = 'none';
+  this.style.display = 'none';
+});
+
+// Ready
+</script>
+</body>
+</html>
