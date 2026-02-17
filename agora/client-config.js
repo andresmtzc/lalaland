@@ -36,21 +36,27 @@ const CLIENT_CONFIGS = {
         cardLogoUrl: 'https://la-la.land/agora/lomasmediterraneo_black.png',
         communities: ['amani-pietra'],
         center: [-100.189895, 25.428123],
-        zoom: 16.3
+        zoom: 16.3,
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       },
       'amani-aqua': {
         url: 'https://la-la.land/agora/aqua.png',
         cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png',
         communities: ['amani-aqua'],
         center: [-100.179293, 25.436671],
-        zoom: 15.6
+        zoom: 15.6,
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       },
       'cañadas-vergel': {
         url: 'https://la-la.land/agora/canadas.png',
         cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png',
         communities: ['cañadas-vergel'],
         center: [-100.178178, 25.441325],
-        zoom: 16.4
+        zoom: 16.4,
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       }
     },
 

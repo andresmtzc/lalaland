@@ -37,7 +37,9 @@ const CLIENT_CONFIGS = {
         cardLogoUrl: 'https://la-la.land/inverta/lomasmediterraneo_black.png', // Black version for cards
         communities: ['marsella', 'barcelona'],
         center: [-96.036711, 19.0485],
-        zoom: 15
+        zoom: 15,
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       },
       'puntolomas': {
         // For sierraalta & sierrabaja
@@ -45,7 +47,9 @@ const CLIENT_CONFIGS = {
         cardLogoUrl: 'https://la-la.land/inverta/puntolomas_black.png', // Black version for cards
         communities: ['sierraalta', 'sierrabaja'],
         center: [-96.090537, 19.073336],
-        zoom: 15.2
+        zoom: 15.2,
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       },
           'arborea': {
         // For sierraalta & sierrabaja
@@ -53,7 +57,9 @@ const CLIENT_CONFIGS = {
         cardLogoUrl: 'https://la-la.land/inverta/puntolomas_black.png', // Black version for cards
         communities: ['cortezia', 'ebano', 'verdalia', 'frondia'],
         center: [-110.908304, 29.123942],
-        zoom: 14.9
+        zoom: 14.9,
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       },
                 'almaterra': {
         // For sierraalta & sierrabaja
@@ -61,7 +67,9 @@ const CLIENT_CONFIGS = {
         cardLogoUrl: 'https://la-la.land/inverta/puntolomas_black.png', // Black version for cards
         communities: ['almaterra'],
         center: [-100.06265, 25.314019],
-        zoom: 14.5
+        zoom: 14.5,
+        detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
+        minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       }
     },
 
