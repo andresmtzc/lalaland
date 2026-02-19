@@ -97,9 +97,10 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <!-- ===== LEADS IFRAME STYLES ===== -->
 <style>
-  /* Hide leads button by default (shown only in dashboard mode via JS) */
-  #leadsDashboardButton {
+  /* Leads button - positioned above dashboard button */
+  #leads-btn {
     display: none;
+    bottom: 52px;  /* Above dashboard-btn which is at 28px */
   }
 
   /* When modal is in leads-mode, expand to near-full-screen so iframe has room */
@@ -184,6 +185,19 @@ window.clientAccessCache = window.clientAccessCache || {};
     <path d="M12 5C7 5 2.73 8.11 1 12.5C2.73 16.89 7 20 12 20C17 20 21.27 16.89 23 12.5C21.27 8.11 17 5 12 5ZM12 17C9.24 17 7 14.76 7 12C7 9.24 9.24 7 12 7C14.76 7 17 9.24 17 12C17 14.76 14.76 17 12 17ZM12 9C10.34 9 9 10.34 9 12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12C15 10.34 13.66 9 12 9Z" fill="var(--color-white)"/>
   </svg>
   <span>Dashboard</span>
+</button>
+
+<!-- Leads button - above dashboard button, only visible when authenticated -->
+<button id="leads-btn" class="dashboard-button" title="Leads">
+  <!-- People icon (default - leads closed) -->
+  <svg id="leads-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" fill="var(--color-white)"/>
+  </svg>
+  <!-- People icon filled (leads open) -->
+  <svg id="leads-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" fill="var(--color-primary)"/>
+  </svg>
+  <span>Leads</span>
 </button>
 
 <div class="lala-wrapper">
@@ -294,8 +308,6 @@ window.clientAccessCache = window.clientAccessCache || {};
   </svg>
 </button>
 
-<!-- 📊 LEADS DASHBOARD BUTTON (only visible in dashboard mode, to the left of GLOBAL) -->
-<button class="unit-btn" id="leadsDashboardButton" title="View Leads Dashboard" translate="no">LEADS</button>
 <!-- 🌐 GLOBAL DASHBOARD BUTTON (only visible in dashboard mode, positioned on right side) -->
 <button class="unit-btn" id="globalDashboardButton" title="View All Communities" translate="no">GLOBAL</button>
 
@@ -2379,6 +2391,12 @@ ctaobserver.observe(ctaToaster, {
       dashboardBtn.style.display = loggedIn ? 'flex' : 'none';
     }
 
+    // Update leads button visibility
+    const leadsBtn = $('#leads-btn');
+    if (leadsBtn) {
+      leadsBtn.style.display = loggedIn ? 'flex' : 'none';
+    }
+
     // Update global auth state and re-render list to show/hide action buttons
     window.isUserAuthenticated = loggedIn;
 
@@ -2547,38 +2565,51 @@ ctaobserver.observe(ctaToaster, {
     }
   });
 
-  // Leads dashboard button - open lead-dashboard.html in an iframe inside the modal
-  const leadsDashboardBtn = $('#leadsDashboardButton');
+  // Leads button - open lead-dashboard.html in an iframe inside the modal
   window.isLeadsDashboardOpen = false;
+  const leadsBtnEl = $('#leads-btn');
 
-  leadsDashboardBtn && leadsDashboardBtn.addEventListener('click', async () => {
+  leadsBtnEl && leadsBtnEl.addEventListener('click', async () => {
     const modal = document.getElementById('lotModal');
-    const isActive = leadsDashboardBtn.classList.contains('active');
 
-    if (isActive) {
-      // Already showing leads — go back to previous dashboard
-      leadsDashboardBtn.classList.remove('active');
-      modal.classList.remove('leads-mode');
+    if (window.isLeadsDashboardOpen) {
+      // Already showing leads — close it
       window.isLeadsDashboardOpen = false;
+      leadsBtnEl.classList.remove('active');
+      modal.classList.remove('leads-mode');
 
-      // Remove the iframe
+      // Toggle icon back
+      const leadsOpen = document.getElementById('leads-open-icon');
+      const leadsClosed = document.getElementById('leads-closed-icon');
+      if (leadsOpen) leadsOpen.style.display = 'none';
+      if (leadsClosed) leadsClosed.style.display = 'inline-block';
+
+      // Remove the iframe and close the modal
       const existingIframe = document.getElementById('leadsIframe');
       if (existingIframe) existingIframe.remove();
-
-      // Restore previous dashboard view
-      if (globalDashboardBtn.classList.contains('active')) {
-        await openGlobalDashboard();
-      } else {
-        await openDashboardModal();
-      }
+      closeModal();
     } else {
-      // Show leads iframe
-      leadsDashboardBtn.classList.add('active');
-      // Deactivate global button visual (but remember state for when we come back)
-      globalDashboardBtn.classList.remove('active');
-      window.isLeadsDashboardOpen = true;
+      // If dashboard is open, close it first
+      if (window.isDashboardOpen) {
+        window.isDashboardOpen = false;
+        const dashBtn = document.getElementById('dashboard-btn');
+        const eyeOpen = document.getElementById('eye-open-icon');
+        const eyeClosed = document.getElementById('eye-closed-icon');
+        if (dashBtn) dashBtn.classList.remove('active');
+        if (eyeOpen) eyeOpen.style.display = 'none';
+        if (eyeClosed) eyeClosed.style.display = 'inline-block';
+      }
 
-      // Add leads-mode class for full-screen expansion
+      window.isLeadsDashboardOpen = true;
+      leadsBtnEl.classList.add('active');
+
+      // Toggle icon
+      const leadsOpen = document.getElementById('leads-open-icon');
+      const leadsClosed = document.getElementById('leads-closed-icon');
+      if (leadsOpen) leadsOpen.style.display = 'inline-block';
+      if (leadsClosed) leadsClosed.style.display = 'none';
+
+      // Open modal in leads-mode (full screen with map edges)
       modal.classList.add('leads-mode', 'info-mode', 'show');
 
       // Set header
@@ -2597,6 +2628,8 @@ ctaobserver.observe(ctaToaster, {
       if (customScrollbar) customScrollbar.style.display = 'none';
       const plusBtn = document.querySelector('.plus-button');
       if (plusBtn) plusBtn.style.display = 'none';
+      const globalBtn = document.getElementById('globalDashboardButton');
+      if (globalBtn) globalBtn.style.display = 'none';
 
       // Replace content with iframe
       const lotDetails = document.getElementById('lotDetails');
@@ -2968,16 +3001,18 @@ ctaobserver.observe(ctaToaster, {
       globalBtn.classList.remove('active');
     }
 
-    // Show LEADS button in dashboard mode, reset its state
-    const leadsBtn = document.getElementById('leadsDashboardButton');
-    if (leadsBtn) {
-      leadsBtn.style.display = 'block';
-      leadsBtn.classList.remove('active');
-    }
-    // Remove leads-mode expansion if returning from leads
+    // Reset leads state if returning from leads iframe
     const modalEl = document.getElementById('lotModal');
     if (modalEl) modalEl.classList.remove('leads-mode');
-    window.isLeadsDashboardOpen = false;
+    if (window.isLeadsDashboardOpen) {
+      window.isLeadsDashboardOpen = false;
+      const leadsBtnRst = document.getElementById('leads-btn');
+      if (leadsBtnRst) leadsBtnRst.classList.remove('active');
+      const leadsOpen = document.getElementById('leads-open-icon');
+      const leadsClosed = document.getElementById('leads-closed-icon');
+      if (leadsOpen) leadsOpen.style.display = 'none';
+      if (leadsClosed) leadsClosed.style.display = 'inline-block';
+    }
 
     // Clear and prepare content area
     if (lotDetails) {
@@ -3867,9 +3902,14 @@ map.on('click', 'lots-final-click', (e) => {
             console.log('  Removing GLOBAL button active state');
             globalBtn.classList.remove('active');
           }
-          const leadsBtnReset = document.getElementById('leadsDashboardButton');
-          if (leadsBtnReset) leadsBtnReset.classList.remove('active');
+          // Reset leads button state
           window.isLeadsDashboardOpen = false;
+          const leadsBtnReset = document.getElementById('leads-btn');
+          if (leadsBtnReset) leadsBtnReset.classList.remove('active');
+          const leadsOpenRst = document.getElementById('leads-open-icon');
+          const leadsClosedRst = document.getElementById('leads-closed-icon');
+          if (leadsOpenRst) leadsOpenRst.style.display = 'none';
+          if (leadsClosedRst) leadsClosedRst.style.display = 'inline-block';
 
           // Clear dashboard content from lotDetails
           const lotDetails = document.getElementById('lotDetails');
@@ -5952,9 +5992,6 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   // Hide GLOBAL and LEADS dashboard buttons in detail mode
   const globalBtn = document.getElementById('globalDashboardButton');
   if (globalBtn) globalBtn.style.display = 'none';
-  const leadsBtn2 = document.getElementById('leadsDashboardButton');
-  if (leadsBtn2) leadsBtn2.style.display = 'none';
-
   // Clear only lotDetails content (but not other UI like back button)
   lotDetails.classList.remove('active');
   lotDetails.innerHTML = '';
@@ -7248,8 +7285,16 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
 
     const globalButton = document.getElementById('globalDashboardButton');
     if (globalButton) globalButton.style.display = 'none';
-    const leadsButton = document.getElementById('leadsDashboardButton');
-    if (leadsButton) leadsButton.style.display = 'none';
+    // Reset leads button state when opening lot modal
+    if (window.isLeadsDashboardOpen) {
+      window.isLeadsDashboardOpen = false;
+      const lBtn = document.getElementById('leads-btn');
+      if (lBtn) lBtn.classList.remove('active');
+      const lOpen = document.getElementById('leads-open-icon');
+      const lClosed = document.getElementById('leads-closed-icon');
+      if (lOpen) lOpen.style.display = 'none';
+      if (lClosed) lClosed.style.display = 'inline-block';
+    }
 
     // Reset content wrapper
     const contentWrapper = document.querySelector('.modal-content-wrapper');
@@ -7565,14 +7610,17 @@ function closeModal() {
     globalBtn.style.display = 'none';
   }
 
-  // Hide leads dashboard button when closing modal and reset state
-  const leadsBtn = document.getElementById('leadsDashboardButton');
-  if (leadsBtn) {
-    leadsBtn.classList.remove('active');
-    leadsBtn.style.display = 'none';
-  }
+  // Reset leads state when closing modal
   modal.classList.remove('leads-mode');
-  window.isLeadsDashboardOpen = false;
+  if (window.isLeadsDashboardOpen) {
+    window.isLeadsDashboardOpen = false;
+    const leadsBtnCM = document.getElementById('leads-btn');
+    if (leadsBtnCM) leadsBtnCM.classList.remove('active');
+    const leadsOpenCM = document.getElementById('leads-open-icon');
+    const leadsClosedCM = document.getElementById('leads-closed-icon');
+    if (leadsOpenCM) leadsOpenCM.style.display = 'none';
+    if (leadsClosedCM) leadsClosedCM.style.display = 'inline-block';
+  }
   // Remove iframe if present
   const leadsIframe = document.getElementById('leadsIframe');
   if (leadsIframe) leadsIframe.remove();
@@ -8428,8 +8476,6 @@ PS.openPinInModal = async function (pin) {
   // Hide GLOBAL and LEADS dashboard buttons in pin mode
   const globalBtn = document.getElementById('globalDashboardButton');
   if (globalBtn) globalBtn.style.display = 'none';
-  const leadsBtnPin = document.getElementById('leadsDashboardButton');
-  if (leadsBtnPin) leadsBtnPin.style.display = 'none';
 
   if (backButton) backButton.style.display = 'none';
   document.querySelector('.plus-button')?.style && (document.querySelector('.plus-button').style.display = 'none');
@@ -10302,13 +10348,16 @@ function closeModalWithZoomReset() {
     globalBtn.style.display = 'none';
   }
 
-  // Hide leads dashboard button when closing modal and reset state
-  const leadsBtnZR = document.getElementById('leadsDashboardButton');
-  if (leadsBtnZR) {
-    leadsBtnZR.classList.remove('active');
-    leadsBtnZR.style.display = 'none';
+  // Reset leads state when closing modal
+  if (window.isLeadsDashboardOpen) {
+    window.isLeadsDashboardOpen = false;
+    const leadsBtnZR = document.getElementById('leads-btn');
+    if (leadsBtnZR) leadsBtnZR.classList.remove('active');
+    const leadsOpenZR = document.getElementById('leads-open-icon');
+    const leadsClosedZR = document.getElementById('leads-closed-icon');
+    if (leadsOpenZR) leadsOpenZR.style.display = 'none';
+    if (leadsClosedZR) leadsClosedZR.style.display = 'inline-block';
   }
-  window.isLeadsDashboardOpen = false;
   const leadsIframeZR = document.getElementById('leadsIframe');
   if (leadsIframeZR) leadsIframeZR.remove();
 
