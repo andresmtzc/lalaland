@@ -280,7 +280,7 @@ const CLIENT_CONFIGS = {
       mapboxFont: 'Barlow Condensed Regular',
 
       // Skip list modal and go directly to detail view when clicking a lot
-      skipListModal: true,
+      skipListModal: false,
 
       // Allow clicking on sold lots (independent of skipListModal)
       soldLotsClickable: false,
