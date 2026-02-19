@@ -159,7 +159,7 @@ const CLIENT_CONFIGS = {
         position: 1,
         searchMenuId: 'positionThree',
         apartarEnabled: false,
-        framesBase: 'https://andresmtzc.github.io/geepeeX/aqua/frames/'
+        framesBase: 'https://andresmtzc.github.io/aqua/frames/'
       },
 
       'cañadas-vergel': {
