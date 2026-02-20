@@ -1749,21 +1749,23 @@ function showMarbleImage(marbleId) {
   const m = track.marbles.find(x => x.id === marbleId); 
   if (!m) return;
   
-  if (m.assignedImage == null) {
-    console.log('❌ Marble has no assigned image:', m);
-    showToaster(`Marble ${m.index+1} has no image`);
-    return;
+  // Determine image index: use assignedImage if available, otherwise fall back to marble's position in track
+  let imageIdx = m.assignedImage;
+  if (imageIdx == null) {
+    imageIdx = track.marbles.findIndex(x => x.id === marbleId);
+    if (imageIdx < 0) imageIdx = 0;
+    console.log('⚠️ No assignedImage — using fallback index:', imageIdx);
   }
-  
-  console.log('🖼️ Showing image for marble:', m);
-  console.log('🖼️ Assigned image index:', m.assignedImage);
-  
- open360ViewerInModal();
 
-// Wait for Three.js to initialize before showing image
-setTimeout(() => {
-  showImageByIndex(m.assignedImage);
-}, 300); // Wait for Three.js to initialize
+  console.log('🖼️ Showing image for marble:', m);
+  console.log('🖼️ Image index:', imageIdx);
+
+  open360ViewerInModal();
+
+  // Wait for Three.js to initialize before showing image
+  setTimeout(() => {
+    showImageByIndex(imageIdx);
+  }, 400); // Slightly longer wait to ensure Three.js is ready
 }
 
 // Loading overlay functions
@@ -6335,6 +6337,9 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   modalEl.dataset.fracc = lot.fraccionamiento;
   currentFraccionamiento = lot.fraccionamiento; // Update for dynamic frames loading
   if (window.updateCommunityLogo) window.updateCommunityLogo();
+
+  // Store lot number so chatear button can include it in the WhatsApp message
+  headerLotNumber.textContent = lot.number;
 
   const status = String(lot.availability || '').toLowerCase();
   if (status === 'sold') return;
@@ -11605,16 +11610,35 @@ function initChatAvailability() {
 <script>
 // ===== EDIT MODE FUNCTIONALITY =====
 // Declare on window object to ensure global access
-window.window.editMode = false;
+window.editMode = false;
 window.compareMode = false;
-window.window.selectedLots = new Set();
+window.selectedLots = new Set();
+
+// Force-exit compare mode (callable from anywhere)
+window.exitCompareMode = function() {
+    window.compareMode = false;
+    const btn = document.getElementById('compareBtn');
+    if (btn) btn.classList.remove('active');
+    window.selectedLots.clear();
+    try { removeEditOutlines(); } catch(e) {}
+    if (window.originalBaseLots) {
+        baseLots = window.originalBaseLots;
+        updateLotsArray();
+        window.originalBaseLots = null;
+    }
+    if (isDataLoaded) { try { render(); } catch(e) {} }
+    showToaster('Compare mode OFF');
+    console.log('Compare mode OFF');
+};
 
 // Compare button event listener
 document.getElementById('compareBtn').addEventListener('click', function() {
-    window.compareMode = !window.compareMode;
-
     if (window.compareMode) {
-        // Enter compare mode
+        // Already ON — turn it off
+        window.exitCompareMode();
+    } else {
+        // Turn compare mode ON
+        window.compareMode = true;
         this.classList.add('active');
         showToaster('🔍 Compare mode ON - Click lots to compare');
         console.log('Compare mode ON');
@@ -11626,7 +11650,7 @@ document.getElementById('compareBtn').addEventListener('click', function() {
             if (!isNaN(baseIndex) && baseIndex >= 0 && baseLots[baseIndex]) {
                 const lot = baseLots[baseIndex];
                 const lotName = `lot${lot.number}`;
-                window.window.selectedLots.add(lotName);
+                window.selectedLots.add(lotName);
                 console.log('Auto-selected centered lot:', lotName);
 
                 // Apply visual overlay
@@ -11642,25 +11666,6 @@ document.getElementById('compareBtn').addEventListener('click', function() {
                 console.log('Data loaded for compare mode');
             });
         }
-    } else {
-        // Exit compare mode
-        this.classList.remove('active');
-        window.window.selectedLots.clear();
-        removeEditOutlines();
-        
-        // 🟢 RESTORE original baseLots
-        if (window.originalBaseLots) {
-            baseLots = window.originalBaseLots;
-            updateLotsArray();
-            window.originalBaseLots = null; // Clean up
-        }
-        
-        // Restore normal list
-        if (isDataLoaded) {
-            render();
-        }
-        showToaster('Compare mode OFF');
-        console.log('Compare mode OFF');
     }
 });
 
