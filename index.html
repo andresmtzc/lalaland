@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/css/intlTelInput.css">
 
 <style>
 :root {
@@ -485,6 +486,31 @@ form input::placeholder { color: #bbb; }
     transform: translateY(-2px);
     box-shadow: 0 8px 24px rgba(255,132,0,0.3);
 }
+.iti { width: 100%; }
+.iti input { width: 100%; }
+.form-success {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+    padding: 40px 0;
+}
+.form-success-icon {
+    font-size: 48px;
+    line-height: 1;
+}
+.form-success h3 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: clamp(22px, 3vw, 32px);
+    font-weight: 700;
+    color: var(--off-black);
+}
+.form-success p {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 18px;
+    color: var(--mid);
+}
 
 /* ── RESPONSIVE ── */
 /* ── TUTORIAL BUTTON ── */
@@ -740,12 +766,18 @@ form input::placeholder { color: #bbb; }
         <form id="contactForm">
             <input type="text" id="f-nombre"     placeholder="Nombre"     required>
             <input type="text" id="f-desarrollo" placeholder="Desarrollo" required>
-            <input type="tel"  id="f-whatsapp"   placeholder="Celular"    required>
-            <button type="submit" class="btn-submit" id="submitBtn">Quiero una demo</button>
+            <input type="tel"  id="f-phone"      placeholder="Celular"    required>
+            <button type="submit" class="btn-submit" id="submitBtn">Solicitar cotización</button>
         </form>
+        <div class="form-success" id="formSuccess">
+            <div class="form-success-icon">✓</div>
+            <h3 id="formSuccessTitle">Ya recibimos tu solicitud</h3>
+            <p id="formSuccessMsg">Muchas gracias, nos ponemos en contacto muy pronto.</p>
+        </div>
     </div>
 </section>
 
+<script src="https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/intlTelInput.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
 
@@ -799,8 +831,10 @@ document.addEventListener('DOMContentLoaded', function () {
             formHeading: '¿Listo para tener tu inventario siempre actualizado y tu comprador siempre informado?',
             placeholderNombre: 'Nombre',
             placeholderDesarrollo: 'Desarrollo',
-            placeholderWhatsApp: 'Celular',
+            placeholderPhone: 'Celular',
             submitBtn: 'Solicitar cotización',
+            successTitle: 'Ya recibimos tu solicitud',
+            successMsg: 'Muchas gracias, nos ponemos en contacto muy pronto.',
             popoverSite: 'Ver su sitio →',
             popoverDemo: 'Ver su demo ↑',
         },
@@ -852,8 +886,10 @@ document.addEventListener('DOMContentLoaded', function () {
             formHeading: 'Ready to keep your inventory always updated and your buyers always informed?',
             placeholderNombre: 'Name',
             placeholderDesarrollo: 'Development',
-            placeholderWhatsApp: 'Phone',
+            placeholderPhone: 'Phone',
             submitBtn: 'Get pricing',
+            successTitle: 'We got your request',
+            successMsg: 'Thank you, we will be in touch very soon.',
             popoverSite: 'Visit their site →',
             popoverDemo: 'View their demo ↑',
         },
@@ -923,8 +959,10 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('formHeading').textContent   = t.formHeading;
         document.getElementById('f-nombre').placeholder      = t.placeholderNombre;
         document.getElementById('f-desarrollo').placeholder  = t.placeholderDesarrollo;
-        document.getElementById('f-whatsapp').placeholder    = t.placeholderWhatsApp;
+        document.getElementById('f-phone').placeholder       = t.placeholderPhone;
         document.getElementById('submitBtn').textContent     = t.submitBtn;
+        document.getElementById('formSuccessTitle').textContent = t.successTitle;
+        document.getElementById('formSuccessMsg').textContent   = t.successMsg;
         document.querySelectorAll('.lang-btn').forEach(b =>
             b.classList.toggle('active', b.dataset.lang === lang));
         applyTab(activeTab);
@@ -1341,16 +1379,39 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('tutorialBtn').addEventListener('click', runTutorial);
 
-    // ── FORM → WHATSAPP ───────────────────────────────────────
-    document.getElementById('contactForm').addEventListener('submit', function (e) {
+    // ── PHONE FLAG PICKER ─────────────────────────────────────
+    const iti = window.intlTelInput(document.getElementById('f-phone'), {
+        initialCountry: 'mx',
+        preferredCountries: ['mx', 'us', 'ar', 'es'],
+        separateDialCode: true,
+        utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js',
+    });
+
+    // ── FORM → NTFY ───────────────────────────────────────────
+    document.getElementById('contactForm').addEventListener('submit', async function (e) {
         e.preventDefault();
-        const nombre     = document.getElementById('f-nombre').value.trim();
-        const desarrollo = document.getElementById('f-desarrollo').value.trim();
-        const whatsapp   = document.getElementById('f-whatsapp').value.trim();
-        const msg = encodeURIComponent(
-            `Hola, quiero información y cotización de La-La Land.\n\nNombre: ${nombre}\nDesarrollo: ${desarrollo}\nWhatsApp: ${whatsapp}`
-        );
-        window.open(`https://wa.me/5218185261819?text=${msg}`, '_blank');
+        const btn      = document.getElementById('submitBtn');
+        const nombre   = document.getElementById('f-nombre').value.trim();
+        const desarr   = document.getElementById('f-desarrollo').value.trim();
+        const phone    = iti.getNumber();
+
+        btn.disabled = true;
+
+        try {
+            await fetch('https://ntfy.sh/lalaland-webapp-clicks-track', {
+                method: 'POST',
+                headers: {
+                    'Title':    'Solicitud Cotizacion La-La Land',
+                    'Priority': 'high',
+                    'Content-Type': 'text/plain',
+                },
+                body: `${nombre} · ${desarr} · ${phone}`,
+            });
+        } catch (_) { /* fire-and-forget */ }
+
+        document.getElementById('contactForm').style.display  = 'none';
+        const s = document.getElementById('formSuccess');
+        s.style.display = 'flex';
     });
 
     // ── RESIZE ────────────────────────────────────────────────
