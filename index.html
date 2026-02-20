@@ -944,9 +944,36 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ── TUTORIAL ──────────────────────────────────────────────
+    const TUTORIAL_STEPS = 12;
     const TUTORIAL_LABELS = {
-        es: ['Ver lista de lotes →', 'Ver detalle de lote →', 'Cambiar esquema de pagos →', '↺ Reiniciar'],
-        en: ['View lot list →',      'View lot detail →',     'Change payment plan →',      '↺ Restart'],
+        es: [
+            'Ver lista de lotes →',   // 0
+            'Ordenar lista →',        // 1
+            'Comparar lotes →',       // 2
+            'Ver detalle de lote →',  // 3
+            'Cambiar esquema →',      // 4
+            'Cómo llegar →',          // 5
+            'Chatear →',              // 6
+            'Compartir →',            // 7
+            'Apartar →',              // 8
+            'Favorito →',             // 9
+            'Activar GPS →',          // 10
+            '↺ Reiniciar',            // 11
+        ],
+        en: [
+            'View lot list →',        // 0
+            'Sort list →',            // 1
+            'Compare lots →',         // 2
+            'View lot detail →',      // 3
+            'Change payment plan →',  // 4
+            'How to get there →',     // 5
+            'Chat →',                 // 6
+            'Share →',                // 7
+            'Reserve →',              // 8
+            'Favorite →',             // 9
+            'Enable GPS →',           // 10
+            '↺ Restart',              // 11
+        ],
     };
     let tutorialStep   = 0;
     let tutorialLotIdx = -1; // base index in baseLots of the highlighted available lot
@@ -967,43 +994,99 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!win) return;
 
         if (tutorialStep === 0) {
-            // Open lot list
+            // Step 0: Ver lista de lotes — open modal, scroll to first available lot
             if (win.openModal) win.openModal();
-            // Find the first available/featured lot
             const baseLots = win.baseLots;
             if (baseLots && baseLots.length) {
                 tutorialLotIdx = baseLots.findIndex(l =>
                     ['available', 'featured'].includes((l.availability || '').toLowerCase())
                 );
             }
-            // After modal finishes opening (~450ms), scroll to + highlight it
             if (tutorialLotIdx !== -1 && win.scrollToBaseIndex) {
                 setTimeout(() => win.scrollToBaseIndex(tutorialLotIdx, true), 450);
             }
 
         } else if (tutorialStep === 1) {
-            // Open detail for the same lot that was highlighted
-            if (tutorialLotIdx !== -1) {
-                const clones = (typeof win.cloneCount === 'number') ? win.cloneCount : 5;
-                if (win.showDetailViewForLot) win.showDetailViewForLot(tutorialLotIdx + clones);
-            }
+            // Step 1: Ordenar lista — sort by price
+            const sortBtn = win.document.querySelector('.unit-btn-sort');
+            if (sortBtn) sortBtn.click();
 
         } else if (tutorialStep === 2) {
-            // Switch payment scheme to 50/50
+            // Step 2: Comparar lotes — undo sort first, then enter compare mode
+            const sortBtn = win.document.querySelector('.unit-btn-sort');
+            if (sortBtn && sortBtn.classList.contains('active')) sortBtn.click();
+            const compareBtn = win.document.getElementById('compareBtn');
+            if (compareBtn) compareBtn.click();
+
+        } else if (tutorialStep === 3) {
+            // Step 3: Ver detalle de lote — exit compare, scroll to available lot, open detail
+            const compareBtn = win.document.getElementById('compareBtn');
+            if (compareBtn && win.compareMode) compareBtn.click();
+            if (tutorialLotIdx !== -1) {
+                const clones = (typeof win.cloneCount === 'number') ? win.cloneCount : 5;
+                setTimeout(() => win.scrollToBaseIndex && win.scrollToBaseIndex(tutorialLotIdx, true), 300);
+                setTimeout(() => win.showDetailViewForLot && win.showDetailViewForLot(tutorialLotIdx + clones), 700);
+            }
+
+        } else if (tutorialStep === 4) {
+            // Step 4: Cambiar esquema de pagos — switch to 50/50 plan
             const sel = win.document.getElementById('downPaymentCalc');
             if (sel) {
                 sel.value = '50';
                 sel.dispatchEvent(new win.Event('change'));
             }
 
-        } else if (tutorialStep === 3) {
-            // Reset back to map
+        } else if (tutorialStep === 5) {
+            // Step 5: Cómo llegar — click directions button
+            const visitarBtn = win.document.getElementById('visitarBtn');
+            if (visitarBtn) visitarBtn.click();
+
+        } else if (tutorialStep === 6) {
+            // Step 6: Chatear — click WhatsApp chat button
+            const chatearBtn = win.document.getElementById('chatearBtn');
+            if (chatearBtn) chatearBtn.click();
+
+        } else if (tutorialStep === 7) {
+            // Step 7: Compartir — click share button
+            const shareBtn = win.document.getElementById('shareButton');
+            if (shareBtn) shareBtn.click();
+
+        } else if (tutorialStep === 8) {
+            // Step 8: Apartar — click reserve button
+            const separarBtn = win.document.getElementById('separarBtn');
+            if (separarBtn) separarBtn.click();
+
+        } else if (tutorialStep === 9) {
+            // Step 9: Favorito — back to list, scroll to lot, click heart
+            const backBtn = win.document.getElementById('backButton');
+            if (backBtn) backBtn.click();
+            if (tutorialLotIdx !== -1) {
+                setTimeout(() => win.scrollToBaseIndex && win.scrollToBaseIndex(tutorialLotIdx, true), 400);
+                const lotName = win.baseLots && win.baseLots[tutorialLotIdx] && win.baseLots[tutorialLotIdx].name;
+                setTimeout(() => {
+                    const heartBtn = lotName
+                        ? win.document.querySelector(`.heart-btn[data-lot-name="${lotName}"]`)
+                        : win.document.querySelector('.heart-btn');
+                    if (heartBtn) heartBtn.click();
+                }, 800);
+            }
+
+        } else if (tutorialStep === 10) {
+            // Step 10: Activar GPS — close modal, trigger GPS for on-site visit
+            if (win.closeModal) win.closeModal();
+            setTimeout(() => {
+                const gpsBtn = win.document.getElementById('gpsButton');
+                if (gpsBtn) gpsBtn.click();
+            }, 400);
+
+        } else if (tutorialStep === 11) {
+            // Step 11: Reset
             if (win.closeModal) win.closeModal();
             tutorialLotIdx = -1;
             tutorialStep   = -1; // becomes 0 after +1 below
         }
 
-        tutorialStep = (tutorialStep + 1) % 4;
+        tutorialStep = (tutorialStep + 1) % TUTORIAL_STEPS;
         document.getElementById('tutorialBtn').textContent = tutorialLabel();
     }
 
