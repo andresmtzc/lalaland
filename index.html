@@ -163,7 +163,7 @@ section {
 }
 
 .demo-copy {
-    max-width: 360px;
+    max-width: 480px;
     flex-shrink: 0;
 }
 .demo-copy .eyebrow {
@@ -190,7 +190,7 @@ section {
     min-height: 56px;
 }
 
-.demo-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
+.demo-tabs { display: flex; gap: 10px; flex-wrap: nowrap; }
 
 .tab-btn {
     padding: 10px 20px;
@@ -970,35 +970,33 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ── TUTORIAL ──────────────────────────────────────────────
-    const TUTORIAL_STEPS = 12;
+    const TUTORIAL_STEPS = 11;
     const TUTORIAL_LABELS = {
         es: [
-            'Ver lista de lotes →',   // 0
+            'Empezar tour',           // 0
             'Ordenar lista →',        // 1
             'Comparar lotes →',       // 2
-            'Ver detalle de lote →',  // 3
+            'Ver detalle →',          // 3
             'Cambiar esquema →',      // 4
             'Cómo llegar →',          // 5
             'Chatear →',              // 6
-            'Compartir →',            // 7
-            'Apartar →',              // 8
-            'Favorito →',             // 9
-            'Activar GPS →',          // 10
-            '↺ Reiniciar',            // 11
+            'Favorito →',             // 7
+            'Vista 360° →',           // 8
+            'Activar GPS →',          // 9
+            '↺ Reiniciar',            // 10
         ],
         en: [
-            'View lot list →',        // 0
+            'Start tour',             // 0
             'Sort list →',            // 1
             'Compare lots →',         // 2
             'View lot detail →',      // 3
             'Change payment plan →',  // 4
             'How to get there →',     // 5
             'Chat →',                 // 6
-            'Share →',                // 7
-            'Reserve →',              // 8
-            'Favorite →',             // 9
-            'Enable GPS →',           // 10
-            '↺ Restart',              // 11
+            'Favorite →',             // 7
+            'Street view →',          // 8
+            'Enable GPS →',           // 9
+            '↺ Restart',              // 10
         ],
     };
     let tutorialStep   = 0;
@@ -1037,9 +1035,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!win) return;
 
         if (tutorialStep === 0) {
-            // Step 0: Ver lista de lotes — open modal, then scroll to first AVAILABLE lot
+            // Step 0: Empezar tour — open modal, scroll to first AVAILABLE lot
             if (win.openModal) win.openModal();
-            // Delay to let modal render and data load, then find & scroll to first available lot
             setTimeout(() => {
                 const bl = (win.baseLots && win.baseLots.length)
                     ? win.baseLots
@@ -1064,15 +1061,13 @@ document.addEventListener('DOMContentLoaded', function () {
             if (sortBtn && sortBtn.classList.contains('active')) sortBtn.click();
             const compareBtn = win.document.getElementById('compareBtn');
             if (compareBtn) compareBtn.click();
-            // Auto-select 5 available lots on map
             setTimeout(() => {
                 const bl = (win.baseLots && win.baseLots.length)
                     ? win.baseLots
                     : (win.baseLotsAll && win.baseLotsAll.length ? win.baseLotsAll : []);
-                const available = bl.filter(l =>
-                    ['available', 'featured'].includes((l.availability || '').toLowerCase())
-                );
-                const toSelect = available.slice(0, 5);
+                const toSelect = bl
+                    .filter(l => ['available', 'featured'].includes((l.availability || '').toLowerCase()))
+                    .slice(0, 5);
                 if (win.selectedLots && toSelect.length) {
                     win.selectedLots.clear();
                     toSelect.forEach(l => win.selectedLots.add(l.name));
@@ -1082,10 +1077,20 @@ document.addEventListener('DOMContentLoaded', function () {
             }, 400);
 
         } else if (tutorialStep === 3) {
-            // Step 3: Ver detalle de lote — exit compare mode, scroll to available lot, open detail
-            const compareBtn = win.document.getElementById('compareBtn');
-            if (compareBtn && win.compareMode) compareBtn.click();
-            // Re-resolve available lot index in case step 0 didn't set it
+            // Step 3: Ver detalle — FORCE compare mode off, scroll to available lot, open detail
+            if (win.compareMode) {
+                win.compareMode = false;
+                const compareBtn = win.document.getElementById('compareBtn');
+                if (compareBtn) compareBtn.classList.remove('active');
+                if (win.selectedLots) win.selectedLots.clear();
+                if (typeof win.removeEditOutlines === 'function') win.removeEditOutlines();
+                if (win.originalBaseLots) {
+                    win.baseLots = [...win.originalBaseLots];
+                    win.originalBaseLots = null;
+                    if (typeof win.updateLotsArray === 'function') win.updateLotsArray();
+                    if (typeof win.render === 'function') win.render();
+                }
+            }
             if (tutorialLotIdx === -1) {
                 const bl = (win.baseLots && win.baseLots.length)
                     ? win.baseLots
@@ -1119,17 +1124,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (chatearBtn) chatearBtn.click();
 
         } else if (tutorialStep === 7) {
-            // Step 7: Compartir — click share button
-            const shareBtn = win.document.getElementById('shareButton');
-            if (shareBtn) shareBtn.click();
-
-        } else if (tutorialStep === 8) {
-            // Step 8: Apartar — click reserve button
-            const separarBtn = win.document.getElementById('separarBtn');
-            if (separarBtn) separarBtn.click();
-
-        } else if (tutorialStep === 9) {
-            // Step 9: Favorito — back to list, scroll to lot, click heart
+            // Step 7: Favorito — back to list, scroll to available lot, click heart
             const backBtn = win.document.getElementById('backButton');
             if (backBtn) backBtn.click();
             if (tutorialLotIdx !== -1) {
@@ -1143,16 +1138,32 @@ document.addEventListener('DOMContentLoaded', function () {
                 }, 800);
             }
 
-        } else if (tutorialStep === 10) {
-            // Step 10: Activar GPS — close modal, trigger GPS for on-site visit
+        } else if (tutorialStep === 8) {
+            // Step 8: Vista 360° — close modal, click first available marble to open street view
+            if (win.closeModal) win.closeModal();
+            setTimeout(() => {
+                if (!win.allTracks || win.allTracks.size === 0) return;
+                const firstTrackId = Array.from(win.allTracks.keys())[0];
+                const track = win.allTracks.get(firstTrackId);
+                const firstMarble = track && track.marbles && track.marbles[0];
+                if (firstMarble && win.selectTrackAndThenMarble) {
+                    win.selectTrackAndThenMarble(firstTrackId, firstMarble.id);
+                }
+            }, 400);
+
+        } else if (tutorialStep === 9) {
+            // Step 9: Activar GPS — close viewer + modal if open, then trigger GPS
+            if (typeof win.deselectMarble === 'function') win.deselectMarble();
+            const viewerEl = win.document.getElementById('viewer-container');
+            if (viewerEl) viewerEl.style.display = 'none';
             if (win.closeModal) win.closeModal();
             setTimeout(() => {
                 const gpsBtn = win.document.getElementById('gpsButton');
                 if (gpsBtn) gpsBtn.click();
             }, 400);
 
-        } else if (tutorialStep === 11) {
-            // Step 11: Reset
+        } else if (tutorialStep === 10) {
+            // Step 10: Reset
             if (win.closeModal) win.closeModal();
             tutorialLotIdx = -1;
             tutorialStep   = -1; // becomes 0 after +1 below
