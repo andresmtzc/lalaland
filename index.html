@@ -948,14 +948,16 @@ document.addEventListener('DOMContentLoaded', function () {
         es: ['Ver lista de lotes →', 'Ver detalle de lote →', 'Cambiar esquema de pagos →', '↺ Reiniciar'],
         en: ['View lot list →',      'View lot detail →',     'Change payment plan →',      '↺ Restart'],
     };
-    let tutorialStep = 0;
+    let tutorialStep   = 0;
+    let tutorialLotIdx = -1; // base index in baseLots of the highlighted available lot
 
     function tutorialLabel() {
         return TUTORIAL_LABELS[lang][tutorialStep];
     }
 
     function resetTutorial() {
-        tutorialStep = 0;
+        tutorialStep   = 0;
+        tutorialLotIdx = -1;
         const btn = document.getElementById('tutorialBtn');
         if (btn) btn.textContent = tutorialLabel();
     }
@@ -967,19 +969,23 @@ document.addEventListener('DOMContentLoaded', function () {
         if (tutorialStep === 0) {
             // Open lot list
             if (win.openModal) win.openModal();
-
-        } else if (tutorialStep === 1) {
-            // Find first available lot and open its detail
+            // Find the first available/featured lot
             const baseLots = win.baseLots;
             if (baseLots && baseLots.length) {
-                const available = baseLots.find(l =>
+                tutorialLotIdx = baseLots.findIndex(l =>
                     ['available', 'featured'].includes((l.availability || '').toLowerCase())
                 );
-                if (available) {
-                    const idx      = baseLots.indexOf(available);
-                    const clones   = (typeof win.cloneCount === 'number') ? win.cloneCount : 5;
-                    if (win.showDetailViewForLot) win.showDetailViewForLot(idx + clones);
-                }
+            }
+            // After modal finishes opening (~450ms), scroll to + highlight it
+            if (tutorialLotIdx !== -1 && win.scrollToBaseIndex) {
+                setTimeout(() => win.scrollToBaseIndex(tutorialLotIdx, true), 450);
+            }
+
+        } else if (tutorialStep === 1) {
+            // Open detail for the same lot that was highlighted
+            if (tutorialLotIdx !== -1) {
+                const clones = (typeof win.cloneCount === 'number') ? win.cloneCount : 5;
+                if (win.showDetailViewForLot) win.showDetailViewForLot(tutorialLotIdx + clones);
             }
 
         } else if (tutorialStep === 2) {
@@ -993,7 +999,8 @@ document.addEventListener('DOMContentLoaded', function () {
         } else if (tutorialStep === 3) {
             // Reset back to map
             if (win.closeModal) win.closeModal();
-            tutorialStep = -1; // will become 0 below
+            tutorialLotIdx = -1;
+            tutorialStep   = -1; // becomes 0 after +1 below
         }
 
         tutorialStep = (tutorialStep + 1) % 4;
