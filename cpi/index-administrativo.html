@@ -54,6 +54,7 @@
 // ===== CLIENT CONFIG =====
 const CURRENT_CLIENT = 'cpi';
 const CONFIG = getClientConfig(CURRENT_CLIENT);
+const IS_DEMO = new URLSearchParams(location.search).has('demo');
 
 // Validate config loaded
 if (!CONFIG) {
@@ -2886,7 +2887,7 @@ ctaobserver.observe(ctaToaster, {
     }
 
     window.isLeadsOpen = true;
-    leadsIframe.src = 'lead-dashboard.html';
+    leadsIframe.src = IS_DEMO ? 'lead-dashboard-demo.html' : 'lead-dashboard.html';
     leadsOverlay.style.display = 'block';
     // Toggle icons
     const openIcon = $('#leads-open-icon');
@@ -7407,6 +7408,15 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
 
   console.log(`Updating ${affectedLots.length} lots from ${oldValue} to ${newValue}`);
 
+  if (IS_DEMO) {
+    lotData.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); lot.price_m2 = newValue; } });
+    baseLots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
+    lots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
+    showToaster(`✓ Updated ${affectedLots.length} lot${affectedLots.length > 1 ? 's' : ''} (demo)`);
+    render(); highlightCenter(); updateScrollbar();
+    return;
+  }
+
   try {
     // Update all matching lots in Supabase using bulk .in() operation
     const lotNames = affectedLots.map(l => l.name);
@@ -10197,6 +10207,7 @@ function refreshFeaturedLayer() {
 
     // Save to database in background (don't await - fire and forget with error handling)
     (async () => {
+      if (IS_DEMO) return;
       try {
         // Mark this lot to skip next realtime re-render
         if (!window.skipNextRealtimeRender) window.skipNextRealtimeRender = new Set();
