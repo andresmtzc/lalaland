@@ -466,6 +466,31 @@ form input::placeholder { color: #bbb; }
     background: var(--brand-orange);
     color: #fff;
 }
+.tutorial-wrap {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+}
+.tutorial-step-dots {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-top: 10px;
+}
+.tutorial-step-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255,132,0,0.2);
+    transition: background 0.25s, transform 0.25s;
+}
+.tutorial-step-dot.done {
+    background: rgba(255,132,0,0.5);
+}
+.tutorial-step-dot.current {
+    background: var(--brand-orange);
+    transform: scale(1.3);
+}
 
 @media (max-width: 960px) {
     .demo-section {
@@ -568,6 +593,7 @@ form input::placeholder { color: #bbb; }
         </div>
         <div class="tutorial-wrap" id="tutorialWrap">
             <button class="tutorial-btn" id="tutorialBtn">Ver lista de lotes →</button>
+            <div class="tutorial-step-dots" id="tutorialStepDots"></div>
         </div>
     </div>
 
@@ -982,11 +1008,28 @@ document.addEventListener('DOMContentLoaded', function () {
         return TUTORIAL_LABELS[lang][tutorialStep];
     }
 
+    function updateStepIndicator() {
+        const container = document.getElementById('tutorialStepDots');
+        if (!container) return;
+        // Show 11 dots (steps 0-10; step 11 is restart, excluded)
+        const total = TUTORIAL_STEPS - 1;
+        const current = tutorialStep % TUTORIAL_STEPS;
+        container.innerHTML = '';
+        for (let i = 0; i < total; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'tutorial-step-dot';
+            if (i < current) dot.classList.add('done');
+            else if (i === current) dot.classList.add('current');
+            container.appendChild(dot);
+        }
+    }
+
     function resetTutorial() {
         tutorialStep   = 0;
         tutorialLotIdx = -1;
         const btn = document.getElementById('tutorialBtn');
         if (btn) btn.textContent = tutorialLabel();
+        updateStepIndicator();
     }
 
     function runTutorial() {
@@ -994,17 +1037,21 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!win) return;
 
         if (tutorialStep === 0) {
-            // Step 0: Ver lista de lotes — open modal, scroll to first available lot
+            // Step 0: Ver lista de lotes — open modal, then scroll to first AVAILABLE lot
             if (win.openModal) win.openModal();
-            const baseLots = win.baseLots;
-            if (baseLots && baseLots.length) {
-                tutorialLotIdx = baseLots.findIndex(l =>
+            // Delay to let modal render and data load, then find & scroll to first available lot
+            setTimeout(() => {
+                const bl = (win.baseLots && win.baseLots.length)
+                    ? win.baseLots
+                    : (win.baseLotsAll && win.baseLotsAll.length ? win.baseLotsAll : []);
+                const idx = bl.findIndex(l =>
                     ['available', 'featured'].includes((l.availability || '').toLowerCase())
                 );
-            }
-            if (tutorialLotIdx !== -1 && win.scrollToBaseIndex) {
-                setTimeout(() => win.scrollToBaseIndex(tutorialLotIdx, true), 450);
-            }
+                if (idx !== -1) {
+                    tutorialLotIdx = idx;
+                    if (win.scrollToBaseIndex) win.scrollToBaseIndex(idx, true);
+                }
+            }, 600);
 
         } else if (tutorialStep === 1) {
             // Step 1: Ordenar lista — sort by price
@@ -1012,20 +1059,45 @@ document.addEventListener('DOMContentLoaded', function () {
             if (sortBtn) sortBtn.click();
 
         } else if (tutorialStep === 2) {
-            // Step 2: Comparar lotes — undo sort first, then enter compare mode
+            // Step 2: Comparar lotes — undo sort, enter compare mode, auto-select 5 available lots
             const sortBtn = win.document.querySelector('.unit-btn-sort');
             if (sortBtn && sortBtn.classList.contains('active')) sortBtn.click();
             const compareBtn = win.document.getElementById('compareBtn');
             if (compareBtn) compareBtn.click();
+            // Auto-select 5 available lots on map
+            setTimeout(() => {
+                const bl = (win.baseLots && win.baseLots.length)
+                    ? win.baseLots
+                    : (win.baseLotsAll && win.baseLotsAll.length ? win.baseLotsAll : []);
+                const available = bl.filter(l =>
+                    ['available', 'featured'].includes((l.availability || '').toLowerCase())
+                );
+                const toSelect = available.slice(0, 5);
+                if (win.selectedLots && toSelect.length) {
+                    win.selectedLots.clear();
+                    toSelect.forEach(l => win.selectedLots.add(l.name));
+                    if (typeof win.updateEditOutlines === 'function') win.updateEditOutlines();
+                    if (typeof win.updateModalList === 'function') win.updateModalList();
+                }
+            }, 400);
 
         } else if (tutorialStep === 3) {
-            // Step 3: Ver detalle de lote — exit compare, scroll to available lot, open detail
+            // Step 3: Ver detalle de lote — exit compare mode, scroll to available lot, open detail
             const compareBtn = win.document.getElementById('compareBtn');
             if (compareBtn && win.compareMode) compareBtn.click();
+            // Re-resolve available lot index in case step 0 didn't set it
+            if (tutorialLotIdx === -1) {
+                const bl = (win.baseLots && win.baseLots.length)
+                    ? win.baseLots
+                    : (win.baseLotsAll && win.baseLotsAll.length ? win.baseLotsAll : []);
+                tutorialLotIdx = bl.findIndex(l =>
+                    ['available', 'featured'].includes((l.availability || '').toLowerCase())
+                );
+            }
             if (tutorialLotIdx !== -1) {
                 const clones = (typeof win.cloneCount === 'number') ? win.cloneCount : 5;
-                setTimeout(() => win.scrollToBaseIndex && win.scrollToBaseIndex(tutorialLotIdx, true), 300);
-                setTimeout(() => win.showDetailViewForLot && win.showDetailViewForLot(tutorialLotIdx + clones), 700);
+                setTimeout(() => win.scrollToBaseIndex && win.scrollToBaseIndex(tutorialLotIdx, true), 400);
+                setTimeout(() => win.showDetailViewForLot && win.showDetailViewForLot(tutorialLotIdx + clones), 800);
             }
 
         } else if (tutorialStep === 4) {
@@ -1088,6 +1160,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         tutorialStep = (tutorialStep + 1) % TUTORIAL_STEPS;
         document.getElementById('tutorialBtn').textContent = tutorialLabel();
+        updateStepIndicator();
     }
 
     document.getElementById('tutorialBtn').addEventListener('click', runTutorial);
@@ -1112,7 +1185,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ── INIT ──────────────────────────────────────────────────
-    const init = () => { applyLang(); scalePhone(); updateProgress(); };
+    const init = () => { applyLang(); scalePhone(); updateProgress(); updateStepIndicator(); };
     if (document.fonts && document.fonts.ready) {
         document.fonts.ready.then(init);
     } else {
