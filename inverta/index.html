@@ -2336,7 +2336,7 @@ ctaobserver.observe(ctaToaster, {
       // Look up the token
       const { data: tokenData, error: tokenError } = await window.supabaseClient
         .from('lead_tokens')
-        .select('id, lead_id, claimed, leads(id, phone, name, last_name, is_agent)')
+        .select('id, lead_id, claimed, leads(id, phone, name, last_name, is_agent, is_demo)')
         .eq('token', urlToken)
         .single();
 
@@ -2347,27 +2347,31 @@ ctaobserver.observe(ctaToaster, {
         return;
       }
 
-      if (tokenData.claimed) {
-        // Token already claimed by another device
-        console.error('Token already claimed:', urlToken);
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=claimed';
-        return;
+      const isDemo = tokenData.leads?.is_demo === true;
+
+      if (!isDemo) {
+        if (tokenData.claimed) {
+          // Token already claimed by another device
+          console.error('Token already claimed:', urlToken);
+          window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=claimed';
+          return;
+        }
+
+        // Claim the token
+        await window.supabaseClient
+          .from('lead_tokens')
+          .update({ claimed: true, claimed_at: new Date().toISOString() })
+          .eq('id', tokenData.id);
+
+        // Update lead's last_seen_at
+        await window.supabaseClient
+          .from('leads')
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq('id', tokenData.lead_id);
+
+        // Save session cookie (365 days)
+        setCookie('lead_session_' + CURRENT_CLIENT, urlToken, 365);
       }
-
-      // Claim the token
-      await window.supabaseClient
-        .from('lead_tokens')
-        .update({ claimed: true, claimed_at: new Date().toISOString() })
-        .eq('id', tokenData.id);
-
-      // Update lead's last_seen_at
-      await window.supabaseClient
-        .from('leads')
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq('id', tokenData.lead_id);
-
-      // Save session cookie (365 days)
-      setCookie('lead_session_' + CURRENT_CLIENT, urlToken, 365);
 
       // Store lead info globally
       window.currentLead = {
@@ -2376,13 +2380,22 @@ ctaobserver.observe(ctaToaster, {
         name: tokenData.leads?.name,
         lastName: tokenData.leads?.last_name,
         token: urlToken,
-        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT)
+        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT),
+        isDemo
       };
 
       // Set global agent flag
       window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
 
-      console.log('✅ Lead authenticated via token:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
+      console.log('✅ Lead authenticated via token:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '', isDemo ? '(DEMO)' : '');
+
+      // Demo: clear saved lots so each session starts fresh
+      if (isDemo) {
+        await window.supabaseClient
+          .from('lead_saved_lots')
+          .delete()
+          .eq('lead_id', tokenData.lead_id);
+      }
 
       // Start session tracking
       await startLeadSession();
