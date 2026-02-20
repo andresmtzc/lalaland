@@ -441,6 +441,32 @@ form input::placeholder { color: #bbb; }
 }
 
 /* ── RESPONSIVE ── */
+/* ── TUTORIAL BUTTON ── */
+.tutorial-wrap {
+    display: none;
+    justify-content: center;
+    margin-top: 20px;
+}
+.tutorial-wrap.visible { display: flex; }
+.tutorial-btn {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 10px 24px;
+    border: 2px solid var(--brand-orange);
+    color: var(--brand-orange);
+    background: transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.tutorial-btn:hover {
+    background: var(--brand-orange);
+    color: #fff;
+}
+
 @media (max-width: 960px) {
     .demo-section {
         flex-direction: column;
@@ -464,6 +490,8 @@ form input::placeholder { color: #bbb; }
     .hero h1 { text-shadow: 3px 3px 0 var(--brand-orange); }
     .clients-logos { grid-template-columns: 1fr; gap: 32px; }
     .progress-track { display: none; }
+    .demo-tabs { gap: 6px; flex-wrap: nowrap; }
+    .tab-btn { padding: 5px 8px; font-size: 11px; letter-spacing: 0; }
 }
 </style>
 
@@ -537,6 +565,9 @@ form input::placeholder { color: #bbb; }
                     allow="geolocation"
                 ></iframe>
             </div>
+        </div>
+        <div class="tutorial-wrap" id="tutorialWrap">
+            <button class="tutorial-btn" id="tutorialBtn">Ver lista de lotes →</button>
         </div>
     </div>
 
@@ -803,6 +834,13 @@ document.addEventListener('DOMContentLoaded', function () {
             b.classList.toggle('active', b.dataset.tab === tab);
             b.textContent = T[lang].tabs[b.dataset.tab].label;
         });
+        // Show tutorial only on buyer tab
+        const tutWrap = document.getElementById('tutorialWrap');
+        if (tutWrap) {
+            const show = tab === 'comprador';
+            tutWrap.classList.toggle('visible', show);
+            if (show) resetTutorial();
+        }
     }
 
     // ── HERO SIZING ───────────────────────────────────────────
@@ -904,6 +942,65 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => applyTab(btn.dataset.tab));
     });
+
+    // ── TUTORIAL ──────────────────────────────────────────────
+    const TUTORIAL_LABELS = {
+        es: ['Ver lista de lotes →', 'Ver detalle de lote →', 'Cambiar esquema de pagos →', '↺ Reiniciar'],
+        en: ['View lot list →',      'View lot detail →',     'Change payment plan →',      '↺ Restart'],
+    };
+    let tutorialStep = 0;
+
+    function tutorialLabel() {
+        return TUTORIAL_LABELS[lang][tutorialStep];
+    }
+
+    function resetTutorial() {
+        tutorialStep = 0;
+        const btn = document.getElementById('tutorialBtn');
+        if (btn) btn.textContent = tutorialLabel();
+    }
+
+    function runTutorial() {
+        const win = document.getElementById('demoIframe').contentWindow;
+        if (!win) return;
+
+        if (tutorialStep === 0) {
+            // Open lot list
+            if (win.openModal) win.openModal();
+
+        } else if (tutorialStep === 1) {
+            // Find first available lot and open its detail
+            const baseLots = win.baseLots;
+            if (baseLots && baseLots.length) {
+                const available = baseLots.find(l =>
+                    ['available', 'featured'].includes((l.availability || '').toLowerCase())
+                );
+                if (available) {
+                    const idx      = baseLots.indexOf(available);
+                    const clones   = (typeof win.cloneCount === 'number') ? win.cloneCount : 5;
+                    if (win.showDetailViewForLot) win.showDetailViewForLot(idx + clones);
+                }
+            }
+
+        } else if (tutorialStep === 2) {
+            // Switch payment scheme to 50/50
+            const sel = win.document.getElementById('downPaymentCalc');
+            if (sel) {
+                sel.value = '50';
+                sel.dispatchEvent(new win.Event('change'));
+            }
+
+        } else if (tutorialStep === 3) {
+            // Reset back to map
+            if (win.closeModal) win.closeModal();
+            tutorialStep = -1; // will become 0 below
+        }
+
+        tutorialStep = (tutorialStep + 1) % 4;
+        document.getElementById('tutorialBtn').textContent = tutorialLabel();
+    }
+
+    document.getElementById('tutorialBtn').addEventListener('click', runTutorial);
 
     // ── FORM → WHATSAPP ───────────────────────────────────────
     document.getElementById('contactForm').addEventListener('submit', function (e) {
