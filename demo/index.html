@@ -3595,7 +3595,6 @@ let baseLots = [];
 let lots = [];
 let isDataLoaded = false;
 let previousMapView = null; // for "Back" button inside modal
-let preModalView = null;    // for closing modal completely
 let isDragging = false;
 let isScrollbarDragging = false;
 let dragStartY = 0;
@@ -3782,16 +3781,6 @@ function setupLotClickHandlers() {
 
       // Original code for when detail view is NOT open
       if (status === 'featured' || status === 'available') {
-        // Save map state
-        if (map && map.getCenter) {
-          preModalView = {
-            center: map.getCenter().toArray(),
-            zoom: map.getZoom(),
-            bearing: map.getBearing(),
-            pitch: map.getPitch()
-          };
-        }
-
         const lotNumber = lot.number;
         const lotMapIndex = lotData.findIndex(l => extractLotNumber(l.name) === lotNumber);
         
@@ -5381,7 +5370,10 @@ function closeModal() {
 
   const modal = document.getElementById('lotModal');
   if (!modal) return;
-  
+
+  // 🟢 CHECK if it's pin-mode BEFORE removing the class
+  const wasPinMode = modal.classList.contains('pin-mode');
+
   const wrapper = document.querySelector('.modal-content-wrapper');
   const modalInfo = document.getElementById('modalInfo');
   const customScrollbar = document.getElementById('customScrollbar');
@@ -5392,7 +5384,7 @@ function closeModal() {
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const plusBtn = document.querySelector('.plus-button');
   const bottomPlus = document.querySelector('.bottom-plus-button');
-  
+
   // --- 1) Kill special modes / embeds
   modal.classList.remove('info-mode', 'pin-mode', 'expanded', 'lot-mode');
   hideCalendlyEmbed();
@@ -5501,28 +5493,49 @@ function closeModal() {
   try { clampCooldown = false; } catch {}
   try { animatedFeaturedLots?.clear?.(); } catch {}
   
-  // --- 6) Restore map view (undo panBy offset + preModalView fly)
-  if (preModalView && map) {
-    map.flyTo({
-      center: preModalView.center,
-      zoom: preModalView.zoom,
-      bearing: preModalView.bearing,
-      pitch: preModalView.pitch,
-      speed: 1.2,
-      curve: 1.5
-    });
-    
-    map.once('moveend', () => {
-      if (lastOffset) {
-        map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
-        lastOffset = [0, 0];
-      }
-    });
-    
-    preModalView = null;
-  } else if (map && lastOffset) {
-    map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 800 });
-    lastOffset = [0, 0];
+  // --- 6) Restore map view
+
+  // Clear lot from URL
+  clearLotURL();
+
+  // Hide 360 viewer if open
+  const viewerContainer = document.getElementById('viewer-container');
+  if (viewerContainer) {
+    viewerContainer.style.display = 'none';
+  }
+
+  // 🟢 When closing pin modal, DON'T clear fracc - keep it set to pin location
+  // 🟢 When closing lot modal, CLEAR fracc to prevent stale selection
+  if (!wasPinMode && modal) {
+    // Only clear fracc when closing lot modal (not pin modal)
+    modal.dataset.fracc = '';
+
+    // Hide community logo when modal closes
+    if (typeof window.updateCommunityLogo === 'function') {
+      window.updateCommunityLogo();
+    }
+  }
+
+  if (wasPinMode) {
+    // For pin modal, just undo the panBy offset (don't fly anywhere)
+    if (map && lastOffset) {
+      map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 400 });
+      lastOffset = [0, 0];
+    }
+  } else {
+    // For lot modal, fly to fracc center
+    const fraccCenter = getCurrentFraccCenter();
+    const initialZoom = getCurrentFraccZoom();
+    if (map) {
+      map.flyTo({
+        center: fraccCenter,
+        zoom: initialZoom,
+        bearing: 0,
+        pitch: 0,
+        speed: 1.2,
+        curve: 1.5
+      });
+    }
   }
   
 // --- 7) Close modal (let CSS transition run)
@@ -6155,14 +6168,6 @@ PS.openPinInModal = async function (pin) {
 
   if (!modal.classList.contains('show')) {
     try {
-      if (window.map) {
-        window.preModalView = {
-          center: map.getCenter().toArray(),
-          zoom: map.getZoom(),
-          bearing: map.getBearing(),
-          pitch: map.getPitch()
-        };
-      }
       modal.classList.add('show');
       modal.style.display = 'block';
       if (typeof window.adjustMapForModal === 'function') adjustMapForModal();
@@ -7918,159 +7923,6 @@ function getCurrentFraccZoom() {
       window.history.replaceState(null, '', url);
     }
 
-    // 🟢 FIX: PROPER FRACC-AWARE CLOSE BEHAVIOR
-function closeModalWithZoomReset() {
-  // Don't close modal if POI mode is active
-  if (window.poiModeActive) return;
-
-  const modal = document.getElementById('lotModal');
-  if (!modal) return;
-
-  // 🟢 Exit compare mode if active - SAME LOGIC AS closeModal()
-  if (window.compareMode) {
-    const compareBtn = document.getElementById('compareBtn');
-    if (compareBtn) {
-      compareBtn.classList.remove('active');
-    }
-    window.compareMode = false;
-    window.selectedLots.clear();
-    if (typeof removeEditOutlines === 'function') {
-      removeEditOutlines();
-    }
-    console.log('Compare mode OFF (modal closed with zoom reset)');
-
-    // 🟢 RESTORE from backup BEFORE clearing it
-    if (window.originalBaseLots) {
-      baseLots = [...window.originalBaseLots];
-      window.originalBaseLots = null;
-    }
-  }
-
-  // 🔥 Hide 360 viewer when closing modal
-  const viewerContainer = document.getElementById('viewer-container');
-  if (viewerContainer) {
-    viewerContainer.style.display = 'none';
-  }
-  
-  // Clear URL first
-  clearLotURL();
-  
-  // Remove side length labels
-  removeSideLengthLabels();
-  
-  // 🟢 GET THE CORRECT FRACC CENTER BASED ON CURRENT VIEW
-  const fraccCenter = getCurrentFraccCenter();
-  const initialZoom = getCurrentFraccZoom();
-  
-  if (map) {
-    map.flyTo({
-      center: fraccCenter,
-      zoom: initialZoom,
-      bearing: 0,
-      pitch: 0,
-      speed: 1.2,
-      curve: 1.5
-    });
-  }
-  
-  // Reset modal state
-  const wrapper = document.querySelector('.modal-content-wrapper');
-  const lotDetails = document.getElementById('lotDetails');
-  const backButton = document.getElementById('backButton');
-  const headerLotNumber = document.getElementById('headerLotNumber');
-  const plusBtn = document.querySelector('.plus-button');
-  const bottomPlus = document.querySelector('.bottom-plus-button');
-  
-  if (wrapper) wrapper.classList.remove('show-details');
-  if (lotDetails) {
-    lotDetails.classList.remove('active');
-    lotDetails.style.display = 'block';
-    lotDetails.innerHTML = '';
-  }
-  if (backButton) backButton.style.display = 'none';
-  if (headerLotNumber) headerLotNumber.style.display = 'none';
-  if (plusBtn) plusBtn.style.display = 'none';
-  if (bottomPlus) bottomPlus.style.display = 'none';
-  
-  // Hide calendly if open
-  const calendlyEl = document.getElementById('calendlyEmbed');
-  if (calendlyEl) calendlyEl.style.display = 'none';
-
-  // Hide share button when closing modal
-  const shareBtn = document.getElementById('shareButton');
-  if (shareBtn) shareBtn.style.display = 'none';
-
-  // Hide global dashboard button when closing modal and remove active state
-  const globalBtn = document.getElementById('globalDashboardButton');
-  if (globalBtn) {
-    globalBtn.classList.remove('active');  // Remove underline
-    globalBtn.style.display = 'none';
-  }
-
-  // Reset dashboard button state when closing modal
-  const dashboardBtn = document.getElementById('dashboard-btn');
-  const eyeOpen = document.getElementById('eye-open-icon');
-  const eyeClosed = document.getElementById('eye-closed-icon');
-  if (dashboardBtn) {
-    console.log('closeModalWithZoomReset: Resetting dashboard button state');
-    dashboardBtn.classList.remove('active');
-    if (eyeOpen) eyeOpen.style.display = 'none';  // Hide open eye
-    if (eyeClosed) eyeClosed.style.display = 'inline-block';  // Show closed eye (dashboard hidden)
-  }
-  window.isDashboardOpen = false;
-
-// Close modal with animation
-modal.classList.remove('show', 'info-mode', 'pin-mode', 'expanded', 'lot-mode');
-
-// 🔥 Clear immediately when show class is removed
-if (map && map.getSource('lots-final') && window.hoveredId !== null) {
-  try {
-    map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
-  } catch {}
-}
-
-setTimeout(() => {
-  modal.style.display = 'none';
-
-  // 🟢 SHOW FLOATING BUTTONS AGAIN
-  document.getElementById('communitySearchBtn')?.classList.remove('hide');
-  document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
-
-  // 🔥 Clear hover states AFTER modal is fully closed
-  if (map && map.getSource('lots-final')) {
-    try {
-      if (window.hoveredId !== null) {
-        map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
-      }
-
-      lotData.forEach((lot, index) => {
-        try {
-          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
-        } catch {}
-      });
-
-      window.hoveredId = null;
-    } catch {}
-  }
-  
-  // 🔥 Clear one more time after another frame
-  requestAnimationFrame(() => {
-    if (map && map.getSource('lots-final')) {
-      lotData.forEach((lot, index) => {
-        try {
-          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
-        } catch {}
-      });
-    }
-  });
-}, 50);
-  
-  // Reset internal states
-  isDetailOpen = false;
-  scrollHandlerAttached = true;
-}
-
-
     // Handle URL changes - for browser navigation AFTER initial load
     function handleURLChange() {
       const lotName = getLotFromURL();
@@ -8163,16 +8015,13 @@ setTimeout(() => {
           }
         }
       } else {
-        // No lot in URL - close modal with zoom reset
-        closeModalWithZoomReset();
+        // No lot in URL - close modal
+        closeModal();
       }
     }
 
     // Listen for URL changes
     window.addEventListener('popstate', handleURLChange);
-
-    // 🟢 REPLACE THE CLOSE MODAL FUNCTION
-    window.closeModal = closeModalWithZoomReset;
 
     // Initialize - open lot from URL if present
     openInitialLotModal();
