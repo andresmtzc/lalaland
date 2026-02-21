@@ -40,7 +40,7 @@ const CLIENT_CONFIGS = {
         detailZoom: 18.8,           // must be >= minZoomForDimensions for dimensions to show
         minZoomForDimensions: 18.8, // minimum zoom to show lot dimension labels
       },
-      'amani-aqua': {
+      'aqua': {
         url: 'https://la-la.land/agora/aqua.png',
         cardLogoUrl: 'https://la-la.land/agora/puntolomas_black.png',
         communities: ['amani-aqua'],
@@ -73,7 +73,7 @@ const CLIENT_CONFIGS = {
           { name: '30/70-3M', downPayment: 30, installments: { count: 3,  pct: 70 }, escrituracion: 0, discount: 10 }
         ]
       },
-      'amani-aqua': {
+      'aqua': {
         communities: ['amani-aqua'],
         plans: [
           { name: '20/80', downPayment: 20, installments: { count: 12, pct: 80 }, escrituracion: 0,  discount: 0 },
@@ -149,7 +149,7 @@ const CLIENT_CONFIGS = {
         framesBase: 'https://andresmtzc.github.io/geepeeX/pietra/frames/'
       },
 
-      'amani-aqua': {
+      'aqua': {
         id: 'amani-aqua',
         name: 'Amani Aqua',
         displayName: 'Amani Aqua',
