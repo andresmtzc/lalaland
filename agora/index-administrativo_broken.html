@@ -50,7 +50,7 @@
 <script src="client-config.js"></script>
 <script>
 // ===== CLIENT CONFIG =====
-const CURRENT_CLIENT = 'inverta';
+const CURRENT_CLIENT = 'agora';
 const CONFIG = getClientConfig(CURRENT_CLIENT);
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 
@@ -189,7 +189,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <div class="logoinv-wrapper">
    <a href="#" onclick="event.preventDefault(); window.location.reload(true);" title="Reload Site">
-  <img id="mainClientLogo" src="" alt=""></a>
+  <img id="mainClientLogo" src="" alt="" style="height:40px;"></a>
 </div>
 <script>
   // Set main logo from config
@@ -207,7 +207,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 </script>
 
 <!-- Conditional community logo -->
-<div class="community-logo-wrapper" id="communityLogo">
+<div class="community-logo-wrapper" id="communityLogo" style="top:70px;">
   <img id="communityLogoImg" src="" alt="Community Logo">
 </div>
 <script>
@@ -723,7 +723,7 @@ function initThreeJSViewer() {
     powerPreference: 'high-performance'
   });
   
-  const dpr = Math.min(window.devicePixelRatio, 2);
+const dpr = Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height, false);
   
@@ -1780,16 +1780,15 @@ async function load360Images() {
 }
   
 async function createImagesFromFramesFolder() {
-  const track = getCurrentTrack();
-  const framesBase = track.framesBase || getFramesBase();
   currentImages = [];
-  currentImageIndex = -1; 
-  if (!track) { 
-    showToaster('No track selected'); 
-    return; 
+  currentImageIndex = -1;
+  const track = getCurrentTrack();
+  if (!track) {
+    showToaster('No track selected');
+    return;
   }
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
-    if (!gpxName) {
+  if (!gpxName) {
     showToaster('GPX name missing');
     return;
   }
@@ -1797,6 +1796,10 @@ async function createImagesFromFramesFolder() {
   const gpxNameLC = gpxName.toLowerCase();
   const prefixHyphen = gpxNameLC + '-';
   const prefixUnderscore = gpxNameLC + '_';
+
+  // Use the track's own framesBase (set at GPX load time), fall back to dynamic lookup
+  const framesBase = track.framesBase || getFramesBase();
+
   let list;
   try {
     const res = await fetch(framesBase + 'index.json', { cache: 'no-store' });
@@ -1820,7 +1823,7 @@ async function createImagesFromFramesFolder() {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   if (!matches.length) {
     showToaster(`No frames for "${gpxName}"`);
-    return; 
+    return;
   }
 
   currentImages = matches.map((filename, i) => ({
@@ -2032,7 +2035,7 @@ function close360ViewerInModal(targetBaseIndex = null) {
       const scrollTarget = (targetBaseIndex !== null && typeof targetBaseIndex === 'number') 
         ? targetBaseIndex 
         : (typeof targetBaseIndex === 'string' 
-          ? baseLots.findIndex(l => l.number === targetBaseIndex)
+          ? baseLots.findIndex(l => l.name === targetBaseIndex)
           : lastOpenedBaseIndex);
           
       if (typeof scrollTarget === 'number' && scrollTarget !== -1) {
@@ -3995,9 +3998,9 @@ map.on('click', 'lots-final-click', (e) => {
     let targetBaseIndex = null;
     if (lot) {
       targetBaseIndex = baseLots.findIndex(l => l.name === lot.name);
-      // If baseLots is empty (data not loaded yet), store the lot number for later
+      // If baseLots is empty (data not loaded yet), store the lot name for later
       if (targetBaseIndex === -1 && !isDataLoaded) {
-        targetBaseIndex = extractLotNumber(lot.name);
+        targetBaseIndex = lot.name;
       }
     }
     
@@ -5076,7 +5079,7 @@ function animateLots(map, cb) {
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
-    // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
+    // Fade in final lots - sold lots get partial opacity during transition
     map.setPaintProperty("lots-final-available", "line-opacity", CONFIG.lotStyles.available.outline.opacity);
     map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // ⬅️ partial for final layer during transition
     if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
@@ -5095,7 +5098,7 @@ function animateLots(map, cb) {
 
       // AFTER group layers fade out, update final sold layer to full 0.49
       setTimeout(() => {
-        map.setPaintProperty("lots-final-sold", "line-opacity", 0.49); // ⬅️ UPDATE TO FULL 0.49
+        map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity); // ⬅️ UPDATE TO FULL opacity
          
         // Remove all lot groups
         groupArr.forEach((_, i) => {
@@ -5444,9 +5447,9 @@ function addFeaturedLotsLayer(map, onComplete) {
     type: 'line',
     source: 'featured-lots',
     paint: {
-      'line-color': CONFIG.colors.primary,
-      'line-width': 2,
-      'line-opacity': 1
+      'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+      'line-width': CONFIG.lotStyles.featured.outline.width,
+      'line-opacity': CONFIG.lotStyles.featured.outline.opacity
     }
   }, 'lots-final-click');  
   
@@ -5462,6 +5465,9 @@ function startPolygonPulse(map, onComplete) {
   let t = 0;
   let initialPulseCompleted = false;
   const PULSE_DURATION = 2.0; // seconds
+  const _pulseOp = CONFIG.lotStyles.featured.fill.opacity;
+  const _pulseBase = Array.isArray(_pulseOp) ? _pulseOp[0] : _pulseOp;
+  const _pulseAmp  = Array.isArray(_pulseOp) ? _pulseOp[1] : 0;
 
   function frame() {
     t += 0.05; // SLOWER: was 0.05, now 0.02 for slower animation
@@ -5473,7 +5479,7 @@ function startPolygonPulse(map, onComplete) {
       ...source._data,
       features: source._data.features.map(f => {
         const phase = f.properties?.phase ?? 0;
-        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        const opacity = _pulseBase + Math.sin(t + phase) * _pulseAmp;
         return {
           ...f,
           properties: {
@@ -5674,7 +5680,6 @@ let baseLots = [];
 let lots = [];
 let isDataLoaded = false;
 let previousMapView = null; // for "Back" button inside modal
-let preModalView = null;    // for closing modal completely
 let isDragging = false;
 let isScrollbarDragging = false;
 let dragStartY = 0;
@@ -5842,16 +5847,6 @@ function setupLotClickHandlers() {
 
       // Original code for when detail view is NOT open
       if (status === 'featured' || status === 'available') {
-        // Save map state
-        if (map && map.getCenter) {
-          preModalView = {
-            center: map.getCenter().toArray(),
-            zoom: map.getZoom(),
-            bearing: map.getBearing(),
-            pitch: map.getPitch()
-          };
-        }
-
         const lotNumber = lot.number;
         // 🔥 FIX: Match by BOTH number AND fraccionamiento to avoid selecting wrong lot
         const lotMapIndex = lotData.findIndex(l =>
@@ -5938,7 +5933,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   // Update community logo for this lot's fraccionamiento
   modalEl.dataset.fracc = lot.fraccionamiento;
-  currentFraccionamiento = lot.fraccionamiento;
+  currentFraccionamiento = lot.fraccionamiento; // Update for dynamic frames loading
   if (window.updateCommunityLogo) window.updateCommunityLogo();
 
   // Store lot number so chatear button can include it in the WhatsApp message
@@ -6038,29 +6033,18 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     ? getCommunityPricing(CURRENT_CLIENT, lot.fraccionamiento)
     : null;
 
-  // Build down payment options HTML
-  let downPaymentOptionsHtml = '';
-  if (pricingConfig) {
-    const { min, max, step } = pricingConfig.downPayment;
-    for (let pct = min; pct <= max; pct += step) {
-      downPaymentOptionsHtml += `<option value="${pct}">${pct}%</option>`;
-    }
-  }
-
-  // Build installments options HTML and INTEREST_RATES object
-  let installmentsOptionsHtml = '';
-  const INTEREST_RATES = {};
-  if (pricingConfig) {
-    const terms = pricingConfig.terms;
-    terms.forEach((term, idx) => {
-      const selected = idx === terms.length - 1 ? ' selected' : '';
-      installmentsOptionsHtml += `<option value="${term.months}"${selected}>${term.months}</option>`;
-      INTEREST_RATES[term.months] = term.interest / 100;
+  // Build plan options HTML (plan-based pricing)
+  let planOptionsHtml = '';
+  if (pricingConfig && pricingConfig.plans) {
+    pricingConfig.plans.forEach((plan, idx) => {
+      planOptionsHtml += `<option value="${idx}">${plan.name}</option>`;
     });
   }
 
-  // Default interest rate (last term's rate or 0)
-  const defaultInterestRate = pricingConfig ? pricingConfig.terms[pricingConfig.terms.length - 1].interest : 0;
+  // Get first plan defaults for initial display
+  const defaultPlan = pricingConfig && pricingConfig.plans ? pricingConfig.plans[0] : null;
+  const defaultDiscountedPrice = defaultPlan ? totalPrice * (1 - defaultPlan.discount / 100) : totalPrice;
+  const defaultEnganche = defaultPlan ? defaultDiscountedPrice * (defaultPlan.downPayment / 100) : 0;
 
   detailRow.innerHTML = `
   <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
@@ -6081,48 +6065,46 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     </div>
 
     <!-- Big total price with more space above -->
-    <div style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
+    <div id="bigTotalPrice" style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
       $${totalPriceFormatted}<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>
     </div>
     <div style="font-size: 13px; color: ${CONFIG.colors.textLight}; text-align: right; width: 100%; margin-top: -8px;">
-      Precio de contado
+      Precio del plan
     </div>
     <div style="width: 100%; height: 1px; background: ${CONFIG.colors.grayLight}; margin: 0px;"></div>
 
-    ${pricingConfig ? `
-    <!-- Financing Calculator -->
+    ${pricingConfig && pricingConfig.plans ? `
+    <!-- Plan-based Financing -->
     <div style="margin-top: 6px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; position: relative;">
-      <!-- Row 1: Down payment % + Enganche amount -->
+      <!-- Row 1: Plan dropdown + Enganche amount -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="downPaymentCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${downPaymentOptionsHtml}
+        <div style="width: 110px;">
+          <select id="downPaymentCalc" style="width: 110px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
+            ${planOptionsHtml}
           </select>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * (pricingConfig.downPayment.min / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${defaultEnganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       </div>
 
-      <!-- Row 2: Months + Monthly payment -->
+      <!-- Row 2: Discount display + Mensualidades -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="installmentsCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${installmentsOptionsHtml}
-          </select>
+        <div style="width: 110px; text-align: center; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight};">
+          <span id="discountDisplay">${defaultPlan.discount}%</span>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
+          <span id="paymentLabel">${defaultPlan.installments.count} Meses</span>: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span id="paymentSuffix" style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
         </div>
       </div>
 
-      <!-- Tasa and Precio financiado on same line -->
+      <!-- Row 3: Descuento label + Escrituración (conditional) -->
       <div style="width: 100%; display: flex; justify-content: space-between; margin-top: -4px; font-size: 13px; color: ${CONFIG.colors.textLight};">
-        <div style="width: 80px; text-align: center;">
-          <span>Tasa <span id="financingRate">${defaultInterestRate}</span>%</span>
+        <div style="width: 110px; text-align: center;" class="descuento-label">
+          <span>Descuento</span>
         </div>
-        <div style="text-align: right;">
-          <span>Financiado: <span id="financingTotalPrice">$0.00</span></span>
+        <div style="text-align: right;" id="financingInfo">
+          <span>Escrituración: <span id="financingTotalPrice">$0.00</span></span>
         </div>
       </div>
     </div>
@@ -6139,59 +6121,70 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   detailContainer.appendChild(detailRow);
 
-  // Initialize calculator (only if pricing config exists)
-  if (pricingConfig) {
+  // Initialize plan-based calculator (only if pricing config with plans exists)
+  if (pricingConfig && pricingConfig.plans) {
     const totalPriceNum = totalPrice;
+    const plans = pricingConfig.plans;
 
-    function calculateMonthlyPayment(principal, annualRate, months) {
-      const monthlyRate = annualRate / 12;
-      if (monthlyRate === 0) return principal / months;
-      const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-      const denominator = Math.pow(1 + monthlyRate, months) - 1;
-      return numerator / denominator;
+    function updatePlanCalculations() {
+      const planIndex = parseInt(document.getElementById('downPaymentCalc').value);
+      const plan = plans[planIndex];
+      if (!plan) return;
+
+      const discountedPrice = totalPriceNum * (1 - plan.discount / 100);
+      const enganche = discountedPrice * (plan.downPayment / 100);
+      const installmentTotal = discountedPrice * (plan.installments.pct / 100);
+      const mensualidad = installmentTotal / plan.installments.count;
+      const escrituracion = discountedPrice * (plan.escrituracion / 100);
+
+      // Update enganche
+      document.getElementById('downPaymentAmount').textContent = '$' + enganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      // Update discount display — hide when 0%
+      const discountEl = document.getElementById('discountDisplay');
+      discountEl.textContent = plan.discount + '%';
+      discountEl.parentElement.style.visibility = plan.discount > 0 ? 'visible' : 'hidden';
+
+      // Update mensualidades
+      document.getElementById('paymentLabel').textContent = plan.installments.count + ' Meses';
+      document.getElementById('monthlyPayment').textContent = '$' + mensualidad.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('paymentSuffix').textContent = '/MES';
+
+      // Update escrituración row
+      const financingInfo = document.getElementById('financingInfo');
+      if (plan.escrituracion > 0) {
+        financingInfo.style.visibility = 'visible';
+        financingInfo.innerHTML = '<span>Escrituración: <span id="financingTotalPrice">$' + escrituracion.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</span></span>';
+      } else {
+        financingInfo.style.visibility = 'hidden';
+      }
+
+      // Update descuento label visibility
+      const descuentoLabel = document.querySelector('.descuento-label');
+      if (descuentoLabel) {
+        descuentoLabel.style.visibility = plan.discount > 0 ? 'visible' : 'hidden';
+      }
+
+      // Update big total price to show discounted price when discount > 0
+      const bigTotalPrice = document.getElementById('bigTotalPrice');
+      if (bigTotalPrice) {
+        bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+      }
+
     }
 
-    function updateCalculations() {
-      const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
-      const months = parseInt(document.getElementById('installmentsCalc').value);
-      const interestRate = INTEREST_RATES[months] || 0;
-
-      const downPaymentAmount = totalPriceNum * downPaymentPercent;
-      const amountFinanced = totalPriceNum - downPaymentAmount;
-      const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
-
-      const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
-
-      document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
-
-      // Update financing header
-      document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
-      document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    // Add event listeners
+    // Add event listener
     setTimeout(() => {
-      // Check URL parameters and set values if present
-      // Support both new short params (a, m, i) and old long params for backwards compatibility
       const urlParams = new URLSearchParams(window.location.search);
-      const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
-      const monthsParam = urlParams.get('m') || urlParams.get('months');
+      const planParam = urlParams.get('plan');
 
-      const downPaymentSelect = document.getElementById('downPaymentCalc');
-      const installmentsSelect = document.getElementById('installmentsCalc');
-
-      if (downpaymentParam && downPaymentSelect) {
-        downPaymentSelect.value = downpaymentParam;
-      }
-      if (monthsParam && installmentsSelect) {
-        installmentsSelect.value = monthsParam;
+      const planSelect = document.getElementById('downPaymentCalc');
+      if (planParam !== null && planSelect) {
+        planSelect.value = planParam;
       }
 
-      downPaymentSelect?.addEventListener('change', updateCalculations);
-      installmentsSelect?.addEventListener('change', updateCalculations);
-      updateCalculations(); // Initial calculation with URL params
+      planSelect?.addEventListener('change', updatePlanCalculations);
+      updatePlanCalculations(); // Initial calculation
     }, 100);
   }
 
@@ -6281,12 +6274,10 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       if (lot && window.generateMultiPagePDF) {
         const dynamicText = prompt('Ingrese el texto para el PDF:');
         if (dynamicText !== null) {
-          // Get selected financing options from the calculator dropdowns
-          const downPaymentSelect = document.getElementById('downPaymentCalc');
-          const installmentsSelect = document.getElementById('installmentsCalc');
+          // Get selected plan index from the plan dropdown
+          const planSelect = document.getElementById('downPaymentCalc');
           const financingOptions = {
-            downpaymentPercent: downPaymentSelect ? parseInt(downPaymentSelect.value) : 30,
-            installmentMonths: installmentsSelect ? parseInt(installmentsSelect.value) : 48
+            planIndex: planSelect ? parseInt(planSelect.value) : 0
           };
           window.generateMultiPagePDF(lot, dynamicText, financingOptions);
         }
@@ -7693,7 +7684,20 @@ function closeModal() {
   try { clampCooldown = false; } catch {}
   try { animatedFeaturedLots?.clear?.(); } catch {}
   
-  // --- 6) Restore map view (undo panBy offset + preModalView fly)
+  // --- 6) Restore map view
+
+  // Clear lot from URL
+  try {
+    const url = new URL(window.location);
+    url.searchParams.delete('lot');
+    window.history.replaceState(null, '', url);
+  } catch (e) {}
+
+  // Hide 360 viewer if open
+  const viewerContainer = document.getElementById('viewer-container');
+  if (viewerContainer) {
+    viewerContainer.style.display = 'none';
+  }
 
   // 🟢 When closing pin modal, DON'T clear fracc - keep it set to pin location
   // 🟢 When closing lot modal, CLEAR fracc to prevent stale selection
@@ -7706,38 +7710,27 @@ function closeModal() {
       window.updateCommunityLogo();
     }
   }
-  // For pin mode, fracc stays set to the pin's location
 
-  // 🟢 For pin modal, DON'T fly back to preModalView - stay at pin location
   if (wasPinMode) {
-    // Just clear preModalView without flying
-    preModalView = null;
+    // For pin modal, just undo the panBy offset (don't fly anywhere)
     if (map && lastOffset) {
       map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 400 });
       lastOffset = [0, 0];
     }
-  } else if (preModalView && map) {
-    // For lot modal, fly back to previous view
-    map.flyTo({
-      center: preModalView.center,
-      zoom: preModalView.zoom,
-      bearing: preModalView.bearing,
-      pitch: preModalView.pitch,
-      speed: 1.2,
-      curve: 1.5
-    });
-
-    map.once('moveend', () => {
-      if (lastOffset) {
-        map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 400 });
-        lastOffset = [0, 0];
-      }
-    });
-
-    preModalView = null;
-  } else if (map && lastOffset) {
-    map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 400 });
-    lastOffset = [0, 0];
+  } else {
+    // For lot modal, fly to fracc center
+    const fraccCenter = getCurrentFraccCenter();
+    const initialZoom = getCurrentFraccZoom();
+    if (map) {
+      map.flyTo({
+        center: fraccCenter,
+        zoom: initialZoom,
+        bearing: 0,
+        pitch: 0,
+        speed: 1.2,
+        curve: 1.5
+      });
+    }
   }
   
 // --- 7) Close modal (let CSS transition run)
@@ -8362,13 +8355,6 @@ PS.openPinInModal = async function (pin) {
           window.updateCommunityLogo();
         }
 
-        // Save current view but we won't fly back to it - closeModal will clear preModalView for pins
-        window.preModalView = {
-          center: map.getCenter().toArray(),
-          zoom: map.getZoom(),
-          bearing: map.getBearing(),
-          pitch: map.getPitch()
-        };
       }
       modal.classList.add('show');
       modal.style.display = 'block';
@@ -10188,10 +10174,10 @@ function getCurrentFraccZoom() {
                       // 🟢 HIDE THE PLUS BUTTON
                       const plusButton = document.querySelector('.plus-button');
                       if (plusButton) plusButton.style.display = 'none';
-                      
+
                       // 🟢 SHOW DETAIL VIEW (this will handle dimensions internally)
                       showDetailViewForLot(baseIndex + cloneCount);
-                      
+
                       // 🟢 UPDATE CURRENT LOT INDEX
                       const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                       if (lotMapIndex !== -1) {
@@ -10228,175 +10214,6 @@ function getCurrentFraccZoom() {
       url.searchParams.delete('lot');
       window.history.replaceState(null, '', url);
     }
-
-    // 🟢 FIX: PROPER FRACC-AWARE CLOSE BEHAVIOR
-function closeModalWithZoomReset() {
-  // Don't close modal if POI mode is active
-  if (window.poiModeActive) return;
-
-  const modal = document.getElementById('lotModal');
-  if (!modal) return;
-
-  // 🟢 CHECK if it's pin-mode BEFORE removing the class
-  const wasPinMode = modal.classList.contains('pin-mode');
-
-  // 🟢 Exit compare mode if active - SAME LOGIC AS closeModal()
-  if (window.compareMode) {
-    const compareBtn = document.getElementById('compareBtn');
-    if (compareBtn) {
-      compareBtn.classList.remove('active');
-    }
-    window.compareMode = false;
-    window.selectedLots.clear();
-    if (typeof removeEditOutlines === 'function') {
-      removeEditOutlines();
-    }
-    console.log('Compare mode OFF (modal closed with zoom reset)');
-
-    // 🟢 RESTORE from backup BEFORE clearing it
-    if (window.originalBaseLots) {
-      baseLots = [...window.originalBaseLots];
-      window.originalBaseLots = null;
-    }
-  }
-
-  // 🔥 Hide 360 viewer when closing modal
-  const viewerContainer = document.getElementById('viewer-container');
-  if (viewerContainer) {
-    viewerContainer.style.display = 'none';
-  }
-
-  // Clear URL first
-  clearLotURL();
-
-  // Remove side length labels
-  removeSideLengthLabels();
-
-  // 🟢 FOR POI: Don't fly to fracc center, just stay at current location
-  // 🟢 FOR LOT: Fly to fracc center as before
-  if (!wasPinMode) {
-    // Only fly to fracc center for lot modals (not POI)
-    const fraccCenter = getCurrentFraccCenter();
-    const initialZoom = getCurrentFraccZoom();
-
-    if (map) {
-      map.flyTo({
-        center: fraccCenter,
-        zoom: initialZoom,
-        bearing: 0,
-        pitch: 0,
-        speed: 1.2,
-        curve: 1.5
-      });
-    }
-
-    // Clear fracc for lot modal
-    modal.dataset.fracc = '';
-  } else {
-    // For pin mode, just undo the panBy offset (don't fly anywhere)
-    if (map && lastOffset) {
-      map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 400 });
-      lastOffset = [0, 0];
-    }
-  }
-  
-  // Reset modal state
-  const wrapper = document.querySelector('.modal-content-wrapper');
-  const lotDetails = document.getElementById('lotDetails');
-  const backButton = document.getElementById('backButton');
-  const headerLotNumber = document.getElementById('headerLotNumber');
-  const plusBtn = document.querySelector('.plus-button');
-  const bottomPlus = document.querySelector('.bottom-plus-button');
-  
-  if (wrapper) wrapper.classList.remove('show-details');
-  if (lotDetails) {
-    lotDetails.classList.remove('active');
-    lotDetails.style.display = 'block';
-    lotDetails.innerHTML = '';
-  }
-  if (backButton) backButton.style.display = 'none';
-  if (headerLotNumber) headerLotNumber.style.display = 'none';
-  if (plusBtn) plusBtn.style.display = 'none';
-  if (bottomPlus) bottomPlus.style.display = 'none';
-  
-  // Hide calendly if open
-  const calendlyEl = document.getElementById('calendlyEmbed');
-  if (calendlyEl) calendlyEl.style.display = 'none';
-
-  // Hide share button when closing modal
-  const shareBtn = document.getElementById('shareButton');
-  if (shareBtn) shareBtn.style.display = 'none';
-
-  // Hide global dashboard button when closing modal and remove active state
-  const globalBtn = document.getElementById('globalDashboardButton');
-  if (globalBtn) {
-    globalBtn.classList.remove('active');  // Remove underline
-    globalBtn.style.display = 'none';
-  }
-
-  // Reset dashboard button state when closing modal
-  const dashboardBtn = document.getElementById('dashboard-btn');
-  const eyeOpen = document.getElementById('eye-open-icon');
-  const eyeClosed = document.getElementById('eye-closed-icon');
-  if (dashboardBtn) {
-    console.log('closeModalWithZoomReset: Resetting dashboard button state');
-    dashboardBtn.classList.remove('active');
-    if (eyeOpen) eyeOpen.style.display = 'none';  // Hide open eye
-    if (eyeClosed) eyeClosed.style.display = 'inline-block';  // Show closed eye (dashboard hidden)
-  }
-  window.isDashboardOpen = false;
-
-// Close modal with animation
-modal.classList.remove('show', 'info-mode', 'pin-mode', 'expanded', 'lot-mode');
-
-// 🔥 Clear immediately when show class is removed
-if (map && map.getSource('lots-final') && window.hoveredId !== null) {
-  try {
-    map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
-  } catch {}
-}
-
-setTimeout(() => {
-  modal.style.display = 'none';
-
-  // 🟢 SHOW FLOATING BUTTONS AGAIN
-  document.getElementById('searchBtnStage')?.classList.remove('hide');
-  document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
-
-  // 🔥 Clear hover states AFTER modal is fully closed
-  if (map && map.getSource('lots-final')) {
-    try {
-      if (window.hoveredId !== null) {
-        map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
-      }
-
-      lotData.forEach((lot, index) => {
-        try {
-          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
-        } catch {}
-      });
-
-      window.hoveredId = null;
-    } catch {}
-  }
-  
-  // 🔥 Clear one more time after another frame
-  requestAnimationFrame(() => {
-    if (map && map.getSource('lots-final')) {
-      lotData.forEach((lot, index) => {
-        try {
-          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
-        } catch {}
-      });
-    }
-  });
-}, 50);
-  
-  // Reset internal states
-  isDetailOpen = false;
-  scrollHandlerAttached = true;
-}
-
 
     // Handle URL changes - for browser navigation AFTER initial load
     function handleURLChange() {
@@ -10472,7 +10289,7 @@ setTimeout(() => {
                   if (baseIndex !== -1) {
                     const plusButton = document.querySelector('.plus-button');
                     if (plusButton) plusButton.style.display = 'none';
-                    
+
                     const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                     if (lotMapIndex !== -1) {
                       currentLotIndex = lotMapIndex;
@@ -10492,16 +10309,13 @@ setTimeout(() => {
           }
         }
       } else {
-        // No lot in URL - close modal with zoom reset
-        closeModalWithZoomReset();
+        // No lot in URL - close modal
+        closeModal();
       }
     }
 
     // Listen for URL changes
     window.addEventListener('popstate', handleURLChange);
-
-    // 🟢 REPLACE THE CLOSE MODAL FUNCTION
-    window.closeModal = closeModalWithZoomReset;
 
     // Initialize - open lot from URL if present
     openInitialLotModal();
@@ -10580,9 +10394,8 @@ function shareCurrentLot() {
     return;
   }
   
-  // Get financing calculator values
-  const downPaymentPercent = document.getElementById('downPaymentCalc')?.value || '20';
-  const installments = document.getElementById('installmentsCalc')?.value || '72';
+  // Get selected plan index
+  const selectedPlan = document.getElementById('downPaymentCalc')?.value || '0';
 
   // Get community from modal dataset (current selected fracc), fallback to lot data, then default
   const modal = document.getElementById('lotModal');
@@ -10597,11 +10410,11 @@ function shareCurrentLot() {
   const communitySlug = community.toLowerCase().replace(/\s+/g, '-');
   const communityCapitalized = community.charAt(0).toUpperCase() + community.slice(1);
 
-  // Create share URL with community prefix and short params (a=anticipo, m=mensualidades)
+  // Create share URL with community prefix and plan param
   const shareUrl = `${window.location.origin}${CONFIG.share.urlTemplate
     .replace('{slug}', CONFIG.slug)
     .replace('{communitySlug}', communitySlug)
-    .replace('{lotNumber}', lotNumber)}?a=${downPaymentPercent}&m=${installments}`;
+    .replace('{lotNumber}', lotNumber)}?plan=${selectedPlan}`;
   const shareText = CONFIG.share.textTemplate
     .replace('{lotNumber}', lotNumber)
     .replace('{community}', communityCapitalized)
@@ -10770,7 +10583,7 @@ function setupChatButton() {
       const lotNum = lot?.number || lot?.name || (document.getElementById('headerLotNumber')?.textContent || '').trim();
       const community = (document.getElementById('headerFracc')?.textContent || '').trim();
       const msg = encodeURIComponent('Me interesa el Lote ' + lotNum + ' en ' + community + ', ¿podemos programar una visita?');
-      window.open('https://wa.me/5212292233911?text=' + msg, '_blank');
+      window.open('https://wa.me/5218185261819?text=' + msg, '_blank');
     });
   }
 }
@@ -11956,7 +11769,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     // Determine community group from fraccionamiento
     const fraccionamiento = lot.fraccionamiento || lot.community || '';
-    const communityGroup = getCommunityGroup('inverta', fraccionamiento);
+    const communityGroup = getCommunityGroup('agora', fraccionamiento);
 
     if (!communityGroup) {
       console.error('Could not determine community group for:', fraccionamiento);
@@ -12144,8 +11957,8 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     // Function to create a page with template elements
     function createPage(pageNum, template, lotValues, settings) {
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/inverta/pdf/${communityGroup}/`;
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
       const lotImagePrefix = settings.lotImagePrefix || '';
       const pageWidth = settings.pageWidth || 1224;
       const pageHeight = settings.pageHeight || 1584;
@@ -12309,7 +12122,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     try {
       // Step 1: Fetch template for this community group
       progressText.textContent = 'Cargando plantilla...';
-      const templatePath = `/inverta/pdf/${communityGroup}/pdf-template.json`;
+      const templatePath = `/agora/pdf/${communityGroup}/pdf-template.json`;
 
       let template = { pages: {}, settings: {} };
       try {
@@ -12338,8 +12151,8 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       progressText.textContent = 'Cargando imágenes...';
       progressBar.style.width = '10%';
 
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/inverta/pdf/${communityGroup}/`;
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
       const lotImagePrefix = settings.lotImagePrefix || '';
 
       const imagePromises = [];
@@ -12398,7 +12211,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
       const worker = html2pdf().set({
         margin: 0,
-        filename: `Inverta-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
+        filename: `Agora-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
         image: { type: 'jpeg', quality: 1 },
         html2canvas: { scale: 1, useCORS: true },
         jsPDF: { unit: 'px', format: [pageWidth, pageHeight], orientation: orientation }

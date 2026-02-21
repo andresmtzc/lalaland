@@ -27,15 +27,49 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- ===== LEAD AUTH CHECK (runs first) ===== -->
+  <script>
+    (function() {
+      const CURRENT_CLIENT = 'inverta';
+
+      // Cookie helpers
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+      }
+
+      function setCookie(name, value, days) {
+        const expires = new Date(Date.now() + days * 864e5).toUTCString();
+        document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+      }
+
+      // Check if URL has ?token= query parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('token');
+
+      // Check for session cookie
+      const sessionToken = getCookie('lead_session_' + CURRENT_CLIENT);
+
+      // If no token in URL and no session, redirect to registro
+      if (!urlToken && !sessionToken) {
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+        // Stop execution
+        throw new Error('Redirecting to registro');
+      }
+
+      // Store token for later validation (after Supabase loads)
+      window.__leadAuthToken = urlToken;
+      window.__leadSessionToken = sessionToken;
+      window.__leadClient = CURRENT_CLIENT;
+    })();
+  </script>
+
   <title></title>
   <link rel="icon" href="favicon.ico" type="image/x-icon">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700" rel="stylesheet">
-<!-- STIX Two Text for PDF generation -->
-<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
-<!-- Custom fonts for PDF generation -->
-<link rel="stylesheet" href="/fonts/fonts.css">
-<!-- html2pdf for PDF generation -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
@@ -43,6 +77,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="stylesheet" href="https://la-la.land/styles.css">
 <link rel="stylesheet" href="https://la-la.land/street-view-nav.css">
 
@@ -87,21 +122,6 @@ window.clientAccessCache = window.clientAccessCache || {};
       document.body.classList.add('fonts-loaded'); // Fallback if fonts fail
     });
   </script>
-
-
-<style>
-  @media (min-width: 768px) {
-    #leads-modal-container {
-      position: fixed;
-      top: 50%;
-      left: calc(10% + 250px);
-      width: 750px;
-      height: 90%;
-      max-height: 1000px;
-      transform: translate(-50%, -50%);
-    }
-  }
-</style>
 </head>
  
 <body>
@@ -143,42 +163,21 @@ window.clientAccessCache = window.clientAccessCache || {};
   })();
 </script>
 
-<!-- Login button in top right -->
-<button id="globe-login-btn" class="globe-login-button" title="Login">
-  Login
-</button>
+<!-- Lead greeting in top right -->
+<div id="lead-greeting" class="lead-greeting">
+  Hola, <span id="lead-name"></span>
+</div>
 
-<!-- Leads button - above dashboard button, only visible when authenticated -->
-<button id="leads-btn" class="dashboard-button" title="Leads">
-  <!-- Person icon (default - leads closed) -->
-  <svg id="leads-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-white)"/>
-  </svg>
-  <!-- Person icon filled (leads open) -->
-  <svg id="leads-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Leads</span>
-</button>
-
-<!-- Dashboard button - bottom left above mapbox logo, only visible when authenticated -->
-<button id="dashboard-btn" class="dashboard-button" title="Dashboard">
-  <!-- Bar graph icon (default - dashboard closed) -->
-  <svg id="eye-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M4 20h4V10H4v10zm6 0h4V4h-4v16zm6 0h4v-8h-4v8z" fill="var(--color-white)"/>
-  </svg>
-  <!-- Bar graph icon filled (dashboard open) -->
-  <svg id="eye-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M4 20h4V10H4v10zm6 0h4V4h-4v16zm6 0h4v-8h-4v8z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Dashboard</span>
-</button>
-
-<!-- Leads modal overlay with iframe -->
-<div id="leads-modal-overlay" style="display:none;">
-  <div id="leads-modal-backdrop"></div>
-  <div id="leads-modal-container">
-    <iframe id="leads-iframe" src="about:blank" frameborder="0"></iframe>
+<!-- Name Modal (shown when lead has no name) -->
+<div id="nameModal" class="name-modal">
+  <div class="name-modal-content">
+    <h2>¡Bienvenido!</h2>
+    <p>¿Cómo te llamas?</p>
+    <form id="nameForm">
+      <input type="text" id="leadNameInput" placeholder="Nombre" required>
+      <input type="text" id="leadLastNameInput" placeholder="Apellido" required>
+      <button type="submit">EMPEZAR</button>
+    </form>
   </div>
 </div>
 
@@ -723,7 +722,7 @@ function initThreeJSViewer() {
     powerPreference: 'high-performance'
   });
   
-  const dpr = Math.min(window.devicePixelRatio, 2);
+const dpr = Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height, false);
   
@@ -1780,14 +1779,14 @@ async function load360Images() {
 }
   
 async function createImagesFromFramesFolder() {
-  const track = getCurrentTrack();
-  const framesBase = track.framesBase || getFramesBase();
   currentImages = [];
-  currentImageIndex = -1; 
-  if (!track) { 
-    showToaster('No track selected'); 
+  currentImageIndex = -1;
+  const track = getCurrentTrack();
+  if (!track) {
+    showToaster('No track selected');
     return; 
   }
+  const framesBase = track.framesBase || getFramesBase();
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
     if (!gpxName) {
     showToaster('GPX name missing');
@@ -2231,6 +2230,20 @@ ctaobserver.observe(ctaToaster, {
         // If lot just became sold, add X mark
         if (wasAvailable && nowSold && typeof addSoldXs === 'function') {
           addSoldXs(map, [lot], 300);
+
+          // Auto-remove sold lots from lead's saved lots
+          if (window.currentLead && window.leadSavedLots?.has(lot.name)) {
+            window.leadSavedLots.delete(lot.name);
+            // Remove from database
+            window.supabaseClient?.from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lot.name)
+              .eq('client', CURRENT_CLIENT)
+              .then(() => console.log('🗑️ Auto-removed sold lot from favorites:', lot.name));
+            // Refresh map layer
+            if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          }
         }
       }
 
@@ -2294,7 +2307,353 @@ ctaobserver.observe(ctaToaster, {
   });
 </script>
 
+<!-- ===== LEAD TOKEN AUTH VALIDATION ===== -->
+<script>
+(async function validateLeadAuth() {
+  const CURRENT_CLIENT = window.__leadClient || 'inverta';
 
+  // Cookie helpers
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+  }
+
+  function setCookie(name, value, days) {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+  }
+
+  // Wait for Supabase
+  await window.supabaseReady;
+
+  const urlToken = window.__leadAuthToken;
+  const sessionToken = window.__leadSessionToken;
+
+  // If we have a URL token, validate and claim it
+  if (urlToken) {
+    try {
+      // Look up the token
+      const { data: tokenData, error: tokenError } = await window.supabaseClient
+        .from('lead_tokens')
+        .select('id, lead_id, claimed, leads(id, phone, name, last_name, is_agent, is_demo)')
+        .eq('token', urlToken)
+        .single();
+
+      if (tokenError || !tokenData) {
+        // Invalid token
+        console.error('Invalid token:', urlToken);
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
+        return;
+      }
+
+      const isDemo = tokenData.leads?.is_demo === true;
+
+      if (!isDemo) {
+        if (tokenData.claimed) {
+          // Token already claimed by another device
+          console.error('Token already claimed:', urlToken);
+          window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=claimed';
+          return;
+        }
+
+        // Claim the token
+        await window.supabaseClient
+          .from('lead_tokens')
+          .update({ claimed: true, claimed_at: new Date().toISOString() })
+          .eq('id', tokenData.id);
+
+        // Update lead's last_seen_at
+        await window.supabaseClient
+          .from('leads')
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq('id', tokenData.lead_id);
+
+        // Save session cookie (365 days)
+        setCookie('lead_session_' + CURRENT_CLIENT, urlToken, 365);
+      }
+
+      // Store lead info globally
+      window.currentLead = {
+        id: tokenData.lead_id,
+        phone: tokenData.leads?.phone,
+        name: tokenData.leads?.name,
+        lastName: tokenData.leads?.last_name,
+        token: urlToken,
+        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT),
+        isDemo
+      };
+
+      // Set global agent flag
+      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+
+      console.log('✅ Lead authenticated via token:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '', isDemo ? '(DEMO)' : '');
+
+      // Demo: clear saved lots so each session starts fresh
+      if (isDemo) {
+        await window.supabaseClient
+          .from('lead_saved_lots')
+          .delete()
+          .eq('lead_id', tokenData.lead_id);
+      }
+
+      // Start session tracking
+      await startLeadSession();
+
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
+      }
+
+      // Clean URL (remove /m/token, keep just /client/)
+      const cleanUrl = window.location.origin + '/' + CURRENT_CLIENT + '/index-m.html';
+      window.history.replaceState({}, '', cleanUrl);
+
+    } catch (err) {
+      console.error('Token validation error:', err);
+      window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
+      return;
+    }
+  }
+  // If we have a session cookie, validate it
+  else if (sessionToken) {
+    try {
+      const { data: tokenData, error: tokenError } = await window.supabaseClient
+        .from('lead_tokens')
+        .select('id, lead_id, leads(id, phone, name, last_name, is_agent)')
+        .eq('token', sessionToken)
+        .single();
+
+      if (tokenError || !tokenData) {
+        // Session token no longer valid
+        console.error('Session token invalid');
+        document.cookie = 'lead_session_' + CURRENT_CLIENT + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+        return;
+      }
+
+      // Update lead's last_seen_at
+      await window.supabaseClient
+        .from('leads')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', tokenData.lead_id);
+
+      // Store lead info globally
+      window.currentLead = {
+        id: tokenData.lead_id,
+        phone: tokenData.leads?.phone,
+        name: tokenData.leads?.name,
+        lastName: tokenData.leads?.last_name,
+        token: sessionToken,
+        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT)
+      };
+
+      // Set global agent flag
+      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+
+      console.log('✅ Lead authenticated via session:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
+
+      // Start session tracking
+      await startLeadSession();
+
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
+      }
+
+    } catch (err) {
+      console.error('Session validation error:', err);
+      window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+      return;
+    }
+  }
+
+  // ===== SESSION TRACKING =====
+  window.currentSessionId = null;
+  window.sessionStartTime = null;
+
+  async function startLeadSession() {
+    if (!window.currentLead || !window.supabaseClient) return;
+
+    try {
+      window.sessionStartTime = new Date();
+
+      const { data, error } = await window.supabaseClient
+        .from('lead_sessions')
+        .insert({
+          lead_id: window.currentLead.id,
+          client_id: CURRENT_CLIENT,
+          started_at: window.sessionStartTime.toISOString(),
+          page_url: window.location.href,
+          user_agent: navigator.userAgent
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Failed to create session:', error);
+        return;
+      }
+
+      window.currentSessionId = data.id;
+      console.log('📊 Session started:', window.currentSessionId);
+
+      // Set up session end tracking
+      setupSessionEndTracking();
+    } catch (err) {
+      console.error('Session tracking error:', err);
+    }
+  }
+
+  async function endLeadSession() {
+    if (!window.currentSessionId || !window.sessionStartTime || !window.supabaseClient) return;
+
+    try {
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      await window.supabaseClient
+        .from('lead_sessions')
+        .update({
+          ended_at: endTime.toISOString(),
+          duration_seconds: durationSeconds
+        })
+        .eq('id', window.currentSessionId);
+
+      console.log(`📊 Session ended: ${durationSeconds}s`);
+    } catch (err) {
+      console.error('Failed to end session:', err);
+    }
+  }
+
+  function setupSessionEndTracking() {
+    // Track when user leaves the page
+    window.addEventListener('beforeunload', () => {
+      if (!window.currentSessionId) return;
+
+      // Use sendBeacon for reliable delivery during page unload
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      // We can't use async/await in beforeunload, so use sendBeacon
+      // But Supabase doesn't support sendBeacon directly, so we do best effort with fetch keepalive
+      if (window.supabaseClient) {
+        window.supabaseClient
+          .from('lead_sessions')
+          .update({
+            ended_at: endTime.toISOString(),
+            duration_seconds: durationSeconds
+          })
+          .eq('id', window.currentSessionId)
+          .then(() => console.log('📊 Session ended on unload'))
+          .catch(err => console.error('Failed to end session on unload:', err));
+      }
+    });
+
+    // Also track visibility changes (tab switches, minimizing)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // User switched away - update session
+        endLeadSession();
+      }
+    });
+  }
+
+  // Helper function to update lead greeting
+  function updateLeadGreeting() {
+    const leadNameEl = document.getElementById('lead-name');
+    if (leadNameEl && window.currentLead) {
+      const fullName = `${window.currentLead.name || ''} ${window.currentLead.lastName || ''}`.trim();
+      leadNameEl.textContent = fullName || 'Usuario';
+    }
+  }
+
+  // Show name modal
+  function showNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.add('show');
+    }
+  }
+
+  // Hide name modal
+  function hideNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.remove('show');
+    }
+  }
+
+  // Handle name form submission
+  const nameForm = document.getElementById('nameForm');
+  if (nameForm) {
+    nameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nameInput = document.getElementById('leadNameInput');
+      const lastNameInput = document.getElementById('leadLastNameInput');
+      const submitBtn = nameForm.querySelector('button');
+
+      const name = nameInput.value.trim();
+      const lastName = lastNameInput.value.trim();
+
+      if (!name || !lastName) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Guardando...';
+
+      try {
+        // Update lead in Supabase
+        await window.supabaseClient
+          .from('leads')
+          .update({ name, last_name: lastName })
+          .eq('id', window.currentLead.id);
+
+        // Update local state
+        window.currentLead.name = name;
+        window.currentLead.lastName = lastName;
+
+        // Update greeting
+        updateLeadGreeting();
+
+        // Hide modal
+        hideNameModal();
+
+      } catch (err) {
+        console.error('Error saving name:', err);
+        alert('Error al guardar. Intenta de nuevo.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continuar';
+      }
+    });
+  }
+
+  // Load saved lots for this lead
+  if (window.currentLead) {
+    try {
+      const { data: savedLots } = await window.supabaseClient
+        .from('lead_saved_lots')
+        .select('lot_name')
+        .eq('lead_id', window.currentLead.id)
+        .eq('client', CURRENT_CLIENT);
+
+      window.leadSavedLots = new Set(savedLots?.map(s => s.lot_name) || []);
+      console.log('✅ Loaded', window.leadSavedLots.size, 'saved lots for lead');
+
+      // Add saved lots layer to map if map is already loaded
+      if (window.map && typeof addSavedLotsLayer === 'function') {
+        addSavedLotsLayer(window.map);
+      }
+    } catch (err) {
+      console.error('Error loading saved lots:', err);
+      window.leadSavedLots = new Set();
+    }
+  }
+})();
+</script>
 
 
 <script>
@@ -2350,7 +2709,6 @@ ctaobserver.observe(ctaToaster, {
   }
 
   function updateButtons(loggedIn) {
-    if (IS_DEMO) loggedIn = true;
     if (btnLogin)  btnLogin.style.display  = loggedIn ? 'none' : 'flex';
 
     // Update globe button visual state
@@ -2371,12 +2729,6 @@ ctaobserver.observe(ctaToaster, {
     const dashboardBtn = $('#dashboard-btn');
     if (dashboardBtn) {
       dashboardBtn.style.display = loggedIn ? 'flex' : 'none';
-    }
-
-    // Update leads button visibility
-    const leadsBtn = $('#leads-btn');
-    if (leadsBtn) {
-      leadsBtn.style.display = loggedIn ? 'flex' : 'none';
     }
 
     // Update global auth state and re-render list to show/hide action buttons
@@ -2513,111 +2865,6 @@ ctaobserver.observe(ctaToaster, {
         eyeClosed.style.display = 'inline-block';  // Show closed eye when dashboard is hidden
         dashboardBtn.classList.remove('active');
       }
-    }
-  });
-
-  // Leads button - toggle leads modal with iframe
-  window.isLeadsOpen = false;
-  const leadsBtn = $('#leads-btn');
-  const leadsOverlay = $('#leads-modal-overlay');
-  const leadsBackdrop = $('#leads-modal-backdrop');
-  const leadsCloseBtn = $('#leads-modal-close');
-  const leadsIframe = $('#leads-iframe');
-
-  // Elements to hide when leads modal is open (save display state)
-  const leadsHideTargets = [
-    $('.lala-wrapper'),
-    $('#leads-btn'),
-    $('#dashboard-btn'),
-    $('#gpsButton'),
-    $('.logoinv-wrapper')
-  ].filter(Boolean);
-  const leadsHideSavedDisplay = new Map();
-  let leadsModalPanned = false;
-
-  function openLeadsModal() {
-    // Close lotModal first if open
-    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
-    if (typeof closeModal === 'function') {
-      try { closeModal(); } catch(e) {}
-    }
-
-    leadsModalPanned = false;
-    if (map && window.innerWidth >= 768 && !lotModalWasOpen) {
-      map.panBy([-240, 0], { duration: 400 });
-      leadsModalPanned = true;
-    }
-
-    window.isLeadsOpen = true;
-    leadsIframe.src = IS_DEMO ? 'lead-dashboard-demo.html' : 'lead-dashboard.html';
-    leadsOverlay.style.display = 'block';
-    // Toggle icons
-    const openIcon = $('#leads-open-icon');
-    const closedIcon = $('#leads-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'inline-block';
-      closedIcon.style.display = 'none';
-    }
-    leadsBtn.classList.add('active');
-    // Save display state then hide
-    leadsHideTargets.forEach(el => {
-      leadsHideSavedDisplay.set(el, el.style.display);
-      el.style.display = 'none';
-    });
-  }
-
-  function closeLeadsModal() {
-    if (map && window.innerWidth >= 768 && leadsModalPanned) {
-      map.panBy([240, 0], { duration: 400 });
-      leadsModalPanned = false;
-    }
-
-    window.isLeadsOpen = false;
-    leadsOverlay.style.display = 'none';
-    leadsIframe.src = 'about:blank';
-    // Toggle icons
-    const openIcon = $('#leads-open-icon');
-    const closedIcon = $('#leads-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'none';
-      closedIcon.style.display = 'inline-block';
-    }
-    leadsBtn.classList.remove('active');
-    // Restore saved display state
-    leadsHideTargets.forEach(el => {
-      el.style.display = leadsHideSavedDisplay.get(el) || '';
-    });
-  }
-
-  leadsBtn && leadsBtn.addEventListener('click', () => {
-    if (window.isLeadsOpen) {
-      closeLeadsModal();
-    } else {
-      openLeadsModal();
-    }
-  });
-
-  // Close leads modal on backdrop click
-  leadsBackdrop && leadsBackdrop.addEventListener('click', () => {
-    closeLeadsModal();
-  });
-
-  // Close leads modal on X button click
-  leadsCloseBtn && leadsCloseBtn.addEventListener('click', () => {
-    closeLeadsModal();
-  });
-
-  // Close leads modal on Escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && window.isLeadsOpen) {
-      closeLeadsModal();
-    }
-  });
-
-  // Close leads modal via postMessage from iframe
-  window.addEventListener('message', (e) => {
-    if (e.data === 'closeLeads' && window.isLeadsOpen) {
-      closeLeadsModal();
     }
   });
 
@@ -3453,7 +3700,7 @@ let isDetailOpen = false;
 let lastOpenedBaseIndex = null;
 
 // Global authentication state
-window.isUserAuthenticated = IS_DEMO;
+window.isUserAuthenticated = false;
 
 // Function to show road labels and hide built-in Mapbox labels
 function toggleRoadLabels() {
@@ -3632,7 +3879,12 @@ fetch(mapboxTokenUrl)
           await loadManzanaLabels(map);
           addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
-    
+
+    // Add saved lots layer for leads
+    if (window.currentLead && window.leadSavedLots) {
+      addSavedLotsLayer(map);
+    }
+
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
 
         // ===== COMMUNITY SEARCH CIRCULAR MENU =====
@@ -4718,7 +4970,6 @@ function parseLots(text) {
 <script>
 // ========== DRAW X ON SOLD LOTS ==========
 function addSoldXs(map, soldLots, fadeDuration = 500) {
-  if (!CONFIG.lotStyles.sold.xMark.enabled) return;
   if (!map.getSource('sold-x')) {
     map.addSource('sold-x', {
       type: 'geojson',
@@ -4731,8 +4982,8 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
       source: 'sold-x',
       layout: {},
       paint: {
-        'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.xMark.color),
-        'line-width': CONFIG.lotStyles.sold.xMark.width,
+        'line-color': CONFIG.colors.white,
+        'line-width': 1,
         'line-opacity': 0,
         'line-opacity-transition': { duration: fadeDuration }
       }
@@ -4750,7 +5001,7 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
 
   // ⏳ Fade in after tiny delay to ensure features are added first
   setTimeout(() => {
-    map.setPaintProperty('sold-x-layer', 'line-opacity', CONFIG.lotStyles.sold.xMark.opacity);
+    map.setPaintProperty('sold-x-layer', 'line-opacity', 0.49);
   }, 10);
 }
 
@@ -4894,7 +5145,7 @@ function animateLots(map, cb) {
       },
       filter: ["!=", ["get", "availability"], "Sold"]
     });
-
+    
     map.addLayer({
       id: `lot-group-${i}-sold`,
       type: "line",
@@ -5444,9 +5695,9 @@ function addFeaturedLotsLayer(map, onComplete) {
     type: 'line',
     source: 'featured-lots',
     paint: {
-      'line-color': CONFIG.colors.primary,
-      'line-width': 2,
-      'line-opacity': 1
+      'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+      'line-width': CONFIG.lotStyles.featured.outline.width,
+      'line-opacity': CONFIG.lotStyles.featured.outline.opacity
     }
   }, 'lots-final-click');  
   
@@ -5499,7 +5750,141 @@ function startPolygonPulse(map, onComplete) {
 
   requestAnimationFrame(frame);
 }
-</script> 
+
+// ===== SAVED LOTS LAYER (for leads) =====
+function savedPolygonFeature(lot) {
+  const coords = [...lot.coords];
+  if (
+    coords.length < 3 ||
+    coords[0][0] !== coords[coords.length - 1][0] ||
+    coords[0][1] !== coords[coords.length - 1][1]
+  ) {
+    coords.push(coords[0]); // Ensure closed polygon
+  }
+
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coords]
+    },
+    properties: {
+      name: lot.name,
+      phase: Math.random() * Math.PI * 2,
+      opacity: 0.5
+    }
+  };
+}
+
+function addSavedLotsLayer(map) {
+  if (!window.currentLead || !window.leadSavedLots || window.leadSavedLots.size === 0) {
+    return;
+  }
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  if (savedLots.length === 0) return;
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  if (map.getSource('saved-lots')) {
+    map.getSource('saved-lots').setData({
+      type: 'FeatureCollection',
+      features
+    });
+    return;
+  }
+
+  map.addSource('saved-lots', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features
+    }
+  });
+
+  // Primary fill with pulsating opacity
+  map.addLayer({
+    id: 'saved-lots-layer',
+    type: 'fill',
+    source: 'saved-lots',
+    paint: {
+      'fill-color': CONFIG.colors.primary,
+      'fill-opacity': ['get', 'opacity']
+    }
+  }, 'lots-final-available');
+
+  // Primary color outline
+  map.addLayer({
+    id: 'saved-lots-outline',
+    type: 'line',
+    source: 'saved-lots',
+    paint: {
+      'line-color': CONFIG.colors.primary,
+      'line-width': 2,
+      'line-opacity': 1
+    }
+  }, 'lots-final-click');
+
+  // Start animation
+  startSavedLotsPulse(map);
+}
+
+function refreshSavedLotsLayer() {
+  if (!window.map) return;
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots?.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  const source = window.map.getSource('saved-lots');
+  if (source) {
+    source.setData({
+      type: 'FeatureCollection',
+      features
+    });
+  } else if (savedLots.length > 0) {
+    addSavedLotsLayer(window.map);
+  }
+}
+
+function startSavedLotsPulse(map) {
+  let t = 0;
+
+  function frame() {
+    t += 0.05;
+
+    const source = map.getSource('saved-lots');
+    if (!source || !source._data) return;
+
+    const updated = {
+      ...source._data,
+      features: source._data.features.map(f => {
+        const phase = f.properties?.phase ?? 0;
+        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            opacity
+          }
+        };
+      })
+    };
+
+    source.setData(updated);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+}
+</script>
 
 
 
@@ -5674,7 +6059,6 @@ let baseLots = [];
 let lots = [];
 let isDataLoaded = false;
 let previousMapView = null; // for "Back" button inside modal
-let preModalView = null;    // for closing modal completely
 let isDragging = false;
 let isScrollbarDragging = false;
 let dragStartY = 0;
@@ -5842,16 +6226,6 @@ function setupLotClickHandlers() {
 
       // Original code for when detail view is NOT open
       if (status === 'featured' || status === 'available') {
-        // Save map state
-        if (map && map.getCenter) {
-          preModalView = {
-            center: map.getCenter().toArray(),
-            zoom: map.getZoom(),
-            bearing: map.getBearing(),
-            pitch: map.getPitch()
-          };
-        }
-
         const lotNumber = lot.number;
         // 🔥 FIX: Match by BOTH number AND fraccionamiento to avoid selecting wrong lot
         const lotMapIndex = lotData.findIndex(l =>
@@ -5938,7 +6312,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   // Update community logo for this lot's fraccionamiento
   modalEl.dataset.fracc = lot.fraccionamiento;
-  currentFraccionamiento = lot.fraccionamiento;
+  currentFraccionamiento = lot.fraccionamiento; // Update for dynamic frames loading
   if (window.updateCommunityLogo) window.updateCommunityLogo();
 
   // Store lot number so chatear button can include it in the WhatsApp message
@@ -6212,12 +6586,16 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'cta-buttons-row';
   buttonsRow.style.position = 'relative';
-  // Show COTIZAR button when authenticated, CÓMO LLEGAR otherwise
+  // Show COTIZAR when authenticated OR agent, CÓMO LLEGAR otherwise
   const isAuthenticated = window.isUserAuthenticated === true;
+  const isAgent = window.isAgent === true;
   const apartarEnabled = getCommunityByFracc(CURRENT_CLIENT, lot.fraccionamiento)?.apartarEnabled === true;
   buttonsRow.innerHTML = `
     <button class="cta-button first" id="separarBtn" translate="no"${!apartarEnabled ? ' disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>APARTAR</button>
-    ${isAuthenticated ? '<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>' : '<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>'}
+    ${(isAuthenticated || isAgent)
+      ? `<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>`
+      : `<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>`
+    }
     <button class="cta-button second" id="chatearBtn" translate="no">CHATEAR</button>
   `;
 
@@ -6251,6 +6629,37 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       } else {
         console.error('Payment view not available or lot data missing');
       }
+    } else if (e.target.id === 'descargarPdfBtn') {
+      // Generate PDF quote
+      e.stopPropagation();
+
+      // Prompt user for dynamic text
+      const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
+      if (!dynamicText) return; // User cancelled
+
+      // Track agent quote if this is an agent
+      if (window.isAgent && window.currentLead?.phone) {
+        window.supabaseClient
+          .from('agent_quotes')
+          .insert({
+            agent_phone: window.currentLead.phone,
+            client_id: CURRENT_CLIENT,
+            lot_name: lot?.name || null,
+            lead_name: dynamicText
+          })
+          .then(({ error }) => {
+            if (error) console.error('Error tracking agent quote:', error);
+            else console.log('✅ Agent quote tracked:', dynamicText);
+          });
+      }
+
+      // Generate PDF if function is available
+      if (lot && window.generateMultiPagePDF) {
+        window.generateMultiPagePDF(lot, dynamicText, {});
+      } else {
+        console.error('PDF generation not available or lot data missing');
+        window.showToaster?.('PDF generation not available');
+      }
     } else if (e.target.id === 'visitarBtn') {
       // Open driving directions to this lot
       e.stopPropagation();
@@ -6275,25 +6684,6 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       // Example: open WhatsApp
       // window.open('https://wa.me/5218185261819', '_blank');
       e.stopPropagation();
-    } else if (e.target.id === 'descargarPdfBtn') {
-      // Generate PDF quote
-      e.stopPropagation();
-      if (lot && window.generateMultiPagePDF) {
-        const dynamicText = prompt('Ingrese el texto para el PDF:');
-        if (dynamicText !== null) {
-          // Get selected financing options from the calculator dropdowns
-          const downPaymentSelect = document.getElementById('downPaymentCalc');
-          const installmentsSelect = document.getElementById('installmentsCalc');
-          const financingOptions = {
-            downpaymentPercent: downPaymentSelect ? parseInt(downPaymentSelect.value) : 30,
-            installmentMonths: installmentsSelect ? parseInt(installmentsSelect.value) : 48
-          };
-          window.generateMultiPagePDF(lot, dynamicText, financingOptions);
-        }
-      } else {
-        console.error('PDF generation not available or lot data missing');
-        window.showToaster?.('Error al generar PDF');
-      }
     }
   });
 
@@ -6500,7 +6890,9 @@ const calculatedPriceFormatted = calculatedPrice.toString().replace(/\B(?=(\d{3}
 // Format price per m2 from Supabase
 const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '');
 
+    const isSaved = window.currentLead && window.leadSavedLots?.has(lot.name);
     if (isFeatured) row.classList.add('info-row--featured');
+    if (isSaved && !isSold) row.classList.add('info-row--saved');
 
 row.innerHTML = `
   <div class="lot-left">
@@ -6544,6 +6936,12 @@ row.innerHTML = `
               <path d="M23 4L23 10 17 10M1 20L1 14 7 14M3.51 9a9 9 0 0114.85-3.36L23 10M20.49 15a9 9 0 01-14.85 3.36L1 14"/>
             </svg>
           </button>
+        ` : (window.currentLead && !isSold) ? `
+          <button class="row-action-btn heart-btn ${window.leadSavedLots?.has(lot.name) ? 'saved' : ''}" title="Guardar" data-lot-name="${lot.name}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="${window.leadSavedLots?.has(lot.name) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+          </button>
         ` : ''}
       </div>
 
@@ -6568,6 +6966,22 @@ row.innerHTML = `
       const label = document.createElement('div');
       label.classList.add('featured-label');
       label.textContent = 'SELECCIÓN LA-LA LAND';
+      row.appendChild(label);
+    }
+
+    // Add saved lot styling (similar to featured but with heart)
+    if (isSaved && !isSold && !isFeatured) {
+      const left = document.createElement('div');
+      left.classList.add('border-left', 'border-left--saved');
+      row.appendChild(left);
+
+      const top = document.createElement('div');
+      top.classList.add('border-top', 'border-top--saved');
+      row.appendChild(top);
+
+      const label = document.createElement('div');
+      label.classList.add('saved-label');
+      label.innerHTML = 'FAVORITO';
       row.appendChild(label);
     }
 
@@ -6686,6 +7100,61 @@ function setupRowActionButtons() {
         if (typeof window.cycleSelectedLotAvailability === 'function') {
           window.cycleSelectedLotAvailability();
         }
+        return;
+      }
+
+      // Handle heart button clicks (save lot for leads)
+      const heartBtn = e.target.closest('.row-action-btn.heart-btn');
+      if (heartBtn) {
+        e.stopPropagation();
+        heartBtn.closest('.info-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const lotName = heartBtn.dataset.lotName;
+
+        if (!window.currentLead || !window.supabaseClient) {
+          console.error('Lead not authenticated');
+          return;
+        }
+
+        const isSaved = window.leadSavedLots?.has(lotName);
+
+        try {
+          if (isSaved) {
+            // Remove from saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lotName)
+              .eq('client', CURRENT_CLIENT);
+
+            window.leadSavedLots.delete(lotName);
+            heartBtn.classList.remove('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'none');
+            showToaster('Removed from favorites');
+          } else {
+            // Add to saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .insert({
+                lead_id: window.currentLead.id,
+                lot_name: lotName,
+                client: CURRENT_CLIENT
+              });
+
+            window.leadSavedLots.add(lotName);
+            heartBtn.classList.add('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'currentColor');
+            showToaster('Saved to favorites');
+          }
+
+          // Refresh map layer and list
+          if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          if (typeof render === 'function') render();
+        } catch (err) {
+          console.error('Error saving lot:', err);
+          showToaster('Error saving');
+        }
+        return;
       }
     });
   }
@@ -6699,14 +7168,12 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   }
 
   // Authentication check - trigger login if not authenticated
-  if (!IS_DEMO) {
-    const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
-    const isLoggedIn = !!(session && session.user);
-    if (!isLoggedIn) {
-      showToaster('Please login to edit prices');
-      document.getElementById('globe-login-btn')?.click();
-      return;
-    }
+  const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
+  const isLoggedIn = !!(session && session.user);
+  if (!isLoggedIn) {
+    showToaster('Please login to edit prices');
+    document.getElementById('globe-login-btn')?.click();
+    return;
   }
 
   // Strip commas and parse values
@@ -6743,15 +7210,6 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   }
 
   console.log(`Updating ${affectedLots.length} lots from ${oldValue} to ${newValue}`);
-
-  if (IS_DEMO) {
-    lotData.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); lot.price_m2 = newValue; } });
-    baseLots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
-    lots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
-    showToaster(`✓ Updated ${affectedLots.length} lot${affectedLots.length > 1 ? 's' : ''} (demo)`);
-    render(); highlightCenter(); updateScrollbar();
-    return;
-  }
 
   try {
     // Update all matching lots in Supabase using bulk .in() operation
@@ -6944,6 +7402,18 @@ function highlightCenter(isClamping = false) {
           void row.offsetWidth;
           row.classList.add('animate-featured');
           animatedFeaturedLots.add(featureIndex);
+        } else {
+          row.classList.add('animate-featured');
+        }
+      }
+
+      // Animate saved lots (same as featured)
+      if (row.classList.contains('info-row--saved')) {
+        const savedIndex = row.dataset.index;
+        if (!animatedFeaturedLots.has('saved-' + savedIndex)) {
+          void row.offsetWidth;
+          row.classList.add('animate-featured');
+          animatedFeaturedLots.add('saved-' + savedIndex);
         } else {
           row.classList.add('animate-featured');
         }
@@ -7393,7 +7863,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
   // Prevent button animations on initial modal open
   if (wasHidden) {
     modal.classList.add('initial-load');
-    if (!skipPan && !window.isLeadsOpen) {
+    if (!skipPan) {
       adjustMapForModal();
     } else {
       console.log('⏭️ Skipping map pan (already positioned from dashboard)');
@@ -7693,7 +8163,20 @@ function closeModal() {
   try { clampCooldown = false; } catch {}
   try { animatedFeaturedLots?.clear?.(); } catch {}
   
-  // --- 6) Restore map view (undo panBy offset + preModalView fly)
+  // --- 6) Restore map view
+
+  // Clear lot from URL
+  try {
+    const url = new URL(window.location);
+    url.searchParams.delete('lot');
+    window.history.replaceState(null, '', url);
+  } catch (e) {}
+
+  // Hide 360 viewer if open
+  const viewerContainer = document.getElementById('viewer-container');
+  if (viewerContainer) {
+    viewerContainer.style.display = 'none';
+  }
 
   // 🟢 When closing pin modal, DON'T clear fracc - keep it set to pin location
   // 🟢 When closing lot modal, CLEAR fracc to prevent stale selection
@@ -7706,38 +8189,27 @@ function closeModal() {
       window.updateCommunityLogo();
     }
   }
-  // For pin mode, fracc stays set to the pin's location
 
-  // 🟢 For pin modal, DON'T fly back to preModalView - stay at pin location
   if (wasPinMode) {
-    // Just clear preModalView without flying
-    preModalView = null;
+    // For pin modal, just undo the panBy offset (don't fly anywhere)
     if (map && lastOffset) {
       map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 400 });
       lastOffset = [0, 0];
     }
-  } else if (preModalView && map) {
-    // For lot modal, fly back to previous view
-    map.flyTo({
-      center: preModalView.center,
-      zoom: preModalView.zoom,
-      bearing: preModalView.bearing,
-      pitch: preModalView.pitch,
-      speed: 1.2,
-      curve: 1.5
-    });
-
-    map.once('moveend', () => {
-      if (lastOffset) {
-        map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 400 });
-        lastOffset = [0, 0];
-      }
-    });
-
-    preModalView = null;
-  } else if (map && lastOffset) {
-    map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 400 });
-    lastOffset = [0, 0];
+  } else {
+    // For lot modal, fly to fracc center
+    const fraccCenter = getCurrentFraccCenter();
+    const initialZoom = getCurrentFraccZoom();
+    if (map) {
+      map.flyTo({
+        center: fraccCenter,
+        zoom: initialZoom,
+        bearing: 0,
+        pitch: 0,
+        speed: 1.2,
+        curve: 1.5
+      });
+    }
   }
   
 // --- 7) Close modal (let CSS transition run)
@@ -8133,10 +8605,6 @@ function hideCalendlyEmbed() {
     await window.supabaseReady;
 
     // Get authenticated user for RLS policy
-    if (IS_DEMO) {
-      toast('Pins are read-only in demo mode');
-      return;
-    }
     const { data: { user } } = await window.supabaseClient.auth.getUser();
     if (!user) {
       console.error('User not authenticated');
@@ -8362,13 +8830,6 @@ PS.openPinInModal = async function (pin) {
           window.updateCommunityLogo();
         }
 
-        // Save current view but we won't fly back to it - closeModal will clear preModalView for pins
-        window.preModalView = {
-          center: map.getCenter().toArray(),
-          zoom: map.getZoom(),
-          bearing: map.getBearing(),
-          pitch: map.getPitch()
-        };
       }
       modal.classList.add('show');
       modal.style.display = 'block';
@@ -8901,7 +9362,6 @@ function refreshFeaturedLayer() {
 
   // --- auth guard ---
   async function ensureLoggedIn() {
-    if (IS_DEMO) return true;
     const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
     return !!(session && session.user);
   }
@@ -8939,7 +9399,6 @@ function refreshFeaturedLayer() {
 
     // Save to database in background (don't await - fire and forget with error handling)
     (async () => {
-      if (IS_DEMO) return;
       try {
         // Mark this lot to skip next realtime re-render
         if (!window.skipNextRealtimeRender) window.skipNextRealtimeRender = new Set();
@@ -9511,67 +9970,47 @@ try {
 
 
 <script>
-// TEMPORARY FOR YC DEMO: All buttons visible regardless of auth status
-// Function to check authentication status and toggle buttons visibility hide buttons
+// Toggle admin-only buttons based on Supabase session (isAuthenticated)
 function toggleAuthButtons(isAuthenticated) {
+  if (IS_DEMO) isAuthenticated = false;
   const cycleAvailabilityBtn = document.getElementById('cycleAvailabilityBtn');
-  const addPinBtn = document.getElementById('addPinBtn');
-  const gpsButton = document.getElementById('gpsButton');
-  const driveBtn = document.getElementById('driveBtn');
-  const compareBtn = document.getElementById('compareBtn'); // Added compareBtn
-  const editBtn = document.getElementById('editBtn'); // Added editBtn
+  const editBtn = document.getElementById('editBtn');
+  const poiButton = document.getElementById('poiButton');
 
-  console.log('Toggle buttons - Authenticated:', isAuthenticated);
-  
-  // COMMENTED OUT FOR YC DEMO - Show all buttons always
-  // if (cycleAvailabilityBtn) {
-  //   cycleAvailabilityBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (addPinBtn) {
-  //   addPinBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (gpsButton) {
-  //   gpsButton.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (driveBtn) {
-  //   driveBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (compareBtn) { // Added compareBtn condition
-  //   compareBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (editBtn) { // Added editBtn condition
-  //   editBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
+  if (cycleAvailabilityBtn) {
+    cycleAvailabilityBtn.classList.toggle('hide-button', !isAuthenticated);
+  }
+  if (editBtn) {
+    editBtn.classList.toggle('hide-button', !isAuthenticated);
+  }
+  if (poiButton) {
+    poiButton.style.display = isAuthenticated ? '' : 'none';
+  }
 }
 
-// COMMENTED OUT FOR YC DEMO - Don't hide buttons on page load
-// Hide buttons immediately on page load
+// Hide admin buttons immediately on page load
 document.addEventListener('DOMContentLoaded', function() {
-  console.log('DOM loaded - showing all buttons for YC demo');
-  // toggleAuthButtons(false); // COMMENTED OUT FOR YC DEMO
-  
-  // Check auth status once Supabase is likely ready
+  toggleAuthButtons(false);
+
+  // Refine once Supabase is ready
   const checkAuth = setInterval(function() {
     if (window.supabaseClient && typeof window.supabaseClient.auth.getSession === 'function') {
       clearInterval(checkAuth);
       window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
         const isAuthenticated = !!(session && session.user);
-        console.log('Initial auth check - Authenticated:', isAuthenticated);
-        // toggleAuthButtons(isAuthenticated); // COMMENTED OUT FOR YC DEMO
+        toggleAuthButtons(isAuthenticated);
       });
     }
   }, 100);
 });
-  
-// COMMENTED OUT FOR YC DEMO - Don't toggle buttons on auth change
-// Listen for auth changes once Supabase is ready
+
+// Keep in sync with auth state changes
 const setupAuthListener = setInterval(function() {
   if (window.supabaseClient && typeof window.supabaseClient.auth.onAuthStateChange === 'function') {
     clearInterval(setupAuthListener);
     window.supabaseClient.auth.onAuthStateChange((_event, session) => {
       const isAuthenticated = !!(session && session.user);
-      console.log('Auth state changed - Authenticated:', isAuthenticated);
-      // toggleAuthButtons(isAuthenticated); // COMMENTED OUT FOR YC DEMO
+      toggleAuthButtons(isAuthenticated);
     });
   }
 }, 100);
@@ -10229,175 +10668,6 @@ function getCurrentFraccZoom() {
       window.history.replaceState(null, '', url);
     }
 
-    // 🟢 FIX: PROPER FRACC-AWARE CLOSE BEHAVIOR
-function closeModalWithZoomReset() {
-  // Don't close modal if POI mode is active
-  if (window.poiModeActive) return;
-
-  const modal = document.getElementById('lotModal');
-  if (!modal) return;
-
-  // 🟢 CHECK if it's pin-mode BEFORE removing the class
-  const wasPinMode = modal.classList.contains('pin-mode');
-
-  // 🟢 Exit compare mode if active - SAME LOGIC AS closeModal()
-  if (window.compareMode) {
-    const compareBtn = document.getElementById('compareBtn');
-    if (compareBtn) {
-      compareBtn.classList.remove('active');
-    }
-    window.compareMode = false;
-    window.selectedLots.clear();
-    if (typeof removeEditOutlines === 'function') {
-      removeEditOutlines();
-    }
-    console.log('Compare mode OFF (modal closed with zoom reset)');
-
-    // 🟢 RESTORE from backup BEFORE clearing it
-    if (window.originalBaseLots) {
-      baseLots = [...window.originalBaseLots];
-      window.originalBaseLots = null;
-    }
-  }
-
-  // 🔥 Hide 360 viewer when closing modal
-  const viewerContainer = document.getElementById('viewer-container');
-  if (viewerContainer) {
-    viewerContainer.style.display = 'none';
-  }
-
-  // Clear URL first
-  clearLotURL();
-
-  // Remove side length labels
-  removeSideLengthLabels();
-
-  // 🟢 FOR POI: Don't fly to fracc center, just stay at current location
-  // 🟢 FOR LOT: Fly to fracc center as before
-  if (!wasPinMode) {
-    // Only fly to fracc center for lot modals (not POI)
-    const fraccCenter = getCurrentFraccCenter();
-    const initialZoom = getCurrentFraccZoom();
-
-    if (map) {
-      map.flyTo({
-        center: fraccCenter,
-        zoom: initialZoom,
-        bearing: 0,
-        pitch: 0,
-        speed: 1.2,
-        curve: 1.5
-      });
-    }
-
-    // Clear fracc for lot modal
-    modal.dataset.fracc = '';
-  } else {
-    // For pin mode, just undo the panBy offset (don't fly anywhere)
-    if (map && lastOffset) {
-      map.panBy([-lastOffset[0], -lastOffset[1]], { duration: 400 });
-      lastOffset = [0, 0];
-    }
-  }
-  
-  // Reset modal state
-  const wrapper = document.querySelector('.modal-content-wrapper');
-  const lotDetails = document.getElementById('lotDetails');
-  const backButton = document.getElementById('backButton');
-  const headerLotNumber = document.getElementById('headerLotNumber');
-  const plusBtn = document.querySelector('.plus-button');
-  const bottomPlus = document.querySelector('.bottom-plus-button');
-  
-  if (wrapper) wrapper.classList.remove('show-details');
-  if (lotDetails) {
-    lotDetails.classList.remove('active');
-    lotDetails.style.display = 'block';
-    lotDetails.innerHTML = '';
-  }
-  if (backButton) backButton.style.display = 'none';
-  if (headerLotNumber) headerLotNumber.style.display = 'none';
-  if (plusBtn) plusBtn.style.display = 'none';
-  if (bottomPlus) bottomPlus.style.display = 'none';
-  
-  // Hide calendly if open
-  const calendlyEl = document.getElementById('calendlyEmbed');
-  if (calendlyEl) calendlyEl.style.display = 'none';
-
-  // Hide share button when closing modal
-  const shareBtn = document.getElementById('shareButton');
-  if (shareBtn) shareBtn.style.display = 'none';
-
-  // Hide global dashboard button when closing modal and remove active state
-  const globalBtn = document.getElementById('globalDashboardButton');
-  if (globalBtn) {
-    globalBtn.classList.remove('active');  // Remove underline
-    globalBtn.style.display = 'none';
-  }
-
-  // Reset dashboard button state when closing modal
-  const dashboardBtn = document.getElementById('dashboard-btn');
-  const eyeOpen = document.getElementById('eye-open-icon');
-  const eyeClosed = document.getElementById('eye-closed-icon');
-  if (dashboardBtn) {
-    console.log('closeModalWithZoomReset: Resetting dashboard button state');
-    dashboardBtn.classList.remove('active');
-    if (eyeOpen) eyeOpen.style.display = 'none';  // Hide open eye
-    if (eyeClosed) eyeClosed.style.display = 'inline-block';  // Show closed eye (dashboard hidden)
-  }
-  window.isDashboardOpen = false;
-
-// Close modal with animation
-modal.classList.remove('show', 'info-mode', 'pin-mode', 'expanded', 'lot-mode');
-
-// 🔥 Clear immediately when show class is removed
-if (map && map.getSource('lots-final') && window.hoveredId !== null) {
-  try {
-    map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
-  } catch {}
-}
-
-setTimeout(() => {
-  modal.style.display = 'none';
-
-  // 🟢 SHOW FLOATING BUTTONS AGAIN
-  document.getElementById('searchBtnStage')?.classList.remove('hide');
-  document.getElementById('lalalandInfoBtn')?.classList.remove('hide');
-
-  // 🔥 Clear hover states AFTER modal is fully closed
-  if (map && map.getSource('lots-final')) {
-    try {
-      if (window.hoveredId !== null) {
-        map.setFeatureState({ source: 'lots-final', id: window.hoveredId }, { hover: false });
-      }
-
-      lotData.forEach((lot, index) => {
-        try {
-          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
-        } catch {}
-      });
-
-      window.hoveredId = null;
-    } catch {}
-  }
-  
-  // 🔥 Clear one more time after another frame
-  requestAnimationFrame(() => {
-    if (map && map.getSource('lots-final')) {
-      lotData.forEach((lot, index) => {
-        try {
-          map.setFeatureState({ source: 'lots-final', id: index }, { hover: false });
-        } catch {}
-      });
-    }
-  });
-}, 50);
-  
-  // Reset internal states
-  isDetailOpen = false;
-  scrollHandlerAttached = true;
-}
-
-
     // Handle URL changes - for browser navigation AFTER initial load
     function handleURLChange() {
       const lotName = getLotFromURL();
@@ -10492,16 +10762,13 @@ setTimeout(() => {
           }
         }
       } else {
-        // No lot in URL - close modal with zoom reset
-        closeModalWithZoomReset();
+        // No lot in URL - close modal
+        closeModal();
       }
     }
 
     // Listen for URL changes
     window.addEventListener('popstate', handleURLChange);
-
-    // 🟢 REPLACE THE CLOSE MODAL FUNCTION
-    window.closeModal = closeModalWithZoomReset;
 
     // Initialize - open lot from URL if present
     openInitialLotModal();
@@ -11585,21 +11852,6 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     return text.split('\n').map(line => `<div>${line || '&nbsp;'}</div>`).join('');
   }
 
-  function updateLogo(logoUrl) {
-    const communityLogo = document.getElementById('communityLogo');
-    const communityLogoImg = document.getElementById('communityLogoImg');
-
-    if (!communityLogo || !communityLogoImg) return;
-
-    if (logoUrl && logoUrl.trim() !== '') {
-      communityLogo.style.display = 'block';
-      communityLogoImg.src = logoUrl;
-    } else {
-      communityLogo.style.display = 'none';
-      communityLogoImg.src = '';
-    }
-  }
-
   function applyConfig() {
     setCSSVar('--orbit-radius', config.radius);
     setCSSVar('--dot', config.dotSize + 'px');
@@ -11619,6 +11871,21 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     // Initialize logo on page load
     updateLogo(config.defaultLogo || '');
+  }
+
+  function updateLogo(logoUrl) {
+    const communityLogo = document.getElementById('communityLogo');
+    const communityLogoImg = document.getElementById('communityLogoImg');
+
+    if (!communityLogo || !communityLogoImg) return;
+
+    if (logoUrl && logoUrl.trim() !== '') {
+      communityLogo.style.display = 'block';
+      communityLogoImg.src = logoUrl;
+    } else {
+      communityLogo.style.display = 'none';
+      communityLogoImg.src = '';
+    }
   }
 
   function buildDots() {
@@ -11936,7 +12203,6 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 })();
 </script>
 
-<!-- ===== PDF GENERATION COMPONENT ===== -->
 <script>
 (function() {
   // PDF Generation for Inverta - Multi-template support based on community group
