@@ -77,7 +77,6 @@ const CLIENT_CONFIGS = {
         id: 'senterra',
         name: 'Senterra',
         displayName: 'Senterra',
-        fracc: 'senterra',
         center: [-99.9490, 25.1474],
         zoom: 14.1,
         position: 0, // Position in community selector
@@ -330,6 +329,12 @@ function getClientConfig(clientName) {
   if (!config) {
     console.error(`❌ Client config not found for: ${clientName}`);
     return null;
+  }
+  // Auto-derive fracc from the config key so they can never go out of sync
+  if (config.communities) {
+    Object.keys(config.communities).forEach(key => {
+      config.communities[key].fracc = key;
+    });
   }
   return config;
 }
