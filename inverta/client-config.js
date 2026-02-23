@@ -150,7 +150,7 @@ const CLIENT_CONFIGS = {
         id: 'barcelona',
         name: 'Barcelona',
         displayName: 'Barcelona',
-        fracc: 'barcelona',
+
         center: [-96.035362, 19.046467],
         zoom: 16.2,
         position: 2,
@@ -163,7 +163,7 @@ const CLIENT_CONFIGS = {
         id: 'marsella',
         name: 'Marsella',
         displayName: 'Marsella',
-        fracc: 'marsella',
+
         center: [-96.038468, 19.047346],
         zoom: 16.3,
         position: 1,
@@ -176,7 +176,7 @@ const CLIENT_CONFIGS = {
         id: 'sierraalta',
         name: 'Sierra Alta',
         displayName: 'Sierra Alta',
-        fracc: 'sierraalta',
+
         center: [-96.090324, 19.072938],
         zoom: 15.6,
         position: 7,
@@ -189,7 +189,7 @@ const CLIENT_CONFIGS = {
         id: 'sierrabaja',
         name: 'Sierra Baja',
         displayName: 'Sierra Baja',
-        fracc: 'sierrabaja',
+
         center: [-96.091763, 19.074588],
         zoom: 16.8,
         position: 6,
@@ -202,7 +202,7 @@ const CLIENT_CONFIGS = {
         id: 'cortezia',
         name: 'Cortezia',
         displayName: 'Cortezia',
-        fracc: 'cortezia',
+
         center: [-110.909995, 29.12009],
         zoom: 15.8,
         position: 6,
@@ -215,7 +215,7 @@ const CLIENT_CONFIGS = {
         id: 'ebano',
         name: 'Ebano',
         displayName: 'Ebano',
-        fracc: 'ebano',
+
         center: [-110.909567, 29.121523],
         zoom: 16.2,
         position: 6,
@@ -228,7 +228,7 @@ const CLIENT_CONFIGS = {
         id: 'verdalia',
         name: 'Verdalia',
         displayName: 'Verdalia',
-        fracc: 'verdalia',
+
         center: [-110.90849, 29.123108],
         zoom: 15.5,
         position: 6,
@@ -241,7 +241,7 @@ const CLIENT_CONFIGS = {
         id: 'frondia',
         name: 'Frondia',
         displayName: 'Frondia',
-        fracc: 'frondia',
+
         center: [-110.906239, 29.125526],
         zoom: 16,
         position: 6,
@@ -254,7 +254,7 @@ const CLIENT_CONFIGS = {
         id: 'almaterra',
         name: 'Almaterra',
         displayName: 'Almaterra',
-        fracc: 'almaterra',
+
         center: [-100.06265, 25.314019],
         zoom: 14.5,
         position: 6,
@@ -509,6 +509,12 @@ function getClientConfig(clientName) {
   if (!config) {
     console.error(`❌ Client config not found for: ${clientName}`);
     return null;
+  }
+  // Auto-derive fracc from the config key so they can never go out of sync
+  if (config.communities) {
+    Object.keys(config.communities).forEach(key => {
+      config.communities[key].fracc = key;
+    });
   }
   return config;
 }

@@ -142,7 +142,6 @@ const CLIENT_CONFIGS = {
         id: 'amani-pietra',
         name: 'Amani Pietra',
         displayName: 'Amani Pietra',
-        fracc: 'pietra',
         center: [-100.189895, 25.428123],
         zoom: 16.3,
         position: 2,
@@ -155,7 +154,6 @@ const CLIENT_CONFIGS = {
         id: 'amani-aqua',
         name: 'Amani Aqua',
         displayName: 'Amani Aqua',
-        fracc: 'aqua',
         center: [-100.179293, 25.436671],
         zoom: 15.6,
         position: 1,
@@ -168,7 +166,6 @@ const CLIENT_CONFIGS = {
         id: 'cañadas-vergel',
         name: 'Cañadas Vergel',
         displayName: 'Cañadas Vergel',
-        fracc: 'canadas',
         center: [-100.178178, 25.441325],
         zoom: 16.4,
         position: 7,
@@ -420,6 +417,12 @@ function getClientConfig(clientName) {
   if (!config) {
     console.error(`❌ Client config not found for: ${clientName}`);
     return null;
+  }
+  // Auto-derive fracc from the config key so they can never go out of sync
+  if (config.communities) {
+    Object.keys(config.communities).forEach(key => {
+      config.communities[key].fracc = key;
+    });
   }
   return config;
 }
