@@ -20,6 +20,8 @@ const CLIENT_CONFIGS = {
     displayName: 'AGORA - La-La Land',
     slug: 'agora', // URL path slug (e.g., /inverta/)
     defaultCommunity: 'cañadas-vergel',
+    demoCommunity: 'amani-aqua',
+    demoNavKey: '2',
 
     // ----- BRANDING -----
     branding: {
