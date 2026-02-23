@@ -20,6 +20,8 @@ const CLIENT_CONFIGS = {
     displayName: 'CPI - La-La Land',
     slug: 'cpi', // URL path slug (e.g., /inverta/)
     defaultCommunity: 'senterra',
+    demoCommunity: 'senterra',
+    demoNavKey: '2',
 
     // ----- BRANDING -----
     branding: {
