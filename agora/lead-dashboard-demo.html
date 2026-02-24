@@ -447,6 +447,29 @@
           <tbody id="leadsTableBody"></tbody>
         </table>
       </div>
+
+      <!-- Agents Divider -->
+      <div id="agentsDivider" style="display: none; margin: 16px 0; border-top: 1px solid #e0ddd5;"></div>
+
+      <!-- Agents Section -->
+      <div id="agentsSection" style="display: none;">
+        <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--color-dark);">Agentes</h2>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Teléfono</th>
+                <th>Cotizaciones</th>
+                <th>Última Actividad</th>
+                <th>Agente</th>
+                <th>WhatsApp</th>
+              </tr>
+            </thead>
+            <tbody id="agentsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div><!-- end body-content -->
   </div>
 
@@ -705,7 +728,7 @@
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
             <td style="text-align: center;">${lead.exported ? 'Sí' : 'No'}</td>
             <td>${lead.campaign || '-'}</td>
-            <td style="text-align:center;"><button onclick="void(0)" class="agent-btn" title="Hacer agente">+</button></td>
+            <td style="text-align:center;"><button onclick="toggleAgent('${lead.id}', true)" class="agent-btn" title="Hacer agente">+</button></td>
             <td style="text-align:center;"><a href="${waLink}" target="_blank" class="whatsapp-btn" title="WhatsApp">→</a></td>
           </tr>`;
       }).join('');
@@ -767,9 +790,70 @@
       renderLeads();
     }
 
+    // --- AGENTS ---
+    let allAgents = [
+      {
+        id: 'a1', name: 'Daniela', last_name: 'Ríos Salazar', phone: '5218187654321',
+        created_at: '2025-12-10T09:00:00Z', uniqueQuotes: 14,
+        lastActivity: '2026-02-20T18:30:00Z'
+      },
+      {
+        id: 'a2', name: 'Alejandro', last_name: 'Núñez Torres', phone: '5218176543210',
+        created_at: '2026-01-05T10:00:00Z', uniqueQuotes: 8,
+        lastActivity: '2026-02-19T14:15:00Z'
+      }
+    ];
+
+    function renderAgents() {
+      const tbody = document.getElementById('agentsTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = allAgents.map(agent => {
+        const fullName = `${agent.name || ''} ${agent.last_name || ''}`.trim() || '-';
+        const waLink = getWhatsAppLink(agent.phone);
+        return `
+          <tr>
+            <td>${fullName}</td>
+            <td>${formatPhone(agent.phone)}</td>
+            <td>${agent.uniqueQuotes}</td>
+            <td>${formatMexicoCentralTime(agent.lastActivity)}</td>
+            <td style="text-align:center;"><button onclick="toggleAgent('${agent.id}', false)" class="agent-btn" title="Quitar agente">&minus;</button></td>
+            <td style="text-align:center;"><a href="${waLink}" target="_blank" class="whatsapp-btn" title="WhatsApp">&rarr;</a></td>
+          </tr>`;
+      }).join('');
+      document.getElementById('agentsDivider').style.display = allAgents.length > 0 ? 'block' : 'none';
+      document.getElementById('agentsSection').style.display = allAgents.length > 0 ? 'block' : 'none';
+    }
+
+    function toggleAgent(id, makeAgent) {
+      if (makeAgent) {
+        const idx = allLeads.findIndex(l => l.id === id);
+        if (idx === -1) return;
+        const lead = allLeads.splice(idx, 1)[0];
+        allAgents.push({
+          id: lead.id, name: lead.name, last_name: lead.last_name, phone: lead.phone,
+          created_at: lead.created_at, uniqueQuotes: 0,
+          lastActivity: new Date().toISOString()
+        });
+      } else {
+        const idx = allAgents.findIndex(a => a.id === id);
+        if (idx === -1) return;
+        const agent = allAgents.splice(idx, 1)[0];
+        allLeads.push({
+          id: agent.id, name: agent.name, last_name: agent.last_name, phone: agent.phone,
+          created_at: agent.created_at, attended_at: null,
+          visits: 0, uniqueDays: 0, savedCount: 0, savedLotNames: [],
+          score: 2, exported: false, campaign: '-'
+        });
+      }
+      renderLeads();
+      updateStats();
+      renderAgents();
+    }
+
     // Init
     renderLeads();
     updateStats();
+    renderAgents();
   </script>
 </body>
 </html>
