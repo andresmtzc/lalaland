@@ -171,7 +171,7 @@ window.clientAccessCache = window.clientAccessCache || {};
   <svg id="leads-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
     <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-primary)"/>
   </svg>
-  <span>Leads</span>
+  <span>Leads/Asesor</span>
 </button>
 
 <!-- Dashboard button - bottom left above mapbox logo, only visible when authenticated -->
@@ -8935,22 +8935,36 @@ const nextState = cur => {
       const baseIdx = baseLots.findIndex(b => b.name === mapLot.name);
       return { lotName: mapLot.name, number: n, baseIndex: baseIdx };
     }
-    // list-centered path
+    // list-centered path — only use if the centered row belongs to the current fracc
     const centered = document.querySelector('.info-row.center');
-    if (!centered) return null;
-    const baseIndex = parseInt(centered.dataset.baseIndex, 10);
-    if (isNaN(baseIndex) || baseIndex < 0) return null;
-    const base = baseLots[baseIndex];
-    if (!base) return null;
-
-    // 🔥 FIX: Search for lot matching BOTH number AND fraccionamiento
-    // This prevents selecting the wrong lot when duplicate numbers exist (e.g., lot 17-05 in both marsella and sierraalta)
-    const mapIdx = lotData.findIndex(l =>
-      extractLotNumber(l.name) === base.number &&
-      l.fraccionamiento === base.fraccionamiento
+    if (centered) {
+      const baseIndex = parseInt(centered.dataset.baseIndex, 10);
+      if (!isNaN(baseIndex) && baseIndex >= 0) {
+        const base = baseLots[baseIndex];
+        if (base && base.fraccionamiento === currentFraccionamiento) {
+          // 🔥 FIX: Search for lot matching BOTH number AND fraccionamiento
+          const mapIdx = lotData.findIndex(l =>
+            extractLotNumber(l.name) === base.number &&
+            l.fraccionamiento === base.fraccionamiento
+          );
+          if (mapIdx !== -1) {
+            return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
+          }
+        }
+      }
+    }
+    // 🔥 FIX: Fallback — select first available lot in currentFraccionamiento
+    // Handles the case where the user navigated to a new fracc via nav dots
+    // and the centered row belongs to a different community.
+    const firstAvailable = lotData.find(l =>
+      l.fraccionamiento === currentFraccionamiento &&
+      normalize(l.availability || 'available') !== 'sold'
     );
-    if (mapIdx === -1) return null;
-    return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
+    if (firstAvailable) {
+      const baseIdx = baseLots.findIndex(b => b.name === firstAvailable.name);
+      return { lotName: firstAvailable.name, number: extractLotNumber(firstAvailable.name), baseIndex: baseIdx };
+    }
+    return null;
   } 
 
   // Visual re-apply: map hover + list active row + button color
@@ -11010,23 +11024,19 @@ document.getElementById('compareBtn').addEventListener('click', function() {
     }
 });
 
-// Edit button event listener
+// Edit button — trigger inline price edit on the currently centered list row
 document.getElementById('editBtn').addEventListener('click', function() {
-    window.editMode = !window.editMode;
-    
-    if (window.editMode) {
-        // Enter edit mode
-        this.style.boxShadow = `0 0 0 3px ${CONFIG.colors.primaryFull}`;
-        this.style.backgroundColor = CONFIG.colors.primary;
-        showToaster('✏️ Edit mode ON - Edit prices in detail view');
-        console.log('Edit mode ON');
-} else {
-    // Exit edit mode
-    this.style.boxShadow = '';
-    this.style.backgroundColor = CONFIG.colors.cream;
-    showToaster('Edit mode OFF');
-    console.log('Edit mode OFF');
-}
+    const centered = document.querySelector('.info-row.center');
+    if (!centered) {
+        showToaster('Selecciona un lote primero.');
+        return;
+    }
+    const rowEditBtn = centered.querySelector('.row-action-btn.edit-btn');
+    if (rowEditBtn) {
+        rowEditBtn.click();
+    } else {
+        showToaster('No hay precio editable para este lote.');
+    }
 });
 
 // Compare mode click handler (renamed from handleEditClick)
