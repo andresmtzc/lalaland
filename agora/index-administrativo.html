@@ -100,7 +100,8 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <style>
   @media (min-width: 768px) {
-    #leads-modal-container {
+    #leads-modal-container,
+    #registro-modal-container {
       position: fixed;
       top: 50%;
       left: calc(10% + 250px);
@@ -183,11 +184,30 @@ window.clientAccessCache = window.clientAccessCache || {};
   <span>Dashboard</span>
 </button>
 
+<!-- Registro button - above leads button, only visible when authenticated -->
+<button id="registro-btn" class="dashboard-button" title="Registro">
+  <svg id="registro-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-white)"/>
+  </svg>
+  <svg id="registro-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-primary)"/>
+  </svg>
+  <span>Registro</span>
+</button>
+
 <!-- Leads modal overlay with iframe -->
 <div id="leads-modal-overlay" style="display:none;">
   <div id="leads-modal-backdrop"></div>
   <div id="leads-modal-container">
     <iframe id="leads-iframe" src="about:blank" frameborder="0"></iframe>
+  </div>
+</div>
+
+<!-- Registro modal overlay with iframe -->
+<div id="registro-modal-overlay" style="display:none;">
+  <div id="registro-modal-backdrop"></div>
+  <div id="registro-modal-container">
+    <iframe id="registro-iframe" src="about:blank" frameborder="0"></iframe>
   </div>
 </div>
 
@@ -2393,6 +2413,12 @@ ctaobserver.observe(ctaToaster, {
       leadsBtn.style.display = loggedIn ? 'flex' : 'none';
     }
 
+    // Update registro button visibility
+    const registroBtn = $('#registro-btn');
+    if (registroBtn) {
+      registroBtn.style.display = loggedIn ? 'flex' : 'none';
+    }
+
     // Update global auth state and re-render list to show/hide action buttons
     window.isUserAuthenticated = loggedIn;
 
@@ -2538,11 +2564,12 @@ ctaobserver.observe(ctaToaster, {
   const leadsCloseBtn = $('#leads-modal-close');
   const leadsIframe = $('#leads-iframe');
 
-  // Elements to hide when leads modal is open (save display state)
+  // Elements to hide when leads/registro modal is open on mobile (save display state)
   const leadsHideTargets = [
     $('.lala-wrapper'),
     $('#leads-btn'),
     $('#dashboard-btn'),
+    $('#registro-btn'),
     $('#gpsButton'),
     $('.logoinv-wrapper')
   ].filter(Boolean);
@@ -2550,6 +2577,8 @@ ctaobserver.observe(ctaToaster, {
   let leadsModalPanned = false;
 
   function openLeadsModal() {
+    // Close registro modal if open
+    if (window.isRegistroOpen) closeRegistroModal();
     // Close lotModal first if open
     const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
     if (typeof closeModal === 'function') {
@@ -2573,11 +2602,13 @@ ctaobserver.observe(ctaToaster, {
       closedIcon.style.display = 'none';
     }
     leadsBtn.classList.add('active');
-    // Save display state then hide
-    leadsHideTargets.forEach(el => {
-      leadsHideSavedDisplay.set(el, el.style.display);
-      el.style.display = 'none';
-    });
+    // Save display state then hide (mobile only)
+    if (window.innerWidth < 768) {
+      leadsHideTargets.forEach(el => {
+        leadsHideSavedDisplay.set(el, el.style.display);
+        el.style.display = 'none';
+      });
+    }
   }
 
   function closeLeadsModal() {
@@ -2597,10 +2628,12 @@ ctaobserver.observe(ctaToaster, {
       closedIcon.style.display = 'inline-block';
     }
     leadsBtn.classList.remove('active');
-    // Restore saved display state
-    leadsHideTargets.forEach(el => {
-      el.style.display = leadsHideSavedDisplay.get(el) || '';
-    });
+    // Restore saved display state (mobile only)
+    if (window.innerWidth < 768) {
+      leadsHideTargets.forEach(el => {
+        el.style.display = leadsHideSavedDisplay.get(el) || '';
+      });
+    }
   }
 
   leadsBtn && leadsBtn.addEventListener('click', () => {
@@ -2632,6 +2665,103 @@ ctaobserver.observe(ctaToaster, {
   window.addEventListener('message', (e) => {
     if (e.data === 'closeLeads' && window.isLeadsOpen) {
       closeLeadsModal();
+    }
+  });
+
+  // Registro button - toggle registro modal with iframe
+  window.isRegistroOpen = false;
+  const registroBtn = $('#registro-btn');
+  const registroOverlay = $('#registro-modal-overlay');
+  const registroBackdrop = $('#registro-modal-backdrop');
+  const registroIframe = $('#registro-iframe');
+
+  const registroHideSavedDisplay = new Map();
+  let registroModalPanned = false;
+
+  function openRegistroModal() {
+    // Close leads modal if open
+    if (window.isLeadsOpen) closeLeadsModal();
+    // Close lotModal first if open
+    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
+    if (typeof closeModal === 'function') {
+      try { closeModal(); } catch(e) {}
+    }
+
+    registroModalPanned = false;
+    if (map && window.innerWidth >= 768 && !lotModalWasOpen) {
+      map.panBy([-240, 0], { duration: 400 });
+      registroModalPanned = true;
+    }
+
+    window.isRegistroOpen = true;
+    registroIframe.src = 'registro-manual.html';
+    registroOverlay.style.display = 'block';
+    // Toggle icons
+    const openIcon = $('#registro-open-icon');
+    const closedIcon = $('#registro-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'inline-block';
+      closedIcon.style.display = 'none';
+    }
+    registroBtn.classList.add('active');
+    // Save display state then hide (mobile only)
+    if (window.innerWidth < 768) {
+      leadsHideTargets.forEach(el => {
+        registroHideSavedDisplay.set(el, el.style.display);
+        el.style.display = 'none';
+      });
+    }
+  }
+
+  function closeRegistroModal() {
+    if (map && window.innerWidth >= 768 && registroModalPanned) {
+      map.panBy([240, 0], { duration: 400 });
+      registroModalPanned = false;
+    }
+
+    window.isRegistroOpen = false;
+    registroOverlay.style.display = 'none';
+    registroIframe.src = 'about:blank';
+    // Toggle icons
+    const openIcon = $('#registro-open-icon');
+    const closedIcon = $('#registro-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'none';
+      closedIcon.style.display = 'inline-block';
+    }
+    registroBtn.classList.remove('active');
+    // Restore saved display state (mobile only)
+    if (window.innerWidth < 768) {
+      leadsHideTargets.forEach(el => {
+        el.style.display = registroHideSavedDisplay.get(el) || '';
+      });
+    }
+  }
+
+  registroBtn && registroBtn.addEventListener('click', () => {
+    if (window.isRegistroOpen) {
+      closeRegistroModal();
+    } else {
+      openRegistroModal();
+    }
+  });
+
+  // Close registro modal on backdrop click
+  registroBackdrop && registroBackdrop.addEventListener('click', () => {
+    closeRegistroModal();
+  });
+
+  // Close registro modal on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.isRegistroOpen) {
+      closeRegistroModal();
+    }
+  });
+
+  // Close registro modal via postMessage from iframe
+  window.addEventListener('message', (e) => {
+    if (e.data === 'closeRegistro' && window.isRegistroOpen) {
+      closeRegistroModal();
     }
   });
 
