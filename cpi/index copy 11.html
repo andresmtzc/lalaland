@@ -27,15 +27,49 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- ===== LEAD AUTH CHECK (runs first) ===== -->
+  <script>
+    (function() {
+      const CURRENT_CLIENT = 'cpi';
+
+      // Cookie helpers
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+      }
+
+      function setCookie(name, value, days) {
+        const expires = new Date(Date.now() + days * 864e5).toUTCString();
+        document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+      }
+
+      // Check if URL has ?token= query parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('token');
+
+      // Check for session cookie
+      const sessionToken = getCookie('lead_session_' + CURRENT_CLIENT);
+
+      // If no token in URL and no session, redirect to registro
+      if (!urlToken && !sessionToken) {
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+        // Stop execution
+        throw new Error('Redirecting to registro');
+      }
+
+      // Store token for later validation (after Supabase loads)
+      window.__leadAuthToken = urlToken;
+      window.__leadSessionToken = sessionToken;
+      window.__leadClient = CURRENT_CLIENT;
+    })();
+  </script>
+
   <title></title>
   <link rel="icon" href="favicon.ico" type="image/x-icon">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700" rel="stylesheet">
-<!-- STIX Two Text for PDF generation -->
-<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
-<!-- Custom fonts for PDF generation -->
-<link rel="stylesheet" href="/fonts/fonts.css">
-<!-- html2pdf for PDF generation -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet" />
@@ -46,19 +80,27 @@
 <link rel="stylesheet" href="https://la-la.land/styles.css">
 <link rel="stylesheet" href="https://la-la.land/street-view-nav.css">
 
+<!-- STIX Two Text font for PDF generation -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:wght@400;700&display=swap" rel="stylesheet">
+
+<!-- html2pdf for PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
 <!-- ===== LOAD CLIENT CONFIGURATION ===== -->
 <script src="client-config.js"></script>
 <script>
 // ===== CLIENT CONFIG =====
-const CURRENT_CLIENT = 'agora';
+const CURRENT_CLIENT = 'cpi';
 const CONFIG = getClientConfig(CURRENT_CLIENT);
 window.CONFIG = CONFIG;
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 
-// Override defaultCommunity when loaded as demo (token starts with DEMO, or ?demo param)
+// Override defaultCommunity when loaded as demo (token starts with DEMO)
 (function() {
   const _t = new URLSearchParams(location.search).get('token');
-  if (((_t && _t.startsWith('DEMO')) || IS_DEMO) && CONFIG && CONFIG.demoCommunity) {
+  if (_t && _t.startsWith('DEMO') && CONFIG && CONFIG.demoCommunity) {
     CONFIG.defaultCommunity = CONFIG.demoCommunity;
   }
 })();
@@ -96,37 +138,6 @@ window.clientAccessCache = window.clientAccessCache || {};
       document.body.classList.add('fonts-loaded'); // Fallback if fonts fail
     });
   </script>
-
-
-<style>
-  #registro-modal-overlay,
-  #leads-modal-overlay {
-    z-index: 10001;
-  }
-  #leads-modal-container {
-    opacity: 0;
-    transition: opacity 0.4s ease, transform 0.4s ease;
-    transform: translateY(-30px);
-  }
-  #leads-modal-container.show {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  @media (min-width: 768px) {
-    #leads-modal-container {
-      position: fixed;
-      top: 50%;
-      left: calc(10% + 250px);
-      width: 750px;
-      height: 90%;
-      max-height: 1000px;
-      transform: translate(-50%, -55%);
-    }
-    #leads-modal-container.show {
-      transform: translate(-50%, -50%);
-    }
-  }
-</style>
 </head>
  
 <body>
@@ -168,61 +179,21 @@ window.clientAccessCache = window.clientAccessCache || {};
   })();
 </script>
 
-<!-- Login button in top right -->
-<button id="globe-login-btn" class="globe-login-button" title="Login">
-  Login
-</button>
-
-<!-- Leads button - above dashboard button, only visible when authenticated -->
-<button id="leads-btn" class="dashboard-button" title="Leads">
-  <!-- Person icon (default - leads closed) -->
-  <svg id="leads-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-white)"/>
-  </svg>
-  <!-- Person icon filled (leads open) -->
-  <svg id="leads-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Usuarios</span>
-</button>
-
-<!-- Dashboard button - bottom left above mapbox logo, only visible when authenticated -->
-<button id="dashboard-btn" class="dashboard-button" title="Dashboard">
-  <!-- Bar graph icon (default - dashboard closed) -->
-  <svg id="eye-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M4 20h4V10H4v10zm6 0h4V4h-4v16zm6 0h4v-8h-4v8z" fill="var(--color-white)"/>
-  </svg>
-  <!-- Bar graph icon filled (dashboard open) -->
-  <svg id="eye-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M4 20h4V10H4v10zm6 0h4V4h-4v16zm6 0h4v-8h-4v8z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Dashboard</span>
-</button>
-
-<!-- Registro button - above leads button, only visible when authenticated -->
-<button id="registro-btn" class="dashboard-button" title="Registro">
-  <svg id="registro-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-white)"/>
-  </svg>
-  <svg id="registro-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Registro</span>
-</button>
-
-<!-- Leads modal overlay with iframe -->
-<div id="leads-modal-overlay" style="display:none;">
-  <div id="leads-modal-backdrop"></div>
-  <div id="leads-modal-container">
-    <iframe id="leads-iframe" src="about:blank" frameborder="0"></iframe>
-  </div>
+<!-- Lead greeting in top right -->
+<div id="lead-greeting" class="lead-greeting">
+  Hola, <span id="lead-name"></span>
 </div>
 
-<!-- Registro modal overlay with iframe -->
-<div id="registro-modal-overlay" style="display:none;">
-  <div id="registro-modal-backdrop"></div>
-  <div id="registro-modal-container">
-    <iframe id="registro-iframe" src="about:blank" frameborder="0"></iframe>
+<!-- Name Modal (shown when lead has no name) -->
+<div id="nameModal" class="name-modal">
+  <div class="name-modal-content">
+    <h2>¡Bienvenido!</h2>
+    <p>¿Cómo te llamas?</p>
+    <form id="nameForm">
+      <input type="text" id="leadNameInput" placeholder="Nombre" required>
+      <input type="text" id="leadLastNameInput" placeholder="Apellido" required>
+      <button type="submit">EMPEZAR</button>
+    </form>
   </div>
 </div>
 
@@ -233,7 +204,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <div class="logoinv-wrapper">
    <a href="#" onclick="event.preventDefault(); window.location.reload(true);" title="Reload Site">
-  <img id="mainClientLogo" src="" alt="" style="height:40px;"></a>
+  <img id="mainClientLogo" style="height: 50px;" src="" alt=""></a>
 </div>
 <script>
   // Set main logo from config
@@ -251,8 +222,8 @@ window.clientAccessCache = window.clientAccessCache || {};
 </script>
 
 <!-- Conditional community logo -->
-<div class="community-logo-wrapper" id="communityLogo" style="top:70px;">
-  <img id="communityLogoImg" src="" alt="Community Logo">
+<div class="community-logo-wrapper" id="communityLogo" style="top:100px; left:45px;">
+  <img id="communityLogoImg" src="" alt="Community Logo" style="height:45px;">
 </div>
 <script>
   // Set initial community logo from config (for default community)
@@ -2081,7 +2052,7 @@ function close360ViewerInModal(targetBaseIndex = null) {
       const scrollTarget = (targetBaseIndex !== null && typeof targetBaseIndex === 'number') 
         ? targetBaseIndex 
         : (typeof targetBaseIndex === 'string' 
-          ? baseLots.findIndex(l => l.name === targetBaseIndex)
+          ? baseLots.findIndex(l => l.number === targetBaseIndex)
           : lastOpenedBaseIndex);
           
       if (typeof scrollTarget === 'number' && scrollTarget !== -1) {
@@ -2280,6 +2251,20 @@ ctaobserver.observe(ctaToaster, {
         // If lot just became sold, add X mark
         if (wasAvailable && nowSold && typeof addSoldXs === 'function') {
           addSoldXs(map, [lot], 300);
+
+          // Auto-remove sold lots from lead's saved lots
+          if (window.currentLead && window.leadSavedLots?.has(lot.name)) {
+            window.leadSavedLots.delete(lot.name);
+            // Remove from database
+            window.supabaseClient?.from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lot.name)
+              .eq('client', CURRENT_CLIENT)
+              .then(() => console.log('🗑️ Auto-removed sold lot from favorites:', lot.name));
+            // Refresh map layer
+            if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          }
         }
       }
 
@@ -2343,7 +2328,353 @@ ctaobserver.observe(ctaToaster, {
   });
 </script>
 
+<!-- ===== LEAD TOKEN AUTH VALIDATION ===== -->
+<script>
+(async function validateLeadAuth() {
+  const CURRENT_CLIENT = window.__leadClient || 'cpi';
 
+  // Cookie helpers
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+  }
+
+  function setCookie(name, value, days) {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+  }
+
+  // Wait for Supabase
+  await window.supabaseReady;
+
+  const urlToken = window.__leadAuthToken;
+  const sessionToken = window.__leadSessionToken;
+
+  // If we have a URL token, validate and claim it
+  if (urlToken) {
+    try {
+      // Look up the token
+      const { data: tokenData, error: tokenError } = await window.supabaseClient
+        .from('lead_tokens')
+        .select('id, lead_id, claimed, leads(id, phone, name, last_name, is_agent, is_demo)')
+        .eq('token', urlToken)
+        .single();
+
+      if (tokenError || !tokenData) {
+        // Invalid token
+        console.error('Invalid token:', urlToken);
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
+        return;
+      }
+
+      const isDemo = tokenData.leads?.is_demo === true;
+
+      if (!isDemo) {
+        if (tokenData.claimed) {
+          // Token already claimed by another device
+          console.error('Token already claimed:', urlToken);
+          window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=claimed';
+          return;
+        }
+
+        // Claim the token
+        await window.supabaseClient
+          .from('lead_tokens')
+          .update({ claimed: true, claimed_at: new Date().toISOString() })
+          .eq('id', tokenData.id);
+
+        // Update lead's last_seen_at
+        await window.supabaseClient
+          .from('leads')
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq('id', tokenData.lead_id);
+
+        // Save session cookie (365 days)
+        setCookie('lead_session_' + CURRENT_CLIENT, urlToken, 365);
+      }
+
+      // Store lead info globally
+      window.currentLead = {
+        id: tokenData.lead_id,
+        phone: tokenData.leads?.phone,
+        name: tokenData.leads?.name,
+        lastName: tokenData.leads?.last_name,
+        token: urlToken,
+        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT),
+        isDemo
+      };
+
+      // Set global agent flag
+      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+
+      console.log('✅ Lead authenticated via token:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '', isDemo ? '(DEMO)' : '');
+
+      // Demo: clear saved lots so each session starts fresh
+      if (isDemo) {
+        await window.supabaseClient
+          .from('lead_saved_lots')
+          .delete()
+          .eq('lead_id', tokenData.lead_id);
+      }
+
+      // Start session tracking
+      await startLeadSession();
+
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
+      }
+
+      // Clean URL (remove /m/token, keep just /client/)
+      const cleanUrl = window.location.origin + '/' + CURRENT_CLIENT + '/index-m.html';
+      window.history.replaceState({}, '', cleanUrl);
+
+    } catch (err) {
+      console.error('Token validation error:', err);
+      window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
+      return;
+    }
+  }
+  // If we have a session cookie, validate it
+  else if (sessionToken) {
+    try {
+      const { data: tokenData, error: tokenError } = await window.supabaseClient
+        .from('lead_tokens')
+        .select('id, lead_id, leads(id, phone, name, last_name, is_agent)')
+        .eq('token', sessionToken)
+        .single();
+
+      if (tokenError || !tokenData) {
+        // Session token no longer valid
+        console.error('Session token invalid');
+        document.cookie = 'lead_session_' + CURRENT_CLIENT + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+        return;
+      }
+
+      // Update lead's last_seen_at
+      await window.supabaseClient
+        .from('leads')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', tokenData.lead_id);
+
+      // Store lead info globally
+      window.currentLead = {
+        id: tokenData.lead_id,
+        phone: tokenData.leads?.phone,
+        name: tokenData.leads?.name,
+        lastName: tokenData.leads?.last_name,
+        token: sessionToken,
+        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT)
+      };
+
+      // Set global agent flag
+      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+
+      console.log('✅ Lead authenticated via session:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
+
+      // Start session tracking
+      await startLeadSession();
+
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
+      }
+
+    } catch (err) {
+      console.error('Session validation error:', err);
+      window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+      return;
+    }
+  }
+
+  // ===== SESSION TRACKING =====
+  window.currentSessionId = null;
+  window.sessionStartTime = null;
+
+  async function startLeadSession() {
+    if (!window.currentLead || !window.supabaseClient) return;
+
+    try {
+      window.sessionStartTime = new Date();
+
+      const { data, error } = await window.supabaseClient
+        .from('lead_sessions')
+        .insert({
+          lead_id: window.currentLead.id,
+          client_id: CURRENT_CLIENT,
+          started_at: window.sessionStartTime.toISOString(),
+          page_url: window.location.href,
+          user_agent: navigator.userAgent
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Failed to create session:', error);
+        return;
+      }
+
+      window.currentSessionId = data.id;
+      console.log('📊 Session started:', window.currentSessionId);
+
+      // Set up session end tracking
+      setupSessionEndTracking();
+    } catch (err) {
+      console.error('Session tracking error:', err);
+    }
+  }
+
+  async function endLeadSession() {
+    if (!window.currentSessionId || !window.sessionStartTime || !window.supabaseClient) return;
+
+    try {
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      await window.supabaseClient
+        .from('lead_sessions')
+        .update({
+          ended_at: endTime.toISOString(),
+          duration_seconds: durationSeconds
+        })
+        .eq('id', window.currentSessionId);
+
+      console.log(`📊 Session ended: ${durationSeconds}s`);
+    } catch (err) {
+      console.error('Failed to end session:', err);
+    }
+  }
+
+  function setupSessionEndTracking() {
+    // Track when user leaves the page
+    window.addEventListener('beforeunload', () => {
+      if (!window.currentSessionId) return;
+
+      // Use sendBeacon for reliable delivery during page unload
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      // We can't use async/await in beforeunload, so use sendBeacon
+      // But Supabase doesn't support sendBeacon directly, so we do best effort with fetch keepalive
+      if (window.supabaseClient) {
+        window.supabaseClient
+          .from('lead_sessions')
+          .update({
+            ended_at: endTime.toISOString(),
+            duration_seconds: durationSeconds
+          })
+          .eq('id', window.currentSessionId)
+          .then(() => console.log('📊 Session ended on unload'))
+          .catch(err => console.error('Failed to end session on unload:', err));
+      }
+    });
+
+    // Also track visibility changes (tab switches, minimizing)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // User switched away - update session
+        endLeadSession();
+      }
+    });
+  }
+
+  // Helper function to update lead greeting
+  function updateLeadGreeting() {
+    const leadNameEl = document.getElementById('lead-name');
+    if (leadNameEl && window.currentLead) {
+      const fullName = `${window.currentLead.name || ''} ${window.currentLead.lastName || ''}`.trim();
+      leadNameEl.textContent = fullName || 'Usuario';
+    }
+  }
+
+  // Show name modal
+  function showNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.add('show');
+    }
+  }
+
+  // Hide name modal
+  function hideNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.remove('show');
+    }
+  }
+
+  // Handle name form submission
+  const nameForm = document.getElementById('nameForm');
+  if (nameForm) {
+    nameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nameInput = document.getElementById('leadNameInput');
+      const lastNameInput = document.getElementById('leadLastNameInput');
+      const submitBtn = nameForm.querySelector('button');
+
+      const name = nameInput.value.trim();
+      const lastName = lastNameInput.value.trim();
+
+      if (!name || !lastName) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Guardando...';
+
+      try {
+        // Update lead in Supabase
+        await window.supabaseClient
+          .from('leads')
+          .update({ name, last_name: lastName })
+          .eq('id', window.currentLead.id);
+
+        // Update local state
+        window.currentLead.name = name;
+        window.currentLead.lastName = lastName;
+
+        // Update greeting
+        updateLeadGreeting();
+
+        // Hide modal
+        hideNameModal();
+
+      } catch (err) {
+        console.error('Error saving name:', err);
+        alert('Error al guardar. Intenta de nuevo.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continuar';
+      }
+    });
+  }
+
+  // Load saved lots for this lead
+  if (window.currentLead) {
+    try {
+      const { data: savedLots } = await window.supabaseClient
+        .from('lead_saved_lots')
+        .select('lot_name')
+        .eq('lead_id', window.currentLead.id)
+        .eq('client', CURRENT_CLIENT);
+
+      window.leadSavedLots = new Set(savedLots?.map(s => s.lot_name) || []);
+      console.log('✅ Loaded', window.leadSavedLots.size, 'saved lots for lead');
+
+      // Add saved lots layer to map if map is already loaded
+      if (window.map && typeof addSavedLotsLayer === 'function') {
+        addSavedLotsLayer(window.map);
+      }
+    } catch (err) {
+      console.error('Error loading saved lots:', err);
+      window.leadSavedLots = new Set();
+    }
+  }
+})();
+</script>
 
 
 <script>
@@ -2399,7 +2730,6 @@ ctaobserver.observe(ctaToaster, {
   }
 
   function updateButtons(loggedIn) {
-    if (IS_DEMO) loggedIn = true;
     if (btnLogin)  btnLogin.style.display  = loggedIn ? 'none' : 'flex';
 
     // Update globe button visual state
@@ -2420,18 +2750,6 @@ ctaobserver.observe(ctaToaster, {
     const dashboardBtn = $('#dashboard-btn');
     if (dashboardBtn) {
       dashboardBtn.style.display = loggedIn ? 'flex' : 'none';
-    }
-
-    // Update leads button visibility
-    const leadsBtn = $('#leads-btn');
-    if (leadsBtn) {
-      leadsBtn.style.display = loggedIn ? 'flex' : 'none';
-    }
-
-    // Update registro button visibility
-    const registroBtn = $('#registro-btn');
-    if (registroBtn) {
-      registroBtn.style.display = loggedIn ? 'flex' : 'none';
     }
 
     // Update global auth state and re-render list to show/hide action buttons
@@ -2568,218 +2886,6 @@ ctaobserver.observe(ctaToaster, {
         eyeClosed.style.display = 'inline-block';  // Show closed eye when dashboard is hidden
         dashboardBtn.classList.remove('active');
       }
-    }
-  });
-
-  // Leads button - toggle leads modal with iframe
-  window.isLeadsOpen = false;
-  const leadsBtn = $('#leads-btn');
-  const leadsOverlay = $('#leads-modal-overlay');
-  const leadsContainer = $('#leads-modal-container');
-  const leadsBackdrop = $('#leads-modal-backdrop');
-  const leadsCloseBtn = $('#leads-modal-close');
-  const leadsIframe = $('#leads-iframe');
-
-  // Elements to hide when leads/registro modal is open on mobile (save display state)
-  const leadsHideTargets = [
-    $('.lala-wrapper'),
-    $('#leads-btn'),
-    $('#dashboard-btn'),
-    $('#registro-btn'),
-    $('#gpsButton'),
-    $('.logoinv-wrapper')
-  ].filter(Boolean);
-  const leadsHideSavedDisplay = new Map();
-  let leadsModalPanned = false;
-
-  function openLeadsModal() {
-    // Close registro modal if open
-    if (window.isRegistroOpen) closeRegistroModal();
-    // Close lotModal first if open
-    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
-    if (typeof closeModal === 'function') {
-      try { closeModal(); } catch(e) {}
-    }
-
-    leadsModalPanned = false;
-    if (map && window.innerWidth >= 768 && !lotModalWasOpen) {
-      map.panBy([-240, 0], { duration: 400 });
-      leadsModalPanned = true;
-    }
-
-    window.isLeadsOpen = true;
-    leadsIframe.src = IS_DEMO ? 'lead-dashboard-demo.html' : 'lead-dashboard.html';
-    leadsOverlay.style.display = 'block';
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        leadsContainer.classList.add('show');
-      });
-    });
-    // Toggle icons
-    const openIcon = $('#leads-open-icon');
-    const closedIcon = $('#leads-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'inline-block';
-      closedIcon.style.display = 'none';
-    }
-    leadsBtn.classList.add('active');
-    // Save display state then hide (mobile only)
-    if (window.innerWidth < 768) {
-      leadsHideTargets.forEach(el => {
-        leadsHideSavedDisplay.set(el, el.style.display);
-        el.style.display = 'none';
-      });
-    }
-  }
-
-  function closeLeadsModal() {
-    if (map && window.innerWidth >= 768 && leadsModalPanned) {
-      map.panBy([240, 0], { duration: 400 });
-      leadsModalPanned = false;
-    }
-
-    leadsContainer.classList.remove('show');
-    window.isLeadsOpen = false;
-    setTimeout(() => {
-      leadsOverlay.style.display = 'none';
-      leadsIframe.src = 'about:blank';
-    }, 400);
-    // Toggle icons
-    const openIcon = $('#leads-open-icon');
-    const closedIcon = $('#leads-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'none';
-      closedIcon.style.display = 'inline-block';
-    }
-    leadsBtn.classList.remove('active');
-    // Restore saved display state (mobile only)
-    if (window.innerWidth < 768) {
-      leadsHideTargets.forEach(el => {
-        el.style.display = leadsHideSavedDisplay.get(el) || '';
-      });
-    }
-  }
-
-  leadsBtn && leadsBtn.addEventListener('click', () => {
-    if (window.isLeadsOpen) {
-      closeLeadsModal();
-    } else {
-      openLeadsModal();
-    }
-  });
-
-  // Close leads modal on backdrop click
-  leadsBackdrop && leadsBackdrop.addEventListener('click', () => {
-    closeLeadsModal();
-  });
-
-  // Close leads modal on X button click
-  leadsCloseBtn && leadsCloseBtn.addEventListener('click', () => {
-    closeLeadsModal();
-  });
-
-  // Close leads modal on Escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && window.isLeadsOpen) {
-      closeLeadsModal();
-    }
-  });
-
-  // Close leads modal via postMessage from iframe
-  window.addEventListener('message', (e) => {
-    if (e.data === 'closeLeads' && window.isLeadsOpen) {
-      closeLeadsModal();
-    }
-  });
-
-  // Registro button - toggle registro modal with iframe
-  window.isRegistroOpen = false;
-  const registroBtn = $('#registro-btn');
-  const registroOverlay = $('#registro-modal-overlay');
-  const registroBackdrop = $('#registro-modal-backdrop');
-  const registroContainer = $('#registro-modal-container');
-  const registroIframe = $('#registro-iframe');
-
-  const registroHideSavedDisplay = new Map();
-  let registroModalPanned = false;
-
-  function openRegistroModal() {
-    // Close leads modal if open
-    if (window.isLeadsOpen) closeLeadsModal();
-    // Close lotModal first if open
-    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
-    if (typeof closeModal === 'function') {
-      try { closeModal(); } catch(e) {}
-    }
-
-    registroModalPanned = false;
-    if (map && window.innerWidth >= 768 && !lotModalWasOpen) {
-      map.panBy([-240, 0], { duration: 400 });
-      registroModalPanned = true;
-    }
-
-    window.isRegistroOpen = true;
-    registroIframe.src = 'registro-manual.html';
-    registroOverlay.style.display = 'block';
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        registroContainer.classList.add('show');
-      });
-    });
-    // Toggle icons
-    const openIcon = $('#registro-open-icon');
-    const closedIcon = $('#registro-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'inline-block';
-      closedIcon.style.display = 'none';
-    }
-    registroBtn.classList.add('active');
-  }
-
-  function closeRegistroModal() {
-    if (map && window.innerWidth >= 768 && registroModalPanned) {
-      map.panBy([240, 0], { duration: 400 });
-      registroModalPanned = false;
-    }
-
-    registroContainer.classList.remove('show');
-    window.isRegistroOpen = false;
-    registroOverlay.style.display = 'none';
-    registroIframe.src = 'about:blank';
-    // Toggle icons
-    const openIcon = $('#registro-open-icon');
-    const closedIcon = $('#registro-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'none';
-      closedIcon.style.display = 'inline-block';
-    }
-    registroBtn.classList.remove('active');
-  }
-
-  registroBtn && registroBtn.addEventListener('click', () => {
-    if (window.isRegistroOpen) {
-      closeRegistroModal();
-    } else {
-      openRegistroModal();
-    }
-  });
-
-  // Close registro modal on backdrop click
-  registroBackdrop && registroBackdrop.addEventListener('click', () => {
-    closeRegistroModal();
-  });
-
-  // Close registro modal on Escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && window.isRegistroOpen) {
-      closeRegistroModal();
-    }
-  });
-
-  // Close registro modal via postMessage from iframe
-  window.addEventListener('message', (e) => {
-    if (e.data === 'closeRegistro' && window.isRegistroOpen) {
-      closeRegistroModal();
     }
   });
 
@@ -3615,7 +3721,7 @@ let isDetailOpen = false;
 let lastOpenedBaseIndex = null;
 
 // Global authentication state
-window.isUserAuthenticated = IS_DEMO;
+window.isUserAuthenticated = false;
 
 // Function to show road labels and hide built-in Mapbox labels
 function toggleRoadLabels() {
@@ -3794,6 +3900,11 @@ fetch(mapboxTokenUrl)
           await loadManzanaLabels(map);
           addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
+
+    // Add saved lots layer for leads
+    if (window.currentLead && window.leadSavedLots) {
+      addSavedLotsLayer(map);
+    }
     
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
 
@@ -3888,9 +3999,9 @@ function setupCommunitySearchMenu() {
 
 // ===== 🟢 ADD MARBLE LAYERS HERE =====
         // 🟢 MARBLES SOURCE
-        map.addSource('marbles', { 
-          type: 'geojson', 
-          data: { type:'FeatureCollection', features: [] } 
+        map.addSource('marbles', {
+          type: 'geojson',
+          data: { type:'FeatureCollection', features: [] }
         });
 
         // VISIBLE marbles layer (fades in/out based on zoom)
@@ -4157,9 +4268,9 @@ map.on('click', 'lots-final-click', (e) => {
     let targetBaseIndex = null;
     if (lot) {
       targetBaseIndex = baseLots.findIndex(l => l.name === lot.name);
-      // If baseLots is empty (data not loaded yet), store the lot name for later
+      // If baseLots is empty (data not loaded yet), store the lot number for later
       if (targetBaseIndex === -1 && !isDataLoaded) {
-        targetBaseIndex = lot.name;
+        targetBaseIndex = extractLotNumber(lot.name);
       }
     }
     
@@ -5238,9 +5349,9 @@ function animateLots(map, cb) {
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
-    // Fade in final lots - sold lots get partial opacity during transition
+    // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
     map.setPaintProperty("lots-final-available", "line-opacity", CONFIG.lotStyles.available.outline.opacity);
-    map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // ⬅️ partial for final layer during transition
+    map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51);
     if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
     if (map.getLayer("lots-final-sold-fill")) map.setPaintProperty("lots-final-sold-fill", "fill-opacity", CONFIG.lotStyles.sold.fill.opacity);
     // Labels now fade based on zoom level (see text-opacity interpolate expression)
@@ -5257,7 +5368,7 @@ function animateLots(map, cb) {
 
       // AFTER group layers fade out, update final sold layer to full 0.49
       setTimeout(() => {
-        map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity); // ⬅️ UPDATE TO FULL opacity
+        map.setPaintProperty("lots-final-sold", "line-opacity", 0.49); // ⬅️ UPDATE TO FULL 0.49
          
         // Remove all lot groups
         groupArr.forEach((_, i) => {
@@ -5664,7 +5775,141 @@ function startPolygonPulse(map, onComplete) {
 
   requestAnimationFrame(frame);
 }
-</script> 
+
+// ===== SAVED LOTS LAYER (for leads) =====
+function savedPolygonFeature(lot) {
+  const coords = [...lot.coords];
+  if (
+    coords.length < 3 ||
+    coords[0][0] !== coords[coords.length - 1][0] ||
+    coords[0][1] !== coords[coords.length - 1][1]
+  ) {
+    coords.push(coords[0]); // Ensure closed polygon
+  }
+
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coords]
+    },
+    properties: {
+      name: lot.name,
+      phase: Math.random() * Math.PI * 2,
+      opacity: 0.5
+    }
+  };
+}
+
+function addSavedLotsLayer(map) {
+  if (!window.currentLead || !window.leadSavedLots || window.leadSavedLots.size === 0) {
+    return;
+  }
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  if (savedLots.length === 0) return;
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  if (map.getSource('saved-lots')) {
+    map.getSource('saved-lots').setData({
+      type: 'FeatureCollection',
+      features
+    });
+    return;
+  }
+
+  map.addSource('saved-lots', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features
+    }
+  });
+
+  // Primary fill with pulsating opacity
+  map.addLayer({
+    id: 'saved-lots-layer',
+    type: 'fill',
+    source: 'saved-lots',
+    paint: {
+      'fill-color': CONFIG.colors.primary,
+      'fill-opacity': ['get', 'opacity']
+    }
+  }, 'lots-final-available');
+
+  // Primary color outline
+  map.addLayer({
+    id: 'saved-lots-outline',
+    type: 'line',
+    source: 'saved-lots',
+    paint: {
+      'line-color': CONFIG.colors.primary,
+      'line-width': 2,
+      'line-opacity': 1
+    }
+  }, 'lots-final-click');
+
+  // Start animation
+  startSavedLotsPulse(map);
+}
+
+function refreshSavedLotsLayer() {
+  if (!window.map) return;
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots?.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  const source = window.map.getSource('saved-lots');
+  if (source) {
+    source.setData({
+      type: 'FeatureCollection',
+      features
+    });
+  } else if (savedLots.length > 0) {
+    addSavedLotsLayer(window.map);
+  }
+}
+
+function startSavedLotsPulse(map) {
+  let t = 0;
+
+  function frame() {
+    t += 0.05;
+
+    const source = map.getSource('saved-lots');
+    if (!source || !source._data) return;
+
+    const updated = {
+      ...source._data,
+      features: source._data.features.map(f => {
+        const phase = f.properties?.phase ?? 0;
+        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            opacity
+          }
+        };
+      })
+    };
+
+    source.setData(updated);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+}
+</script>
 
 
 
@@ -5854,7 +6099,7 @@ function extractLotNumber(lotName) {
   const prefixes = CONFIG.lotPrefixes;
 
   // Get all prefix values and sort by length (longest first) to handle overlapping prefixes
-  // This ensures 'lotinvertasb' is matched before 'lotinverta'
+  // This ensures more specific prefixes are matched before generic ones
   const sortedPrefixes = Object.values(prefixes).sort((a, b) => b.length - a.length);
 
   let cleanName = lotName;
@@ -6198,31 +6443,13 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const priceM2Formatted = priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const totalPriceFormatted = totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Get pricing config for this community
-  const pricingConfig = typeof getCommunityPricing === 'function'
-    ? getCommunityPricing(CURRENT_CLIENT, lot.fraccionamiento)
-    : null;
-
-  // Build plan options HTML (plan-based pricing)
-  let planOptionsHtml = '';
-  if (pricingConfig && pricingConfig.plans) {
-    pricingConfig.plans.forEach((plan, idx) => {
-      planOptionsHtml += `<option value="${idx}">${plan.name}</option>`;
-    });
-  }
-
-  // Get first plan defaults for initial display
-  const defaultPlan = pricingConfig && pricingConfig.plans ? pricingConfig.plans[0] : null;
-  const defaultDiscountedPrice = defaultPlan ? totalPrice * (1 - defaultPlan.discount / 100) : totalPrice;
-  const defaultEnganche = defaultPlan ? defaultDiscountedPrice * (defaultPlan.downPayment / 100) : 0;
-
   detailRow.innerHTML = `
   <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
     <!-- Top row: Lot name on left, calculation centered -->
     <div style="display: flex; align-items: center; justify-content: center; width: 100%; position: relative;">
       <!-- Lot name on left (smaller, two rows) -->
       <div class="lot-left" style="position: absolute; left: 0; align-items: flex-end !important; text-align: right !important; transform: scale(0.75); transform-origin: left center;">
-        <div class="lote-label">MZ-L</div>
+        <div class="lote-label">LOTE</div>
         <div class="lote-number" style="text-align: right !important; margin-left: 0 !important;">${lot.number}</div>
       </div>
 
@@ -6239,124 +6466,94 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       $${totalPriceFormatted}<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>
     </div>
     <div style="font-size: 13px; color: ${CONFIG.colors.textLight}; text-align: right; width: 100%; margin-top: -8px;">
-      Precio del plan
+      Precio de preventa
     </div>
     <div style="width: 100%; height: 1px; background: ${CONFIG.colors.grayLight}; margin: 0px;"></div>
 
-    ${pricingConfig && pricingConfig.plans ? `
-    <!-- Plan-based Financing -->
-    <div style="margin-top: 6px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; position: relative;">
-      <!-- Row 1: Plan dropdown + Enganche amount -->
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 110px;">
-          <select id="downPaymentCalc" style="width: 110px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${planOptionsHtml}
-          </select>
-        </div>
-        <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${defaultEnganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+    <!-- Financing Calculator - Two Column Layout -->
+    <div style="margin-top: 6px; width: 100%; display: flex; gap: 16px; position: relative;">
+      <!-- Left Column: Esquema de pagos -->
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 13.5px; font-weight: 600; color: ${CONFIG.colors.textLight};">Esquema de pagos</div>
+        <select id="downPaymentCalc" style="width: 100%; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
+          <option value="25">25/45/30</option>
+          <option value="50">50/50</option>
+          <option value="85">85/15</option>
+        </select>
+
+        <div style="font-size: 13.5px; color: ${CONFIG.colors.textLight};">
+          Descuento: <span id="discountDisplay" style="font-weight: 600;">0%</span>
         </div>
       </div>
-
-      <!-- Row 2: Discount display + Mensualidades -->
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 110px; text-align: center; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight};">
-          <span id="discountDisplay">${defaultPlan.discount}%</span>
+      <!-- Right Column: Payment details -->
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
+        <div style="font-size: 13.5px; color: ${CONFIG.colors.textLight};">
+          Enganche: <span id="downPaymentAmount" style="font-weight: 700;">$${(totalPrice * 0.25).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
-        <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          <span id="paymentLabel">${defaultPlan.installments.count} Meses</span>: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span id="paymentSuffix" style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
+        <div id="mensualidadesRow" style="font-size: 13.5px; color: ${CONFIG.colors.textLight};">
+          24 Meses: <span id="monthlyPayment" style="font-weight: 700;">$${(totalPrice * 0.45 / 24).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
-      </div>
-
-      <!-- Row 3: Descuento label + Escrituración (conditional) -->
-      <div style="width: 100%; display: flex; justify-content: space-between; margin-top: -4px; font-size: 13px; color: ${CONFIG.colors.textLight};">
-        <div style="width: 110px; text-align: center;" class="descuento-label">
-          <span>Descuento</span>
-        </div>
-        <div style="text-align: right;" id="financingInfo">
-          <span>Escrituración: <span id="financingTotalPrice">$0.00</span></span>
+        <div id="financingInfo" style="font-size: 13.5px; color: ${CONFIG.colors.textLight};">
+          Al Escriturar: <span id="financingTotalPrice" style="font-weight: 700;">$${(totalPrice * 0.30).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       </div>
     </div>
-    ` : `
-    <!-- No pricing available - Contact for pricing -->
-    <div style="margin-top: 12px; width: 100%; text-align: center; padding: 16px; background: ${CONFIG.colors.grayVeryLight}; border-radius: 8px;">
-      <div style="font-size: 16px; color: ${CONFIG.colors.textLight};">
-        Contáctanos para conocer opciones de financiamiento
-      </div>
-    </div>
-    `}
   </div>
 `;
 
   detailContainer.appendChild(detailRow);
 
-  // Initialize plan-based calculator (only if pricing config with plans exists)
-  if (pricingConfig && pricingConfig.plans) {
-    const totalPriceNum = totalPrice;
-    const plans = pricingConfig.plans;
+  // Initialize presale payment calculator
+  const totalPriceNum = totalPrice;
 
-    function updatePlanCalculations() {
-      const planIndex = parseInt(document.getElementById('downPaymentCalc').value);
-      const plan = plans[planIndex];
-      if (!plan) return;
+  function updatePresaleCalculations() {
+    const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
+    const discountDisplay = document.getElementById('discountDisplay');
+    const mensualidadesRow = document.getElementById('mensualidadesRow');
+    const monthlyPayment = document.getElementById('monthlyPayment');
+    const financingTotalPrice = document.getElementById('financingTotalPrice');
+    const bigTotalPrice = document.getElementById('bigTotalPrice');
 
-      const discountedPrice = totalPriceNum * (1 - plan.discount / 100);
-      const enganche = discountedPrice * (plan.downPayment / 100);
-      const installmentTotal = discountedPrice * (plan.installments.pct / 100);
-      const mensualidad = installmentTotal / plan.installments.count;
-      const escrituracion = discountedPrice * (plan.escrituracion / 100);
-
-      // Update enganche
-      document.getElementById('downPaymentAmount').textContent = '$' + enganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-      // Update discount display — hide when 0%
-      const discountEl = document.getElementById('discountDisplay');
-      discountEl.textContent = plan.discount + '%';
-      discountEl.parentElement.style.visibility = plan.discount > 0 ? 'visible' : 'hidden';
-
-      // Update mensualidades
-      document.getElementById('paymentLabel').textContent = plan.installments.count + ' Meses';
-      document.getElementById('monthlyPayment').textContent = '$' + mensualidad.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      document.getElementById('paymentSuffix').textContent = '/MES';
-
-      // Update escrituración row
-      const financingInfo = document.getElementById('financingInfo');
-      if (plan.escrituracion > 0) {
-        financingInfo.style.visibility = 'visible';
-        financingInfo.innerHTML = '<span>Escrituración: <span id="financingTotalPrice">$' + escrituracion.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</span></span>';
-      } else {
-        financingInfo.style.visibility = 'hidden';
-      }
-
-      // Update descuento label visibility
-      const descuentoLabel = document.querySelector('.descuento-label');
-      if (descuentoLabel) {
-        descuentoLabel.style.visibility = plan.discount > 0 ? 'visible' : 'hidden';
-      }
-
-      // Update big total price to show discounted price when discount > 0
-      const bigTotalPrice = document.getElementById('bigTotalPrice');
-      if (bigTotalPrice) {
-        bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
-      }
-
+    if (downPaymentPercent === 0.25) {
+      // 25/45/30: 25% enganche, 45% in 24 months, 30% on deeds - no discount
+      discountDisplay.textContent = '0%';
+      mensualidadesRow.style.display = '';
+      const monthly = (totalPriceNum * 0.45) / 24;
+      monthlyPayment.textContent = '$' + monthly.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      financingTotalPrice.textContent = '$' + (totalPriceNum * 0.30).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // Big price shows full price
+      bigTotalPrice.innerHTML = '$' + totalPriceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+    } else if (downPaymentPercent === 0.50) {
+      // 50/50: 50% enganche, 50% contra escrituras - 5% discount
+      const discountedPrice = totalPriceNum * 0.95;
+      discountDisplay.textContent = '5%';
+      mensualidadesRow.style.display = 'none';
+      financingTotalPrice.textContent = '$' + (discountedPrice * 0.50).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // Big price shows discounted price
+      bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+    } else if (downPaymentPercent === 0.85) {
+      // 85/15: 85% enganche, 15% contra escrituras - 12% discount
+      const discountedPrice = totalPriceNum * 0.88;
+      discountDisplay.textContent = '12%';
+      mensualidadesRow.style.display = 'none';
+      financingTotalPrice.textContent = '$' + (discountedPrice * 0.15).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // Big price shows discounted price
+      bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
     }
 
-    // Add event listener
-    setTimeout(() => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const planParam = urlParams.get('plan');
-
-      const planSelect = document.getElementById('downPaymentCalc');
-      if (planParam !== null && planSelect) {
-        planSelect.value = planParam;
-      }
-
-      planSelect?.addEventListener('change', updatePlanCalculations);
-      updatePlanCalculations(); // Initial calculation
-    }, 100);
+    // Update enganche amount (based on discounted price for 50/50 and 85/15)
+    const downPaymentAmount = downPaymentPercent === 0.50 ? (totalPriceNum * 0.95 * 0.50) :
+                              downPaymentPercent === 0.85 ? (totalPriceNum * 0.88 * 0.85) :
+                              (totalPriceNum * downPaymentPercent);
+    document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+
+  // Add event listener
+  setTimeout(() => {
+    const downPaymentSelect = document.getElementById('downPaymentCalc');
+    downPaymentSelect?.addEventListener('change', updatePresaleCalculations);
+    updatePresaleCalculations(); // Initial calculation
+  }, 100);
 
   // CTA Buttons Section
   const ctaSection = document.createElement('div');
@@ -6375,12 +6572,16 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'cta-buttons-row';
   buttonsRow.style.position = 'relative';
-  // Show COTIZAR button when authenticated, CÓMO LLEGAR otherwise
+  // Show COTIZAR when authenticated OR agent, CÓMO LLEGAR otherwise
   const isAuthenticated = window.isUserAuthenticated === true;
+  const isAgent = window.isAgent === true;
   const apartarEnabled = getCommunityByFracc(CURRENT_CLIENT, lot.fraccionamiento)?.apartarEnabled === true;
   buttonsRow.innerHTML = `
     <button class="cta-button first" id="separarBtn" translate="no"${!apartarEnabled ? ' disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>APARTAR</button>
-    ${isAuthenticated ? '<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>' : '<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>'}
+    ${(isAuthenticated || isAgent)
+      ? `<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>`
+      : `<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>`
+    }
     <button class="cta-button second" id="chatearBtn" translate="no">CHATEAR</button>
   `;
 
@@ -6414,8 +6615,405 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       } else {
         console.error('Payment view not available or lot data missing');
       }
+    } else if (e.target.id === 'descargarPdfBtn') {
+      // Generate and download multi-page PDF using template
+      e.stopPropagation();
+
+      // Prompt user for dynamic text (for page 3)
+      const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
+      if (!dynamicText) return; // User cancelled
+
+      // Track agent quote if this is an agent
+      if (window.isAgent && window.currentLead?.phone) {
+        window.supabaseClient
+          .from('agent_quotes')
+          .insert({
+            agent_phone: window.currentLead.phone,
+            client_id: CURRENT_CLIENT,
+            lot_name: lot?.name || null,
+            lead_name: dynamicText
+          })
+          .then(({ error }) => {
+            if (error) console.error('Error tracking agent quote:', error);
+            else console.log('✅ Agent quote tracked:', dynamicText);
+          });
+      }
+
+      // Create progress overlay
+      const progressOverlay = document.createElement('div');
+      progressOverlay.id = 'pdf-progress-overlay';
+      progressOverlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+      `;
+      progressOverlay.innerHTML = `
+        <div style="background: white; padding: 32px 48px; border-radius: 12px; text-align: center; font-family: Arial, sans-serif;">
+          <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Generando PDF...</div>
+          <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Cargando plantilla...</div>
+          <div style="width: 200px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
+            <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: ${CONFIG.colors?.primary || '#007bff'}; transition: width 0.3s;"></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(progressOverlay);
+
+      const progressText = document.getElementById('pdf-progress-text');
+      const progressBar = document.getElementById('pdf-progress-bar');
+
+      // Calculate lot values for placeholders
+      function getLotValues(lot, dynamicText) {
+        const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
+        const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+        const totalPrice = size * priceM2;
+
+        // Calculate category based on priceM2 tier
+        // Get unique priceM2 values from all lots, sorted descending (highest first)
+        const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+        const uniquePrices = [...new Set(allLotsData.map(l =>
+          parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+        ))].filter(p => p > 0).sort((a, b) => b - a);
+
+        // Determine category: AAA+ (highest), AAA (2nd), AA (3rd), A (lowest)
+        const categories = ['AAA+', 'AAA', 'AA', 'A'];
+        // Find price tier index (use tolerance for floating point comparison)
+        const priceIndex = uniquePrices.findIndex(p => Math.abs(p - priceM2) < 0.01);
+        const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+        // Format currency helper
+        const formatCurrency = (num) => '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const formatNumber = (num) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        // Discount calculations
+        const discount5 = totalPrice * 0.05;
+        const discount12 = totalPrice * 0.12;
+        const priceWith5Discount = totalPrice * 0.95;
+        const priceWith12Discount = totalPrice * 0.88;
+
+        // 25% plan: no discount, 25% down, 45% in 24 months, 30% contra escritura
+        const downpayment25 = totalPrice * 0.25;
+        const monthly25 = (totalPrice * 0.45) / 24;
+        const contraEscritura30 = totalPrice * 0.30;
+
+        // 50% plan: 5% discount, 50% down, 50% contra escritura
+        const downpayment50 = priceWith5Discount * 0.50;
+        const contraEscritura50 = priceWith5Discount * 0.50;
+
+        // 85% plan: 12% discount, 85% down, 15% contra escritura
+        const downpayment85 = priceWith12Discount * 0.85;
+        const contraEscritura15 = priceWith12Discount * 0.15;
+
+        return {
+          'dynamicText': dynamicText,
+          'lot.number': lot.number || '',
+          'lot.category': category || 'A',
+          'lot.size': formatNumber(size) + ' m²',
+          'lot.pricePerM2': formatCurrency(priceM2),
+          'lot.totalPrice': formatCurrency(totalPrice),
+          'lot.downpayment25': formatCurrency(downpayment25),
+          'lot.downpayment50': formatCurrency(downpayment50),
+          'lot.downpayment85': formatCurrency(downpayment85),
+          'lot.monthly25': formatCurrency(monthly25),
+          'lot.discount0': formatCurrency(0),
+          'lot.discount5': formatCurrency(discount5),
+          'lot.discount12': formatCurrency(discount12),
+          'lot.priceWith5Discount': formatCurrency(priceWith5Discount),
+          'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
+          'lot.contraEscritura30': formatCurrency(contraEscritura30),
+          'lot.contraEscritura50': formatCurrency(contraEscritura50),
+          'lot.contraEscritura15': formatCurrency(contraEscritura15)
+        };
+      }
+
+      // Replace placeholders in text
+      function replacePlaceholders(text, values) {
+        if (!text) return '';
+        return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+          return values[key.trim()] !== undefined ? values[key.trim()] : match;
+        });
+      }
+
+      // Create hidden container for rendering pages
+      const pdfContainer = document.createElement('div');
+      pdfContainer.id = 'pdf-generation-container';
+      pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+      document.body.appendChild(pdfContainer);
+
+      // Function to create a page with template elements
+      function createPage(pageNum, template, lotValues) {
+        const pdfPage = document.createElement('div');
+        pdfPage.style.cssText = `
+          width: 1224px;
+          height: 1584px;
+          position: relative;
+          background-image: url("https://la-la.land/cpi/pdf/page.${pageNum}.png");
+          background-size: cover;
+          background-repeat: no-repeat;
+          background-position: top left;
+        `;
+
+        // Get page data from template
+        const pageIndex = parseInt(pageNum, 10);
+        const pageData = template?.pages?.[pageIndex];
+
+        if (pageData) {
+          // Render text boxes
+          if (pageData.textBoxes) {
+            pageData.textBoxes.forEach(tb => {
+              const textEl = document.createElement('div');
+              textEl.textContent = replacePlaceholders(tb.content, lotValues);
+              textEl.style.cssText = `
+                position: absolute;
+                left: ${tb.x}px;
+                top: ${tb.y}px;
+                ${tb.width ? `width: ${tb.width}px;` : ''}
+                ${tb.height ? `height: ${tb.height}px;` : ''}
+                font-size: ${tb.fontSize || 24}px;
+                font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+                color: ${tb.color || '#000000'};
+                font-weight: ${tb.bold ? '700' : '400'};
+                font-style: ${tb.italic ? 'italic' : 'normal'};
+                text-decoration: ${tb.underline ? 'underline' : 'none'};
+                text-align: ${tb.textAlign || 'left'};
+                white-space: pre-wrap;
+              `;
+              pdfPage.appendChild(textEl);
+            });
+          }
+
+          // Render tables
+          if (pageData.tables) {
+            pageData.tables.forEach(tableData => {
+              // Get column widths and row heights (with defaults)
+              const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
+              const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
+              const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
+
+              const tableContainer = document.createElement('div');
+              tableContainer.style.cssText = `
+                position: absolute;
+                left: ${tableData.x}px;
+                top: ${tableData.y}px;
+              `;
+
+              const table = document.createElement('table');
+              table.style.cssText = `
+                border-collapse: collapse;
+                table-layout: fixed;
+                width: ${totalWidth}px;
+              `;
+
+              for (let r = 0; r < tableData.rows; r++) {
+                const tr = document.createElement('tr');
+                tr.style.height = rowHeights[r] + 'px';
+
+                for (let c = 0; c < tableData.cols; c++) {
+                  const cellData = tableData.cells?.[r]?.[c];
+                  if (!cellData || cellData.hidden) continue;
+
+                  const td = document.createElement('td');
+                  td.textContent = replacePlaceholders(cellData.content || '', lotValues);
+
+                  // Border properties
+                  const borderWidth = cellData.borderWidth || 1;
+                  const borderStyle = cellData.borderStyle || 'solid';
+                  const borderColor = cellData.borderColor || '#000000';
+                  const borderPosition = cellData.borderPosition || 'all';
+
+                  let borderCss = '';
+                  if (borderPosition === 'bottom') {
+                    borderCss = `border: none; border-bottom: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                  } else if (borderPosition === 'top') {
+                    borderCss = `border: none; border-top: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                  } else {
+                    borderCss = `border: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                  }
+
+                  td.style.cssText = `
+                    width: ${colWidths[c]}px;
+                    height: ${rowHeights[r]}px;
+                    box-sizing: border-box;
+                    overflow: hidden;
+                    background-color: ${cellData.bgColor || '#ffffff'};
+                    color: ${cellData.textColor || '#000000'};
+                    font-family: "${cellData.fontFamily || 'Arial'}", sans-serif;
+                    font-size: ${cellData.fontSize || 14}px;
+                    font-weight: ${cellData.bold ? '700' : '400'};
+                    font-style: ${cellData.italic ? 'italic' : 'normal'};
+                    text-decoration: ${cellData.underline ? 'underline' : 'none'};
+                    ${borderCss}
+                    padding: 0;
+                    text-align: ${cellData.textAlign || 'left'};
+                    vertical-align: middle;
+                  `;
+
+                  if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
+                  if (cellData.rowSpan > 1) td.rowSpan = cellData.rowSpan;
+
+                  tr.appendChild(td);
+                }
+                table.appendChild(tr);
+              }
+
+              tableContainer.appendChild(table);
+              pdfPage.appendChild(tableContainer);
+            });
+          }
+
+          // Render images
+          if (pageData.images) {
+            pageData.images.forEach(imgData => {
+              const imgEl = document.createElement('div');
+
+              // Determine image URL based on type
+              let imageUrl = '';
+              if (imgData.type === '{{lot.landscape}}') {
+                imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_landscape.jpg`;
+              } else if (imgData.type === '{{lot.map}}') {
+                imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_map.jpg`;
+              } else if (imgData.type === 'static' && imgData.url) {
+                imageUrl = imgData.url;
+              }
+
+              imgEl.style.cssText = `
+                position: absolute;
+                left: ${imgData.x}px;
+                top: ${imgData.y}px;
+                width: ${imgData.width}px;
+                height: ${imgData.height}px;
+                background-image: url("${imageUrl}");
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+              `;
+              pdfPage.appendChild(imgEl);
+            });
+          }
+        }
+
+        return pdfPage;
+      }
+
+      // Generate PDF
+      async function generateMultiPagePDF() {
+        // Step 1: Fetch template
+        progressText.textContent = 'Cargando plantilla...';
+        let template = { pages: {} };
+        try {
+          const response = await fetch('/cpi/pdf/pdf-template.json');
+          if (response.ok) {
+            template = await response.json();
+          }
+        } catch (err) {
+          console.warn('Could not load PDF template, using defaults:', err);
+        }
+
+        // Calculate lot values
+        const lotValues = getLotValues(lot, dynamicText);
+
+        // Step 2: Preload ALL images in parallel
+        progressText.textContent = 'Cargando imágenes...';
+        progressBar.style.width = '10%';
+
+        const imagePromises = [];
+
+        // Preload page backgrounds
+        for (let i = 1; i <= 8; i++) {
+          const pageNum = String(i).padStart(3, '0');
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = resolve;
+            img.onerror = resolve;
+            img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
+          }));
+        }
+
+        // Preload lot-specific images (landscape and map)
+        const lotNum = lotValues['lot.number'];
+        if (lotNum) {
+          ['landscape', 'map'].forEach(type => {
+            imagePromises.push(new Promise(resolve => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = resolve;
+              img.onerror = resolve;
+              img.src = `/cpi/pdf/lotcpi1-${lotNum}_${type}.jpg`;
+            }));
+          });
+
+          // Preload any static images from the template
+          Object.values(template.pages || {}).forEach(pageData => {
+            (pageData.images || []).forEach(imgData => {
+              if (imgData.type === 'static' && imgData.url) {
+                imagePromises.push(new Promise(resolve => {
+                  const img = new Image();
+                  img.crossOrigin = 'anonymous';
+                  img.onload = resolve;
+                  img.onerror = resolve;
+                  img.src = imgData.url;
+                }));
+              }
+            });
+          });
+        }
+
+        await Promise.all(imagePromises);
+        progressBar.style.width = '40%';
+
+        // Step 3: Generate PDF pages sequentially (required by jsPDF)
+        progressText.textContent = 'Generando PDF...';
+
+        const worker = html2pdf().set({
+          margin: 0,
+          filename: 'CPI-documento.pdf',
+          image: { type: 'jpeg', quality: 1 },
+          html2canvas: { scale: 1, useCORS: true },
+          jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
+        });
+
+        for (let i = 1; i <= 8; i++) {
+          progressText.textContent = `Renderizando página ${i} de 8`;
+          progressBar.style.width = `${40 + (i / 8) * 55}%`;
+
+          const pageNum = String(i).padStart(3, '0');
+
+          // Create page with template elements
+          const page = createPage(pageNum, template, lotValues);
+          pdfContainer.innerHTML = '';
+          pdfContainer.appendChild(page);
+
+          if (i === 1) {
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          } else {
+            await worker.get('pdf').then(pdf => {
+              pdf.addPage([1224, 1584], 'portrait');
+            });
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          }
+        }
+
+        // Save the final PDF
+        progressText.textContent = 'Descargando...';
+        progressBar.style.width = '100%';
+        await worker.save();
+
+        // Clean up
+        document.body.removeChild(pdfContainer);
+        document.body.removeChild(progressOverlay);
+      }
+
+      generateMultiPagePDF();
     } else if (e.target.id === 'visitarBtn') {
-      // Open driving directions to this lot
+      // Open driving directions to this lot (shown when not authenticated)
       e.stopPropagation();
 
       // Use the lotMapData already calculated in showDetailViewForLot
@@ -6438,23 +7036,6 @@ document.getElementById('authControls').classList.add('hide-in-detail');
       // Example: open WhatsApp
       // window.open('https://wa.me/5218185261819', '_blank');
       e.stopPropagation();
-    } else if (e.target.id === 'descargarPdfBtn') {
-      // Generate PDF quote
-      e.stopPropagation();
-      if (lot && window.generateMultiPagePDF) {
-        const dynamicText = prompt('Ingrese el texto para el PDF:');
-        if (dynamicText !== null) {
-          // Get selected plan index from the plan dropdown
-          const planSelect = document.getElementById('downPaymentCalc');
-          const financingOptions = {
-            planIndex: planSelect ? parseInt(planSelect.value) : 0
-          };
-          window.generateMultiPagePDF(lot, dynamicText, financingOptions);
-        }
-      } else {
-        console.error('PDF generation not available or lot data missing');
-        window.showToaster?.('Error al generar PDF');
-      }
     }
   });
 
@@ -6661,11 +7242,13 @@ const calculatedPriceFormatted = calculatedPrice.toString().replace(/\B(?=(\d{3}
 // Format price per m2 from Supabase
 const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '');
 
+    const isSaved = window.currentLead && window.leadSavedLots?.has(lot.name);
     if (isFeatured) row.classList.add('info-row--featured');
+    if (isSaved && !isSold) row.classList.add('info-row--saved');
 
 row.innerHTML = `
   <div class="lot-left">
-    <div class="lote-label">MZ-L</div>
+    <div class="lote-label">LOTE</div>
     <div class="lote-number">${lot.number}</div>
   </div>
 
@@ -6705,6 +7288,12 @@ row.innerHTML = `
               <path d="M23 4L23 10 17 10M1 20L1 14 7 14M3.51 9a9 9 0 0114.85-3.36L23 10M20.49 15a9 9 0 01-14.85 3.36L1 14"/>
             </svg>
           </button>
+        ` : (window.currentLead && !isSold) ? `
+          <button class="row-action-btn heart-btn ${window.leadSavedLots?.has(lot.name) ? 'saved' : ''}" title="Guardar" data-lot-name="${lot.name}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="${window.leadSavedLots?.has(lot.name) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+          </button>
         ` : ''}
       </div>
 
@@ -6729,6 +7318,22 @@ row.innerHTML = `
       const label = document.createElement('div');
       label.classList.add('featured-label');
       label.textContent = 'SELECCIÓN LA-LA LAND';
+      row.appendChild(label);
+    }
+
+    // Add saved lot styling (similar to featured but with heart)
+    if (isSaved && !isSold && !isFeatured) {
+      const left = document.createElement('div');
+      left.classList.add('border-left', 'border-left--saved');
+      row.appendChild(left);
+
+      const top = document.createElement('div');
+      top.classList.add('border-top', 'border-top--saved');
+      row.appendChild(top);
+
+      const label = document.createElement('div');
+      label.classList.add('saved-label');
+      label.innerHTML = 'FAVORITO';
       row.appendChild(label);
     }
 
@@ -6847,6 +7452,61 @@ function setupRowActionButtons() {
         if (typeof window.cycleSelectedLotAvailability === 'function') {
           window.cycleSelectedLotAvailability();
         }
+        return;
+      }
+
+      // Handle heart button clicks (save lot for leads)
+      const heartBtn = e.target.closest('.row-action-btn.heart-btn');
+      if (heartBtn) {
+        e.stopPropagation();
+        heartBtn.closest('.info-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const lotName = heartBtn.dataset.lotName;
+
+        if (!window.currentLead || !window.supabaseClient) {
+          console.error('Lead not authenticated');
+          return;
+        }
+
+        const isSaved = window.leadSavedLots?.has(lotName);
+
+        try {
+          if (isSaved) {
+            // Remove from saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lotName)
+              .eq('client', CURRENT_CLIENT);
+
+            window.leadSavedLots.delete(lotName);
+            heartBtn.classList.remove('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'none');
+            showToaster('Removed from favorites');
+          } else {
+            // Add to saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .insert({
+                lead_id: window.currentLead.id,
+                lot_name: lotName,
+                client: CURRENT_CLIENT
+              });
+
+            window.leadSavedLots.add(lotName);
+            heartBtn.classList.add('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'currentColor');
+            showToaster('Saved to favorites');
+          }
+
+          // Refresh map layer and list
+          if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          if (typeof render === 'function') render();
+        } catch (err) {
+          console.error('Error saving lot:', err);
+          showToaster('Error saving');
+        }
+        return;
       }
     });
   }
@@ -6860,14 +7520,12 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   }
 
   // Authentication check - trigger login if not authenticated
-  if (!IS_DEMO) {
-    const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
-    const isLoggedIn = !!(session && session.user);
-    if (!isLoggedIn) {
-      showToaster('Please login to edit prices');
-      document.getElementById('globe-login-btn')?.click();
-      return;
-    }
+  const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
+  const isLoggedIn = !!(session && session.user);
+  if (!isLoggedIn) {
+    showToaster('Please login to edit prices');
+    document.getElementById('globe-login-btn')?.click();
+    return;
   }
 
   // Strip commas and parse values
@@ -6904,15 +7562,6 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   }
 
   console.log(`Updating ${affectedLots.length} lots from ${oldValue} to ${newValue}`);
-
-  if (IS_DEMO) {
-    lotData.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); lot.price_m2 = newValue; } });
-    baseLots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
-    lots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
-    showToaster(`✓ Updated ${affectedLots.length} lot${affectedLots.length > 1 ? 's' : ''} (demo)`);
-    render(); highlightCenter(); updateScrollbar();
-    return;
-  }
 
   try {
     // Update all matching lots in Supabase using bulk .in() operation
@@ -7105,6 +7754,18 @@ function highlightCenter(isClamping = false) {
           void row.offsetWidth;
           row.classList.add('animate-featured');
           animatedFeaturedLots.add(featureIndex);
+        } else {
+          row.classList.add('animate-featured');
+        }
+      }
+
+      // Animate saved lots (same as featured)
+      if (row.classList.contains('info-row--saved')) {
+        const savedIndex = row.dataset.index;
+        if (!animatedFeaturedLots.has('saved-' + savedIndex)) {
+          void row.offsetWidth;
+          row.classList.add('animate-featured');
+          animatedFeaturedLots.add('saved-' + savedIndex);
         } else {
           row.classList.add('animate-featured');
         }
@@ -7535,7 +8196,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     const scrollToIndex = baseLots.findIndex(l => l.name === lot.name);
     if (scrollToIndex !== -1) {
       scrollToBaseIndex(scrollToIndex, true);
-      
+
       // Update map highlight
       const mapIndex = lotData.findIndex(l => l.name === lot.name);
       if (mapIndex !== -1 && map) {
@@ -7568,7 +8229,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
   // Prevent button animations on initial modal open
   if (wasHidden) {
     modal.classList.add('initial-load');
-    if (!skipPan && !window.isLeadsOpen) {
+    if (!skipPan) {
       adjustMapForModal();
     } else {
       console.log('⏭️ Skipping map pan (already positioned from dashboard)');
@@ -7700,7 +8361,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
       const scrollToIndex = baseLots.findIndex(l => l.name === lot.name);
       if (scrollToIndex !== -1) {
         scrollToBaseIndex(scrollToIndex, true);
-        
+
         // Update map highlight
         const mapIndex = lotData.findIndex(l => l.name === lot.name);
         if (mapIndex !== -1 && map) {
@@ -8308,10 +8969,6 @@ function hideCalendlyEmbed() {
     await window.supabaseReady;
 
     // Get authenticated user for RLS policy
-    if (IS_DEMO) {
-      toast('Pins are read-only in demo mode');
-      return;
-    }
     const { data: { user } } = await window.supabaseClient.auth.getUser();
     if (!user) {
       console.error('User not authenticated');
@@ -8956,36 +9613,22 @@ const nextState = cur => {
       const baseIdx = baseLots.findIndex(b => b.name === mapLot.name);
       return { lotName: mapLot.name, number: n, baseIndex: baseIdx };
     }
-    // list-centered path — only use if the centered row belongs to the current fracc
+    // list-centered path
     const centered = document.querySelector('.info-row.center');
-    if (centered) {
-      const baseIndex = parseInt(centered.dataset.baseIndex, 10);
-      if (!isNaN(baseIndex) && baseIndex >= 0) {
-        const base = baseLots[baseIndex];
-        if (base && base.fraccionamiento === currentFraccionamiento) {
-          // 🔥 FIX: Search for lot matching BOTH number AND fraccionamiento
-          const mapIdx = lotData.findIndex(l =>
-            extractLotNumber(l.name) === base.number &&
-            l.fraccionamiento === base.fraccionamiento
-          );
-          if (mapIdx !== -1) {
-            return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
-          }
-        }
-      }
-    }
-    // 🔥 FIX: Fallback — select first available lot in currentFraccionamiento
-    // Handles the case where the user navigated to a new fracc via nav dots
-    // and the centered row belongs to a different community.
-    const firstAvailable = lotData.find(l =>
-      l.fraccionamiento === currentFraccionamiento &&
-      normalize(l.availability || 'available') !== 'sold'
+    if (!centered) return null;
+    const baseIndex = parseInt(centered.dataset.baseIndex, 10);
+    if (isNaN(baseIndex) || baseIndex < 0) return null;
+    const base = baseLots[baseIndex];
+    if (!base) return null;
+
+    // 🔥 FIX: Search for lot matching BOTH number AND fraccionamiento
+    // This prevents selecting the wrong lot when duplicate numbers exist (e.g., lot 17-05 in both marsella and sierraalta)
+    const mapIdx = lotData.findIndex(l =>
+      extractLotNumber(l.name) === base.number &&
+      l.fraccionamiento === base.fraccionamiento
     );
-    if (firstAvailable) {
-      const baseIdx = baseLots.findIndex(b => b.name === firstAvailable.name);
-      return { lotName: firstAvailable.name, number: extractLotNumber(firstAvailable.name), baseIndex: baseIdx };
-    }
-    return null;
+    if (mapIdx === -1) return null;
+    return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
   } 
 
   // Visual re-apply: map hover + list active row + button color
@@ -9090,7 +9733,6 @@ function refreshFeaturedLayer() {
 
   // --- auth guard ---
   async function ensureLoggedIn() {
-    if (IS_DEMO) return true;
     const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
     return !!(session && session.user);
   }
@@ -9128,7 +9770,6 @@ function refreshFeaturedLayer() {
 
     // Save to database in background (don't await - fire and forget with error handling)
     (async () => {
-      if (IS_DEMO) return;
       try {
         // Mark this lot to skip next realtime re-render
         if (!window.skipNextRealtimeRender) window.skipNextRealtimeRender = new Set();
@@ -9700,67 +10341,47 @@ try {
 
 
 <script>
-// TEMPORARY FOR YC DEMO: All buttons visible regardless of auth status
-// Function to check authentication status and toggle buttons visibility hide buttons
+// Toggle admin-only buttons based on Supabase session (isAuthenticated)
 function toggleAuthButtons(isAuthenticated) {
+  if (IS_DEMO) isAuthenticated = false;
   const cycleAvailabilityBtn = document.getElementById('cycleAvailabilityBtn');
-  const addPinBtn = document.getElementById('addPinBtn');
-  const gpsButton = document.getElementById('gpsButton');
-  const driveBtn = document.getElementById('driveBtn');
-  const compareBtn = document.getElementById('compareBtn'); // Added compareBtn
-  const editBtn = document.getElementById('editBtn'); // Added editBtn
+  const editBtn = document.getElementById('editBtn');
+  const poiButton = document.getElementById('poiButton');
 
-  console.log('Toggle buttons - Authenticated:', isAuthenticated);
-  
-  // COMMENTED OUT FOR YC DEMO - Show all buttons always
-  // if (cycleAvailabilityBtn) {
-  //   cycleAvailabilityBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (addPinBtn) {
-  //   addPinBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (gpsButton) {
-  //   gpsButton.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (driveBtn) {
-  //   driveBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (compareBtn) { // Added compareBtn condition
-  //   compareBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (editBtn) { // Added editBtn condition
-  //   editBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
+  if (cycleAvailabilityBtn) {
+    cycleAvailabilityBtn.classList.toggle('hide-button', !isAuthenticated);
+  }
+  if (editBtn) {
+    editBtn.classList.toggle('hide-button', !isAuthenticated);
+  }
+  if (poiButton) {
+    poiButton.style.display = isAuthenticated ? '' : 'none';
+  }
 }
 
-// COMMENTED OUT FOR YC DEMO - Don't hide buttons on page load
-// Hide buttons immediately on page load
+// Hide admin buttons immediately on page load
 document.addEventListener('DOMContentLoaded', function() {
-  console.log('DOM loaded - showing all buttons for YC demo');
-  // toggleAuthButtons(false); // COMMENTED OUT FOR YC DEMO
-  
-  // Check auth status once Supabase is likely ready
+  toggleAuthButtons(false);
+
+  // Refine once Supabase is ready
   const checkAuth = setInterval(function() {
     if (window.supabaseClient && typeof window.supabaseClient.auth.getSession === 'function') {
       clearInterval(checkAuth);
       window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
         const isAuthenticated = !!(session && session.user);
-        console.log('Initial auth check - Authenticated:', isAuthenticated);
-        // toggleAuthButtons(isAuthenticated); // COMMENTED OUT FOR YC DEMO
+        toggleAuthButtons(isAuthenticated);
       });
     }
   }, 100);
 });
-  
-// COMMENTED OUT FOR YC DEMO - Don't toggle buttons on auth change
-// Listen for auth changes once Supabase is ready
+
+// Keep in sync with auth state changes
 const setupAuthListener = setInterval(function() {
   if (window.supabaseClient && typeof window.supabaseClient.auth.onAuthStateChange === 'function') {
     clearInterval(setupAuthListener);
     window.supabaseClient.auth.onAuthStateChange((_event, session) => {
       const isAuthenticated = !!(session && session.user);
-      console.log('Auth state changed - Authenticated:', isAuthenticated);
-      // toggleAuthButtons(isAuthenticated); // COMMENTED OUT FOR YC DEMO
+      toggleAuthButtons(isAuthenticated);
     });
   }
 }, 100);
@@ -10217,15 +10838,15 @@ function getCurrentFraccCenter() {
       };
     });
   }
-
+  
   const modal = document.getElementById('lotModal');
   let currentFracc = (modal?.dataset.fracc || '').trim().toLowerCase();
-
+  
   // 1. Try current modal fracc
   if (communities[currentFracc]) {
     return communities[currentFracc].center;
   }
-
+  
   // 2. Try most recent selected lot
   if (window.selectedLots.size > 0) {
     const lastSelected = Array.from(window.selectedLots).pop();
@@ -10237,13 +10858,13 @@ function getCurrentFraccCenter() {
       }
     }
   }
-
+  
   // 3. Dynamic: Find closest community to current map view
   if (map) {
     const currentCenter = map.getCenter();
     return findClosestCommunityCenter(currentCenter, communities);
   }
-
+  
   // 4. Fallback to first community
   return communities[Object.keys(communities)[0]].center;
 }
@@ -10380,7 +11001,7 @@ function getCurrentFraccZoom() {
 
                       // 🟢 SHOW DETAIL VIEW (this will handle dimensions internally)
                       showDetailViewForLot(baseIndex + cloneCount);
-
+                      
                       // 🟢 UPDATE CURRENT LOT INDEX
                       const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                       if (lotMapIndex !== -1) {
@@ -10769,8 +11390,20 @@ function shareCurrentLot() {
     return;
   }
   
-  // Get selected plan index
-  const selectedPlan = document.getElementById('downPaymentCalc')?.value || '0';
+  // Get financing calculator values
+  const downPaymentPercent = document.getElementById('downPaymentCalc')?.value || '25';
+
+  // Calculate installments based on down payment (presale structure)
+  let installments;
+  if (downPaymentPercent === '25') {
+    installments = '24'; // 25% down = 24 months
+  } else if (downPaymentPercent === '50') {
+    installments = '1'; // 50% down = 1 payment
+  } else if (downPaymentPercent === '85') {
+    installments = '1'; // 85% down = 1 payment
+  } else {
+    installments = '24'; // default
+  }
 
   // Get community from modal dataset (current selected fracc), fallback to lot data, then default
   const modal = document.getElementById('lotModal');
@@ -10785,11 +11418,11 @@ function shareCurrentLot() {
   const communitySlug = community.toLowerCase().replace(/\s+/g, '-');
   const communityCapitalized = community.charAt(0).toUpperCase() + community.slice(1);
 
-  // Create share URL with community prefix and plan param
+  // Create share URL with community prefix and short params (a=anticipo, m=mensualidades)
   const shareUrl = `${window.location.origin}${CONFIG.share.urlTemplate
     .replace('{slug}', CONFIG.slug)
     .replace('{communitySlug}', communitySlug)
-    .replace('{lotNumber}', lotNumber)}?plan=${selectedPlan}`;
+    .replace('{lotNumber}', lotNumber)}?a=${downPaymentPercent}&m=${installments}`;
   const shareText = CONFIG.share.textTemplate
     .replace('{lotNumber}', lotNumber)
     .replace('{community}', communityCapitalized)
@@ -10958,7 +11591,7 @@ function setupChatButton() {
       const lotNum = lot?.number || lot?.name || (document.getElementById('headerLotNumber')?.textContent || '').trim();
       const community = (document.getElementById('headerFracc')?.textContent || '').trim();
       const msg = encodeURIComponent('Me interesa el Lote ' + lotNum + ' en ' + community + ', ¿podemos programar una visita?');
-      window.open('https://wa.me/5218185261819?text=' + msg, '_blank');
+      window.open('https://wa.me/5218128600017?text=' + msg, '_blank');
     });
   }
 }
@@ -11045,19 +11678,23 @@ document.getElementById('compareBtn').addEventListener('click', function() {
     }
 });
 
-// Edit button — trigger inline price edit on the currently centered list row
+// Edit button event listener
 document.getElementById('editBtn').addEventListener('click', function() {
-    const centered = document.querySelector('.info-row.center');
-    if (!centered) {
-        showToaster('Selecciona un lote primero.');
-        return;
-    }
-    const rowEditBtn = centered.querySelector('.row-action-btn.edit-btn');
-    if (rowEditBtn) {
-        rowEditBtn.click();
-    } else {
-        showToaster('No hay precio editable para este lote.');
-    }
+    window.editMode = !window.editMode;
+    
+    if (window.editMode) {
+        // Enter edit mode
+        this.style.boxShadow = `0 0 0 3px ${CONFIG.colors.primaryFull}`;
+        this.style.backgroundColor = CONFIG.colors.primary;
+        showToaster('✏️ Edit mode ON - Edit prices in detail view');
+        console.log('Edit mode ON');
+} else {
+    // Exit edit mode
+    this.style.boxShadow = '';
+    this.style.backgroundColor = CONFIG.colors.cream;
+    showToaster('Edit mode OFF');
+    console.log('Edit mode OFF');
+}
 });
 
 // Compare mode click handler (renamed from handleEditClick)
@@ -11770,21 +12407,6 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     return text.split('\n').map(line => `<div>${line || '&nbsp;'}</div>`).join('');
   }
 
-  function updateLogo(logoUrl) {
-    const communityLogo = document.getElementById('communityLogo');
-    const communityLogoImg = document.getElementById('communityLogoImg');
-
-    if (!communityLogo || !communityLogoImg) return;
-
-    if (logoUrl && logoUrl.trim() !== '') {
-      communityLogo.style.display = 'block';
-      communityLogoImg.src = logoUrl;
-    } else {
-      communityLogo.style.display = 'none';
-      communityLogoImg.src = '';
-    }
-  }
-
   function applyConfig() {
     setCSSVar('--orbit-radius', config.radius);
     setCSSVar('--dot', config.dotSize + 'px');
@@ -11806,7 +12428,22 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     updateLogo(config.defaultLogo || '');
   }
 
-  function buildDots() {
+  function updateLogo(logoUrl) {
+    const communityLogo = document.getElementById('communityLogo');
+    const communityLogoImg = document.getElementById('communityLogoImg');
+
+    if (!communityLogo || !communityLogoImg) return;
+
+    if (logoUrl && logoUrl.trim() !== '') {
+      communityLogo.style.display = 'block';
+      communityLogoImg.src = logoUrl;
+    } else {
+      communityLogo.style.display = 'none';
+      communityLogoImg.src = '';
+    }
+  }
+
+function buildDots() {
   rotator.innerHTML = '';
   dots = [];
   const count = config.count;
@@ -12119,521 +12756,6 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     .catch(err => {
       console.error('❌ Failed to load saved.json:', err);
     });
-})();
-</script>
-
-<!-- ===== PDF GENERATION COMPONENT ===== -->
-<script>
-(function() {
-  // PDF Generation for Inverta - Multi-template support based on community group
-
-  async function generateMultiPagePDF(lot, dynamicText, financingOptions = {}) {
-    if (!lot) {
-      console.error('No lot data provided');
-      window.showToaster?.('Error: No se pudo obtener datos del lote');
-      return;
-    }
-
-    // Default financing options (matches modal defaults)
-    const financing = {
-      downpaymentPercent: financingOptions.downpaymentPercent || 30,
-      installmentMonths: financingOptions.installmentMonths || 48
-    };
-
-    // Determine community group from fraccionamiento
-    const fraccionamiento = lot.fraccionamiento || lot.community || '';
-    const communityGroup = getCommunityGroup('agora', fraccionamiento);
-
-    if (!communityGroup) {
-      console.error('Could not determine community group for:', fraccionamiento);
-      window.showToaster?.('Error: Plantilla no disponible para esta comunidad');
-      return;
-    }
-
-    // Create progress overlay
-    const progressOverlay = document.createElement('div');
-    progressOverlay.id = 'pdf-progress-overlay';
-    progressOverlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.7);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 99999;
-    `;
-    progressOverlay.innerHTML = `
-      <div style="background: white; padding: 32px 48px; border-radius: 12px; text-align: center; font-family: Arial, sans-serif;">
-        <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Generando PDF...</div>
-        <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Cargando plantilla...</div>
-        <div style="width: 200px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
-          <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: ${CONFIG?.colors?.primary || '#007bff'}; transition: width 0.3s;"></div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(progressOverlay);
-
-    const progressText = document.getElementById('pdf-progress-text');
-    const progressBar = document.getElementById('pdf-progress-bar');
-
-    // Create hidden container for rendering pages
-    const pdfContainer = document.createElement('div');
-    pdfContainer.id = 'pdf-generation-container';
-    pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
-    document.body.appendChild(pdfContainer);
-
-    // Calculate lot values for placeholders
-    function getLotValues(lot, dynamicText, financingOpts = {}) {
-      const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
-      const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
-      const totalPrice = size * priceM2;
-
-      // Calculate category based on priceM2 tier
-      const allLotsData = lotData || window.baseLotsAll || baseLots || [];
-      const uniquePrices = [...new Set(allLotsData.map(l =>
-        parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
-      ))].filter(p => p > 0).sort((a, b) => b - a);
-
-      const categories = ['AAA+', 'AAA', 'AA', 'A'];
-      const priceIndex = uniquePrices.findIndex(p => Math.abs(p - priceM2) < 0.01);
-      const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
-
-      // Format helpers
-      const formatCurrency = (num) => '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const formatNumber = (num) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-      // Discount calculations
-      const discount5 = totalPrice * 0.05;
-      const discount12 = totalPrice * 0.12;
-      const priceWith5Discount = totalPrice * 0.95;
-      const priceWith12Discount = totalPrice * 0.88;
-
-      // 25% plan: no discount, 25% down, 45% in 24 months, 30% contra escritura
-      const downpayment25 = totalPrice * 0.25;
-      const monthly25 = (totalPrice * 0.45) / 24;
-      const contraEscritura30 = totalPrice * 0.30;
-
-      // 50% plan: 5% discount, 50% down, 50% contra escritura
-      const downpayment50 = priceWith5Discount * 0.50;
-      const contraEscritura50 = priceWith5Discount * 0.50;
-
-      // 85% plan: 12% discount, 85% down, 15% contra escritura
-      const downpayment85 = priceWith12Discount * 0.85;
-      const contraEscritura15 = priceWith12Discount * 0.15;
-
-      // Dynamic financing calculations based on selected options
-      const selectedDownpaymentPercent = financingOpts.downpaymentPercent || 30;
-      const selectedInstallmentMonths = financingOpts.installmentMonths || 48;
-
-      // Interest rates by month term
-      const INTEREST_RATES = { 24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17 };
-      const selectedInterestRate = INTEREST_RATES[selectedInstallmentMonths] || 0.15;
-
-      // Calculate dynamic financing values
-      const selectedDownpaymentAmount = totalPrice * (selectedDownpaymentPercent / 100);
-      const amountToFinance = totalPrice - selectedDownpaymentAmount;
-
-      // Monthly payment calculation helper
-      function calcMonthlyPayment(principal, annualRate, months) {
-        const monthlyRate = annualRate / 12;
-        if (monthlyRate === 0) return principal / months;
-        const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-        const denominator = Math.pow(1 + monthlyRate, months) - 1;
-        return numerator / denominator;
-      }
-
-      // Selected term calculation
-      const selectedMonthlyPayment = calcMonthlyPayment(amountToFinance, selectedInterestRate, selectedInstallmentMonths);
-      const selectedTotalFinancedPrice = selectedDownpaymentAmount + (selectedMonthlyPayment * selectedInstallmentMonths);
-
-      // Calculate all term options (using selected downpayment)
-      const terms = [24, 36, 48, 60, 72];
-      const termCalcs = {};
-      terms.forEach(months => {
-        const rate = INTEREST_RATES[months];
-        const monthly = calcMonthlyPayment(amountToFinance, rate, months);
-        const total = selectedDownpaymentAmount + (monthly * months);
-        termCalcs[months] = { rate, monthly, total };
-      });
-
-      // Parse lot number (e.g., "10-11" → "MZ10L11")
-      const lotNumberParts = (lot.number || '').split('-');
-      const lotFormatted = lotNumberParts.length === 2
-        ? `MZ${lotNumberParts[0]}L${lotNumberParts[1]}`
-        : lot.number || '';
-
-      // Current date in Spanish format (e.g., "28 ENE 2026")
-      const spanishMonths = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
-      const today = new Date();
-      const dateFormatted = `${today.getDate()} ${spanishMonths[today.getMonth()]} ${today.getFullYear()}`;
-
-      return {
-        'dynamicText': dynamicText,
-        'lot.number': lot.number || '',
-        'lot.nameA': lotNumberParts[0] || '',
-        'lot.nameB': lotNumberParts[1] || '',
-        'lot.numberFormatted': lotFormatted,
-        'lot.date': dateFormatted,
-        'lot.category': category || 'A',
-        'lot.size': formatNumber(size) + ' m²',
-        'lot.pricePerM2': formatCurrency(priceM2),
-        'lot.totalPrice': formatCurrency(totalPrice),
-        'lot.downpayment25': formatCurrency(downpayment25),
-        'lot.downpayment50': formatCurrency(downpayment50),
-        'lot.downpayment85': formatCurrency(downpayment85),
-        'lot.monthly25': formatCurrency(monthly25),
-        'lot.discount0': formatCurrency(0),
-        'lot.discount5': formatCurrency(discount5),
-        'lot.discount12': formatCurrency(discount12),
-        'lot.priceWith5Discount': formatCurrency(priceWith5Discount),
-        'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
-        'lot.contraEscritura30': formatCurrency(contraEscritura30),
-        'lot.contraEscritura50': formatCurrency(contraEscritura50),
-        'lot.contraEscritura15': formatCurrency(contraEscritura15),
-        // New dynamic financing placeholders (selected)
-        'lot.selectedDownpaymentPercent': selectedDownpaymentPercent + '%',
-        'lot.selectedDownpaymentAmount': formatCurrency(selectedDownpaymentAmount),
-        'lot.selectedInstallmentMonths': String(selectedInstallmentMonths),
-        'lot.selectedMonthlyPayment': formatCurrency(selectedMonthlyPayment),
-        'lot.selectedInterestRate': (selectedInterestRate * 100).toFixed(0) + '%',
-        'lot.selectedTotalFinancedPrice': formatCurrency(selectedTotalFinancedPrice),
-        // All term options (using selected downpayment)
-        'lot.monthly24': formatCurrency(termCalcs[24].monthly),
-        'lot.rate24': (termCalcs[24].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced24': formatCurrency(termCalcs[24].total),
-        'lot.monthly36': formatCurrency(termCalcs[36].monthly),
-        'lot.rate36': (termCalcs[36].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced36': formatCurrency(termCalcs[36].total),
-        'lot.monthly48': formatCurrency(termCalcs[48].monthly),
-        'lot.rate48': (termCalcs[48].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced48': formatCurrency(termCalcs[48].total),
-        'lot.monthly60': formatCurrency(termCalcs[60].monthly),
-        'lot.rate60': (termCalcs[60].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced60': formatCurrency(termCalcs[60].total),
-        'lot.monthly72': formatCurrency(termCalcs[72].monthly),
-        'lot.rate72': (termCalcs[72].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced72': formatCurrency(termCalcs[72].total)
-      };
-    }
-
-    // Replace placeholders in text
-    function replacePlaceholders(text, values) {
-      if (!text) return '';
-      return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-        return values[key.trim()] !== undefined ? values[key.trim()] : match;
-      });
-    }
-
-    // Function to create a page with template elements
-    function createPage(pageNum, template, lotValues, settings) {
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
-      const lotImagePrefix = settings.lotImagePrefix || '';
-      const pageWidth = settings.pageWidth || 1224;
-      const pageHeight = settings.pageHeight || 1584;
-
-      const pdfPage = document.createElement('div');
-      pdfPage.style.cssText = `
-        width: ${pageWidth}px;
-        height: ${pageHeight}px;
-        position: relative;
-        overflow: visible;
-        background-image: url("${pageBackgroundBaseUrl}page.${pageNum}.png");
-        background-size: cover;
-        background-repeat: no-repeat;
-        background-position: top left;
-      `;
-
-      // Get page data from template
-      const pageIndex = parseInt(pageNum, 10);
-      const pageData = template?.pages?.[pageIndex];
-
-      if (pageData) {
-        // Render text boxes
-        if (pageData.textBoxes) {
-          pageData.textBoxes.forEach(tb => {
-            const textEl = document.createElement('div');
-            textEl.textContent = replacePlaceholders(tb.content, lotValues);
-            textEl.style.cssText = `
-              position: absolute;
-              left: ${tb.x}px;
-              top: ${tb.y}px;
-              ${tb.width ? `width: ${tb.width}px;` : ''}
-              ${tb.height ? `height: ${tb.height}px;` : ''}
-              font-size: ${tb.fontSize || 24}px;
-              font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
-              color: ${tb.color || '#000000'};
-              font-weight: ${tb.bold ? '700' : '400'};
-              font-style: ${tb.italic ? 'italic' : 'normal'};
-              text-decoration: ${tb.underline ? 'underline' : 'none'};
-              text-align: ${tb.textAlign || 'left'};
-              white-space: pre-wrap;
-              ${tb.zIndex !== undefined ? `z-index: ${tb.zIndex};` : ''}
-            `;
-            pdfPage.appendChild(textEl);
-          });
-        }
-
-        // Render tables
-        if (pageData.tables) {
-          pageData.tables.forEach(tableData => {
-            const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
-            const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
-            const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
-
-            const tableContainer = document.createElement('div');
-            tableContainer.style.cssText = `
-              position: absolute;
-              left: ${tableData.x}px;
-              top: ${tableData.y}px;
-              ${tableData.zIndex !== undefined ? `z-index: ${tableData.zIndex};` : ''}
-            `;
-
-            const table = document.createElement('table');
-            table.style.cssText = `
-              border-collapse: collapse;
-              table-layout: fixed;
-              width: ${totalWidth}px;
-            `;
-
-            for (let r = 0; r < tableData.rows; r++) {
-              const tr = document.createElement('tr');
-              tr.style.height = rowHeights[r] + 'px';
-
-              for (let c = 0; c < tableData.cols; c++) {
-                const cellData = tableData.cells?.[r]?.[c];
-                if (!cellData || cellData.hidden) continue;
-
-                const td = document.createElement('td');
-                td.textContent = replacePlaceholders(cellData.content || '', lotValues);
-
-                const borderWidth = cellData.borderWidth || 1;
-                const borderStyle = cellData.borderStyle || 'solid';
-                const borderColor = cellData.borderColor || '#000000';
-                const borderPosition = cellData.borderPosition || 'all';
-
-                let borderCss = '';
-                if (borderPosition === 'bottom') {
-                  borderCss = `border: none; border-bottom: ${borderWidth}px ${borderStyle} ${borderColor};`;
-                } else if (borderPosition === 'top') {
-                  borderCss = `border: none; border-top: ${borderWidth}px ${borderStyle} ${borderColor};`;
-                } else {
-                  borderCss = `border: ${borderWidth}px ${borderStyle} ${borderColor};`;
-                }
-
-                td.style.cssText = `
-                  width: ${colWidths[c]}px;
-                  height: ${rowHeights[r]}px;
-                  box-sizing: border-box;
-                  overflow: hidden;
-                  background-color: ${cellData.bgColor || '#ffffff'};
-                  color: ${cellData.textColor || '#000000'};
-                  font-family: "${cellData.fontFamily || 'Arial'}", sans-serif;
-                  font-size: ${cellData.fontSize || 14}px;
-                  font-weight: ${cellData.bold ? '700' : '400'};
-                  font-style: ${cellData.italic ? 'italic' : 'normal'};
-                  text-decoration: ${cellData.underline ? 'underline' : 'none'};
-                  ${borderCss}
-                  padding: 0;
-                  text-align: ${cellData.textAlign || 'left'};
-                  vertical-align: middle;
-                `;
-
-                if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
-                if (cellData.rowSpan > 1) td.rowSpan = cellData.rowSpan;
-
-                tr.appendChild(td);
-              }
-              table.appendChild(tr);
-            }
-
-            tableContainer.appendChild(table);
-            pdfPage.appendChild(tableContainer);
-          });
-        }
-
-        // Render images
-        if (pageData.images) {
-          pageData.images.forEach(imgData => {
-            const imgEl = document.createElement('div');
-
-            // Determine image URL based on type
-            let imageUrl = '';
-            if (imgData.type === '{{lot.landscape}}') {
-              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_landscape.jpg`;
-            } else if (imgData.type === '{{lot.map}}') {
-              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_map.jpg`;
-            } else if (imgData.type === 'static' && imgData.url) {
-              imageUrl = imgData.url;
-            }
-
-            imgEl.style.cssText = `
-              position: absolute;
-              left: ${imgData.x}px;
-              top: ${imgData.y}px;
-              width: ${imgData.width}px;
-              height: ${imgData.height}px;
-              background-image: url("${imageUrl}");
-              background-size: cover;
-              background-position: center;
-              background-repeat: no-repeat;
-              ${imgData.borderWidth > 0 ? `border: ${imgData.borderWidth}px solid ${imgData.borderColor || '#000000'}; box-sizing: border-box;` : ''}
-              ${imgData.zIndex !== undefined ? `z-index: ${imgData.zIndex};` : ''}
-            `;
-            pdfPage.appendChild(imgEl);
-          });
-        }
-      }
-
-      return pdfPage;
-    }
-
-    try {
-      // Step 1: Fetch template for this community group
-      progressText.textContent = 'Cargando plantilla...';
-      const templatePath = `/agora/pdf/${communityGroup}/pdf-template.json`;
-
-      let template = { pages: {}, settings: {} };
-      try {
-        const response = await fetch(templatePath);
-        if (response.ok) {
-          template = await response.json();
-        } else {
-          throw new Error(`Template not found: ${templatePath}`);
-        }
-      } catch (err) {
-        console.error('Could not load PDF template:', err);
-        window.showToaster?.('Error: No se pudo cargar la plantilla PDF');
-        document.body.removeChild(progressOverlay);
-        document.body.removeChild(pdfContainer);
-        return;
-      }
-
-      // Get settings from template or use defaults
-      const settings = template.settings || {};
-      const totalPages = settings.totalPages || Object.keys(template.pages || {}).length || 8;
-
-      // Calculate lot values with financing options
-      const lotValues = getLotValues(lot, dynamicText, financing);
-
-      // Step 2: Preload ALL images in parallel
-      progressText.textContent = 'Cargando imágenes...';
-      progressBar.style.width = '10%';
-
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
-      const lotImagePrefix = settings.lotImagePrefix || '';
-
-      const imagePromises = [];
-
-      // Preload page backgrounds
-      for (let i = 1; i <= totalPages; i++) {
-        const pageNum = String(i).padStart(3, '0');
-        imagePromises.push(new Promise(resolve => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = resolve;
-          img.onerror = resolve;
-          img.src = `${pageBackgroundBaseUrl}page.${pageNum}.png`;
-        }));
-      }
-
-      // Preload lot-specific images (landscape and map)
-      const lotNum = lotValues['lot.number'];
-      if (lotNum) {
-        ['landscape', 'map'].forEach(type => {
-          imagePromises.push(new Promise(resolve => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = resolve;
-            img.onerror = resolve;
-            img.src = `${lotImageBaseUrl}${lotImagePrefix}${lotNum}_${type}.jpg`;
-          }));
-        });
-
-        // Preload any static images from the template
-        Object.values(template.pages || {}).forEach(pageData => {
-          (pageData.images || []).forEach(imgData => {
-            if (imgData.type === 'static' && imgData.url) {
-              imagePromises.push(new Promise(resolve => {
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
-                img.onload = resolve;
-                img.onerror = resolve;
-                img.src = imgData.url;
-              }));
-            }
-          });
-        });
-      }
-
-      await Promise.all(imagePromises);
-      progressBar.style.width = '40%';
-
-      // Step 3: Generate PDF pages sequentially (required by jsPDF)
-      progressText.textContent = 'Generando PDF...';
-
-      // Use page dimensions from template or defaults
-      const pageWidth = settings.pageWidth || 1224;
-      const pageHeight = settings.pageHeight || 1584;
-      const orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
-
-      const worker = html2pdf().set({
-        margin: 0,
-        filename: `Agora-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
-        image: { type: 'jpeg', quality: 1 },
-        html2canvas: { scale: 1, useCORS: true },
-        jsPDF: { unit: 'px', format: [pageWidth, pageHeight], orientation: orientation }
-      });
-
-      for (let i = 1; i <= totalPages; i++) {
-        progressText.textContent = `Renderizando página ${i} de ${totalPages}`;
-        progressBar.style.width = `${40 + (i / totalPages) * 55}%`;
-
-        const pageNum = String(i).padStart(3, '0');
-
-        // Create page with template elements
-        const page = createPage(pageNum, template, lotValues, settings);
-        pdfContainer.innerHTML = '';
-        pdfContainer.appendChild(page);
-
-        if (i === 1) {
-          await worker.from(page).toContainer().toCanvas().toPdf();
-        } else {
-          await worker.get('pdf').then(pdf => {
-            pdf.addPage([pageWidth, pageHeight], orientation);
-          });
-          await worker.from(page).toContainer().toCanvas().toPdf();
-        }
-      }
-
-      // Save the final PDF
-      progressText.textContent = 'Descargando...';
-      progressBar.style.width = '100%';
-      await worker.save();
-
-      // Clean up
-      document.body.removeChild(pdfContainer);
-      document.body.removeChild(progressOverlay);
-
-    } catch (err) {
-      console.error('PDF generation error:', err);
-      window.showToaster?.('Error al generar el PDF');
-      if (document.getElementById('pdf-progress-overlay')) {
-        document.body.removeChild(progressOverlay);
-      }
-      if (document.getElementById('pdf-generation-container')) {
-        document.body.removeChild(pdfContainer);
-      }
-    }
-  }
-
-  // Expose to global scope
-  window.generateMultiPagePDF = generateMultiPagePDF;
 })();
 </script>
 
