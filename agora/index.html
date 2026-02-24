@@ -131,8 +131,21 @@ window.clientAccessCache = window.clientAccessCache || {};
       document.body.classList.add('fonts-loaded'); // Fallback if fonts fail
     });
   </script>
+<style>
+  @media (min-width: 768px) {
+    #registro-modal-container {
+      position: fixed;
+      top: 50%;
+      left: calc(10% + 250px);
+      width: 750px;
+      height: 90%;
+      max-height: 1000px;
+      transform: translate(-50%, -50%);
+    }
+  }
+</style>
 </head>
- 
+
 <body>
 
 
@@ -425,7 +438,26 @@ window.clientAccessCache = window.clientAccessCache || {};
 </button> -->
 
 
-<!-- Old Search Button removed - replaced by new search button component at bottom of file --> 
+<!-- Old Search Button removed - replaced by new search button component at bottom of file -->
+
+<!-- Registro button - only visible when user is agent, positioned at bottom left -->
+<button id="registro-btn" class="dashboard-button" title="Registro" style="bottom: 28px;">
+  <svg id="registro-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-white)"/>
+  </svg>
+  <svg id="registro-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-primary)"/>
+  </svg>
+  <span>Registro</span>
+</button>
+
+<!-- Registro modal overlay with iframe -->
+<div id="registro-modal-overlay" style="display:none;">
+  <div id="registro-modal-backdrop"></div>
+  <div id="registro-modal-container">
+    <iframe id="registro-iframe" src="about:blank" frameborder="0"></iframe>
+  </div>
+</div>
 
   <!-- GPS button - bottom right above lalaland logo -->
 <button id="gpsButton" class="gps-button" title="Enable GPS">
@@ -2398,6 +2430,9 @@ ctaobserver.observe(ctaToaster, {
 
       // Set global agent flag
       window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+      // Show registro button for agents
+      const _regBtn1 = document.getElementById('registro-btn');
+      if (_regBtn1) _regBtn1.style.display = window.isAgent ? 'flex' : 'none';
 
       console.log('✅ Lead authenticated via token:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '', isDemo ? '(DEMO)' : '');
 
@@ -2463,6 +2498,9 @@ ctaobserver.observe(ctaToaster, {
 
       // Set global agent flag
       window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+      // Show registro button for agents
+      const _regBtn2 = document.getElementById('registro-btn');
+      if (_regBtn2) _regBtn2.style.display = window.isAgent ? 'flex' : 'none';
 
       console.log('✅ Lead authenticated via session:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
 
@@ -12037,6 +12075,104 @@ async function markLotAsSold(lot) {
 
 // Export function to global scope
 window.showPaymentViewInModal = showPaymentViewInModal;
+</script>
+
+<!-- ===== REGISTRO MODAL (agent-only) ===== -->
+<script>
+(function() {
+  const $ = (sel) => document.querySelector(sel);
+  window.isRegistroOpen = false;
+  const registroBtn = $('#registro-btn');
+  const registroOverlay = $('#registro-modal-overlay');
+  const registroBackdrop = $('#registro-modal-backdrop');
+  const registroIframe = $('#registro-iframe');
+
+  const registroHideTargets = [
+    $('#registro-btn'),
+    $('#gpsButton'),
+    $('.lala-wrapper'),
+    $('.logoinv-wrapper')
+  ].filter(Boolean);
+  const registroHideSavedDisplay = new Map();
+  let registroModalPanned = false;
+
+  function openRegistroModal() {
+    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
+    if (typeof closeModal === 'function') {
+      try { closeModal(); } catch(e) {}
+    }
+
+    registroModalPanned = false;
+    if (map && window.innerWidth >= 768 && !lotModalWasOpen) {
+      map.panBy([-240, 0], { duration: 400 });
+      registroModalPanned = true;
+    }
+
+    window.isRegistroOpen = true;
+    registroIframe.src = 'registro-manual.html';
+    registroOverlay.style.display = 'block';
+    const openIcon = $('#registro-open-icon');
+    const closedIcon = $('#registro-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'inline-block';
+      closedIcon.style.display = 'none';
+    }
+    registroBtn.classList.add('active');
+    if (window.innerWidth < 768) {
+      registroHideTargets.forEach(el => {
+        registroHideSavedDisplay.set(el, el.style.display);
+        el.style.display = 'none';
+      });
+    }
+  }
+
+  function closeRegistroModal() {
+    if (map && window.innerWidth >= 768 && registroModalPanned) {
+      map.panBy([240, 0], { duration: 400 });
+      registroModalPanned = false;
+    }
+
+    window.isRegistroOpen = false;
+    registroOverlay.style.display = 'none';
+    registroIframe.src = 'about:blank';
+    const openIcon = $('#registro-open-icon');
+    const closedIcon = $('#registro-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'none';
+      closedIcon.style.display = 'inline-block';
+    }
+    registroBtn.classList.remove('active');
+    if (window.innerWidth < 768) {
+      registroHideTargets.forEach(el => {
+        el.style.display = registroHideSavedDisplay.get(el) || '';
+      });
+    }
+  }
+
+  registroBtn && registroBtn.addEventListener('click', () => {
+    if (window.isRegistroOpen) {
+      closeRegistroModal();
+    } else {
+      openRegistroModal();
+    }
+  });
+
+  registroBackdrop && registroBackdrop.addEventListener('click', () => {
+    closeRegistroModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.isRegistroOpen) {
+      closeRegistroModal();
+    }
+  });
+
+  window.addEventListener('message', (e) => {
+    if (e.data === 'closeRegistro' && window.isRegistroOpen) {
+      closeRegistroModal();
+    }
+  });
+})();
 </script>
 
 <!-- ===== SEARCH BUTTON COMPONENT ===== -->
