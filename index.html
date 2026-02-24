@@ -1260,11 +1260,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     toSelect.forEach(l => win.selectedLots.add(l.name));
                     if (typeof win.updateEditOutlines === 'function') win.updateEditOutlines();
                     if (typeof win.updateModalList === 'function') win.updateModalList();
+                    // Scroll to and highlight the first selected lot
+                    const firstIdx = bl.indexOf(toSelect[0]);
+                    if (firstIdx !== -1 && win.scrollToBaseIndex) {
+                        win.scrollToBaseIndex(firstIdx, true);
+                    }
                 }
             }, 400);
 
         } else if (tutorialStep === 4) {
-            // Step 4: Ver detalle — exit compare mode properly, scroll to available lot, open detail
+            // Step 4: Ver detalle — exit compare mode, scroll to lot, click the row (triggers zoom + detail like manual)
             if (win.compareMode) {
                 if (typeof win.exitCompareMode === 'function') {
                     win.exitCompareMode();
@@ -1280,15 +1285,26 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             if (tutorialLotIdx !== -1) {
                 const clones = (typeof win.cloneCount === 'number') ? win.cloneCount : 5;
+                const targetIndex = tutorialLotIdx + clones;
+                // Scroll to the lot in the list
                 setTimeout(() => win.scrollToBaseIndex && win.scrollToBaseIndex(tutorialLotIdx, true), 400);
-                setTimeout(() => win.showDetailViewForLot && win.showDetailViewForLot(tutorialLotIdx + clones), 800);
+                // Click the actual row to trigger the full manual flow (zoom + detail + dimensions)
+                setTimeout(() => {
+                    const row = win.document.querySelector('.info-row[data-index="' + targetIndex + '"]');
+                    if (row) {
+                        row.click();
+                    } else if (win.showDetailViewForLot) {
+                        win.showDetailViewForLot(targetIndex);
+                    }
+                }, 900);
             }
 
         } else if (tutorialStep === 5) {
-            // Step 5: Cambiar esquema de pagos — switch to 50/50 plan
+            // Step 5: Cambiar esquema de pagos — switch to the second plan (e.g. 50/50)
+            // The select uses index-based values (0, 1, 2...), not percentage values
             const sel = win.document.getElementById('downPaymentCalc');
-            if (sel) {
-                sel.value = '50';
+            if (sel && sel.options.length > 1) {
+                sel.value = sel.options[1].value;
                 sel.dispatchEvent(new win.Event('change'));
             }
 
