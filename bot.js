@@ -29,9 +29,16 @@ const supabase = createClient(
 let sock = null; // Single WhatsApp socket instance
 let groupPairs = [];
 const messageMap = new Map();
+const MESSAGE_MAP_MAX = 1000; // Max tracked messages to avoid unbounded growth
 const pendingAlerts = new Map();
 const messageHistory = new Map();
 const linksSentTimestamps = []; // Track timestamps for global rate limiting
+
+// Polling interval handles (cleared on each reconnect to prevent accumulation)
+let supabasePollingInterval = null;
+let linkPollingInterval = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_DELAY = 60000; // 60 seconds cap
 
 // ============================================================================
 // FILE OPERATIONS
@@ -416,7 +423,11 @@ async function processRequest(request) {
 }
 
 function startPolling() {
-    setInterval(checkPendingRequests, SUPABASE_POLL_INTERVAL);
+    if (supabasePollingInterval) {
+        clearInterval(supabasePollingInterval);
+        supabasePollingInterval = null;
+    }
+    supabasePollingInterval = setInterval(checkPendingRequests, SUPABASE_POLL_INTERVAL);
     console.log('🔍 Started polling Supabase for new group requests...');
 }
 
@@ -537,7 +548,11 @@ async function processLinkRequest(request) {
 }
 
 function startLinkPolling() {
-    setInterval(checkPendingLinkRequests, LINK_POLL_INTERVAL);
+    if (linkPollingInterval) {
+        clearInterval(linkPollingInterval);
+        linkPollingInterval = null;
+    }
+    linkPollingInterval = setInterval(checkPendingLinkRequests, LINK_POLL_INTERVAL);
     console.log('📨 Started polling Supabase for link requests...');
 }
 
@@ -710,6 +725,11 @@ function setupMessageHandlers(sock) {
                             forwardedMsgId: sentMessage.key.id,
                             isSellerMessage
                         });
+                        // Prune oldest entries if map grows too large
+                        if (messageMap.size > MESSAGE_MAP_MAX) {
+                            const firstKey = messageMap.keys().next().value;
+                            messageMap.delete(firstKey);
+                        }
                     }
 
                     continue;
@@ -849,6 +869,7 @@ async function startBot() {
             console.log('✅ WhatsApp connected!');
             console.log(`📊 Monitoring ${groupPairs.length} group pairs`);
             console.log('🔍 Starting Supabase polling for new group requests...');
+            reconnectAttempts = 0; // Reset backoff on successful connection
 
             // Start Supabase polling
             startPolling();
@@ -856,7 +877,10 @@ async function startBot() {
         }
         if (update.connection === 'close') {
             console.log('Connection closed. Reconnecting...', update.lastDisconnect?.error);
-            setTimeout(() => startBot(), 2000);
+            reconnectAttempts++;
+            const delay = Math.min(2000 * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
+            console.log(`⏳ Reconnect attempt ${reconnectAttempts}, waiting ${delay / 1000}s...`);
+            setTimeout(() => startBot(), delay);
         }
     });
 
