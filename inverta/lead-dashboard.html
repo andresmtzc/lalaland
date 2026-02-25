@@ -397,6 +397,7 @@
       cursor: pointer;
     }
   </style>
+  <style id="agent-mode-styles"></style>
 </head>
 <body>
   <div class="container">
@@ -471,7 +472,7 @@
             <th>Exp.</th>
             <th>Campaña</th>
             <th class="sortable" data-column="assigned_agent">Asignado</th>
-            <th>Agente</th>
+            <th class="col-agent-toggle">Agente</th>
             <th>Whapp</th>
           </tr>
         </thead>
@@ -516,8 +517,23 @@
   <script src="client-config.js"></script>
 
   <script>
+    // Apply agent-mode styles immediately (hide agent toggle column)
+    (function() {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get('mode') === 'agent') {
+        document.getElementById('agent-mode-styles').textContent = '.col-agent-toggle { display: none !important; }';
+      }
+    })();
+  </script>
+
+  <script>
     const CURRENT_CLIENT = 'inverta';
     applyColorsToCSS(CURRENT_CLIENT);
+
+    // Detect mode from URL params: ?mode=agent&agent_phone=XXX
+    const dashParams = new URLSearchParams(window.location.search);
+    const DASHBOARD_MODE = dashParams.get('mode') || 'admin'; // 'admin' or 'agent'
+    const AGENT_PHONE = dashParams.get('agent_phone') || null;
 
     let supabaseClient;
     let currentUser = null;
@@ -535,24 +551,53 @@
         });
         console.log('✅ Supabase client initialized');
 
-        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (DASHBOARD_MODE === 'agent') {
+          // Agent mode: authenticated via lead token in parent, just need a valid agent_phone
+          if (!AGENT_PHONE) {
+            showError('No se pudo identificar al agente.');
+            return;
+          }
+          // Verify this phone is actually an agent
+          const { data: agentCheck } = await supabaseClient
+            .from('leads')
+            .select('id, is_agent')
+            .eq('phone', AGENT_PHONE)
+            .contains('is_agent', [CURRENT_CLIENT])
+            .single();
 
-        if (!session) {
-          showError('No hay sesión activa. Inicia sesión desde la página principal.');
-          return;
+          if (!agentCheck) {
+            showError('No tienes permisos de agente.');
+            return;
+          }
+
+          // Hide agent section elements in agent mode
+          document.getElementById('agentsDivider').style.display = 'none';
+          document.getElementById('agentsSection').style.display = 'none';
+        } else {
+          // Admin mode: require Supabase session
+          const { data: { session } } = await supabaseClient.auth.getSession();
+
+          if (!session) {
+            showError('No hay sesión activa. Inicia sesión desde la página principal.');
+            return;
+          }
+
+          const hasAccess = await validateClientAccess(session);
+          if (!hasAccess) {
+            showError('No tienes acceso a este cliente. Contacta al administrador.');
+            return;
+          }
+
+          currentUser = session.user;
         }
 
-        const hasAccess = await validateClientAccess(session);
-        if (!hasAccess) {
-          showError('No tienes acceso a este cliente. Contacta al administrador.');
-          return;
-        }
-
-        currentUser = session.user;
-
+        // Build agent name lookup for the "Assigned Agent" column
         await buildAgentNameMap();
+
         await loadLeads();
-        await loadAgents();
+        if (DASHBOARD_MODE === 'admin') {
+          await loadAgents();
+        }
         setupRealtime();
 
       } catch (error) {
@@ -651,7 +696,12 @@
         if (error) throw error;
 
         // Filter out agents and demo leads for this client (client-side)
-        const leads = (allData || []).filter(l => (!l.is_agent || !l.is_agent.includes(CURRENT_CLIENT)) && !l.is_demo);
+        let leads = (allData || []).filter(l => (!l.is_agent || !l.is_agent.includes(CURRENT_CLIENT)) && !l.is_demo);
+
+        // In agent mode: only show leads assigned to this agent
+        if (DASHBOARD_MODE === 'agent' && AGENT_PHONE) {
+          leads = leads.filter(l => l.assigned_agent === AGENT_PHONE);
+        }
 
         if (leads.length === 0) {
           document.getElementById('loadingContainer').style.display = 'none';
@@ -1087,8 +1137,12 @@
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
             <td style="text-align: center;">${lead.exported ? 'Sí' : 'No'}</td>
             <td>${lead.campaign || '-'}</td>
-            <td class="assign-cell" onclick="openAssignDropdown(this, '${lead.id}', '${lead.assigned_agent || ''}')">${lead.assigned_agent ? (agentNameMap[lead.assigned_agent] || lead.assigned_agent) : '-'}</td>
-            <td style="text-align:center;"><button onclick="toggleAgent('${lead.id}', true)" class="agent-btn" title="Hacer agente">+</button></td>
+            ${DASHBOARD_MODE === 'admin'
+              ? `<td class="assign-cell" onclick="openAssignDropdown(this, '${lead.id}', '${lead.assigned_agent || ''}')">${lead.assigned_agent ? (agentNameMap[lead.assigned_agent] || lead.assigned_agent) : '-'}</td>`
+              : `<td>${lead.assigned_agent ? (agentNameMap[lead.assigned_agent] || lead.assigned_agent) : '-'}</td>`}
+            ${DASHBOARD_MODE === 'admin'
+              ? `<td class="col-agent-toggle" style="text-align:center;"><button onclick="toggleAgent('${lead.id}', true)" class="agent-btn" title="Hacer agente">+</button></td>`
+              : ''}
             <td style="text-align:center;"><a href="${waLink}" target="_blank" class="whatsapp-btn" title="WhatsApp">→</a></td>
           </tr>
         `;
