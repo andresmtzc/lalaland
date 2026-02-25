@@ -195,7 +195,7 @@ const CLIENT_CONFIGS = {
     // ----- CONTACT & CTA -----
     contact: {
       whatsapp: {
-        number: '5218185261819',
+        number: '5218123194382',
         defaultMessage: '¿Tienes dudas? ¡Chatea con nosotros por WhatsApp!',
         // UTM parameters for tracking
         utmSource: 'website',
