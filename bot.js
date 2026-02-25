@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, downloadContentFromMessage, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, downloadContentFromMessage, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const { Buffer } = require('buffer');
 const fs = require('fs');
@@ -856,7 +856,8 @@ async function startBot() {
     await loadGroupsFromSupabase();
 
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
-    sock = makeWASocket({ auth: state });
+    const { version } = await fetchLatestBaileysVersion();
+    sock = makeWASocket({ auth: state, version, browser: Browsers.macOS('Chrome') });
 
     sock.ev.on('creds.update', saveCreds);
 
