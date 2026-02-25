@@ -294,6 +294,25 @@
 
     .agent-btn:hover { opacity: 0.8; }
 
+    .assign-cell {
+      cursor: pointer;
+      position: relative;
+      white-space: nowrap;
+    }
+    .assign-cell:hover {
+      color: var(--color-primary);
+    }
+    .assign-select {
+      width: 100%;
+      padding: 2px 4px;
+      border: 1px solid var(--color-primary);
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      background: #fff;
+      cursor: pointer;
+    }
+
     .whatsapp-btn {
       background: var(--color-primary);
       color: var(--color-cream);
@@ -1107,8 +1126,11 @@
           savedLotsCell = `<td>${lead.savedCount}</td>`;
         }
 
-        // Assigned agent name
+        // Assigned agent name (clickable dropdown for admin)
         const assignedName = lead.assigned_agent ? (agentNameMap[lead.assigned_agent] || lead.assigned_agent) : '-';
+        const assignedCell = DASHBOARD_MODE === 'admin'
+          ? `<td class="assign-cell" onclick="openAssignDropdown(this, '${lead.id}', '${lead.assigned_agent || ''}')">${assignedName}</td>`
+          : `<td>${assignedName}</td>`;
 
         // Agent toggle column (hidden in agent mode)
         const agentToggleCell = DASHBOARD_MODE === 'admin'
@@ -1129,7 +1151,7 @@
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
             <td style="text-align: center;">${lead.exported ? 'Sí' : 'No'}</td>
             <td>${lead.campaign || '-'}</td>
-            <td>${assignedName}</td>
+            ${assignedCell}
             ${agentToggleCell}
             <td style="text-align:center;"><a href="${waLink}" target="_blank" class="whatsapp-btn" title="WhatsApp">→</a></td>
           </tr>
@@ -1183,6 +1205,64 @@
     });
 
     // No login modal needed — auth inherited from parent (same-origin localStorage)
+
+    function openAssignDropdown(cell, leadId, currentAgent) {
+      // If already showing a select, do nothing
+      if (cell.querySelector('select')) return;
+
+      const select = document.createElement('select');
+      select.className = 'assign-select';
+
+      // "Sin asignar" option
+      const emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = 'Sin asignar';
+      select.appendChild(emptyOpt);
+
+      // Populate agents from agentNameMap
+      Object.keys(agentNameMap).forEach(phone => {
+        const opt = document.createElement('option');
+        opt.value = phone;
+        opt.textContent = agentNameMap[phone];
+        if (phone === currentAgent) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      if (!currentAgent) emptyOpt.selected = true;
+
+      cell.textContent = '';
+      cell.appendChild(select);
+      select.focus();
+
+      select.addEventListener('change', () => assignAgent(leadId, select.value, cell));
+      select.addEventListener('blur', () => {
+        // Restore text on blur without change
+        const name = select.value ? (agentNameMap[select.value] || select.value) : '-';
+        cell.textContent = name;
+      });
+    }
+
+    async function assignAgent(leadId, agentPhone, cell) {
+      try {
+        const { error } = await supabaseClient
+          .from('leads')
+          .update({ assigned_agent: agentPhone || null })
+          .eq('id', leadId);
+
+        if (error) throw error;
+
+        // Update local data
+        const lead = allLeads.find(l => l.id === leadId);
+        if (lead) lead.assigned_agent = agentPhone || null;
+
+        // Restore cell text
+        const name = agentPhone ? (agentNameMap[agentPhone] || agentPhone) : '-';
+        cell.textContent = name;
+      } catch (e) {
+        console.error('Error assigning agent:', e);
+        cell.textContent = 'Error';
+      }
+    }
 
     async function toggleAgent(leadId, makeAgent) {
       try {
