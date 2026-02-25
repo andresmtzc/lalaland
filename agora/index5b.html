@@ -28,7 +28,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- ===== LEAD AUTH CHECK (runs first) ===== -->
+  <!-- ===== LEAD AUTH CHECK (runs first - allows browsing without auth) ===== -->
   <script>
     (function() {
       const CURRENT_CLIENT = 'agora';
@@ -53,12 +53,9 @@
       // Check for session cookie
       const sessionToken = getCookie('lead_session_' + CURRENT_CLIENT);
 
-      // If no token in URL and no session, redirect to registro
-      if (!urlToken && !sessionToken) {
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-        // Stop execution
-        throw new Error('Redirecting to registro');
-      }
+      // Allow page to load without auth - users can browse map, lots, street view
+      // Pricing and contact features will be gated later
+      window.__leadIsGuest = (!urlToken && !sessionToken);
 
       // Store token for later validation (after Supabase loads)
       window.__leadAuthToken = urlToken;
@@ -428,7 +425,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 <!-- Old Search Button removed - replaced by new search button component at bottom of file -->
 
 <!-- Registro button - only visible when user is agent, positioned at bottom left -->
-<button id="registro-btn" class="dashboard-button" title="Registro" style="bottom: 28px;">
+<button id="registro-btn" class="dashboard-button" title="Registro" style="bottom: 28px; display:none;">
   <svg id="registro-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-white)"/>
   </svg>
@@ -445,6 +442,81 @@ window.clientAccessCache = window.clientAccessCache || {};
     <iframe id="registro-iframe" src="about:blank" frameborder="0"></iframe>
   </div>
 </div>
+
+<!-- ===== GUEST REGISTRATION GATE ===== -->
+<!-- Shown when guest users try to access gated content (pricing, contact, etc.) -->
+<div id="guest-gate-overlay" style="display:none;">
+  <div id="guest-gate-backdrop" style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:10000;"></div>
+  <div id="guest-gate-container" style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10001; width:92%; max-width:440px; animation: guestGateFadeIn 0.3s ease-out;">
+    <div id="guest-gate-close" style="position:absolute; top:8px; right:12px; cursor:pointer; font-size:28px; color:#fff; line-height:1; z-index:10002; text-shadow:0 1px 3px rgba(0,0,0,0.5);">&times;</div>
+    <iframe id="guest-gate-iframe" src="about:blank" style="width:100%; height:520px; border:none; border-radius:16px; box-shadow:0 20px 60px rgba(0,0,0,0.4);"></iframe>
+  </div>
+</div>
+<style>
+  @keyframes guestGateFadeIn {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  }
+  /* Blur effect for gated price content */
+  .price-gated {
+    filter: blur(6px);
+    user-select: none;
+    pointer-events: none;
+  }
+  .price-gated-row {
+    cursor: pointer;
+    position: relative;
+  }
+  .price-gated-row::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 1;
+  }
+</style>
+<script>
+// ===== GUEST GATE FUNCTIONS =====
+window.isGuestUser = function() {
+  return !window.currentLead && window.__leadIsGuest === true;
+};
+
+window.showGuestGate = function() {
+  const overlay = document.getElementById('guest-gate-overlay');
+  const iframe = document.getElementById('guest-gate-iframe');
+
+  // Load registro.html in the iframe
+  iframe.src = '/' + (window.__leadClient || 'agora') + '/registro.html';
+  overlay.style.display = 'block';
+};
+
+window.hideGuestGate = function() {
+  const overlay = document.getElementById('guest-gate-overlay');
+  const iframe = document.getElementById('guest-gate-iframe');
+  overlay.style.display = 'none';
+  iframe.src = 'about:blank';
+};
+
+// Close handlers
+document.addEventListener('DOMContentLoaded', function() {
+  const backdrop = document.getElementById('guest-gate-backdrop');
+  const closeBtn = document.getElementById('guest-gate-close');
+  if (backdrop) backdrop.addEventListener('click', window.hideGuestGate);
+  if (closeBtn) closeBtn.addEventListener('click', window.hideGuestGate);
+  // Escape key closes guest gate
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.getElementById('guest-gate-overlay')?.style.display !== 'none') {
+      window.hideGuestGate();
+    }
+  });
+});
+
+// Listen for successful registration message from iframe
+window.addEventListener('message', function(e) {
+  if (e.data === 'registroSuccess' || e.data === 'closeRegistro') {
+    window.hideGuestGate();
+  }
+});
+</script>
 
   <!-- GPS button - bottom right above lalaland logo -->
 <button id="gpsButton" class="gps-button" title="Enable GPS">
@@ -2372,21 +2444,21 @@ ctaobserver.observe(ctaToaster, {
         .single();
 
       if (tokenError || !tokenData) {
-        // Invalid token
-        console.error('Invalid token:', urlToken);
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
-        return;
-      }
+        // Invalid token - continue as guest instead of redirecting
+        console.warn('Invalid token, continuing as guest:', urlToken);
+        window.currentLead = null;
+        window.__leadIsGuest = true;
+      } else {
 
       const isDemo = tokenData.leads?.is_demo === true;
 
       if (!isDemo) {
         if (tokenData.claimed) {
-          // Token already claimed by another device
-          console.error('Token already claimed:', urlToken);
-          window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=claimed';
-          return;
-        }
+          // Token already claimed - continue as guest
+          console.warn('Token already claimed, continuing as guest:', urlToken);
+          window.currentLead = null;
+          window.__leadIsGuest = true;
+        } else {
 
         // Claim the token
         await window.supabaseClient
@@ -2402,8 +2474,10 @@ ctaobserver.observe(ctaToaster, {
 
         // Save session cookie (365 days)
         setCookie('lead_session_' + CURRENT_CLIENT, urlToken, 365);
+        }
       }
 
+      if (!window.__leadIsGuest) {
       // Store lead info globally
       window.currentLead = {
         id: tokenData.lead_id,
@@ -2443,11 +2517,14 @@ ctaobserver.observe(ctaToaster, {
       // Clean URL (remove /m/token, keep just /client/)
       const cleanUrl = window.location.origin + '/' + CURRENT_CLIENT + '/index-m.html';
       window.history.replaceState({}, '', cleanUrl);
+      }
 
+      } // end else (valid tokenData)
     } catch (err) {
       console.error('Token validation error:', err);
-      window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
-      return;
+      // Continue as guest instead of redirecting
+      window.currentLead = null;
+      window.__leadIsGuest = true;
     }
   }
   // If we have a session cookie, validate it
@@ -2460,12 +2537,12 @@ ctaobserver.observe(ctaToaster, {
         .single();
 
       if (tokenError || !tokenData) {
-        // Session token no longer valid
-        console.error('Session token invalid');
+        // Session token no longer valid - continue as guest
+        console.warn('Session token invalid, continuing as guest');
         document.cookie = 'lead_session_' + CURRENT_CLIENT + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-        return;
-      }
+        window.currentLead = null;
+        window.__leadIsGuest = true;
+      } else {
 
       // Update lead's last_seen_at
       await window.supabaseClient
@@ -2500,11 +2577,24 @@ ctaobserver.observe(ctaToaster, {
         showNameModal();
       }
 
+      } // end else (valid tokenData)
     } catch (err) {
       console.error('Session validation error:', err);
-      window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-      return;
+      // Continue as guest instead of redirecting
+      window.currentLead = null;
+      window.__leadIsGuest = true;
     }
+  }
+  // No token and no session - guest browsing mode
+  else {
+    window.currentLead = null;
+    window.__leadIsGuest = true;
+    window.leadSavedLots = new Set();
+    window.isAgent = false;
+    console.log('👤 Guest mode - browsing without registration');
+    // Hide lead greeting for guests
+    const greetingEl = document.getElementById('lead-greeting');
+    if (greetingEl) greetingEl.style.display = 'none';
   }
 
   // ===== SESSION TRACKING =====
@@ -6331,6 +6421,12 @@ function setupLotClickHandlers() {
 
 
 async function showDetailViewForLot(index, isSwitchingLots = false) {
+  // GUEST GATE: If user is not registered, show registration prompt instead of lot detail
+  if (window.isGuestUser && window.isGuestUser()) {
+    window.showGuestGate();
+    return;
+  }
+
   // Clear skip set when entering detail view
   if (window.skipNextRealtimeRender) window.skipNextRealtimeRender.clear();
 
@@ -6945,6 +7041,7 @@ const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toStrin
     if (isFeatured) row.classList.add('info-row--featured');
     if (isSaved && !isSold) row.classList.add('info-row--saved');
 
+const _isGuest = window.isGuestUser && window.isGuestUser();
 row.innerHTML = `
   <div class="lot-left">
     <div class="lote-label">MZ-L</div>
@@ -6959,14 +7056,14 @@ row.innerHTML = `
         }
       </div>
 
-      <div class="lot-price ${isSold ? 'lot-price--hidden' : ''}">
+      <div class="lot-price ${isSold ? 'lot-price--hidden' : ''} ${_isGuest ? 'price-gated' : ''}">
         <div class="price-wrapper">
           <span class="price">$${calculatedPriceFormatted}</span>
           <span class="mdp">${priceUnit}</span>
         </div>
       </div>
 
-      <div class="price-per-m2-column ${isSold ? 'lot-price--hidden' : ''}"
+      <div class="price-per-m2-column ${isSold ? 'lot-price--hidden' : ''} ${_isGuest ? 'price-gated' : ''}"
            contenteditable="false"
            data-price-m2="${lot.priceM2 || ''}"
            data-lot-name="${lot.name}">
