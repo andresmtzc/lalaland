@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, downloadContentFromMessage } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, downloadContentFromMessage, DisconnectReason } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const { Buffer } = require('buffer');
 const fs = require('fs');
@@ -876,6 +876,11 @@ async function startBot() {
             startLinkPolling();
         }
         if (update.connection === 'close') {
+            const statusCode = update.lastDisconnect?.error?.output?.statusCode;
+            if (statusCode === DisconnectReason.loggedOut) {
+                console.log('❌ Logged out by WhatsApp. Delete your auth folder and restart to re-scan the QR code.');
+                return;
+            }
             console.log('Connection closed. Reconnecting...', update.lastDisconnect?.error);
             reconnectAttempts++;
             const delay = Math.min(2000 * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
