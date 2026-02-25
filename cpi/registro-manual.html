@@ -291,9 +291,17 @@
             <label for="phone">WhatsApp</label>
             <input type="tel" id="phone" name="phone" required>
           </div>
-          <div class="form-group">
-            <label for="campaign">Campaña</label>
-            <input type="text" id="campaign" placeholder="Opcional">
+          <div class="name-row">
+            <div class="form-group">
+              <label for="assignedAgent">Agente</label>
+              <select id="assignedAgent" style="width:100%;padding:14px 16px;border:2px solid #e0ddd5;border-radius:8px;font-size:18px;font-family:'Barlow Condensed',sans-serif;background:#fff;transition:all 0.2s;appearance:none;-webkit-appearance:none;cursor:pointer;">
+                <option value="">Sin asignar</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="campaign">Campaña</label>
+              <input type="text" id="campaign" placeholder="Opcional">
+            </div>
           </div>
           <button type="submit" id="submitBtn">Generar Link</button>
         </form>
@@ -350,15 +358,48 @@
 
     let supabaseClient;
 
+    // Get agent phone from parent window (passed when opened from index.html)
+    const parentAgentPhone = window.parent?.currentLead?.phone || null;
+
     fetch('https://la-la.land/sb_config.json')
       .then(r => r.json())
-      .then(cfg => {
+      .then(async (cfg) => {
         supabaseClient = window.supabase.createClient(cfg.url, cfg.key);
         console.log('Supabase client initialized');
+        await loadAgentsDropdown();
       })
       .catch(e => {
         console.error('Failed to load Supabase config:', e);
       });
+
+    async function loadAgentsDropdown() {
+      try {
+        const { data: agents, error } = await supabaseClient
+          .from('leads')
+          .select('phone, name, last_name')
+          .contains('is_agent', [CURRENT_CLIENT])
+          .eq('is_demo', false)
+          .order('name', { ascending: true });
+
+        if (error || !agents) return;
+
+        const select = document.getElementById('assignedAgent');
+        agents.forEach(agent => {
+          const opt = document.createElement('option');
+          opt.value = agent.phone;
+          const fullName = `${agent.name || ''} ${agent.last_name || ''}`.trim() || agent.phone;
+          opt.textContent = fullName;
+          select.appendChild(opt);
+        });
+
+        // Auto-select current agent if opened from index.html
+        if (parentAgentPhone) {
+          select.value = parentAgentPhone;
+        }
+      } catch (e) {
+        console.error('Error loading agents:', e);
+      }
+    }
 
     function generateToken() {
       const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -400,6 +441,7 @@
       const firstName = document.getElementById('firstName').value.trim();
       const lastName = document.getElementById('lastName').value.trim();
       const campaign = document.getElementById('campaign').value.trim();
+      const assignedAgent = document.getElementById('assignedAgent').value || null;
 
       // Persist campaign for next use
       if (campaign) localStorage.setItem('registro_manual_campaign', campaign);
@@ -431,6 +473,7 @@
           if (firstName) updateData.name = firstName;
           if (lastName) updateData.last_name = lastName;
           if (campaign) updateData.campaign = campaign;
+          if (assignedAgent) updateData.assigned_agent = assignedAgent;
 
           await supabaseClient
             .from('leads')
@@ -444,6 +487,7 @@
           if (firstName) insertData.name = firstName;
           if (lastName) insertData.last_name = lastName;
           insertData.campaign = campaign || '-';
+          if (assignedAgent) insertData.assigned_agent = assignedAgent;
 
           const { data: newLead, error: leadError } = await supabaseClient
             .from('leads')
