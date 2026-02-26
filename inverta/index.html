@@ -2241,8 +2241,8 @@ ctaobserver.observe(ctaToaster, {
       if (updatedIndex !== -1) {
         const lot = lotData[updatedIndex];
         const raw = payload.new?.availability ?? lot.availability ?? 'Available';
-        const wasAvailable = (lot.availability ?? '').toLowerCase() !== 'sold';
-        const nowSold = raw.toLowerCase() === 'sold';
+        const wasAvailable = !['sold', 'blocked'].includes((lot.availability ?? '').toLowerCase());
+        const nowSold = ['sold', 'blocked'].includes(raw.toLowerCase());
 
         lot.availability = raw;
         lot.featured = raw.toLowerCase() === 'featured';
@@ -4337,11 +4337,11 @@ map.on('click', 'lots-final-click', (e) => {
     return;
   }
 
-  // Check if sold lot should be clickable based on soldLotsClickable config
-  const isSoldLot = (lot.availability ?? '').toLowerCase() === 'sold';
+  // Check if sold/blocked lot should be clickable based on soldLotsClickable config
+  const isSoldLot = ['sold', 'blocked'].includes((lot.availability ?? '').toLowerCase());
   if (isSoldLot && CONFIG.misc && CONFIG.misc.soldLotsClickable === false) {
-    console.log('🚫 Sold lot click disabled (soldLotsClickable is false)');
-    return; // Don't allow clicks on sold lots when soldLotsClickable is false
+    console.log('🚫 Sold/blocked lot click disabled (soldLotsClickable is false)');
+    return; // Don't allow clicks on sold/blocked lots when soldLotsClickable is false
   }
 
   // 🟢 FIX: Check if we're already in detail view
@@ -5202,9 +5202,9 @@ function animateLots(map, cb) {
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["!=", ["get", "availability"], "Sold"]
+      filter: ["!in", ["get", "availability"], ["literal", ["Sold", "Blocked"]]]
     });
-    
+
     map.addLayer({
       id: `lot-group-${i}-sold`,
       type: "line",
@@ -5215,18 +5215,18 @@ function animateLots(map, cb) {
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["==", ["get", "availability"], "Sold"]
+      filter: ["in", ["get", "availability"], ["literal", ["Sold", "Blocked"]]]
     });
-    
+
     setTimeout(() => {
       // Fade in BOTH layers for this group
       map.setPaintProperty(`lot-group-${i}-available`, "line-opacity", 1);
       map.setPaintProperty(`lot-group-${i}-sold`, "line-opacity", 0.24); // ⬅️ 0.24 for group layer
-      
-      // Draw Xs for sold lots in this group
+
+      // Draw Xs for sold/blocked lots in this group
       const soldInGroup = g
         .map(idx => lotData[idx])
-        .filter(lot => (lot.availability ?? '').toLowerCase() === 'sold');
+        .filter(lot => ['sold', 'blocked'].includes((lot.availability ?? '').toLowerCase()));
       
       if (soldInGroup.length > 0) {
         addSoldXs(map, soldInGroup, fadeDurationXs);
@@ -5282,7 +5282,7 @@ function animateLots(map, cb) {
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
-    filter: ["!=", ["get", "availability"], "Sold"] // Show only available lots
+    filter: ["!in", ["get", "availability"], ["literal", ["Sold", "Blocked"]]] // Show only available lots
   });
 
   map.addLayer({
@@ -5296,7 +5296,7 @@ function animateLots(map, cb) {
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
-    filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
+    filter: ["in", ["get", "availability"], ["literal", ["Sold", "Blocked"]]] // Show sold + blocked lots
   });
 
   // Optional fill layer for available lots (only added when fill.color is set)
@@ -5311,7 +5311,7 @@ function animateLots(map, cb) {
         "fill-opacity": 0,
         "fill-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["!=", ["get", "availability"], "Sold"]
+      filter: ["!in", ["get", "availability"], ["literal", ["Sold", "Blocked"]]]
     });
   }
 
@@ -5327,7 +5327,7 @@ function animateLots(map, cb) {
         "fill-opacity": 0,
         "fill-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["==", ["get", "availability"], "Sold"]
+      filter: ["in", ["get", "availability"], ["literal", ["Sold", "Blocked"]]]
     });
   }
 
@@ -6230,7 +6230,7 @@ function setupLotClickHandlers() {
       const lot = lots[index];
       const status = (lot.availability ?? '').toLowerCase();
 
-      if (status === 'sold') return;
+      if (status === 'sold' || status === 'blocked') return;
 
       // If a detail is already open, switch to the new lot
       if (isDetailOpen) {
@@ -6389,7 +6389,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   headerLotNumber.textContent = lot.number;
 
   const status = String(lot.availability || '').toLowerCase();
-  if (status === 'sold') return;
+  if (status === 'sold' || status === 'blocked') return;
 
   // 🔥 FIX: Match by BOTH number AND fraccionamiento to avoid selecting wrong lot
   const lotMapData = Array.isArray(lotData)
@@ -6933,7 +6933,7 @@ function render() {
 const state = (lot.availability ?? '').toString().toLowerCase();
 const isFeatured  = state === 'featured';
 const isAvailable = state === 'available';
-const isSold      = state === 'sold';
+const isSold      = state === 'sold' || state === 'blocked';
 
 // Calculate price: (price_m2 × size)
 // Round to nearest thousand first, then decide unit
@@ -9308,7 +9308,7 @@ PS.openPinInModal = async function (pin) {
   const btn = document.getElementById('cycleAvailabilityBtn');
   if (!btn) return;
 
-  const ORDER = ['Available', 'Sold', 'Featured'];
+  const ORDER = ['Available', 'Sold', 'Featured', 'Blocked'];
   let selectedLotName = null; // persists selection inside this block
 
   const $modalInfo = document.getElementById('modalInfo');
@@ -9383,16 +9383,17 @@ const nextState = cur => {
     // Button color reflects current state
     const lot = lotData[mapIndex];
     const state = normalize(lot?.availability || 'available');
-    btn.classList.remove('sold','featured');
+    btn.classList.remove('sold','featured','blocked');
     if (state === 'sold') btn.classList.add('sold');
     if (state === 'featured') btn.classList.add('featured');
+    if (state === 'blocked') btn.classList.add('sold'); // blocked looks like sold
   }
 
   // Keep button color synced when UI changes
   function syncButtonToCurrentSelection() {
     const sel = getSelectedLot();
     const name = sel?.lotName ?? selectedLotName;
-    if (!name) { btn.classList.remove('sold','featured'); return; }
+    if (!name) { btn.classList.remove('sold','featured','blocked'); return; }
     setSelectedLotByName(name, { scroll:false });
   }
 
@@ -9429,7 +9430,7 @@ function refreshFeaturedLayer() {
   function refreshSoldLayer() {
     const srcId = 'sold-x';
     const layerId = 'sold-x-layer';
-    const soldLots = lotData.filter(l => normalize(l.availability) === 'sold');
+    const soldLots = lotData.filter(l => ['sold', 'blocked'].includes(normalize(l.availability)));
     const features = soldLots.flatMap(makeXFeatures);
 
     if (!map.getSource(srcId)) {
@@ -9446,6 +9447,14 @@ function refreshFeaturedLayer() {
   function refreshVisuals() {
     refreshFeaturedLayer();
     refreshSoldLayer();
+    // Update lots-final source so Mapbox filters (sold/blocked/available) re-evaluate
+    if (map?.getSource('lots-final') && typeof lotFeature === 'function') {
+      const src = map.getSource('lots-final');
+      src.setData({
+        type: 'FeatureCollection',
+        features: lotData.map((lot, i) => lotFeature(lot, i))
+      });
+    }
     if (typeof render === 'function') render();
   }
 
@@ -9474,12 +9483,12 @@ function refreshFeaturedLayer() {
     selectedLotName = sel.lotName;
     applyAvailabilityLocal(sel.lotName, next);
     // button feedback
-    btn.classList.remove('sold','featured');
-    if (next === 'sold') btn.classList.add('sold');
+    btn.classList.remove('sold','featured','blocked');
+    if (next === 'sold' || next === 'blocked') btn.classList.add('sold');
     if (next === 'featured') btn.classList.add('featured');
 
     // Show immediate feedback
-    const LABELS = { available:'disponible', sold:'vendido', featured:'destacado' };
+    const LABELS = { available:'disponible', sold:'vendido', featured:'destacado', blocked:'bloqueado' };
     window.showToaster?.(`Estado actualizado a "${LABELS[next] || next}".`);
 
     refreshVisuals();
@@ -9512,7 +9521,7 @@ function refreshFeaturedLayer() {
 try {
   // Count total and sold lots from the in-memory lotData array
   const totalLots = lotData.length;
-  const soldLots = lotData.filter(l => normalize(l.availability) === 'sold').length;
+  const soldLots = lotData.filter(l => ['sold', 'blocked'].includes(normalize(l.availability))).length;
   const availableCount = totalLots - soldLots;
 
   await window.supabaseClient
@@ -9535,8 +9544,8 @@ try {
 
         // revert
         applyAvailabilityLocal(sel.lotName, current);
-        btn.classList.remove('sold','featured');
-        if (current === 'sold') btn.classList.add('sold');
+        btn.classList.remove('sold','featured','blocked');
+        if (current === 'sold' || current === 'blocked') btn.classList.add('sold');
         if (current === 'featured') btn.classList.add('featured');
 
         refreshVisuals();
@@ -9612,8 +9621,8 @@ try {
 
           // Just update button color without touching hover state
           const state = normalize(mapData?.availability || 'available');
-          btn.classList.remove('sold','featured');
-          if (state === 'sold') btn.classList.add('sold');
+          btn.classList.remove('sold','featured','blocked');
+          if (state === 'sold' || state === 'blocked') btn.classList.add('sold');
           if (state === 'featured') btn.classList.add('featured');
         }
       } catch {}
@@ -10173,7 +10182,7 @@ const setupAuthListener = setInterval(function() {
     for (const v of fields) {
       if (typeof v === 'string') {
         const s = v.normalize('NFKD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase();
-        if (/(^|[^a-z])(sold|vendido|ocupado)([^a-z]|$)/.test(s)) return true;
+        if (/(^|[^a-z])(sold|vendido|ocupado|blocked|bloqueado)([^a-z]|$)/.test(s)) return true;
       }
     }
     return false;

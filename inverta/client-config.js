@@ -441,6 +441,23 @@ const CLIENT_CONFIGS = {
           opacity: [0.3, 0.2],   // [base, amplitude] → oscillates base ± amplitude
         },
       },
+      blocked: {
+        outline: {
+          color: '#ffffff',
+          width: 1,
+          opacity: 0.49,
+        },
+        fill: {
+          color: 'primary',      // used in admin view only
+          opacity: 0.6,
+        },
+        xMark: {
+          enabled: true,         // used in client view (index.html)
+          color: '#ffffff',
+          width: 1,
+          opacity: 0.49,
+        },
+      },
       hover: {
         outline: {
           color: 'primary',
