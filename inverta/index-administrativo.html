@@ -5071,13 +5071,27 @@ function animateLots(map, cb) {
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["any", ["==", ["get", "availability"], "Sold"], ["==", ["get", "availability"], "Blocked"]]
+      filter: ["==", ["get", "availability"], "Sold"]
+    });
+
+    map.addLayer({
+      id: `lot-group-${i}-blocked`,
+      type: "line",
+      source: `lot-group-${i}`,
+      paint: {
+        "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+        "line-width": 1,
+        "line-opacity": 0,
+        "line-opacity-transition": { duration: fadeDuration },
+      },
+      filter: ["==", ["get", "availability"], "Blocked"]
     });
 
     setTimeout(() => {
-      // Fade in BOTH layers for this group
+      // Fade in all layers for this group
       map.setPaintProperty(`lot-group-${i}-available`, "line-opacity", 1);
       map.setPaintProperty(`lot-group-${i}-sold`, "line-opacity", 0.24); // ⬅️ 0.24 for group layer
+      map.setPaintProperty(`lot-group-${i}-blocked`, "line-opacity", 0.24);
 
       // Draw Xs for sold lots in this group (NOT blocked — blocked get fill instead)
       const soldInGroup = g
@@ -5152,7 +5166,22 @@ function animateLots(map, cb) {
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
-    filter: ["any", ["==", ["get", "availability"], "Sold"], ["==", ["get", "availability"], "Blocked"]] // Show sold + blocked lots
+    filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
+  });
+
+  // Blocked outline layer (admin only — primary color, zoom-interpolated like available)
+  map.addLayer({
+    id: "lots-final-blocked-outline",
+    type: "line",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+      "line-width": lotStyleWidth(CONFIG.lotStyles.featured.outline.width),
+      "line-opacity": 0,
+      "line-opacity-transition": { duration: fadeDuration },
+    },
+    filter: ["==", ["get", "availability"], "Blocked"]
   });
 
   // Optional fill layer for available lots (only added when fill.color is set)
@@ -5259,6 +5288,7 @@ function animateLots(map, cb) {
     // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
     map.setPaintProperty("lots-final-available", "line-opacity", CONFIG.lotStyles.available.outline.opacity);
     map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // ⬅️ partial for final layer during transition
+    if (map.getLayer("lots-final-blocked-outline")) map.setPaintProperty("lots-final-blocked-outline", "line-opacity", CONFIG.lotStyles.featured.outline.opacity * 0.51);
     if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
     if (map.getLayer("lots-final-sold-fill")) map.setPaintProperty("lots-final-sold-fill", "fill-opacity", CONFIG.lotStyles.sold.fill.opacity);
     if (map.getLayer("lots-final-blocked-fill")) map.setPaintProperty("lots-final-blocked-fill", "fill-opacity", CONFIG.lotStyles.blocked.fill.opacity);
@@ -5269,23 +5299,28 @@ function animateLots(map, cb) {
       groupArr.forEach((_, i) => {
         const availableId = `lot-group-${i}-available`;
         const soldId = `lot-group-${i}-sold`;
-        
+        const blockedId = `lot-group-${i}-blocked`;
+
         if (map.getLayer(availableId)) map.setPaintProperty(availableId, "line-opacity", 0);
         if (map.getLayer(soldId)) map.setPaintProperty(soldId, "line-opacity", 0);
+        if (map.getLayer(blockedId)) map.setPaintProperty(blockedId, "line-opacity", 0);
       });
 
-      // AFTER group layers fade out, update final sold layer to full 0.49
+      // AFTER group layers fade out, update final layers to full opacity
       setTimeout(() => {
         map.setPaintProperty("lots-final-sold", "line-opacity", 0.49); // ⬅️ UPDATE TO FULL 0.49
-         
+        if (map.getLayer("lots-final-blocked-outline")) map.setPaintProperty("lots-final-blocked-outline", "line-opacity", CONFIG.lotStyles.featured.outline.opacity);
+
         // Remove all lot groups
         groupArr.forEach((_, i) => {
           const availableId = `lot-group-${i}-available`;
           const soldId = `lot-group-${i}-sold`;
+          const blockedId = `lot-group-${i}-blocked`;
           const sourceId = `lot-group-${i}`;
-          
+
           if (map.getLayer(availableId)) map.removeLayer(availableId);
           if (map.getLayer(soldId)) map.removeLayer(soldId);
+          if (map.getLayer(blockedId)) map.removeLayer(blockedId);
           if (map.getSource(sourceId)) map.removeSource(sourceId);
         });
         if (cb) cb();
@@ -6193,7 +6228,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   headerSection.innerHTML = `
     <div class="tag-row">
-      ${isFeatured ? '<div class="featured-tag">SELECCIÓN LA-LA LAND</div>' : ''}
+      ${isFeatured ? '<div class="featured-tag">RECOMENDADO</div>' : ''}
       <div class="nickname">${nickname}</div>
     </div>
     ${subtitle ? `<div class="subtitle-row">${subtitle}</div>` : ''}
@@ -6749,7 +6784,7 @@ row.innerHTML = `
 
       const label = document.createElement('div');
       label.classList.add('featured-label');
-      label.textContent = 'SELECCIÓN LA-LA LAND';
+      label.textContent = 'RECOMENDADO';
       row.appendChild(label);
     }
 
