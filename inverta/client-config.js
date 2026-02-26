@@ -433,7 +433,7 @@ const CLIENT_CONFIGS = {
       featured: {
         outline: {
           color: 'primary',      // resolves to CONFIG.colors.primary
-          width: 2,
+          width: [1.5, 4],       // [zoomMin, zoomMax] → 1.5px at zoom 16, 4px at zoom 19
           opacity: 1,
         },
         fill: {
