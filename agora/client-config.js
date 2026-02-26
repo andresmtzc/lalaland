@@ -341,12 +341,29 @@ const CLIENT_CONFIGS = {
       featured: {
         outline: {
           color: 'primary',      // resolves to CONFIG.colors.primary
-          width: 2,
+          width: [1.5, 4],       // [zoomMin, zoomMax] → 1.5px at zoom 16, 4px at zoom 19
           opacity: 1,
         },
         fill: {
           color: 'primary',
           opacity: [0.3, 0.2],   // [base, amplitude] → oscillates base ± amplitude
+        },
+      },
+      blocked: {
+        outline: {
+          color: '#ffffff',
+          width: 1,
+          opacity: 0.49,
+        },
+        fill: {
+          color: 'primary',      // used in admin view only
+          opacity: 0.6,
+        },
+        xMark: {
+          enabled: true,         // used in client view (index.html)
+          color: '#ffffff',
+          width: 1,
+          opacity: 0.49,
         },
       },
       hover: {

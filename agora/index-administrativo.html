@@ -2242,8 +2242,10 @@ ctaobserver.observe(ctaToaster, {
       if (updatedIndex !== -1) {
         const lot = lotData[updatedIndex];
         const raw = payload.new?.availability ?? lot.availability ?? 'Available';
-        const wasAvailable = (lot.availability ?? '').toLowerCase() !== 'sold';
+        const prevState = (lot.availability ?? '').toLowerCase();
+        const wasAvailable = !['sold', 'blocked'].includes(prevState);
         const nowSold = raw.toLowerCase() === 'sold';
+        const nowBlocked = raw.toLowerCase() === 'blocked';
 
         lot.availability = raw;
         lot.featured = raw.toLowerCase() === 'featured';
@@ -2277,9 +2279,14 @@ ctaobserver.observe(ctaToaster, {
           source.setData(updatedGeojson);
         }
 
-        // If lot just became sold, add X mark
+        // If lot just became sold, add X mark (not for blocked — blocked gets fill)
         if (wasAvailable && nowSold && typeof addSoldXs === 'function') {
           addSoldXs(map, [lot], 300);
+        }
+
+        // If lot just became blocked, refresh the blocked fill layer
+        if (nowBlocked && map.getLayer('lots-final-blocked-fill')) {
+          map.setPaintProperty('lots-final-blocked-fill', 'fill-opacity', CONFIG.lotStyles.blocked.fill.opacity);
         }
       }
 
@@ -4189,9 +4196,9 @@ map.on('click', 'lots-final-click', (e) => {
   }
 
   // Check if sold lot should be clickable based on soldLotsClickable config
-  const isSoldLot = (lot.availability ?? '').toLowerCase() === 'sold';
+  const isSoldLot = ['sold', 'blocked'].includes((lot.availability ?? '').toLowerCase());
   if (isSoldLot && CONFIG.misc && CONFIG.misc.soldLotsClickable === false) {
-    console.log('🚫 Sold lot click disabled (soldLotsClickable is false)');
+    console.log('🚫 Sold/blocked lot click disabled (soldLotsClickable is false)');
     return; // Don't allow clicks on sold lots when soldLotsClickable is false
   }
 
@@ -5054,7 +5061,7 @@ function animateLots(map, cb) {
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["!=", ["get", "availability"], "Sold"]
+      filter: ["all", ["!=", ["get", "availability"], "Sold"], ["!=", ["get", "availability"], "Blocked"]]
     });
 
     map.addLayer({
@@ -5069,13 +5076,27 @@ function animateLots(map, cb) {
       },
       filter: ["==", ["get", "availability"], "Sold"]
     });
-    
+
+    map.addLayer({
+      id: `lot-group-${i}-blocked`,
+      type: "line",
+      source: `lot-group-${i}`,
+      paint: {
+        "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+        "line-width": 1,
+        "line-opacity": 0,
+        "line-opacity-transition": { duration: fadeDuration },
+      },
+      filter: ["==", ["get", "availability"], "Blocked"]
+    });
+
     setTimeout(() => {
-      // Fade in BOTH layers for this group
+      // Fade in all layers for this group
       map.setPaintProperty(`lot-group-${i}-available`, "line-opacity", 1);
       map.setPaintProperty(`lot-group-${i}-sold`, "line-opacity", 0.24); // ⬅️ 0.24 for group layer
-      
-      // Draw Xs for sold lots in this group
+      map.setPaintProperty(`lot-group-${i}-blocked`, "line-opacity", 0.24);
+
+      // Draw Xs for sold lots in this group (NOT blocked — blocked get fill instead)
       const soldInGroup = g
         .map(idx => lotData[idx])
         .filter(lot => (lot.availability ?? '').toLowerCase() === 'sold');
@@ -5134,7 +5155,7 @@ function animateLots(map, cb) {
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
-    filter: ["!=", ["get", "availability"], "Sold"] // Show only available lots
+    filter: ["all", ["!=", ["get", "availability"], "Sold"], ["!=", ["get", "availability"], "Blocked"]] // Show only available lots
   });
 
   map.addLayer({
@@ -5151,6 +5172,21 @@ function animateLots(map, cb) {
     filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
   });
 
+  // Blocked outline layer (admin only — primary color, zoom-interpolated like available)
+  map.addLayer({
+    id: "lots-final-blocked-outline",
+    type: "line",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+      "line-width": lotStyleWidth(CONFIG.lotStyles.featured.outline.width),
+      "line-opacity": 0,
+      "line-opacity-transition": { duration: fadeDuration },
+    },
+    filter: ["==", ["get", "availability"], "Blocked"]
+  });
+
   // Optional fill layer for available lots (only added when fill.color is set)
   if (CONFIG.lotStyles.available.fill.color) {
     map.addLayer({
@@ -5163,7 +5199,7 @@ function animateLots(map, cb) {
         "fill-opacity": 0,
         "fill-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["!=", ["get", "availability"], "Sold"]
+      filter: ["all", ["!=", ["get", "availability"], "Sold"], ["!=", ["get", "availability"], "Blocked"]]
     });
   }
 
@@ -5182,6 +5218,20 @@ function animateLots(map, cb) {
       filter: ["==", ["get", "availability"], "Sold"]
     });
   }
+
+  // Fill layer for blocked lots (admin only — primary color fill)
+  map.addLayer({
+    id: "lots-final-blocked-fill",
+    type: "fill",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "fill-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.blocked.fill.color),
+      "fill-opacity": 0,
+      "fill-opacity-transition": { duration: fadeDuration },
+    },
+    filter: ["==", ["get", "availability"], "Blocked"]
+  });
 
   map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
     id: "lots-final-click",
@@ -5241,8 +5291,10 @@ function animateLots(map, cb) {
     // Fade in final lots - sold lots get partial opacity during transition
     map.setPaintProperty("lots-final-available", "line-opacity", CONFIG.lotStyles.available.outline.opacity);
     map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // ⬅️ partial for final layer during transition
+    if (map.getLayer("lots-final-blocked-outline")) map.setPaintProperty("lots-final-blocked-outline", "line-opacity", CONFIG.lotStyles.featured.outline.opacity * 0.51);
     if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
     if (map.getLayer("lots-final-sold-fill")) map.setPaintProperty("lots-final-sold-fill", "fill-opacity", CONFIG.lotStyles.sold.fill.opacity);
+    if (map.getLayer("lots-final-blocked-fill")) map.setPaintProperty("lots-final-blocked-fill", "fill-opacity", CONFIG.lotStyles.blocked.fill.opacity);
     // Labels now fade based on zoom level (see text-opacity interpolate expression)
 
     setTimeout(() => {
@@ -5250,23 +5302,28 @@ function animateLots(map, cb) {
       groupArr.forEach((_, i) => {
         const availableId = `lot-group-${i}-available`;
         const soldId = `lot-group-${i}-sold`;
-        
+        const blockedId = `lot-group-${i}-blocked`;
+
         if (map.getLayer(availableId)) map.setPaintProperty(availableId, "line-opacity", 0);
         if (map.getLayer(soldId)) map.setPaintProperty(soldId, "line-opacity", 0);
+        if (map.getLayer(blockedId)) map.setPaintProperty(blockedId, "line-opacity", 0);
       });
 
-      // AFTER group layers fade out, update final sold layer to full 0.49
+      // AFTER group layers fade out, update final layers to full opacity
       setTimeout(() => {
         map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity); // ⬅️ UPDATE TO FULL opacity
-         
+        if (map.getLayer("lots-final-blocked-outline")) map.setPaintProperty("lots-final-blocked-outline", "line-opacity", CONFIG.lotStyles.featured.outline.opacity);
+
         // Remove all lot groups
         groupArr.forEach((_, i) => {
           const availableId = `lot-group-${i}-available`;
           const soldId = `lot-group-${i}-sold`;
+          const blockedId = `lot-group-${i}-blocked`;
           const sourceId = `lot-group-${i}`;
-          
+
           if (map.getLayer(availableId)) map.removeLayer(availableId);
           if (map.getLayer(soldId)) map.removeLayer(soldId);
+          if (map.getLayer(blockedId)) map.removeLayer(blockedId);
           if (map.getSource(sourceId)) map.removeSource(sourceId);
         });
         if (cb) cb();
@@ -5951,7 +6008,7 @@ function setupLotClickHandlers() {
       const lot = lots[index];
       const status = (lot.availability ?? '').toLowerCase();
 
-      if (status === 'sold') return;
+      if (status === 'sold' || status === 'blocked') return;
 
       // If a detail is already open, switch to the new lot
       if (isDetailOpen) {
@@ -6110,7 +6167,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   headerLotNumber.textContent = lot.number;
 
   const status = String(lot.availability || '').toLowerCase();
-  if (status === 'sold') return;
+  if (status === 'sold' || status === 'blocked') return;
 
   // 🔥 FIX: Match by BOTH number AND fraccionamiento to avoid selecting wrong lot
   const lotMapData = Array.isArray(lotData)
@@ -6177,7 +6234,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   headerSection.innerHTML = `
     <div class="tag-row">
-      ${isFeatured ? '<div class="featured-tag">SELECCIÓN LA-LA LAND</div>' : ''}
+      ${isFeatured ? '<div class="featured-tag">RECOMENDADO</div>' : ''}
       <div class="nickname">${nickname}</div>
     </div>
     ${subtitle ? `<div class="subtitle-row">${subtitle}</div>` : ''}
@@ -6634,7 +6691,8 @@ function render() {
 const state = (lot.availability ?? '').toString().toLowerCase();
 const isFeatured  = state === 'featured';
 const isAvailable = state === 'available';
-const isSold      = state === 'sold';
+const isBlocked   = state === 'blocked';
+const isSold      = state === 'sold' || isBlocked;
 
 // Calculate price: (price_m2 × size)
 // Round to nearest thousand first, then decide unit
@@ -6672,7 +6730,7 @@ row.innerHTML = `
       <div class="lot-middle ${isSold ? 'lot-middle--sold' : ''}">
         ${
           isSold
-            ? `<div style="font-size:48px; font-weight:700; color:${CONFIG.colors.primary};">VENDIDO</div>`
+            ? `<div style="font-size:48px; font-weight:700; color:${CONFIG.colors.primary};">${isBlocked ? 'BLOQUEADO' : 'VENDIDO'}</div>`
             : `${lot.size}<span class="sup">M2</span>`
         }
       </div>
@@ -6728,7 +6786,7 @@ row.innerHTML = `
 
       const label = document.createElement('div');
       label.classList.add('featured-label');
-      label.textContent = 'SELECCIÓN LA-LA LAND';
+      label.textContent = 'RECOMENDADO';
       row.appendChild(label);
     }
 
@@ -8933,7 +8991,7 @@ PS.openPinInModal = async function (pin) {
   const btn = document.getElementById('cycleAvailabilityBtn');
   if (!btn) return;
 
-  const ORDER = ['Available', 'Sold', 'Featured'];
+  const ORDER = ['Available', 'Sold', 'Featured', 'Blocked'];
   let selectedLotName = null; // persists selection inside this block
 
   const $modalInfo = document.getElementById('modalInfo');
@@ -8979,7 +9037,7 @@ const nextState = cur => {
     // and the centered row belongs to a different community.
     const firstAvailable = lotData.find(l =>
       l.fraccionamiento === currentFraccionamiento &&
-      normalize(l.availability || 'available') !== 'sold'
+      !['sold', 'blocked'].includes(normalize(l.availability || 'available'))
     );
     if (firstAvailable) {
       const baseIdx = baseLots.findIndex(b => b.name === firstAvailable.name);
@@ -9022,16 +9080,17 @@ const nextState = cur => {
     // Button color reflects current state
     const lot = lotData[mapIndex];
     const state = normalize(lot?.availability || 'available');
-    btn.classList.remove('sold','featured');
+    btn.classList.remove('sold','featured','blocked');
     if (state === 'sold') btn.classList.add('sold');
     if (state === 'featured') btn.classList.add('featured');
+    if (state === 'blocked') btn.classList.add('blocked');
   }
 
   // Keep button color synced when UI changes
   function syncButtonToCurrentSelection() {
     const sel = getSelectedLot();
     const name = sel?.lotName ?? selectedLotName;
-    if (!name) { btn.classList.remove('sold','featured'); return; }
+    if (!name) { btn.classList.remove('sold','featured','blocked'); return; }
     setSelectedLotByName(name, { scroll:false });
   }
 
@@ -9068,7 +9127,7 @@ function refreshFeaturedLayer() {
   function refreshSoldLayer() {
     const srcId = 'sold-x';
     const layerId = 'sold-x-layer';
-    const soldLots = lotData.filter(l => normalize(l.availability) === 'sold');
+    const soldLots = lotData.filter(l => ['sold', 'blocked'].includes(normalize(l.availability)));
     const features = soldLots.flatMap(makeXFeatures);
 
     if (!map.getSource(srcId)) {
@@ -9085,6 +9144,14 @@ function refreshFeaturedLayer() {
   function refreshVisuals() {
     refreshFeaturedLayer();
     refreshSoldLayer();
+    // Update lots-final source so Mapbox filters (sold/blocked/available) re-evaluate
+    if (map?.getSource('lots-final') && typeof lotFeature === 'function') {
+      const src = map.getSource('lots-final');
+      src.setData({
+        type: 'FeatureCollection',
+        features: lotData.map((lot, i) => lotFeature(lot, i))
+      });
+    }
     if (typeof render === 'function') render();
   }
 
@@ -9114,12 +9181,13 @@ function refreshFeaturedLayer() {
     selectedLotName = sel.lotName;
     applyAvailabilityLocal(sel.lotName, next);
     // button feedback
-    btn.classList.remove('sold','featured');
+    btn.classList.remove('sold','featured','blocked');
     if (next === 'sold') btn.classList.add('sold');
     if (next === 'featured') btn.classList.add('featured');
+    if (next === 'blocked') btn.classList.add('blocked');
 
     // Show immediate feedback
-    const LABELS = { available:'disponible', sold:'vendido', featured:'destacado' };
+    const LABELS = { available:'disponible', sold:'vendido', featured:'destacado', blocked:'bloqueado' };
     window.showToaster?.(`Estado actualizado a "${LABELS[next] || next}".`);
 
     refreshVisuals();
@@ -9153,7 +9221,7 @@ function refreshFeaturedLayer() {
 try {
   // Count total and sold lots from the in-memory lotData array
   const totalLots = lotData.length;
-  const soldLots = lotData.filter(l => normalize(l.availability) === 'sold').length;
+  const soldLots = lotData.filter(l => ['sold', 'blocked'].includes(normalize(l.availability))).length;
   const availableCount = totalLots - soldLots;
 
   await window.supabaseClient
@@ -9176,9 +9244,10 @@ try {
 
         // revert
         applyAvailabilityLocal(sel.lotName, current);
-        btn.classList.remove('sold','featured');
+        btn.classList.remove('sold','featured','blocked');
         if (current === 'sold') btn.classList.add('sold');
         if (current === 'featured') btn.classList.add('featured');
+        if (current === 'blocked') btn.classList.add('blocked');
 
         refreshVisuals();
         setSelectedLotByName(selectedLotName, { scroll:false });
@@ -9253,9 +9322,10 @@ try {
 
           // Just update button color without touching hover state
           const state = normalize(mapData?.availability || 'available');
-          btn.classList.remove('sold','featured');
+          btn.classList.remove('sold','featured','blocked');
           if (state === 'sold') btn.classList.add('sold');
           if (state === 'featured') btn.classList.add('featured');
+          if (state === 'blocked') btn.classList.add('blocked');
         }
       } catch {}
       return res;
@@ -9834,7 +9904,7 @@ const setupAuthListener = setInterval(function() {
     for (const v of fields) {
       if (typeof v === 'string') {
         const s = v.normalize('NFKD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase();
-        if (/(^|[^a-z])(sold|vendido|ocupado)([^a-z]|$)/.test(s)) return true;
+        if (/(^|[^a-z])(sold|vendido|ocupado|blocked|bloqueado)([^a-z]|$)/.test(s)) return true;
       }
     }
     return false;
