@@ -471,7 +471,7 @@
             <th class="sortable sorted-desc" data-column="score">Score</th>
             <th>Exp.</th>
             <th>Campaña</th>
-            <th class="sortable" data-column="assigned_agent">Asignado</th>
+            <th class="sortable col-assigned-agent" data-column="assigned_agent">Asignado</th>
             <th class="col-agent-toggle">Agente</th>
             <th>Whapp</th>
           </tr>
@@ -521,7 +521,7 @@
     (function() {
       const p = new URLSearchParams(window.location.search);
       if (p.get('mode') === 'agent') {
-        document.getElementById('agent-mode-styles').textContent = '.col-agent-toggle { display: none !important; }';
+        document.getElementById('agent-mode-styles').textContent = '.col-agent-toggle, .col-assigned-agent { display: none !important; }';
       }
     })();
   </script>
@@ -534,6 +534,14 @@
     const dashParams = new URLSearchParams(window.location.search);
     const DASHBOARD_MODE = dashParams.get('mode') || 'admin'; // 'admin' or 'agent'
     const AGENT_PHONE = dashParams.get('agent_phone') || null;
+
+    // Supabase may return JSONB columns as strings — parse safely
+    function parseJSONB(val) {
+      if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
+        try { return JSON.parse(val); } catch(e) {}
+      }
+      return val;
+    }
 
     let supabaseClient;
     let currentUser = null;
@@ -673,6 +681,9 @@
           if (!payload.new.client_id || !payload.new.client_id.includes(CURRENT_CLIENT)) return;
           const idx = allLeads.findIndex(l => l.id === payload.new.id);
           if (idx !== -1) {
+            // Realtime may return JSONB columns as strings — parse them
+            payload.new.assigned_agent = parseJSONB(payload.new.assigned_agent);
+            payload.new.is_agent = parseJSONB(payload.new.is_agent);
             allLeads[idx] = { ...allLeads[idx], ...payload.new };
             renderLeads();
             updateStats();
@@ -696,11 +707,18 @@
         if (error) throw error;
 
         // Filter out agents and demo leads for this client (client-side)
-        let leads = (allData || []).filter(l => (!l.is_agent || !l.is_agent.includes(CURRENT_CLIENT)) && !l.is_demo);
+        let leads = (allData || []).filter(l => {
+          const ia = parseJSONB(l.is_agent);
+          return (!ia || (Array.isArray(ia) ? !ia.includes(CURRENT_CLIENT) : true)) && !l.is_demo;
+        });
 
         // In agent mode: only show leads assigned to this agent
         if (DASHBOARD_MODE === 'agent' && AGENT_PHONE) {
-          leads = leads.filter(l => l.assigned_agent === AGENT_PHONE);
+          leads = leads.filter(l => {
+            const raw = parseJSONB(l.assigned_agent);
+            const agent = (typeof raw === 'object' && raw) ? raw[CURRENT_CLIENT] : raw;
+            return String(agent || '') === AGENT_PHONE;
+          });
         }
 
         if (leads.length === 0) {
@@ -1078,8 +1096,12 @@
           aVal = getMexicanState(a.phone);
           bVal = getMexicanState(b.phone);
         } else if (col === 'assigned_agent') {
-          aVal = a.assigned_agent ? (agentNameMap[a.assigned_agent] || a.assigned_agent) : '';
-          bVal = b.assigned_agent ? (agentNameMap[b.assigned_agent] || b.assigned_agent) : '';
+          const aRaw = parseJSONB(a.assigned_agent);
+          const bRaw = parseJSONB(b.assigned_agent);
+          const aAgent = (typeof aRaw === 'object' && aRaw) ? aRaw[CURRENT_CLIENT] : aRaw;
+          const bAgent = (typeof bRaw === 'object' && bRaw) ? bRaw[CURRENT_CLIENT] : bRaw;
+          aVal = aAgent ? (agentNameMap[aAgent] || aAgent) : '';
+          bVal = bAgent ? (agentNameMap[bAgent] || bAgent) : '';
         }
 
         if (currentSort.direction === 'asc') {
@@ -1123,6 +1145,19 @@
           savedLotsCell = `<td>${lead.savedCount}</td>`;
         }
 
+        // Assigned agent name (clickable dropdown for admin)
+        const rawAgent = parseJSONB(lead.assigned_agent);
+        const agentVal = (typeof rawAgent === 'object' && rawAgent) ? rawAgent[CURRENT_CLIENT] : rawAgent;
+        const assignedName = agentVal ? (agentNameMap[agentVal] || agentVal) : '-';
+        const assignedCell = DASHBOARD_MODE === 'admin'
+          ? `<td class="assign-cell col-assigned-agent" onclick="openAssignDropdown(this, '${lead.id}', '${agentVal || ''}')">${assignedName}</td>`
+          : `<td class="col-assigned-agent">${assignedName}</td>`;
+
+        // Agent toggle column (hidden in agent mode)
+        const agentToggleCell = DASHBOARD_MODE === 'admin'
+          ? `<td class="col-agent-toggle" style="text-align:center;"><button onclick="toggleAgent('${lead.id}', true)" class="agent-btn" title="Hacer agente">+</button></td>`
+          : '';
+
         return `
           <tr>
             ${attendCell}
@@ -1137,12 +1172,8 @@
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
             <td style="text-align: center;">${lead.exported ? 'Sí' : 'No'}</td>
             <td>${lead.campaign || '-'}</td>
-            ${DASHBOARD_MODE === 'admin'
-              ? `<td class="assign-cell" onclick="openAssignDropdown(this, '${lead.id}', '${lead.assigned_agent || ''}')">${lead.assigned_agent ? (agentNameMap[lead.assigned_agent] || lead.assigned_agent) : '-'}</td>`
-              : `<td>${lead.assigned_agent ? (agentNameMap[lead.assigned_agent] || lead.assigned_agent) : '-'}</td>`}
-            ${DASHBOARD_MODE === 'admin'
-              ? `<td class="col-agent-toggle" style="text-align:center;"><button onclick="toggleAgent('${lead.id}', true)" class="agent-btn" title="Hacer agente">+</button></td>`
-              : ''}
+            ${assignedCell}
+            ${agentToggleCell}
             <td style="text-align:center;"><a href="${waLink}" target="_blank" class="whatsapp-btn" title="WhatsApp">→</a></td>
           </tr>
         `;
@@ -1234,16 +1265,27 @@
 
     async function assignAgent(leadId, agentPhone, cell) {
       try {
+        // Read current assigned_agent to merge
+        const lead = allLeads.find(l => l.id === leadId);
+        const parsed = parseJSONB(lead?.assigned_agent);
+        const existing = (typeof parsed === 'object' && parsed) || {};
+        const updated = { ...existing };
+        if (agentPhone) {
+          updated[CURRENT_CLIENT] = agentPhone;
+        } else {
+          delete updated[CURRENT_CLIENT];
+        }
+        const newValue = Object.keys(updated).length > 0 ? updated : null;
+
         const { error } = await supabaseClient
           .from('leads')
-          .update({ assigned_agent: agentPhone || null })
+          .update({ assigned_agent: newValue })
           .eq('id', leadId);
 
         if (error) throw error;
 
         // Update local data
-        const lead = allLeads.find(l => l.id === leadId);
-        if (lead) lead.assigned_agent = agentPhone || null;
+        if (lead) lead.assigned_agent = newValue;
 
         // Restore cell text
         const name = agentPhone ? (agentNameMap[agentPhone] || agentPhone) : '-';
@@ -1264,7 +1306,7 @@
           .single();
         if (fetchErr) throw fetchErr;
 
-        let currentArr = lead.is_agent || [];
+        let currentArr = parseJSONB(lead.is_agent) || [];
 
         if (makeAgent) {
           // Add CURRENT_CLIENT to array

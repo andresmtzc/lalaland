@@ -490,24 +490,36 @@
 
         let { data: existingLead } = await supabaseClient
           .from('leads')
-          .select('id, client_id')
+          .select('id, client_id, assigned_agent')
           .eq('phone', phone)
           .single();
 
         let leadId;
 
         if (existingLead) {
+          // Block if lead is already registered for this client
+          const currentClients = existingLead.client_id || [];
+          if (currentClients.includes(CURRENT_CLIENT)) {
+            errorMsg.textContent = 'Este número ya está registrado para ' + CURRENT_CLIENT.toUpperCase() + '.';
+            errorMsg.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Registrar';
+            return;
+          }
+
           leadId = existingLead.id;
 
-          const updateData = { last_seen_at: new Date().toISOString() };
-          const currentClients = existingLead.client_id || [];
-          if (!currentClients.includes(CURRENT_CLIENT)) {
-            updateData.client_id = [...currentClients, CURRENT_CLIENT];
-          }
+          const updateData = {
+            last_seen_at: new Date().toISOString(),
+            client_id: [...currentClients, CURRENT_CLIENT],
+          };
           if (firstName) updateData.name = firstName;
           if (lastName) updateData.last_name = lastName;
           if (campaign) updateData.campaign = campaign;
-          if (assignedAgent) updateData.assigned_agent = assignedAgent;
+          if (assignedAgent) {
+            const existingAgents = (typeof existingLead.assigned_agent === 'object' && existingLead.assigned_agent) || {};
+            updateData.assigned_agent = { ...existingAgents, [CURRENT_CLIENT]: assignedAgent };
+          }
 
           await supabaseClient
             .from('leads')
@@ -521,7 +533,7 @@
           if (firstName) insertData.name = firstName;
           if (lastName) insertData.last_name = lastName;
           insertData.campaign = campaign || '-';
-          if (assignedAgent) insertData.assigned_agent = assignedAgent;
+          if (assignedAgent) insertData.assigned_agent = { [CURRENT_CLIENT]: assignedAgent };
 
           const { data: newLead, error: leadError } = await supabaseClient
             .from('leads')
