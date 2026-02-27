@@ -31,7 +31,7 @@
   <!-- ===== LEAD AUTH CHECK (runs first) ===== -->
   <script>
     (function() {
-      const CURRENT_CLIENT = 'inverta';
+      const CURRENT_CLIENT = 'agora';
 
       // Cookie helpers
       function getCookie(name) {
@@ -85,7 +85,7 @@
 <script src="client-config.js"></script>
 <script>
 // ===== CLIENT CONFIG =====
-const CURRENT_CLIENT = 'inverta';
+const CURRENT_CLIENT = 'agora';
 const CONFIG = getClientConfig(CURRENT_CLIENT);
 window.CONFIG = CONFIG;
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
@@ -197,7 +197,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <div class="logoinv-wrapper">
    <a href="#" onclick="event.preventDefault(); window.location.reload(true);" title="Reload Site">
-  <img id="mainClientLogo" src="" alt=""></a>
+  <img id="mainClientLogo" src="" alt="" style="height:40px;"></a>
 </div>
 <script>
   // Set main logo from config
@@ -215,7 +215,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 </script>
 
 <!-- Conditional community logo -->
-<div class="community-logo-wrapper" id="communityLogo">
+<div class="community-logo-wrapper" id="communityLogo" style="top:70px;">
   <img id="communityLogoImg" src="" alt="Community Logo">
 </div>
 <script>
@@ -534,6 +534,31 @@ let currentImages = [];
 let currentImageIndex = -1;
 let imageNumberToArrayIndex = {}; // Maps original image number (from filename) to currentImages array position
 let preloadedImages = {};
+let preloadLRU = [];
+const MAX_CACHED_IMAGES = 10;
+let viewerAnimationId = null;
+
+function cacheImage(url, img) {
+  const idx = preloadLRU.indexOf(url);
+  if (idx !== -1) preloadLRU.splice(idx, 1);
+  while (preloadLRU.length >= MAX_CACHED_IMAGES) {
+    const evictUrl = preloadLRU.shift();
+    if (preloadedImages[evictUrl]) {
+      preloadedImages[evictUrl].onload = null;
+      preloadedImages[evictUrl].onerror = null;
+      preloadedImages[evictUrl].src = '';
+      delete preloadedImages[evictUrl];
+    }
+  }
+  preloadedImages[url] = img;
+  preloadLRU.push(url);
+}
+
+function touchCache(url) {
+  const idx = preloadLRU.indexOf(url);
+  if (idx !== -1) { preloadLRU.splice(idx, 1); preloadLRU.push(url); }
+}
+
 let viewConeMarker = null;
 let isSwitchingTrack = false;
 
@@ -765,7 +790,7 @@ function initThreeJSViewer() {
 
   renderer = new THREE.WebGLRenderer({
     canvas, 
-    antialias: true, 
+    antialias: window.devicePixelRatio < 3,
     alpha: false, 
     powerPreference: 'high-performance'
   });
@@ -784,12 +809,19 @@ const dpr = Math.min(window.devicePixelRatio, 2);
 
 function animateViewer(){
   if (!viewerInitialized) return;
-  requestAnimationFrame(animateViewer);
+  viewerAnimationId = requestAnimationFrame(animateViewer);
   updateNavigationRing();
   if (renderer && scene && camera) {
     try {
       renderer.render(scene, camera);
     } catch(e) {}
+  }
+}
+
+function stopAnimateViewer() {
+  if (viewerAnimationId) {
+    cancelAnimationFrame(viewerAnimationId);
+    viewerAnimationId = null;
   }
 }
 
@@ -1453,7 +1485,7 @@ function preloadMarriedMarbleImages() {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
       img.onload = () => {
-        preloadedImages[url] = img;
+        cacheImage(url, img);
         console.log('Preloaded married marble image:', url);
       };
       img.onerror = () => console.log('Failed to preload:', url);
@@ -1570,14 +1602,13 @@ function handleMapClickForDeselect(e){
 // ===== IMAGE LOADING AND DISPLAY =====
 function showImageInViewer(imageUrl, imageData) {
   console.log('🖼️ Loading image:', imageUrl);
-  showViewerLoading('Loading 360° image...');
 
   // 🟢 REMOVED: Don't initialize Three.js here anymore
   // if (!viewerInitialized) initThreeJSViewer();
 
   if (preloadedImages[imageUrl]) {
     console.log('✅ Using preloaded image');
-    hideViewerLoading();
+    touchCache(imageUrl);
     applyImageToSphere(preloadedImages[imageUrl], imageData);
     preloadAdjacentImages();
     return;
@@ -1585,23 +1616,20 @@ function showImageInViewer(imageUrl, imageData) {
 
   const img = new Image();
   img.crossOrigin = 'Anonymous';
-  
+
   img.onload = function() {
     console.log('✅ Image loaded successfully:', imageUrl);
-    preloadedImages[imageUrl] = img;
-    hideViewerLoading();
+    cacheImage(imageUrl, img);
     applyImageToSphere(img, imageData);
     preloadAdjacentImages();
   };
-  
+
   img.onerror = function() {
     console.error('❌ Failed to load image:', imageUrl);
-    hideViewerLoading();
-    showToaster('Failed to load 360 image');
   };
   
   console.log('📤 Setting image src:', imageUrl);
-  img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
+  img.src = imageUrl;
 }
 
 function applyImageToSphere(img, imageData) {
@@ -1645,7 +1673,7 @@ function preloadAdjacentImages() {
   const track = getCurrentTrack();
   if (!track || !selectedMarbleId) return;
   const marbleIdx = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  const neighbors = [marbleIdx - 1, marbleIdx + 1, marbleIdx - 2, marbleIdx + 2];
+  const neighbors = [marbleIdx - 1, marbleIdx + 1, marbleIdx - 2, marbleIdx + 2, marbleIdx - 3, marbleIdx + 3, marbleIdx - 4, marbleIdx + 4];
   for (const ni of neighbors) {
     if (ni >= 0 && ni < track.marbles.length) {
       const m = track.marbles[ni];
@@ -1667,7 +1695,7 @@ function preloadOne(index) {
     if (preloadedImages[src]) return res();
     const img = new Image();
     img.crossOrigin = 'Anonymous';
-    img.onload = () => { preloadedImages[src] = img; res(); };
+    img.onload = () => { cacheImage(src, img); res(); };
     img.onerror = () => res();
     img.src = src;
     if (img.decode) img.decode().catch(() => {});
@@ -1738,6 +1766,7 @@ function showImageByIndex(index) {
   if (arrayIdx < 0 || arrayIdx >= currentImages.length) return;
   const image = currentImages[arrayIdx];
   if (preloadedImages[image.url]) {
+    touchCache(image.url);
     applyImageToSphere(preloadedImages[image.url], image);
     currentImageIndex = index;
     updateViewerUI();
@@ -1828,14 +1857,13 @@ async function load360Images() {
 }
   
 async function createImagesFromFramesFolder() {
-  currentImages = [];
+  currentImages = []; 
   currentImageIndex = -1;
-  const track = getCurrentTrack();
-  if (!track) {
-    showToaster('No track selected');
+  const track = getCurrentTrack(); 
+  if (!track) { 
+    showToaster('No track selected'); 
     return; 
   }
-  const framesBase = track.framesBase || getFramesBase();
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
     if (!gpxName) {
     showToaster('GPX name missing');
@@ -1845,6 +1873,7 @@ async function createImagesFromFramesFolder() {
   const gpxNameLC = gpxName.toLowerCase();
   const prefixHyphen = gpxNameLC + '-';
   const prefixUnderscore = gpxNameLC + '_';
+  const framesBase = track.framesBase || getFramesBase();
   let list;
   try {
     const res = await fetch(framesBase + 'index.json', { cache: 'no-store' });
@@ -1940,7 +1969,11 @@ function open360ViewerInModal() {
   if (lotDetails) lotDetails.style.display = 'none';
   if (modalInfo) modalInfo.style.display = 'none';
   if (calendlyEl) calendlyEl.style.display = 'none';
-  
+
+  // Hide lot-list loading spinner (openModal shows it, but viewer doesn't need it)
+  const loadingSpinner = document.getElementById('loadingSpinner');
+  if (loadingSpinner) loadingSpinner.style.display = 'none';
+
   // Hide custom scrollbar and thumb
   if (customScrollbar) {
     customScrollbar.style.display = 'none';
@@ -1955,6 +1988,9 @@ function open360ViewerInModal() {
   if (viewerContainer) {
     viewerContainer.style.display = 'block';
   }
+
+  // Resume animation loop
+  if (viewerInitialized && !viewerAnimationId) animateViewer();
 
   // Update modal classes and state
   modal.classList.add('viewer-mode');
@@ -2011,6 +2047,7 @@ function close360ViewerInModal(targetBaseIndex = null) {
 
   // Hide viewer
   if (viewerContainer) viewerContainer.style.display = 'none';
+  stopAnimateViewer();
 
   // --- Copy working logic from closeModal ---
   
@@ -2359,7 +2396,7 @@ ctaobserver.observe(ctaToaster, {
 <!-- ===== LEAD TOKEN AUTH VALIDATION ===== -->
 <script>
 (async function validateLeadAuth() {
-  const CURRENT_CLIENT = window.__leadClient || 'inverta';
+  const CURRENT_CLIENT = window.__leadClient || 'agora';
 
   // Cookie helpers
   function getCookie(name) {
@@ -4337,11 +4374,11 @@ map.on('click', 'lots-final-click', (e) => {
     return;
   }
 
-  // Check if sold/blocked lot should be clickable based on soldLotsClickable config
+  // Check if sold lot should be clickable based on soldLotsClickable config
   const isSoldLot = ['sold', 'blocked'].includes((lot.availability ?? '').toLowerCase());
   if (isSoldLot && CONFIG.misc && CONFIG.misc.soldLotsClickable === false) {
     console.log('🚫 Sold/blocked lot click disabled (soldLotsClickable is false)');
-    return; // Don't allow clicks on sold/blocked lots when soldLotsClickable is false
+    return; // Don't allow clicks on sold lots when soldLotsClickable is false
   }
 
   // 🟢 FIX: Check if we're already in detail view
@@ -5029,6 +5066,9 @@ function parseLots(text) {
 <script>
 // ========== DRAW X ON SOLD LOTS ==========
 function addSoldXs(map, soldLots, fadeDuration = 500) {
+  // Skip if xMark is disabled in config
+  if (!CONFIG.lotStyles.sold.xMark.enabled) return;
+
   if (!map.getSource('sold-x')) {
     map.addSource('sold-x', {
       type: 'geojson',
@@ -5041,8 +5081,8 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
       source: 'sold-x',
       layout: {},
       paint: {
-        'line-color': CONFIG.colors.white,
-        'line-width': 1,
+        'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.xMark.color),
+        'line-width': CONFIG.lotStyles.sold.xMark.width,
         'line-opacity': 0,
         'line-opacity-transition': { duration: fadeDuration }
       }
@@ -5060,7 +5100,7 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
 
   // ⏳ Fade in after tiny delay to ensure features are added first
   setTimeout(() => {
-    map.setPaintProperty('sold-x-layer', 'line-opacity', 0.49);
+    map.setPaintProperty('sold-x-layer', 'line-opacity', CONFIG.lotStyles.sold.xMark.opacity);
   }, 10);
 }
 
@@ -5219,7 +5259,7 @@ function animateLots(map, cb) {
     });
 
     setTimeout(() => {
-      // Fade in BOTH layers for this group
+      // Fade in all layers for this group
       map.setPaintProperty(`lot-group-${i}-available`, "line-opacity", 1);
       map.setPaintProperty(`lot-group-${i}-sold`, "line-opacity", 0.24); // ⬅️ 0.24 for group layer
 
@@ -5386,9 +5426,9 @@ function animateLots(map, cb) {
 
   // After all groups have faded in & paused, fade in final lots, then fade out all groups simultaneously
   setTimeout(() => {
-    // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
+    // Fade in final lots - sold lots get half opacity during transition (group+final overlap)
     map.setPaintProperty("lots-final-available", "line-opacity", CONFIG.lotStyles.available.outline.opacity);
-    map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // ⬅️ partial for final layer during transition
+    map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // half during transition
     if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
     if (map.getLayer("lots-final-sold-fill")) map.setPaintProperty("lots-final-sold-fill", "fill-opacity", CONFIG.lotStyles.sold.fill.opacity);
     // Labels now fade based on zoom level (see text-opacity interpolate expression)
@@ -5405,7 +5445,7 @@ function animateLots(map, cb) {
 
       // AFTER group layers fade out, update final sold layer to full 0.49
       setTimeout(() => {
-        map.setPaintProperty("lots-final-sold", "line-opacity", 0.49); // ⬅️ UPDATE TO FULL 0.49
+        map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity); // full opacity after groups removed
          
         // Remove all lot groups
         groupArr.forEach((_, i) => {
@@ -5725,7 +5765,7 @@ function addFeaturedLotsLayer(map, onComplete) {
     }
   });
 
-  // Orange fill with pulsating opacity - insert above lots-final-available
+  // Featured fill with pulsating opacity - insert above lots-final-available
   map.addLayer({
     id: 'featured-lots-layer',
     type: 'fill',
@@ -5748,7 +5788,7 @@ function addFeaturedLotsLayer(map, onComplete) {
     }
   }
 
-  // Add the orange outline above lots-final-click
+  // Add the featured outline above lots-final-click
   map.addLayer({
     id: 'featured-lots-outline',
     type: 'line',
@@ -5772,6 +5812,9 @@ function startPolygonPulse(map, onComplete) {
   let t = 0;
   let initialPulseCompleted = false;
   const PULSE_DURATION = 2.0; // seconds
+  const _pulseOp = CONFIG.lotStyles.featured.fill.opacity;
+  const _pulseBase = Array.isArray(_pulseOp) ? _pulseOp[0] : _pulseOp;
+  const _pulseAmp  = Array.isArray(_pulseOp) ? _pulseOp[1] : 0;
 
   function frame() {
     t += 0.05; // SLOWER: was 0.05, now 0.02 for slower animation
@@ -5783,7 +5826,7 @@ function startPolygonPulse(map, onComplete) {
       ...source._data,
       features: source._data.features.map(f => {
         const phase = f.properties?.phase ?? 0;
-        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        const opacity = _pulseBase + Math.sin(t + phase) * _pulseAmp;
         return {
           ...f,
           properties: {
@@ -6382,7 +6425,7 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   // Update community logo for this lot's fraccionamiento
   modalEl.dataset.fracc = lot.fraccionamiento;
-  currentFraccionamiento = lot.fraccionamiento; // Update for dynamic frames loading
+  currentFraccionamiento = lot.fraccionamiento;
   if (window.updateCommunityLogo) window.updateCommunityLogo();
 
   // Store lot number so chatear button can include it in the WhatsApp message
@@ -6482,29 +6525,18 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     ? getCommunityPricing(CURRENT_CLIENT, lot.fraccionamiento)
     : null;
 
-  // Build down payment options HTML
-  let downPaymentOptionsHtml = '';
-  if (pricingConfig) {
-    const { min, max, step } = pricingConfig.downPayment;
-    for (let pct = min; pct <= max; pct += step) {
-      downPaymentOptionsHtml += `<option value="${pct}">${pct}%</option>`;
-    }
-  }
-
-  // Build installments options HTML and INTEREST_RATES object
-  let installmentsOptionsHtml = '';
-  const INTEREST_RATES = {};
-  if (pricingConfig) {
-    const terms = pricingConfig.terms;
-    terms.forEach((term, idx) => {
-      const selected = idx === terms.length - 1 ? ' selected' : '';
-      installmentsOptionsHtml += `<option value="${term.months}"${selected}>${term.months}</option>`;
-      INTEREST_RATES[term.months] = term.interest / 100;
+  // Build plan options HTML (plan-based pricing)
+  let planOptionsHtml = '';
+  if (pricingConfig && pricingConfig.plans) {
+    pricingConfig.plans.forEach((plan, idx) => {
+      planOptionsHtml += `<option value="${idx}">${plan.name}</option>`;
     });
   }
 
-  // Default interest rate (last term's rate or 0)
-  const defaultInterestRate = pricingConfig ? pricingConfig.terms[pricingConfig.terms.length - 1].interest : 0;
+  // Get first plan defaults for initial display
+  const defaultPlan = pricingConfig && pricingConfig.plans ? pricingConfig.plans[0] : null;
+  const defaultDiscountedPrice = defaultPlan ? totalPrice * (1 - defaultPlan.discount / 100) : totalPrice;
+  const defaultEnganche = defaultPlan ? defaultDiscountedPrice * (defaultPlan.downPayment / 100) : 0;
 
   detailRow.innerHTML = `
   <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
@@ -6525,48 +6557,46 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     </div>
 
     <!-- Big total price with more space above -->
-    <div style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
+    <div id="bigTotalPrice" style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
       $${totalPriceFormatted}<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>
     </div>
     <div style="font-size: 13px; color: ${CONFIG.colors.textLight}; text-align: right; width: 100%; margin-top: -8px;">
-      Precio de contado
+      Precio del plan
     </div>
     <div style="width: 100%; height: 1px; background: ${CONFIG.colors.grayLight}; margin: 0px;"></div>
 
-    ${pricingConfig ? `
-    <!-- Financing Calculator -->
+    ${pricingConfig && pricingConfig.plans ? `
+    <!-- Plan-based Financing -->
     <div style="margin-top: 6px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; position: relative;">
-      <!-- Row 1: Down payment % + Enganche amount -->
+      <!-- Row 1: Plan dropdown + Enganche amount -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="downPaymentCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${downPaymentOptionsHtml}
+        <div style="width: 110px;">
+          <select id="downPaymentCalc" style="width: 110px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
+            ${planOptionsHtml}
           </select>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * (pricingConfig.downPayment.min / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${defaultEnganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       </div>
 
-      <!-- Row 2: Months + Monthly payment -->
+      <!-- Row 2: Discount display + Mensualidades -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="installmentsCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${installmentsOptionsHtml}
-          </select>
+        <div style="width: 110px; text-align: center; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight};">
+          <span id="discountDisplay">${defaultPlan.discount}%</span>
         </div>
         <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
+          <span id="paymentLabel">${defaultPlan.installments.count} Meses</span>: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span id="paymentSuffix" style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
         </div>
       </div>
 
-      <!-- Tasa and Precio financiado on same line -->
+      <!-- Row 3: Descuento label + Escrituración (conditional) -->
       <div style="width: 100%; display: flex; justify-content: space-between; margin-top: -4px; font-size: 13px; color: ${CONFIG.colors.textLight};">
-        <div style="width: 80px; text-align: center;">
-          <span>Tasa <span id="financingRate">${defaultInterestRate}</span>%</span>
+        <div style="width: 110px; text-align: center;" class="descuento-label">
+          <span>Descuento</span>
         </div>
-        <div style="text-align: right;">
-          <span>Financiado: <span id="financingTotalPrice">$0.00</span></span>
+        <div style="text-align: right;" id="financingInfo">
+          <span>Escrituración: <span id="financingTotalPrice">$0.00</span></span>
         </div>
       </div>
     </div>
@@ -6583,59 +6613,70 @@ document.getElementById('authControls').classList.add('hide-in-detail');
 
   detailContainer.appendChild(detailRow);
 
-  // Initialize calculator (only if pricing config exists)
-  if (pricingConfig) {
+  // Initialize plan-based calculator (only if pricing config with plans exists)
+  if (pricingConfig && pricingConfig.plans) {
     const totalPriceNum = totalPrice;
+    const plans = pricingConfig.plans;
 
-    function calculateMonthlyPayment(principal, annualRate, months) {
-      const monthlyRate = annualRate / 12;
-      if (monthlyRate === 0) return principal / months;
-      const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-      const denominator = Math.pow(1 + monthlyRate, months) - 1;
-      return numerator / denominator;
+    function updatePlanCalculations() {
+      const planIndex = parseInt(document.getElementById('downPaymentCalc').value);
+      const plan = plans[planIndex];
+      if (!plan) return;
+
+      const discountedPrice = totalPriceNum * (1 - plan.discount / 100);
+      const enganche = discountedPrice * (plan.downPayment / 100);
+      const installmentTotal = discountedPrice * (plan.installments.pct / 100);
+      const mensualidad = installmentTotal / plan.installments.count;
+      const escrituracion = discountedPrice * (plan.escrituracion / 100);
+
+      // Update enganche
+      document.getElementById('downPaymentAmount').textContent = '$' + enganche.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      // Update discount display — hide when 0%
+      const discountEl = document.getElementById('discountDisplay');
+      discountEl.textContent = plan.discount + '%';
+      discountEl.parentElement.style.visibility = plan.discount > 0 ? 'visible' : 'hidden';
+
+      // Update mensualidades
+      document.getElementById('paymentLabel').textContent = plan.installments.count + ' Meses';
+      document.getElementById('monthlyPayment').textContent = '$' + mensualidad.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('paymentSuffix').textContent = '/MES';
+
+      // Update escrituración row
+      const financingInfo = document.getElementById('financingInfo');
+      if (plan.escrituracion > 0) {
+        financingInfo.style.visibility = 'visible';
+        financingInfo.innerHTML = '<span>Escrituración: <span id="financingTotalPrice">$' + escrituracion.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</span></span>';
+      } else {
+        financingInfo.style.visibility = 'hidden';
+      }
+
+      // Update descuento label visibility
+      const descuentoLabel = document.querySelector('.descuento-label');
+      if (descuentoLabel) {
+        descuentoLabel.style.visibility = plan.discount > 0 ? 'visible' : 'hidden';
+      }
+
+      // Update big total price to show discounted price when discount > 0
+      const bigTotalPrice = document.getElementById('bigTotalPrice');
+      if (bigTotalPrice) {
+        bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+      }
+
     }
 
-    function updateCalculations() {
-      const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
-      const months = parseInt(document.getElementById('installmentsCalc').value);
-      const interestRate = INTEREST_RATES[months] || 0;
-
-      const downPaymentAmount = totalPriceNum * downPaymentPercent;
-      const amountFinanced = totalPriceNum - downPaymentAmount;
-      const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
-
-      const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
-
-      document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
-
-      // Update financing header
-      document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
-      document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    // Add event listeners
+    // Add event listener
     setTimeout(() => {
-      // Check URL parameters and set values if present
-      // Support both new short params (a, m, i) and old long params for backwards compatibility
       const urlParams = new URLSearchParams(window.location.search);
-      const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
-      const monthsParam = urlParams.get('m') || urlParams.get('months');
+      const planParam = urlParams.get('plan');
 
-      const downPaymentSelect = document.getElementById('downPaymentCalc');
-      const installmentsSelect = document.getElementById('installmentsCalc');
-
-      if (downpaymentParam && downPaymentSelect) {
-        downPaymentSelect.value = downpaymentParam;
-      }
-      if (monthsParam && installmentsSelect) {
-        installmentsSelect.value = monthsParam;
+      const planSelect = document.getElementById('downPaymentCalc');
+      if (planParam !== null && planSelect) {
+        planSelect.value = planParam;
       }
 
-      downPaymentSelect?.addEventListener('change', updateCalculations);
-      installmentsSelect?.addEventListener('change', updateCalculations);
-      updateCalculations(); // Initial calculation with URL params
+      planSelect?.addEventListener('change', updatePlanCalculations);
+      updatePlanCalculations(); // Initial calculation
     }, 100);
   }
 
@@ -6933,7 +6974,8 @@ function render() {
 const state = (lot.availability ?? '').toString().toLowerCase();
 const isFeatured  = state === 'featured';
 const isAvailable = state === 'available';
-const isSold      = state === 'sold' || state === 'blocked';
+const isBlocked   = state === 'blocked';
+const isSold      = state === 'sold' || isBlocked;
 
 // Calculate price: (price_m2 × size)
 // Round to nearest thousand first, then decide unit
@@ -6941,15 +6983,15 @@ let calculatedPrice = lot.price;
 let priceUnit = 'MIL';
 if (!isSold && lot.priceM2 && lot.size) {
   const totalPrice = cleanNumber(lot.priceM2) * cleanNumber(lot.size);
+  const roundedPrice = Math.round(totalPrice / 1000) * 1000;
 
-  if (totalPrice >= 1000000) {
-    // 1 million or more: round to nearest thousand, show as MDP with 2 decimals
-    const roundedPrice = Math.round(totalPrice / 1000) * 1000;
+  if (roundedPrice >= 1000000) {
+    // 1 million or more: show as MDP with 2 decimals
     calculatedPrice = (roundedPrice / 1000000).toFixed(2);
     priceUnit = 'MDP';
   } else {
-    // Under 1 million: floor to thousands (never overstate), show as MIL
-    calculatedPrice = Math.floor(totalPrice / 1000).toString();
+    // Under 1 million: show as MIL (in thousands)
+    calculatedPrice = (roundedPrice / 1000).toString();
     priceUnit = 'MIL';
   }
 }
@@ -7816,6 +7858,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     
     if (calendly) calendly.style.display = 'none';
     if (viewerContainer) viewerContainer.style.display = 'none';
+    stopAnimateViewer();
     if (customScrollbar) {
     customScrollbar.style.display = '';
     customScrollbar.style.visibility = '';
@@ -9384,9 +9427,8 @@ const nextState = cur => {
     const lot = lotData[mapIndex];
     const state = normalize(lot?.availability || 'available');
     btn.classList.remove('sold','featured','blocked');
-    if (state === 'sold') btn.classList.add('sold');
+    if (state === 'sold' || state === 'blocked') btn.classList.add('sold');
     if (state === 'featured') btn.classList.add('featured');
-    if (state === 'blocked') btn.classList.add('sold'); // blocked looks like sold
   }
 
   // Keep button color synced when UI changes
@@ -10565,15 +10607,15 @@ function getCurrentFraccCenter() {
       };
     });
   }
-  
+
   const modal = document.getElementById('lotModal');
   let currentFracc = (modal?.dataset.fracc || '').trim().toLowerCase();
-  
+
   // 1. Try current modal fracc
   if (communities[currentFracc]) {
     return communities[currentFracc].center;
   }
-  
+
   // 2. Try most recent selected lot
   if (window.selectedLots.size > 0) {
     const lastSelected = Array.from(window.selectedLots).pop();
@@ -10585,13 +10627,13 @@ function getCurrentFraccCenter() {
       }
     }
   }
-  
+
   // 3. Dynamic: Find closest community to current map view
   if (map) {
     const currentCenter = map.getCenter();
     return findClosestCommunityCenter(currentCenter, communities);
   }
-  
+
   // 4. Fallback to first community
   return communities[Object.keys(communities)[0]].center;
 }
@@ -11117,9 +11159,8 @@ function shareCurrentLot() {
     return;
   }
   
-  // Get financing calculator values
-  const downPaymentPercent = document.getElementById('downPaymentCalc')?.value || '20';
-  const installments = document.getElementById('installmentsCalc')?.value || '72';
+  // Get selected plan index
+  const selectedPlan = document.getElementById('downPaymentCalc')?.value || '0';
 
   // Get community from modal dataset (current selected fracc), fallback to lot data, then default
   const modal = document.getElementById('lotModal');
@@ -11134,11 +11175,11 @@ function shareCurrentLot() {
   const communitySlug = community.toLowerCase().replace(/\s+/g, '-');
   const communityCapitalized = community.charAt(0).toUpperCase() + community.slice(1);
 
-  // Create share URL with community prefix and short params (a=anticipo, m=mensualidades)
+  // Create share URL with community prefix and plan param
   const shareUrl = `${window.location.origin}${CONFIG.share.urlTemplate
     .replace('{slug}', CONFIG.slug)
     .replace('{communitySlug}', communitySlug)
-    .replace('{lotNumber}', lotNumber)}?a=${downPaymentPercent}&m=${installments}`;
+    .replace('{lotNumber}', lotNumber)}?plan=${selectedPlan}`;
   const shareText = CONFIG.share.textTemplate
     .replace('{lotNumber}', lotNumber)
     .replace('{community}', communityCapitalized)
@@ -11307,7 +11348,7 @@ function setupChatButton() {
       const lotNum = lot?.number || lot?.name || (document.getElementById('headerLotNumber')?.textContent || '').trim();
       const community = (document.getElementById('headerFracc')?.textContent || '').trim();
       const msg = encodeURIComponent('Me interesa el Lote ' + lotNum + ' en ' + community + ', ¿podemos programar una visita?');
-      window.open('https://wa.me/5212976905326?text=' + msg, '_blank');
+      window.open('https://wa.me/5218185261819?text=' + msg, '_blank');
     });
   }
 }
@@ -12187,6 +12228,34 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 </script>
 
 <!-- ===== LEADS MODAL (agent-only) ===== -->
+<style>
+  #leads-modal-overlay {
+    z-index: 10001;
+  }
+  #leads-modal-container {
+    opacity: 0;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: translateY(-30px);
+  }
+  #leads-modal-container.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @media (min-width: 768px) {
+    #leads-modal-container {
+      position: fixed;
+      top: 50%;
+      left: calc(10% + 250px);
+      width: 750px;
+      height: 90%;
+      max-height: 1000px;
+      transform: translate(-50%, -55%);
+    }
+    #leads-modal-container.show {
+      transform: translate(-50%, -50%);
+    }
+  }
+</style>
 <script>
 (function() {
   const $ = (sel) => document.querySelector(sel);
@@ -12283,35 +12352,6 @@ window.showPaymentViewInModal = showPaymentViewInModal;
   });
 })();
 </script>
-
-<style>
-  #leads-modal-overlay {
-    z-index: 10001;
-  }
-  #leads-modal-container {
-    opacity: 0;
-    transition: opacity 0.4s ease, transform 0.4s ease;
-    transform: translateY(-30px);
-  }
-  #leads-modal-container.show {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  @media (min-width: 768px) {
-    #leads-modal-container {
-      position: fixed;
-      top: 50%;
-      left: calc(5% + 400px);
-      width: 800px;
-      height: 90%;
-      max-height: 1000px;
-      transform: translate(-50%, -55%);
-    }
-    #leads-modal-container.show {
-      transform: translate(-50%, -50%);
-    }
-  }
-</style>
 
 <!-- ===== SEARCH BUTTON COMPONENT ===== -->
 <div class="search-btn-stage" id="searchBtnStage">
@@ -12697,7 +12737,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
 <script>
 (function() {
-  // PDF Generation for Inverta - Multi-template support based on community group
+  // PDF Generation for Agora - Multi-template support based on community group
 
   async function generateMultiPagePDF(lot, dynamicText, financingOptions = {}) {
     if (!lot) {
@@ -12714,7 +12754,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     // Determine community group from fraccionamiento
     const fraccionamiento = lot.fraccionamiento || lot.community || '';
-    const communityGroup = getCommunityGroup('inverta', fraccionamiento);
+    const communityGroup = getCommunityGroup('agora', fraccionamiento);
 
     if (!communityGroup) {
       console.error('Could not determine community group for:', fraccionamiento);
@@ -12902,8 +12942,8 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
     // Function to create a page with template elements
     function createPage(pageNum, template, lotValues, settings) {
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/inverta/pdf/${communityGroup}/`;
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
       const lotImagePrefix = settings.lotImagePrefix || '';
       const pageWidth = settings.pageWidth || 1224;
       const pageHeight = settings.pageHeight || 1584;
@@ -13067,7 +13107,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     try {
       // Step 1: Fetch template for this community group
       progressText.textContent = 'Cargando plantilla...';
-      const templatePath = `/inverta/pdf/${communityGroup}/pdf-template.json`;
+      const templatePath = `/agora/pdf/${communityGroup}/pdf-template.json`;
 
       let template = { pages: {}, settings: {} };
       try {
@@ -13096,8 +13136,8 @@ window.showPaymentViewInModal = showPaymentViewInModal;
       progressText.textContent = 'Cargando imágenes...';
       progressBar.style.width = '10%';
 
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/inverta/pdf/${communityGroup}/`;
+      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/agora/pdf/${communityGroup}/`;
+      const lotImageBaseUrl = settings.lotImageBaseUrl || `/agora/pdf/${communityGroup}/`;
       const lotImagePrefix = settings.lotImagePrefix || '';
 
       const imagePromises = [];
@@ -13156,7 +13196,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
 
       const worker = html2pdf().set({
         margin: 0,
-        filename: `Inverta-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
+        filename: `Agora-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
         image: { type: 'jpeg', quality: 1 },
         html2canvas: { scale: 1, useCORS: true },
         jsPDF: { unit: 'px', format: [pageWidth, pageHeight], orientation: orientation }

@@ -534,6 +534,30 @@ let currentImages = [];
 let currentImageIndex = -1;
 let imageNumberToArrayIndex = {}; // Maps original image number (from filename) to currentImages array position
 let preloadedImages = {};
+let preloadLRU = [];
+const MAX_CACHED_IMAGES = 10;
+let viewerAnimationId = null;
+
+function cacheImage(url, img) {
+  const idx = preloadLRU.indexOf(url);
+  if (idx !== -1) preloadLRU.splice(idx, 1);
+  while (preloadLRU.length >= MAX_CACHED_IMAGES) {
+    const evictUrl = preloadLRU.shift();
+    if (preloadedImages[evictUrl]) {
+      preloadedImages[evictUrl].onload = null;
+      preloadedImages[evictUrl].onerror = null;
+      preloadedImages[evictUrl].src = '';
+      delete preloadedImages[evictUrl];
+    }
+  }
+  preloadedImages[url] = img;
+  preloadLRU.push(url);
+}
+
+function touchCache(url) {
+  const idx = preloadLRU.indexOf(url);
+  if (idx !== -1) { preloadLRU.splice(idx, 1); preloadLRU.push(url); }
+}
 let viewConeMarker = null;
 let isSwitchingTrack = false;
 
@@ -765,7 +789,7 @@ function initThreeJSViewer() {
 
   renderer = new THREE.WebGLRenderer({
     canvas, 
-    antialias: true, 
+    antialias: window.devicePixelRatio < 3,
     alpha: false, 
     powerPreference: 'high-performance'
   });
@@ -784,12 +808,19 @@ const dpr = Math.min(window.devicePixelRatio, 2);
 
 function animateViewer(){
   if (!viewerInitialized) return;
-  requestAnimationFrame(animateViewer);
+  viewerAnimationId = requestAnimationFrame(animateViewer);
   updateNavigationRing();
   if (renderer && scene && camera) {
     try {
       renderer.render(scene, camera);
     } catch(e) {}
+  }
+}
+
+function stopAnimateViewer() {
+  if (viewerAnimationId) {
+    cancelAnimationFrame(viewerAnimationId);
+    viewerAnimationId = null;
   }
 }
 
@@ -1453,7 +1484,7 @@ function preloadMarriedMarbleImages() {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
       img.onload = () => {
-        preloadedImages[url] = img;
+        cacheImage(url, img);
         console.log('Preloaded married marble image:', url);
       };
       img.onerror = () => console.log('Failed to preload:', url);
@@ -1570,14 +1601,13 @@ function handleMapClickForDeselect(e){
 // ===== IMAGE LOADING AND DISPLAY =====
 function showImageInViewer(imageUrl, imageData) {
   console.log('🖼️ Loading image:', imageUrl);
-  showViewerLoading('Loading 360° image...');
 
   // 🟢 REMOVED: Don't initialize Three.js here anymore
   // if (!viewerInitialized) initThreeJSViewer();
 
   if (preloadedImages[imageUrl]) {
     console.log('✅ Using preloaded image');
-    hideViewerLoading();
+    touchCache(imageUrl);
     applyImageToSphere(preloadedImages[imageUrl], imageData);
     preloadAdjacentImages();
     return;
@@ -1585,23 +1615,20 @@ function showImageInViewer(imageUrl, imageData) {
 
   const img = new Image();
   img.crossOrigin = 'Anonymous';
-  
+
   img.onload = function() {
     console.log('✅ Image loaded successfully:', imageUrl);
-    preloadedImages[imageUrl] = img;
-    hideViewerLoading();
+    cacheImage(imageUrl, img);
     applyImageToSphere(img, imageData);
     preloadAdjacentImages();
   };
-  
+
   img.onerror = function() {
     console.error('❌ Failed to load image:', imageUrl);
-    hideViewerLoading();
-    showToaster('Failed to load 360 image');
   };
   
   console.log('📤 Setting image src:', imageUrl);
-  img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
+  img.src = imageUrl;
 }
 
 function applyImageToSphere(img, imageData) {
@@ -1645,7 +1672,7 @@ function preloadAdjacentImages() {
   const track = getCurrentTrack();
   if (!track || !selectedMarbleId) return;
   const marbleIdx = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  const neighbors = [marbleIdx - 1, marbleIdx + 1, marbleIdx - 2, marbleIdx + 2];
+  const neighbors = [marbleIdx - 1, marbleIdx + 1, marbleIdx - 2, marbleIdx + 2, marbleIdx - 3, marbleIdx + 3, marbleIdx - 4, marbleIdx + 4];
   for (const ni of neighbors) {
     if (ni >= 0 && ni < track.marbles.length) {
       const m = track.marbles[ni];
@@ -1667,7 +1694,7 @@ function preloadOne(index) {
     if (preloadedImages[src]) return res();
     const img = new Image();
     img.crossOrigin = 'Anonymous';
-    img.onload = () => { preloadedImages[src] = img; res(); };
+    img.onload = () => { cacheImage(src, img); res(); };
     img.onerror = () => res();
     img.src = src;
     if (img.decode) img.decode().catch(() => {});
@@ -1738,6 +1765,7 @@ function showImageByIndex(index) {
   if (arrayIdx < 0 || arrayIdx >= currentImages.length) return;
   const image = currentImages[arrayIdx];
   if (preloadedImages[image.url]) {
+    touchCache(image.url);
     applyImageToSphere(preloadedImages[image.url], image);
     currentImageIndex = index;
     updateViewerUI();
@@ -1940,6 +1968,10 @@ function open360ViewerInModal() {
   if (lotDetails) lotDetails.style.display = 'none';
   if (modalInfo) modalInfo.style.display = 'none';
   if (calendlyEl) calendlyEl.style.display = 'none';
+
+  // Hide lot-list loading spinner (openModal shows it, but viewer doesn't need it)
+  const loadingSpinner = document.getElementById('loadingSpinner');
+  if (loadingSpinner) loadingSpinner.style.display = 'none';
   
   // Hide custom scrollbar and thumb
   if (customScrollbar) {
@@ -1955,6 +1987,9 @@ function open360ViewerInModal() {
   if (viewerContainer) {
     viewerContainer.style.display = 'block';
   }
+
+  // Resume animation loop
+  if (viewerInitialized && !viewerAnimationId) animateViewer();
 
   // Update modal classes and state
   modal.classList.add('viewer-mode');
@@ -2011,6 +2046,7 @@ function close360ViewerInModal(targetBaseIndex = null) {
 
   // Hide viewer
   if (viewerContainer) viewerContainer.style.display = 'none';
+    stopAnimateViewer();
 
   // --- Copy working logic from closeModal ---
   
@@ -7816,6 +7852,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     
     if (calendly) calendly.style.display = 'none';
     if (viewerContainer) viewerContainer.style.display = 'none';
+    stopAnimateViewer();
     if (customScrollbar) {
     customScrollbar.style.display = '';
     customScrollbar.style.visibility = '';

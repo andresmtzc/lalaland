@@ -27,46 +27,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- ===== LEAD AUTH CHECK (runs first) ===== -->
-  <script>
-    (function() {
-      const CURRENT_CLIENT = 'inverta';
-
-      // Cookie helpers
-      function getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
-        return null;
-      }
-
-      function setCookie(name, value, days) {
-        const expires = new Date(Date.now() + days * 864e5).toUTCString();
-        document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
-      }
-
-      // Check if URL has ?token= query parameter
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlToken = urlParams.get('token');
-
-      // Check for session cookie
-      const sessionToken = getCookie('lead_session_' + CURRENT_CLIENT);
-
-      // If no token in URL and no session, redirect to registro
-      if (!urlToken && !sessionToken) {
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-        // Stop execution
-        throw new Error('Redirecting to registro');
-      }
-
-      // Store token for later validation (after Supabase loads)
-      window.__leadAuthToken = urlToken;
-      window.__leadSessionToken = sessionToken;
-      window.__leadClient = CURRENT_CLIENT;
-    })();
-  </script>
-
   <title></title>
   <link rel="icon" href="favicon.ico" type="image/x-icon">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700" rel="stylesheet">
@@ -77,23 +37,30 @@
 <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@4.5.0/dist/togeojson.umd.js"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="stylesheet" href="https://la-la.land/styles.css">
 <link rel="stylesheet" href="https://la-la.land/street-view-nav.css">
+
+<!-- STIX Two Text font for PDF generation -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:wght@400;700&display=swap" rel="stylesheet">
+
+<!-- html2pdf for PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <!-- ===== LOAD CLIENT CONFIGURATION ===== -->
 <script src="client-config.js"></script>
 <script>
 // ===== CLIENT CONFIG =====
-const CURRENT_CLIENT = 'inverta';
+const CURRENT_CLIENT = 'cpi';
 const CONFIG = getClientConfig(CURRENT_CLIENT);
 window.CONFIG = CONFIG;
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 
-// Override defaultCommunity when loaded as demo (token starts with DEMO)
+// Override defaultCommunity when loaded as demo (token starts with DEMO, or ?demo param)
 (function() {
   const _t = new URLSearchParams(location.search).get('token');
-  if (_t && _t.startsWith('DEMO') && CONFIG && CONFIG.demoCommunity) {
+  if (((_t && _t.startsWith('DEMO')) || IS_DEMO) && CONFIG && CONFIG.demoCommunity) {
     CONFIG.defaultCommunity = CONFIG.demoCommunity;
   }
 })();
@@ -131,8 +98,39 @@ window.clientAccessCache = window.clientAccessCache || {};
       document.body.classList.add('fonts-loaded'); // Fallback if fonts fail
     });
   </script>
-</head>
 
+
+<style>
+  #registro-modal-overlay,
+  #leads-modal-overlay {
+    z-index: 10001;
+  }
+  #leads-modal-container {
+    opacity: 0;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: translateY(-30px);
+  }
+  #leads-modal-container.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @media (min-width: 768px) {
+    #leads-modal-container {
+      position: fixed;
+      top: 50%;
+      left: calc(5% + 400px);
+      width: 800px;
+      height: 90%;
+      max-height: 1000px;
+      transform: translate(-50%, -55%);
+    }
+    #leads-modal-container.show {
+      transform: translate(-50%, -50%);
+    }
+  }
+</style>
+</head>
+ 
 <body>
 
 
@@ -172,21 +170,61 @@ window.clientAccessCache = window.clientAccessCache || {};
   })();
 </script>
 
-<!-- Lead greeting in top right -->
-<div id="lead-greeting" class="lead-greeting">
-  Hola, <span id="lead-name"></span>
+<!-- Login button in top right -->
+<button id="globe-login-btn" class="globe-login-button" title="Login">
+  Login
+</button>
+
+<!-- Leads button - above dashboard button, only visible when authenticated -->
+<button id="leads-btn" class="dashboard-button" title="Leads">
+  <!-- Person icon (default - leads closed) -->
+  <svg id="leads-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-white)"/>
+  </svg>
+  <!-- Person icon filled (leads open) -->
+  <svg id="leads-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-primary)"/>
+  </svg>
+  <span>Usuarios</span>
+</button>
+
+<!-- Dashboard button - bottom left above mapbox logo, only visible when authenticated -->
+<button id="dashboard-btn" class="dashboard-button" title="Dashboard">
+  <!-- Bar graph icon (default - dashboard closed) -->
+  <svg id="eye-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 20h4V10H4v10zm6 0h4V4h-4v16zm6 0h4v-8h-4v8z" fill="var(--color-white)"/>
+  </svg>
+  <!-- Bar graph icon filled (dashboard open) -->
+  <svg id="eye-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <path d="M4 20h4V10H4v10zm6 0h4V4h-4v16zm6 0h4v-8h-4v8z" fill="var(--color-primary)"/>
+  </svg>
+  <span>Dashboard</span>
+</button>
+
+<!-- Registro button - above leads button, only visible when authenticated -->
+<button id="registro-btn" class="dashboard-button" title="Registro">
+  <svg id="registro-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-white)"/>
+  </svg>
+  <svg id="registro-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-primary)"/>
+  </svg>
+  <span>Registro</span>
+</button>
+
+<!-- Leads modal overlay with iframe -->
+<div id="leads-modal-overlay" style="display:none;">
+  <div id="leads-modal-backdrop"></div>
+  <div id="leads-modal-container">
+    <iframe id="leads-iframe" src="about:blank" frameborder="0"></iframe>
+  </div>
 </div>
 
-<!-- Name Modal (shown when lead has no name) -->
-<div id="nameModal" class="name-modal">
-  <div class="name-modal-content">
-    <h2>¡Bienvenido!</h2>
-    <p>¿Cómo te llamas?</p>
-    <form id="nameForm">
-      <input type="text" id="leadNameInput" placeholder="Nombre" required>
-      <input type="text" id="leadLastNameInput" placeholder="Apellido" required>
-      <button type="submit">EMPEZAR</button>
-    </form>
+<!-- Registro modal overlay with iframe -->
+<div id="registro-modal-overlay" style="display:none;">
+  <div id="registro-modal-backdrop"></div>
+  <div id="registro-modal-container">
+    <iframe id="registro-iframe" src="about:blank" frameborder="0"></iframe>
   </div>
 </div>
 
@@ -197,7 +235,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <div class="logoinv-wrapper">
    <a href="#" onclick="event.preventDefault(); window.location.reload(true);" title="Reload Site">
-  <img id="mainClientLogo" src="" alt=""></a>
+  <img id="mainClientLogo" style="height: 50px;" src="" alt=""></a>
 </div>
 <script>
   // Set main logo from config
@@ -215,8 +253,8 @@ window.clientAccessCache = window.clientAccessCache || {};
 </script>
 
 <!-- Conditional community logo -->
-<div class="community-logo-wrapper" id="communityLogo">
-  <img id="communityLogoImg" src="" alt="Community Logo">
+<div class="community-logo-wrapper" id="communityLogo" style="top:100px; left:45px;">
+  <img id="communityLogoImg" src="" alt="Community Logo" style="height:45px;">
 </div>
 <script>
   // Set initial community logo from config (for default community)
@@ -327,6 +365,341 @@ window.clientAccessCache = window.clientAccessCache || {};
 
 <div class="lot-details" id="lotDetails"></div>
 
+<!-- Cotizador Panel (hidden by default, shown when modal expands) -->
+<div id="cotizadorPanel" style="display:none; padding:16px; overflow-y:auto;">
+  <style>
+    #cotizadorPanel .cot-card {
+      background: white;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    #cotizadorPanel .cot-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #8f5e38;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #e4e3df;
+    }
+    #cotizadorPanel .cot-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+    #cotizadorPanel .cot-row label {
+      flex: 0 0 130px;
+      font-size: 13px;
+      color: #5d5d5d;
+      text-align: right;
+    }
+    #cotizadorPanel .cot-row input,
+    #cotizadorPanel .cot-row select {
+      flex: 1;
+      padding: 6px 10px;
+      border: 2px solid #e4e3df;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #faf9f7;
+    }
+    #cotizadorPanel .cot-row input:read-only {
+      background: #f0efec;
+      color: #888;
+    }
+    #cotizadorPanel .cot-row input:focus,
+    #cotizadorPanel .cot-row select:focus {
+      outline: none;
+      border-color: #8f5e38;
+    }
+    #cotizadorPanel .cot-pct {
+      display: flex;
+      align-items: center;
+      flex: 1;
+      gap: 6px;
+    }
+    #cotizadorPanel .cot-pct input {
+      width: 70px;
+      flex: 0 0 70px;
+      text-align: center;
+    }
+    #cotizadorPanel .cot-unit {
+      font-size: 13px;
+      color: #999;
+      flex: 0 0 auto;
+    }
+    #cotizadorPanel .cot-amount {
+      font-size: 13px;
+      color: #333;
+      flex: 1;
+      text-align: right;
+    }
+    #cotizadorPanel .cot-error {
+      display: none;
+      color: #d32f2f;
+      font-size: 13px;
+      padding: 6px 0;
+    }
+    #cotizadorPanel .cot-balancer-select {
+      padding: 4px 8px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: inherit;
+      background: white;
+    }
+    #cotizadorPanel .cot-generate-btn {
+      width: 100%;
+      padding: 14px;
+      background: #8f5e38;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    #cotizadorPanel .cot-generate-btn:hover {
+      background: #7a4f2e;
+    }
+    #cotizadorPanel .cot-toggle-btn {
+      flex: 0 0 auto;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: inherit;
+      border: 2px solid #8f5e38;
+      border-radius: 5px;
+      background: transparent;
+      color: #8f5e38;
+      cursor: pointer;
+      line-height: 1.4;
+      transition: background .2s, color .2s;
+    }
+    #cotizadorPanel .cot-toggle-btn.active {
+      background: #8f5e38;
+      color: white;
+    }
+    #cotizadorPanel .cot-toggle-btn:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+    #cotizadorPanel .cot-date-row {
+      display: flex;
+      flex: 1;
+      gap: 6px;
+    }
+    #cotizadorPanel .cot-date-row select {
+      flex: 1;
+      padding: 6px 8px;
+      border: 2px solid #e4e3df;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      background: #faf9f7;
+    }
+    #cotizadorPanel .cot-date-row select:focus {
+      outline: none;
+      border-color: #8f5e38;
+    }
+    @media (max-width: 767px) {
+      #cotizadorPanel .cot-row label {
+        flex: 0 0 100px;
+        font-size: 12px;
+      }
+      #cotizadorPanel .cot-pct input {
+        width: 58px;
+        flex: 0 0 58px;
+      }
+    }
+  </style>
+
+  <!-- Lot Info -->
+  <div class="cot-card">
+    <div class="cot-card-title">Información del Lote</div>
+    <div class="cot-row">
+      <label>Lote</label>
+      <input type="text" id="cotLotNumber" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Categoría</label>
+      <input type="text" id="cotLotCategory" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Superficie</label>
+      <input type="text" id="cotLotSize" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Precio / m²</label>
+      <input type="text" id="cotPriceM2" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Valor Total</label>
+      <input type="text" id="cotTotalPrice" readonly>
+    </div>
+    <div class="cot-row">
+      <label>Descuento</label>
+      <div class="cot-pct">
+        <input type="number" id="cotDescuentoPct" value="0" min="0" max="100" step="0.5">
+        <span class="cot-unit" id="cotDescuentoUnit">%</span>
+        <button type="button" class="cot-toggle-btn" data-field="cotDescuentoPct">%/$</button>
+        <span class="cot-amount" id="cotDescuentoAmountDisplay">$0.00</span>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Precio Final</label>
+      <input type="text" id="cotPrecioFinal" readonly>
+    </div>
+  </div>
+
+  <!-- Client -->
+  <div class="cot-card">
+    <div class="cot-card-title">Datos del Cliente</div>
+    <div class="cot-row">
+      <label>Nombre</label>
+      <input type="text" id="cotClientName" value="Estimada Familia">
+    </div>
+  </div>
+
+  <!-- Fechas de Pago -->
+  <div class="cot-card">
+    <div class="cot-card-title">Fechas de Pago</div>
+    <div class="cot-row">
+      <label>Separación</label>
+      <div class="cot-date-row">
+        <select id="cotFechaSeparacionMonth"></select>
+        <select id="cotFechaSeparacionYear"></select>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Enganche</label>
+      <div class="cot-date-row">
+        <select id="cotFechaEngancheMonth"></select>
+        <select id="cotFechaEngancheYear"></select>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Mensualidades</label>
+      <div class="cot-date-row">
+        <select id="cotFechaMensualidadesMonth"></select>
+        <select id="cotFechaMensualidadesYear"></select>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Anualidades</label>
+      <div class="cot-date-row">
+        <select id="cotFechaAnualidadesMonth"></select>
+        <select id="cotFechaAnualidadesYear"></select>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Escrituración</label>
+      <div class="cot-date-row">
+        <select id="cotFechaEscrituracionMonth"></select>
+        <select id="cotFechaEscrituracionYear"></select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment -->
+  <div class="cot-card">
+    <div class="cot-card-title" style="display:flex; justify-content:space-between; align-items:center;">
+      Esquema de Pago
+      <div style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:400; color:#5d5d5d;">
+        Ajustar:
+        <select id="cotBalancerField" class="cot-balancer-select">
+          <option value="cotSeparacionPct">Separación</option>
+          <option value="cotEnganchePct">Enganche</option>
+          <option value="cotMensualidadesPct">Mensualidades</option>
+          <option value="cotAnualidadesPct">Anualidades</option>
+          <option value="cotEscrituracionPct" selected>Escrituración</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="cot-row">
+      <label>Separación</label>
+      <div class="cot-pct">
+        <input type="number" id="cotSeparacionPct" value="0" min="0" max="100" step="0.5">
+        <span class="cot-unit" id="cotSeparacionUnit">%</span>
+        <button type="button" class="cot-toggle-btn" data-field="cotSeparacionPct">%/$</button>
+        <span class="cot-amount" id="cotSeparacionDisplay">$0.00</span>
+      </div>
+    </div>
+
+    <div class="cot-row">
+      <label>Enganche</label>
+      <div class="cot-pct">
+        <input type="number" id="cotEnganchePct" value="20" min="0" max="100" step="0.5">
+        <span class="cot-unit" id="cotEngancheUnit">%</span>
+        <button type="button" class="cot-toggle-btn" data-field="cotEnganchePct">%/$</button>
+        <span class="cot-amount" id="cotEngancheDisplay">$0.00</span>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Núm. Enganches</label>
+      <input type="number" id="cotNumEnganche" value="1" min="1" max="24" style="width:70px; flex:0 0 70px;">
+      <span class="cot-unit">→</span>
+      <span class="cot-amount" id="cotEnganchePerPayDisplay" style="font-weight:700; color:#8f5e38;">$0.00/pago</span>
+    </div>
+
+    <div class="cot-row">
+      <label>Mensualidades</label>
+      <div class="cot-pct">
+        <input type="number" id="cotMensualidadesPct" value="30" min="0" max="100" step="0.5">
+        <span class="cot-unit" id="cotMensualidadesUnit">%</span>
+        <button type="button" class="cot-toggle-btn" data-field="cotMensualidadesPct">%/$</button>
+        <span class="cot-amount" id="cotMensualidadesTotalDisplay">$0.00</span>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Núm. Mensualidades</label>
+      <input type="number" id="cotNumMensualidades" value="24" min="1" max="120" style="width:70px; flex:0 0 70px;">
+      <span class="cot-unit">→</span>
+      <span class="cot-amount" id="cotMensualidadMesDisplay" style="font-weight:700; color:#8f5e38;">$0.00/mes</span>
+    </div>
+
+    <div class="cot-row">
+      <label>Anualidades</label>
+      <div class="cot-pct">
+        <input type="number" id="cotAnualidadesPct" value="0" min="0" max="100" step="0.5">
+        <span class="cot-unit" id="cotAnualidadesUnit">%</span>
+        <button type="button" class="cot-toggle-btn" data-field="cotAnualidadesPct">%/$</button>
+        <span class="cot-amount" id="cotAnualidadesTotalDisplay">$0.00</span>
+      </div>
+    </div>
+    <div class="cot-row">
+      <label>Núm. Anualidades</label>
+      <input type="number" id="cotNumAnualidades" value="2" min="1" max="10" style="width:70px; flex:0 0 70px;">
+      <span class="cot-unit">→</span>
+      <span class="cot-amount" id="cotAnualidadDisplay" style="font-weight:700; color:#8f5e38;">$0.00/pago</span>
+    </div>
+
+    <div class="cot-row">
+      <label>Escrituración</label>
+      <div class="cot-pct">
+        <input type="number" id="cotEscrituracionPct" value="50" min="0" max="100" step="0.5">
+        <span class="cot-unit" id="cotEscrituracionUnit">%</span>
+        <button type="button" class="cot-toggle-btn" data-field="cotEscrituracionPct">%/$</button>
+        <span class="cot-amount" id="cotEscrituracionDisplay">$0.00</span>
+      </div>
+    </div>
+
+    <div class="cot-error" id="cotErrorMsg"></div>
+
+    <div class="cot-row" style="margin-top:16px; padding-top:12px; border-top:2px solid #e4e3df;">
+      <label style="font-weight:700; font-size:15px; color:#8f5e38;">Total</label>
+      <input type="text" id="cotTotalDisplay" readonly style="font-size:16px; font-weight:700;">
+    </div>
+  </div>
+
+  <button class="cot-generate-btn" id="cotGenerateBtn">Generar PDF</button>
+</div>
+
 <!-- Calendly must be a sibling, not inside lotDetails -->
 <div id="calendlyEmbed" class="calendly-embed-container">
 
@@ -425,45 +798,7 @@ window.clientAccessCache = window.clientAccessCache || {};
 </button> -->
 
 
-<!-- Old Search Button removed - replaced by new search button component at bottom of file -->
-
-<!-- Leads button - only visible when user is agent, positioned above registro -->
-<button id="leads-btn" class="dashboard-button" title="Usuarios" style="bottom: 52px; display: none;">
-  <svg id="leads-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-white)"/>
-  </svg>
-  <svg id="leads-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Leads</span>
-</button>
-
-<!-- Leads modal overlay with iframe (agent mode) -->
-<div id="leads-modal-overlay" style="display:none;">
-  <div id="leads-modal-backdrop"></div>
-  <div id="leads-modal-container">
-    <iframe id="leads-iframe" src="about:blank" frameborder="0"></iframe>
-  </div>
-</div>
-
-<!-- Registro button - only visible when user is agent, positioned at bottom left -->
-<button id="registro-btn" class="dashboard-button" title="Registro" style="bottom: 28px;">
-  <svg id="registro-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-white)"/>
-  </svg>
-  <svg id="registro-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Registro</span>
-</button>
-
-<!-- Registro modal overlay with iframe -->
-<div id="registro-modal-overlay" style="display:none;">
-  <div id="registro-modal-backdrop"></div>
-  <div id="registro-modal-container">
-    <iframe id="registro-iframe" src="about:blank" frameborder="0"></iframe>
-  </div>
-</div>
+<!-- Old Search Button removed - replaced by new search button component at bottom of file --> 
 
   <!-- GPS button - bottom right above lalaland logo -->
 <button id="gpsButton" class="gps-button" title="Enable GPS">
@@ -534,6 +869,30 @@ let currentImages = [];
 let currentImageIndex = -1;
 let imageNumberToArrayIndex = {}; // Maps original image number (from filename) to currentImages array position
 let preloadedImages = {};
+let preloadLRU = [];
+const MAX_CACHED_IMAGES = 10;
+let viewerAnimationId = null;
+
+function cacheImage(url, img) {
+  const idx = preloadLRU.indexOf(url);
+  if (idx !== -1) preloadLRU.splice(idx, 1);
+  while (preloadLRU.length >= MAX_CACHED_IMAGES) {
+    const evictUrl = preloadLRU.shift();
+    if (preloadedImages[evictUrl]) {
+      preloadedImages[evictUrl].onload = null;
+      preloadedImages[evictUrl].onerror = null;
+      preloadedImages[evictUrl].src = '';
+      delete preloadedImages[evictUrl];
+    }
+  }
+  preloadedImages[url] = img;
+  preloadLRU.push(url);
+}
+
+function touchCache(url) {
+  const idx = preloadLRU.indexOf(url);
+  if (idx !== -1) { preloadLRU.splice(idx, 1); preloadLRU.push(url); }
+}
 let viewConeMarker = null;
 let isSwitchingTrack = false;
 
@@ -765,12 +1124,12 @@ function initThreeJSViewer() {
 
   renderer = new THREE.WebGLRenderer({
     canvas, 
-    antialias: true, 
+    antialias: window.devicePixelRatio < 3,
     alpha: false, 
     powerPreference: 'high-performance'
   });
   
-const dpr = Math.min(window.devicePixelRatio, 2);
+ const dpr = Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height, false);
   
@@ -784,12 +1143,19 @@ const dpr = Math.min(window.devicePixelRatio, 2);
 
 function animateViewer(){
   if (!viewerInitialized) return;
-  requestAnimationFrame(animateViewer);
+  viewerAnimationId = requestAnimationFrame(animateViewer);
   updateNavigationRing();
   if (renderer && scene && camera) {
     try {
       renderer.render(scene, camera);
     } catch(e) {}
+  }
+}
+
+function stopAnimateViewer() {
+  if (viewerAnimationId) {
+    cancelAnimationFrame(viewerAnimationId);
+    viewerAnimationId = null;
   }
 }
 
@@ -1453,7 +1819,7 @@ function preloadMarriedMarbleImages() {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
       img.onload = () => {
-        preloadedImages[url] = img;
+        cacheImage(url, img);
         console.log('Preloaded married marble image:', url);
       };
       img.onerror = () => console.log('Failed to preload:', url);
@@ -1570,14 +1936,13 @@ function handleMapClickForDeselect(e){
 // ===== IMAGE LOADING AND DISPLAY =====
 function showImageInViewer(imageUrl, imageData) {
   console.log('🖼️ Loading image:', imageUrl);
-  showViewerLoading('Loading 360° image...');
 
   // 🟢 REMOVED: Don't initialize Three.js here anymore
   // if (!viewerInitialized) initThreeJSViewer();
 
   if (preloadedImages[imageUrl]) {
     console.log('✅ Using preloaded image');
-    hideViewerLoading();
+    touchCache(imageUrl);
     applyImageToSphere(preloadedImages[imageUrl], imageData);
     preloadAdjacentImages();
     return;
@@ -1585,23 +1950,20 @@ function showImageInViewer(imageUrl, imageData) {
 
   const img = new Image();
   img.crossOrigin = 'Anonymous';
-  
+
   img.onload = function() {
     console.log('✅ Image loaded successfully:', imageUrl);
-    preloadedImages[imageUrl] = img;
-    hideViewerLoading();
+    cacheImage(imageUrl, img);
     applyImageToSphere(img, imageData);
     preloadAdjacentImages();
   };
-  
+
   img.onerror = function() {
     console.error('❌ Failed to load image:', imageUrl);
-    hideViewerLoading();
-    showToaster('Failed to load 360 image');
   };
   
   console.log('📤 Setting image src:', imageUrl);
-  img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
+  img.src = imageUrl;
 }
 
 function applyImageToSphere(img, imageData) {
@@ -1645,7 +2007,7 @@ function preloadAdjacentImages() {
   const track = getCurrentTrack();
   if (!track || !selectedMarbleId) return;
   const marbleIdx = track.marbles.findIndex(m => m.id === selectedMarbleId);
-  const neighbors = [marbleIdx - 1, marbleIdx + 1, marbleIdx - 2, marbleIdx + 2];
+  const neighbors = [marbleIdx - 1, marbleIdx + 1, marbleIdx - 2, marbleIdx + 2, marbleIdx - 3, marbleIdx + 3, marbleIdx - 4, marbleIdx + 4];
   for (const ni of neighbors) {
     if (ni >= 0 && ni < track.marbles.length) {
       const m = track.marbles[ni];
@@ -1667,7 +2029,7 @@ function preloadOne(index) {
     if (preloadedImages[src]) return res();
     const img = new Image();
     img.crossOrigin = 'Anonymous';
-    img.onload = () => { preloadedImages[src] = img; res(); };
+    img.onload = () => { cacheImage(src, img); res(); };
     img.onerror = () => res();
     img.src = src;
     if (img.decode) img.decode().catch(() => {});
@@ -1738,6 +2100,7 @@ function showImageByIndex(index) {
   if (arrayIdx < 0 || arrayIdx >= currentImages.length) return;
   const image = currentImages[arrayIdx];
   if (preloadedImages[image.url]) {
+    touchCache(image.url);
     applyImageToSphere(preloadedImages[image.url], image);
     currentImageIndex = index;
     updateViewerUI();
@@ -1833,11 +2196,10 @@ async function createImagesFromFramesFolder() {
   const track = getCurrentTrack();
   if (!track) {
     showToaster('No track selected');
-    return; 
+    return;
   }
-  const framesBase = track.framesBase || getFramesBase();
   const gpxName = (track.name || '').replace(/\.[^.]+$/, '');
-    if (!gpxName) {
+  if (!gpxName) {
     showToaster('GPX name missing');
     return;
   }
@@ -1845,6 +2207,10 @@ async function createImagesFromFramesFolder() {
   const gpxNameLC = gpxName.toLowerCase();
   const prefixHyphen = gpxNameLC + '-';
   const prefixUnderscore = gpxNameLC + '_';
+
+  // Use the track's own framesBase (set at GPX load time), fall back to dynamic lookup
+  const framesBase = track.framesBase || getFramesBase();
+
   let list;
   try {
     const res = await fetch(framesBase + 'index.json', { cache: 'no-store' });
@@ -1868,7 +2234,7 @@ async function createImagesFromFramesFolder() {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   if (!matches.length) {
     showToaster(`No frames for "${gpxName}"`);
-    return; 
+    return;
   }
 
   currentImages = matches.map((filename, i) => ({
@@ -1940,7 +2306,11 @@ function open360ViewerInModal() {
   if (lotDetails) lotDetails.style.display = 'none';
   if (modalInfo) modalInfo.style.display = 'none';
   if (calendlyEl) calendlyEl.style.display = 'none';
-  
+
+  // Hide lot-list loading spinner (openModal shows it, but viewer doesn't need it)
+  const loadingSpinner = document.getElementById('loadingSpinner');
+  if (loadingSpinner) loadingSpinner.style.display = 'none';
+
   // Hide custom scrollbar and thumb
   if (customScrollbar) {
     customScrollbar.style.display = 'none';
@@ -1955,6 +2325,9 @@ function open360ViewerInModal() {
   if (viewerContainer) {
     viewerContainer.style.display = 'block';
   }
+
+  // Resume animation loop
+  if (viewerInitialized && !viewerAnimationId) animateViewer();
 
   // Update modal classes and state
   modal.classList.add('viewer-mode');
@@ -2011,6 +2384,7 @@ function close360ViewerInModal(targetBaseIndex = null) {
 
   // Hide viewer
   if (viewerContainer) viewerContainer.style.display = 'none';
+    stopAnimateViewer();
 
   // --- Copy working logic from closeModal ---
   
@@ -2241,8 +2615,10 @@ ctaobserver.observe(ctaToaster, {
       if (updatedIndex !== -1) {
         const lot = lotData[updatedIndex];
         const raw = payload.new?.availability ?? lot.availability ?? 'Available';
-        const wasAvailable = !['sold', 'blocked'].includes((lot.availability ?? '').toLowerCase());
-        const nowSold = ['sold', 'blocked'].includes(raw.toLowerCase());
+        const prevState = (lot.availability ?? '').toLowerCase();
+        const wasAvailable = !['sold', 'blocked'].includes(prevState);
+        const nowSold = raw.toLowerCase() === 'sold';
+        const nowBlocked = raw.toLowerCase() === 'blocked';
 
         lot.availability = raw;
         lot.featured = raw.toLowerCase() === 'featured';
@@ -2276,23 +2652,14 @@ ctaobserver.observe(ctaToaster, {
           source.setData(updatedGeojson);
         }
 
-        // If lot just became sold, add X mark
+        // If lot just became sold, add X mark (not for blocked — blocked gets fill)
         if (wasAvailable && nowSold && typeof addSoldXs === 'function') {
           addSoldXs(map, [lot], 300);
+        }
 
-          // Auto-remove sold lots from lead's saved lots
-          if (window.currentLead && window.leadSavedLots?.has(lot.name)) {
-            window.leadSavedLots.delete(lot.name);
-            // Remove from database
-            window.supabaseClient?.from('lead_saved_lots')
-              .delete()
-              .eq('lead_id', window.currentLead.id)
-              .eq('lot_name', lot.name)
-              .eq('client', CURRENT_CLIENT)
-              .then(() => console.log('🗑️ Auto-removed sold lot from favorites:', lot.name));
-            // Refresh map layer
-            if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
-          }
+        // If lot just became blocked, refresh the blocked fill layer
+        if (nowBlocked && map.getLayer('lots-final-blocked-fill')) {
+          map.setPaintProperty('lots-final-blocked-fill', 'fill-opacity', CONFIG.lotStyles.blocked.fill.opacity);
         }
       }
 
@@ -2356,363 +2723,7 @@ ctaobserver.observe(ctaToaster, {
   });
 </script>
 
-<!-- ===== LEAD TOKEN AUTH VALIDATION ===== -->
-<script>
-(async function validateLeadAuth() {
-  const CURRENT_CLIENT = window.__leadClient || 'inverta';
 
-  // Cookie helpers
-  function getCookie(name) {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop().split(';').shift();
-    return null;
-  }
-
-  function setCookie(name, value, days) {
-    const expires = new Date(Date.now() + days * 864e5).toUTCString();
-    document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
-  }
-
-  // Wait for Supabase
-  await window.supabaseReady;
-
-  const urlToken = window.__leadAuthToken;
-  const sessionToken = window.__leadSessionToken;
-
-  // If we have a URL token, validate and claim it
-  if (urlToken) {
-    try {
-      // Look up the token
-      const { data: tokenData, error: tokenError } = await window.supabaseClient
-        .from('lead_tokens')
-        .select('id, lead_id, claimed, leads(id, phone, name, last_name, is_agent, is_demo)')
-        .eq('token', urlToken)
-        .single();
-
-      if (tokenError || !tokenData) {
-        // Invalid token
-        console.error('Invalid token:', urlToken);
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
-        return;
-      }
-
-      const isDemo = tokenData.leads?.is_demo === true;
-
-      if (!isDemo) {
-        if (tokenData.claimed) {
-          // Token already claimed by another device
-          console.error('Token already claimed:', urlToken);
-          window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=claimed';
-          return;
-        }
-
-        // Claim the token
-        await window.supabaseClient
-          .from('lead_tokens')
-          .update({ claimed: true, claimed_at: new Date().toISOString() })
-          .eq('id', tokenData.id);
-
-        // Update lead's last_seen_at
-        await window.supabaseClient
-          .from('leads')
-          .update({ last_seen_at: new Date().toISOString() })
-          .eq('id', tokenData.lead_id);
-
-        // Save session cookie (365 days)
-        setCookie('lead_session_' + CURRENT_CLIENT, urlToken, 365);
-      }
-
-      // Store lead info globally
-      window.currentLead = {
-        id: tokenData.lead_id,
-        phone: tokenData.leads?.phone,
-        name: tokenData.leads?.name,
-        lastName: tokenData.leads?.last_name,
-        token: urlToken,
-        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT),
-        isDemo
-      };
-
-      // Set global agent flag
-      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
-      // Show registro and leads buttons for agents
-      const _regBtn1 = document.getElementById('registro-btn');
-      if (_regBtn1) _regBtn1.style.display = window.isAgent ? 'flex' : 'none';
-      const _leadsBtn1 = document.getElementById('leads-btn');
-      if (_leadsBtn1) _leadsBtn1.style.display = window.isAgent ? 'flex' : 'none';
-
-      console.log('✅ Lead authenticated via token:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '', isDemo ? '(DEMO)' : '');
-
-      // Demo: clear saved lots so each session starts fresh
-      if (isDemo) {
-        await window.supabaseClient
-          .from('lead_saved_lots')
-          .delete()
-          .eq('lead_id', tokenData.lead_id);
-      }
-
-      // Start session tracking
-      await startLeadSession();
-
-      // Update lead greeting and show name modal if needed
-      updateLeadGreeting();
-      if (!window.currentLead.name) {
-        showNameModal();
-      }
-
-      // Clean URL (remove /m/token, keep just /client/)
-      const cleanUrl = window.location.origin + '/' + CURRENT_CLIENT + '/index-m.html';
-      window.history.replaceState({}, '', cleanUrl);
-
-    } catch (err) {
-      console.error('Token validation error:', err);
-      window.location.href = '/' + CURRENT_CLIENT + '/registro.html?error=invalid';
-      return;
-    }
-  }
-  // If we have a session cookie, validate it
-  else if (sessionToken) {
-    try {
-      const { data: tokenData, error: tokenError } = await window.supabaseClient
-        .from('lead_tokens')
-        .select('id, lead_id, leads(id, phone, name, last_name, is_agent)')
-        .eq('token', sessionToken)
-        .single();
-
-      if (tokenError || !tokenData) {
-        // Session token no longer valid
-        console.error('Session token invalid');
-        document.cookie = 'lead_session_' + CURRENT_CLIENT + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-        return;
-      }
-
-      // Update lead's last_seen_at
-      await window.supabaseClient
-        .from('leads')
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq('id', tokenData.lead_id);
-
-      // Store lead info globally
-      window.currentLead = {
-        id: tokenData.lead_id,
-        phone: tokenData.leads?.phone,
-        name: tokenData.leads?.name,
-        lastName: tokenData.leads?.last_name,
-        token: sessionToken,
-        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT)
-      };
-
-      // Set global agent flag
-      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
-      // Show registro and leads buttons for agents
-      const _regBtn2 = document.getElementById('registro-btn');
-      if (_regBtn2) _regBtn2.style.display = window.isAgent ? 'flex' : 'none';
-      const _leadsBtn2 = document.getElementById('leads-btn');
-      if (_leadsBtn2) _leadsBtn2.style.display = window.isAgent ? 'flex' : 'none';
-
-      console.log('✅ Lead authenticated via session:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
-
-      // Start session tracking
-      await startLeadSession();
-
-      // Update lead greeting and show name modal if needed
-      updateLeadGreeting();
-      if (!window.currentLead.name) {
-        showNameModal();
-      }
-
-    } catch (err) {
-      console.error('Session validation error:', err);
-      window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-      return;
-    }
-  }
-
-  // ===== SESSION TRACKING =====
-  window.currentSessionId = null;
-  window.sessionStartTime = null;
-
-  async function startLeadSession() {
-    if (!window.currentLead || !window.supabaseClient) return;
-
-    try {
-      window.sessionStartTime = new Date();
-
-      const { data, error } = await window.supabaseClient
-        .from('lead_sessions')
-        .insert({
-          lead_id: window.currentLead.id,
-          client_id: CURRENT_CLIENT,
-          started_at: window.sessionStartTime.toISOString(),
-          page_url: window.location.href,
-          user_agent: navigator.userAgent
-        })
-        .select('id')
-        .single();
-
-      if (error) {
-        console.error('Failed to create session:', error);
-        return;
-      }
-
-      window.currentSessionId = data.id;
-      console.log('📊 Session started:', window.currentSessionId);
-
-      // Set up session end tracking
-      setupSessionEndTracking();
-    } catch (err) {
-      console.error('Session tracking error:', err);
-    }
-  }
-
-  async function endLeadSession() {
-    if (!window.currentSessionId || !window.sessionStartTime || !window.supabaseClient) return;
-
-    try {
-      const endTime = new Date();
-      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
-
-      await window.supabaseClient
-        .from('lead_sessions')
-        .update({
-          ended_at: endTime.toISOString(),
-          duration_seconds: durationSeconds
-        })
-        .eq('id', window.currentSessionId);
-
-      console.log(`📊 Session ended: ${durationSeconds}s`);
-    } catch (err) {
-      console.error('Failed to end session:', err);
-    }
-  }
-
-  function setupSessionEndTracking() {
-    // Track when user leaves the page
-    window.addEventListener('beforeunload', () => {
-      if (!window.currentSessionId) return;
-
-      // Use sendBeacon for reliable delivery during page unload
-      const endTime = new Date();
-      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
-
-      // We can't use async/await in beforeunload, so use sendBeacon
-      // But Supabase doesn't support sendBeacon directly, so we do best effort with fetch keepalive
-      if (window.supabaseClient) {
-        window.supabaseClient
-          .from('lead_sessions')
-          .update({
-            ended_at: endTime.toISOString(),
-            duration_seconds: durationSeconds
-          })
-          .eq('id', window.currentSessionId)
-          .then(() => console.log('📊 Session ended on unload'))
-          .catch(err => console.error('Failed to end session on unload:', err));
-      }
-    });
-
-    // Also track visibility changes (tab switches, minimizing)
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        // User switched away - update session
-        endLeadSession();
-      }
-    });
-  }
-
-  // Helper function to update lead greeting
-  function updateLeadGreeting() {
-    const leadNameEl = document.getElementById('lead-name');
-    if (leadNameEl && window.currentLead) {
-      const fullName = `${window.currentLead.name || ''} ${window.currentLead.lastName || ''}`.trim();
-      leadNameEl.textContent = fullName || 'Usuario';
-    }
-  }
-
-  // Show name modal
-  function showNameModal() {
-    const modal = document.getElementById('nameModal');
-    if (modal) {
-      modal.classList.add('show');
-    }
-  }
-
-  // Hide name modal
-  function hideNameModal() {
-    const modal = document.getElementById('nameModal');
-    if (modal) {
-      modal.classList.remove('show');
-    }
-  }
-
-  // Handle name form submission
-  const nameForm = document.getElementById('nameForm');
-  if (nameForm) {
-    nameForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const nameInput = document.getElementById('leadNameInput');
-      const lastNameInput = document.getElementById('leadLastNameInput');
-      const submitBtn = nameForm.querySelector('button');
-
-      const name = nameInput.value.trim();
-      const lastName = lastNameInput.value.trim();
-
-      if (!name || !lastName) return;
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Guardando...';
-
-      try {
-        // Update lead in Supabase
-        await window.supabaseClient
-          .from('leads')
-          .update({ name, last_name: lastName })
-          .eq('id', window.currentLead.id);
-
-        // Update local state
-        window.currentLead.name = name;
-        window.currentLead.lastName = lastName;
-
-        // Update greeting
-        updateLeadGreeting();
-
-        // Hide modal
-        hideNameModal();
-
-      } catch (err) {
-        console.error('Error saving name:', err);
-        alert('Error al guardar. Intenta de nuevo.');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Continuar';
-      }
-    });
-  }
-
-  // Load saved lots for this lead
-  if (window.currentLead) {
-    try {
-      const { data: savedLots } = await window.supabaseClient
-        .from('lead_saved_lots')
-        .select('lot_name')
-        .eq('lead_id', window.currentLead.id)
-        .eq('client', CURRENT_CLIENT);
-
-      window.leadSavedLots = new Set(savedLots?.map(s => s.lot_name) || []);
-      console.log('✅ Loaded', window.leadSavedLots.size, 'saved lots for lead');
-
-      // Add saved lots layer to map if map is already loaded
-      if (window.map && typeof addSavedLotsLayer === 'function') {
-        addSavedLotsLayer(window.map);
-      }
-    } catch (err) {
-      console.error('Error loading saved lots:', err);
-      window.leadSavedLots = new Set();
-    }
-  }
-})();
-</script>
 
 
 <script>
@@ -2768,6 +2779,7 @@ ctaobserver.observe(ctaToaster, {
   }
 
   function updateButtons(loggedIn) {
+    if (IS_DEMO) loggedIn = true;
     if (btnLogin)  btnLogin.style.display  = loggedIn ? 'none' : 'flex';
 
     // Update globe button visual state
@@ -2788,6 +2800,18 @@ ctaobserver.observe(ctaToaster, {
     const dashboardBtn = $('#dashboard-btn');
     if (dashboardBtn) {
       dashboardBtn.style.display = loggedIn ? 'flex' : 'none';
+    }
+
+    // Update leads button visibility
+    const leadsBtn = $('#leads-btn');
+    if (leadsBtn) {
+      leadsBtn.style.display = loggedIn ? 'flex' : 'none';
+    }
+
+    // Update registro button visibility
+    const registroBtn = $('#registro-btn');
+    if (registroBtn) {
+      registroBtn.style.display = loggedIn ? 'flex' : 'none';
     }
 
     // Update global auth state and re-render list to show/hide action buttons
@@ -2924,6 +2948,218 @@ ctaobserver.observe(ctaToaster, {
         eyeClosed.style.display = 'inline-block';  // Show closed eye when dashboard is hidden
         dashboardBtn.classList.remove('active');
       }
+    }
+  });
+
+  // Leads button - toggle leads modal with iframe
+  window.isLeadsOpen = false;
+  const leadsBtn = $('#leads-btn');
+  const leadsOverlay = $('#leads-modal-overlay');
+  const leadsContainer = $('#leads-modal-container');
+  const leadsBackdrop = $('#leads-modal-backdrop');
+  const leadsCloseBtn = $('#leads-modal-close');
+  const leadsIframe = $('#leads-iframe');
+
+  // Elements to hide when leads/registro modal is open on mobile (save display state)
+  const leadsHideTargets = [
+    $('.lala-wrapper'),
+    $('#leads-btn'),
+    $('#dashboard-btn'),
+    $('#registro-btn'),
+    $('#gpsButton'),
+    $('.logoinv-wrapper')
+  ].filter(Boolean);
+  const leadsHideSavedDisplay = new Map();
+  let leadsModalPanned = false;
+
+  function openLeadsModal() {
+    // Close registro modal if open
+    if (window.isRegistroOpen) closeRegistroModal();
+    // Close lotModal first if open
+    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
+    if (typeof closeModal === 'function') {
+      try { closeModal(); } catch(e) {}
+    }
+
+    leadsModalPanned = false;
+    if (map && window.innerWidth >= 768 && !lotModalWasOpen) {
+      map.panBy([-240, 0], { duration: 400 });
+      leadsModalPanned = true;
+    }
+
+    window.isLeadsOpen = true;
+    leadsIframe.src = IS_DEMO ? 'lead-dashboard-demo.html' : 'lead-dashboard.html';
+    leadsOverlay.style.display = 'block';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        leadsContainer.classList.add('show');
+      });
+    });
+    // Toggle icons
+    const openIcon = $('#leads-open-icon');
+    const closedIcon = $('#leads-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'inline-block';
+      closedIcon.style.display = 'none';
+    }
+    leadsBtn.classList.add('active');
+    // Save display state then hide (mobile only)
+    if (window.innerWidth < 768) {
+      leadsHideTargets.forEach(el => {
+        leadsHideSavedDisplay.set(el, el.style.display);
+        el.style.display = 'none';
+      });
+    }
+  }
+
+  function closeLeadsModal() {
+    if (map && window.innerWidth >= 768 && leadsModalPanned) {
+      map.panBy([240, 0], { duration: 400 });
+      leadsModalPanned = false;
+    }
+
+    leadsContainer.classList.remove('show');
+    window.isLeadsOpen = false;
+    setTimeout(() => {
+      leadsOverlay.style.display = 'none';
+      leadsIframe.src = 'about:blank';
+    }, 400);
+    // Toggle icons
+    const openIcon = $('#leads-open-icon');
+    const closedIcon = $('#leads-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'none';
+      closedIcon.style.display = 'inline-block';
+    }
+    leadsBtn.classList.remove('active');
+    // Restore saved display state (mobile only)
+    if (window.innerWidth < 768) {
+      leadsHideTargets.forEach(el => {
+        el.style.display = leadsHideSavedDisplay.get(el) || '';
+      });
+    }
+  }
+
+  leadsBtn && leadsBtn.addEventListener('click', () => {
+    if (window.isLeadsOpen) {
+      closeLeadsModal();
+    } else {
+      openLeadsModal();
+    }
+  });
+
+  // Close leads modal on backdrop click
+  leadsBackdrop && leadsBackdrop.addEventListener('click', () => {
+    closeLeadsModal();
+  });
+
+  // Close leads modal on X button click
+  leadsCloseBtn && leadsCloseBtn.addEventListener('click', () => {
+    closeLeadsModal();
+  });
+
+  // Close leads modal on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.isLeadsOpen) {
+      closeLeadsModal();
+    }
+  });
+
+  // Close leads modal via postMessage from iframe
+  window.addEventListener('message', (e) => {
+    if (e.data === 'closeLeads' && window.isLeadsOpen) {
+      closeLeadsModal();
+    }
+  });
+
+  // Registro button - toggle registro modal with iframe
+  window.isRegistroOpen = false;
+  const registroBtn = $('#registro-btn');
+  const registroOverlay = $('#registro-modal-overlay');
+  const registroBackdrop = $('#registro-modal-backdrop');
+  const registroContainer = $('#registro-modal-container');
+  const registroIframe = $('#registro-iframe');
+
+  const registroHideSavedDisplay = new Map();
+  let registroModalPanned = false;
+
+  function openRegistroModal() {
+    // Close leads modal if open
+    if (window.isLeadsOpen) closeLeadsModal();
+    // Close lotModal first if open
+    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
+    if (typeof closeModal === 'function') {
+      try { closeModal(); } catch(e) {}
+    }
+
+    registroModalPanned = false;
+    if (map && window.innerWidth >= 768 && !lotModalWasOpen) {
+      map.panBy([-240, 0], { duration: 400 });
+      registroModalPanned = true;
+    }
+
+    window.isRegistroOpen = true;
+    registroIframe.src = 'registro-manual.html';
+    registroOverlay.style.display = 'block';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        registroContainer.classList.add('show');
+      });
+    });
+    // Toggle icons
+    const openIcon = $('#registro-open-icon');
+    const closedIcon = $('#registro-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'inline-block';
+      closedIcon.style.display = 'none';
+    }
+    registroBtn.classList.add('active');
+  }
+
+  function closeRegistroModal() {
+    if (map && window.innerWidth >= 768 && registroModalPanned) {
+      map.panBy([240, 0], { duration: 400 });
+      registroModalPanned = false;
+    }
+
+    registroContainer.classList.remove('show');
+    window.isRegistroOpen = false;
+    registroOverlay.style.display = 'none';
+    registroIframe.src = 'about:blank';
+    // Toggle icons
+    const openIcon = $('#registro-open-icon');
+    const closedIcon = $('#registro-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'none';
+      closedIcon.style.display = 'inline-block';
+    }
+    registroBtn.classList.remove('active');
+  }
+
+  registroBtn && registroBtn.addEventListener('click', () => {
+    if (window.isRegistroOpen) {
+      closeRegistroModal();
+    } else {
+      openRegistroModal();
+    }
+  });
+
+  // Close registro modal on backdrop click
+  registroBackdrop && registroBackdrop.addEventListener('click', () => {
+    closeRegistroModal();
+  });
+
+  // Close registro modal on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.isRegistroOpen) {
+      closeRegistroModal();
+    }
+  });
+
+  // Close registro modal via postMessage from iframe
+  window.addEventListener('message', (e) => {
+    if (e.data === 'closeRegistro' && window.isRegistroOpen) {
+      closeRegistroModal();
     }
   });
 
@@ -3759,7 +3995,7 @@ let isDetailOpen = false;
 let lastOpenedBaseIndex = null;
 
 // Global authentication state
-window.isUserAuthenticated = false;
+window.isUserAuthenticated = IS_DEMO;
 
 // Function to show road labels and hide built-in Mapbox labels
 function toggleRoadLabels() {
@@ -3938,12 +4174,7 @@ fetch(mapboxTokenUrl)
           await loadManzanaLabels(map);
           addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
-
-    // Add saved lots layer for leads
-    if (window.currentLead && window.leadSavedLots) {
-      addSavedLotsLayer(map);
-    }
-
+    
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
 
         // ===== COMMUNITY SEARCH CIRCULAR MENU =====
@@ -4037,9 +4268,9 @@ function setupCommunitySearchMenu() {
 
 // ===== 🟢 ADD MARBLE LAYERS HERE =====
         // 🟢 MARBLES SOURCE
-        map.addSource('marbles', { 
-          type: 'geojson', 
-          data: { type:'FeatureCollection', features: [] } 
+        map.addSource('marbles', {
+          type: 'geojson',
+          data: { type:'FeatureCollection', features: [] }
         });
 
         // VISIBLE marbles layer (fades in/out based on zoom)
@@ -5029,6 +5260,7 @@ function parseLots(text) {
 <script>
 // ========== DRAW X ON SOLD LOTS ==========
 function addSoldXs(map, soldLots, fadeDuration = 500) {
+  if (!CONFIG.lotStyles.sold.xMark.enabled) return;
   if (!map.getSource('sold-x')) {
     map.addSource('sold-x', {
       type: 'geojson',
@@ -5041,8 +5273,8 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
       source: 'sold-x',
       layout: {},
       paint: {
-        'line-color': CONFIG.colors.white,
-        'line-width': 1,
+        'line-color': resolveLotStyleColor(CONFIG, CONFIG.lotStyles.sold.xMark.color),
+        'line-width': CONFIG.lotStyles.sold.xMark.width,
         'line-opacity': 0,
         'line-opacity-transition': { duration: fadeDuration }
       }
@@ -5060,7 +5292,7 @@ function addSoldXs(map, soldLots, fadeDuration = 500) {
 
   // ⏳ Fade in after tiny delay to ensure features are added first
   setTimeout(() => {
-    map.setPaintProperty('sold-x-layer', 'line-opacity', 0.49);
+    map.setPaintProperty('sold-x-layer', 'line-opacity', CONFIG.lotStyles.sold.xMark.opacity);
   }, 10);
 }
 
@@ -5215,18 +5447,32 @@ function animateLots(map, cb) {
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["any", ["==", ["get", "availability"], "Sold"], ["==", ["get", "availability"], "Blocked"]]
+      filter: ["==", ["get", "availability"], "Sold"]
+    });
+
+    map.addLayer({
+      id: `lot-group-${i}-blocked`,
+      type: "line",
+      source: `lot-group-${i}`,
+      paint: {
+        "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+        "line-width": 1,
+        "line-opacity": 0,
+        "line-opacity-transition": { duration: fadeDuration },
+      },
+      filter: ["==", ["get", "availability"], "Blocked"]
     });
 
     setTimeout(() => {
-      // Fade in BOTH layers for this group
+      // Fade in all layers for this group
       map.setPaintProperty(`lot-group-${i}-available`, "line-opacity", 1);
       map.setPaintProperty(`lot-group-${i}-sold`, "line-opacity", 0.24); // ⬅️ 0.24 for group layer
+      map.setPaintProperty(`lot-group-${i}-blocked`, "line-opacity", 0.24);
 
-      // Draw Xs for sold/blocked lots in this group
+      // Draw Xs for sold lots in this group (NOT blocked — blocked get fill instead)
       const soldInGroup = g
         .map(idx => lotData[idx])
-        .filter(lot => ['sold', 'blocked'].includes((lot.availability ?? '').toLowerCase()));
+        .filter(lot => (lot.availability ?? '').toLowerCase() === 'sold');
       
       if (soldInGroup.length > 0) {
         addSoldXs(map, soldInGroup, fadeDurationXs);
@@ -5296,7 +5542,22 @@ function animateLots(map, cb) {
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
-    filter: ["any", ["==", ["get", "availability"], "Sold"], ["==", ["get", "availability"], "Blocked"]] // Show sold + blocked lots
+    filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
+  });
+
+  // Blocked outline layer (admin only — primary color, zoom-interpolated like available)
+  map.addLayer({
+    id: "lots-final-blocked-outline",
+    type: "line",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
+      "line-width": lotStyleWidth(CONFIG.lotStyles.featured.outline.width),
+      "line-opacity": 0,
+      "line-opacity-transition": { duration: fadeDuration },
+    },
+    filter: ["==", ["get", "availability"], "Blocked"]
   });
 
   // Optional fill layer for available lots (only added when fill.color is set)
@@ -5327,9 +5588,23 @@ function animateLots(map, cb) {
         "fill-opacity": 0,
         "fill-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["any", ["==", ["get", "availability"], "Sold"], ["==", ["get", "availability"], "Blocked"]]
+      filter: ["==", ["get", "availability"], "Sold"]
     });
   }
+
+  // Fill layer for blocked lots (admin only — primary color fill)
+  map.addLayer({
+    id: "lots-final-blocked-fill",
+    type: "fill",
+    source: "lots-final",
+    layout: { visibility: "visible" },
+    paint: {
+      "fill-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.blocked.fill.color),
+      "fill-opacity": 0,
+      "fill-opacity-transition": { duration: fadeDuration },
+    },
+    filter: ["==", ["get", "availability"], "Blocked"]
+  });
 
   map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
     id: "lots-final-click",
@@ -5391,6 +5666,8 @@ function animateLots(map, cb) {
     map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // ⬅️ partial for final layer during transition
     if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
     if (map.getLayer("lots-final-sold-fill")) map.setPaintProperty("lots-final-sold-fill", "fill-opacity", CONFIG.lotStyles.sold.fill.opacity);
+    if (map.getLayer("lots-final-blocked-outline")) map.setPaintProperty("lots-final-blocked-outline", "line-opacity", CONFIG.lotStyles.featured.outline.opacity * 0.51);
+    if (map.getLayer("lots-final-blocked-fill")) map.setPaintProperty("lots-final-blocked-fill", "fill-opacity", CONFIG.lotStyles.blocked.fill.opacity);
     // Labels now fade based on zoom level (see text-opacity interpolate expression)
 
     setTimeout(() => {
@@ -5398,23 +5675,28 @@ function animateLots(map, cb) {
       groupArr.forEach((_, i) => {
         const availableId = `lot-group-${i}-available`;
         const soldId = `lot-group-${i}-sold`;
-        
+        const blockedId = `lot-group-${i}-blocked`;
+
         if (map.getLayer(availableId)) map.setPaintProperty(availableId, "line-opacity", 0);
         if (map.getLayer(soldId)) map.setPaintProperty(soldId, "line-opacity", 0);
+        if (map.getLayer(blockedId)) map.setPaintProperty(blockedId, "line-opacity", 0);
       });
 
       // AFTER group layers fade out, update final sold layer to full 0.49
       setTimeout(() => {
         map.setPaintProperty("lots-final-sold", "line-opacity", 0.49); // ⬅️ UPDATE TO FULL 0.49
-         
+        if (map.getLayer("lots-final-blocked-outline")) map.setPaintProperty("lots-final-blocked-outline", "line-opacity", CONFIG.lotStyles.featured.outline.opacity);
+
         // Remove all lot groups
         groupArr.forEach((_, i) => {
           const availableId = `lot-group-${i}-available`;
           const soldId = `lot-group-${i}-sold`;
+          const blockedId = `lot-group-${i}-blocked`;
           const sourceId = `lot-group-${i}`;
-          
+
           if (map.getLayer(availableId)) map.removeLayer(availableId);
           if (map.getLayer(soldId)) map.removeLayer(soldId);
+          if (map.getLayer(blockedId)) map.removeLayer(blockedId);
           if (map.getSource(sourceId)) map.removeSource(sourceId);
         });
         if (cb) cb();
@@ -5772,6 +6054,9 @@ function startPolygonPulse(map, onComplete) {
   let t = 0;
   let initialPulseCompleted = false;
   const PULSE_DURATION = 2.0; // seconds
+  const _pulseOp = CONFIG.lotStyles.featured.fill.opacity;
+  const _pulseBase = Array.isArray(_pulseOp) ? _pulseOp[0] : _pulseOp;
+  const _pulseAmp  = Array.isArray(_pulseOp) ? _pulseOp[1] : 0;
 
   function frame() {
     t += 0.05; // SLOWER: was 0.05, now 0.02 for slower animation
@@ -5783,7 +6068,7 @@ function startPolygonPulse(map, onComplete) {
       ...source._data,
       features: source._data.features.map(f => {
         const phase = f.properties?.phase ?? 0;
-        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        const opacity = _pulseBase + Math.sin(t + phase) * _pulseAmp;
         return {
           ...f,
           properties: {
@@ -5809,141 +6094,7 @@ function startPolygonPulse(map, onComplete) {
 
   requestAnimationFrame(frame);
 }
-
-// ===== SAVED LOTS LAYER (for leads) =====
-function savedPolygonFeature(lot) {
-  const coords = [...lot.coords];
-  if (
-    coords.length < 3 ||
-    coords[0][0] !== coords[coords.length - 1][0] ||
-    coords[0][1] !== coords[coords.length - 1][1]
-  ) {
-    coords.push(coords[0]); // Ensure closed polygon
-  }
-
-  return {
-    type: 'Feature',
-    geometry: {
-      type: 'Polygon',
-      coordinates: [coords]
-    },
-    properties: {
-      name: lot.name,
-      phase: Math.random() * Math.PI * 2,
-      opacity: 0.5
-    }
-  };
-}
-
-function addSavedLotsLayer(map) {
-  if (!window.currentLead || !window.leadSavedLots || window.leadSavedLots.size === 0) {
-    return;
-  }
-
-  const savedLots = lotData.filter(lot =>
-    window.leadSavedLots.has(lot.name) &&
-    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
-  );
-
-  if (savedLots.length === 0) return;
-
-  const features = savedLots.map(savedPolygonFeature);
-
-  if (map.getSource('saved-lots')) {
-    map.getSource('saved-lots').setData({
-      type: 'FeatureCollection',
-      features
-    });
-    return;
-  }
-
-  map.addSource('saved-lots', {
-    type: 'geojson',
-    data: {
-      type: 'FeatureCollection',
-      features
-    }
-  });
-
-  // Primary fill with pulsating opacity
-  map.addLayer({
-    id: 'saved-lots-layer',
-    type: 'fill',
-    source: 'saved-lots',
-    paint: {
-      'fill-color': CONFIG.colors.primary,
-      'fill-opacity': ['get', 'opacity']
-    }
-  }, 'lots-final-available');
-
-  // Primary color outline
-  map.addLayer({
-    id: 'saved-lots-outline',
-    type: 'line',
-    source: 'saved-lots',
-    paint: {
-      'line-color': CONFIG.colors.primary,
-      'line-width': 2,
-      'line-opacity': 1
-    }
-  }, 'lots-final-click');
-
-  // Start animation
-  startSavedLotsPulse(map);
-}
-
-function refreshSavedLotsLayer() {
-  if (!window.map) return;
-
-  const savedLots = lotData.filter(lot =>
-    window.leadSavedLots?.has(lot.name) &&
-    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
-  );
-
-  const features = savedLots.map(savedPolygonFeature);
-
-  const source = window.map.getSource('saved-lots');
-  if (source) {
-    source.setData({
-      type: 'FeatureCollection',
-      features
-    });
-  } else if (savedLots.length > 0) {
-    addSavedLotsLayer(window.map);
-  }
-}
-
-function startSavedLotsPulse(map) {
-  let t = 0;
-
-  function frame() {
-    t += 0.05;
-
-    const source = map.getSource('saved-lots');
-    if (!source || !source._data) return;
-
-    const updated = {
-      ...source._data,
-      features: source._data.features.map(f => {
-        const phase = f.properties?.phase ?? 0;
-        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
-        return {
-          ...f,
-          properties: {
-            ...f.properties,
-            opacity
-          }
-        };
-      })
-    };
-
-    source.setData(updated);
-    requestAnimationFrame(frame);
-  }
-
-  requestAnimationFrame(frame);
-}
-</script>
+</script> 
 
 
 
@@ -6133,7 +6284,7 @@ function extractLotNumber(lotName) {
   const prefixes = CONFIG.lotPrefixes;
 
   // Get all prefix values and sort by length (longest first) to handle overlapping prefixes
-  // This ensures 'lotinvertasb' is matched before 'lotinverta'
+  // This ensures more specific prefixes are matched before generic ones
   const sortedPrefixes = Object.values(prefixes).sort((a, b) => b.length - a.length);
 
   let cleanName = lotName;
@@ -6477,42 +6628,13 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const priceM2Formatted = priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const totalPriceFormatted = totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Get pricing config for this community
-  const pricingConfig = typeof getCommunityPricing === 'function'
-    ? getCommunityPricing(CURRENT_CLIENT, lot.fraccionamiento)
-    : null;
-
-  // Build down payment options HTML
-  let downPaymentOptionsHtml = '';
-  if (pricingConfig) {
-    const { min, max, step } = pricingConfig.downPayment;
-    for (let pct = min; pct <= max; pct += step) {
-      downPaymentOptionsHtml += `<option value="${pct}">${pct}%</option>`;
-    }
-  }
-
-  // Build installments options HTML and INTEREST_RATES object
-  let installmentsOptionsHtml = '';
-  const INTEREST_RATES = {};
-  if (pricingConfig) {
-    const terms = pricingConfig.terms;
-    terms.forEach((term, idx) => {
-      const selected = idx === terms.length - 1 ? ' selected' : '';
-      installmentsOptionsHtml += `<option value="${term.months}"${selected}>${term.months}</option>`;
-      INTEREST_RATES[term.months] = term.interest / 100;
-    });
-  }
-
-  // Default interest rate (last term's rate or 0)
-  const defaultInterestRate = pricingConfig ? pricingConfig.terms[pricingConfig.terms.length - 1].interest : 0;
-
   detailRow.innerHTML = `
   <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
     <!-- Top row: Lot name on left, calculation centered -->
     <div style="display: flex; align-items: center; justify-content: center; width: 100%; position: relative;">
       <!-- Lot name on left (smaller, two rows) -->
       <div class="lot-left" style="position: absolute; left: 0; align-items: flex-end !important; text-align: right !important; transform: scale(0.75); transform-origin: left center;">
-        <div class="lote-label">MZ-L</div>
+        <div class="lote-label">LOTE</div>
         <div class="lote-number" style="text-align: right !important; margin-left: 0 !important;">${lot.number}</div>
       </div>
 
@@ -6525,119 +6647,98 @@ document.getElementById('authControls').classList.add('hide-in-detail');
     </div>
 
     <!-- Big total price with more space above -->
-    <div style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
+    <div id="bigTotalPrice" style="margin-top: 12px; font-size: 48px; font-weight: 700; color: ${CONFIG.colors.textDark};">
       $${totalPriceFormatted}<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>
     </div>
     <div style="font-size: 13px; color: ${CONFIG.colors.textLight}; text-align: right; width: 100%; margin-top: -8px;">
-      Precio de contado
+      Precio de preventa
     </div>
     <div style="width: 100%; height: 1px; background: ${CONFIG.colors.grayLight}; margin: 0px;"></div>
 
-    ${pricingConfig ? `
-    <!-- Financing Calculator -->
-    <div style="margin-top: 6px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; position: relative;">
-      <!-- Row 1: Down payment % + Enganche amount -->
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="downPaymentCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${downPaymentOptionsHtml}
-          </select>
-        </div>
-        <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Enganche: <span id="downPaymentAmount" style="color: ${CONFIG.colors.textLight};">$${(totalPrice * (pricingConfig.downPayment.min / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+    <!-- Financing Calculator - Two Column Layout -->
+    <div style="margin-top: 6px; width: 100%; display: flex; gap: 16px; position: relative;">
+      <!-- Left Column: Esquema de pagos -->
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 13.5px; font-weight: 600; color: ${CONFIG.colors.textLight};">Esquema de pagos</div>
+        <select id="downPaymentCalc" style="width: 100%; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
+          <option value="25">25/45/30</option>
+          <option value="50">50/50</option>
+          <option value="85">85/15</option>
+        </select>
+
+        <div style="font-size: 13.5px; color: ${CONFIG.colors.textLight};">
+          Descuento: <span id="discountDisplay" style="font-weight: 600;">0%</span>
         </div>
       </div>
-
-      <!-- Row 2: Months + Monthly payment -->
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 80px;">
-          <select id="installmentsCalc" style="width: 80px; padding: 6px 10px; border: 2px solid ${CONFIG.colors.primary}; border-radius: 6px; font-size: 18px; font-weight: 600; color: ${CONFIG.colors.textLight}; background: white; cursor: pointer; outline: none; font-family: '${CONFIG.misc.fontFamily}', Arial, sans-serif;">
-            ${installmentsOptionsHtml}
-          </select>
+      <!-- Right Column: Payment details -->
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
+        <div style="font-size: 13.5px; color: ${CONFIG.colors.textLight};">
+          Enganche: <span id="downPaymentAmount" style="font-weight: 700;">$${(totalPrice * 0.25).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
-        <div style="font-size: 18px; color: ${CONFIG.colors.textLight};">
-          Mensualidades: <span style="color: ${CONFIG.colors.textDark}; font-weight: 600; font-size: 22px;"><span id="monthlyPayment" style="text-decoration: underline;">$0.00</span><span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">/MES</span></span>
+        <div id="mensualidadesRow" style="font-size: 13.5px; color: ${CONFIG.colors.textLight};">
+          24 Meses: <span id="monthlyPayment" style="font-weight: 700;">$${(totalPrice * 0.45 / 24).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
-      </div>
-
-      <!-- Tasa and Precio financiado on same line -->
-      <div style="width: 100%; display: flex; justify-content: space-between; margin-top: -4px; font-size: 13px; color: ${CONFIG.colors.textLight};">
-        <div style="width: 80px; text-align: center;">
-          <span>Tasa <span id="financingRate">${defaultInterestRate}</span>%</span>
-        </div>
-        <div style="text-align: right;">
-          <span>Financiado: <span id="financingTotalPrice">$0.00</span></span>
+        <div id="financingInfo" style="font-size: 13.5px; color: ${CONFIG.colors.textLight};">
+          Al Escriturar: <span id="financingTotalPrice" style="font-weight: 700;">$${(totalPrice * 0.30).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
       </div>
     </div>
-    ` : `
-    <!-- No pricing available - Contact for pricing -->
-    <div style="margin-top: 12px; width: 100%; text-align: center; padding: 16px; background: ${CONFIG.colors.grayVeryLight}; border-radius: 8px;">
-      <div style="font-size: 16px; color: ${CONFIG.colors.textLight};">
-        Contáctanos para conocer opciones de financiamiento
-      </div>
-    </div>
-    `}
   </div>
 `;
 
   detailContainer.appendChild(detailRow);
 
-  // Initialize calculator (only if pricing config exists)
-  if (pricingConfig) {
-    const totalPriceNum = totalPrice;
+  // Initialize presale payment calculator
+  const totalPriceNum = totalPrice;
 
-    function calculateMonthlyPayment(principal, annualRate, months) {
-      const monthlyRate = annualRate / 12;
-      if (monthlyRate === 0) return principal / months;
-      const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-      const denominator = Math.pow(1 + monthlyRate, months) - 1;
-      return numerator / denominator;
+  function updatePresaleCalculations() {
+    const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
+    const discountDisplay = document.getElementById('discountDisplay');
+    const mensualidadesRow = document.getElementById('mensualidadesRow');
+    const monthlyPayment = document.getElementById('monthlyPayment');
+    const financingTotalPrice = document.getElementById('financingTotalPrice');
+    const bigTotalPrice = document.getElementById('bigTotalPrice');
+
+    if (downPaymentPercent === 0.25) {
+      // 25/45/30: 25% enganche, 45% in 24 months, 30% on deeds - no discount
+      discountDisplay.textContent = '0%';
+      mensualidadesRow.style.display = '';
+      const monthly = (totalPriceNum * 0.45) / 24;
+      monthlyPayment.textContent = '$' + monthly.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      financingTotalPrice.textContent = '$' + (totalPriceNum * 0.30).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // Big price shows full price
+      bigTotalPrice.innerHTML = '$' + totalPriceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+    } else if (downPaymentPercent === 0.50) {
+      // 50/50: 50% enganche, 50% contra escrituras - 5% discount
+      const discountedPrice = totalPriceNum * 0.95;
+      discountDisplay.textContent = '5%';
+      mensualidadesRow.style.display = 'none';
+      financingTotalPrice.textContent = '$' + (discountedPrice * 0.50).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // Big price shows discounted price
+      bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
+    } else if (downPaymentPercent === 0.85) {
+      // 85/15: 85% enganche, 15% contra escrituras - 12% discount
+      const discountedPrice = totalPriceNum * 0.88;
+      discountDisplay.textContent = '12%';
+      mensualidadesRow.style.display = 'none';
+      financingTotalPrice.textContent = '$' + (discountedPrice * 0.15).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // Big price shows discounted price
+      bigTotalPrice.innerHTML = '$' + discountedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + `<span style="font-size: 60%; vertical-align: super; font-weight: 600; color: ${CONFIG.colors.textTan};">MXN</span>`;
     }
 
-    function updateCalculations() {
-      const downPaymentPercent = parseFloat(document.getElementById('downPaymentCalc').value) / 100;
-      const months = parseInt(document.getElementById('installmentsCalc').value);
-      const interestRate = INTEREST_RATES[months] || 0;
-
-      const downPaymentAmount = totalPriceNum * downPaymentPercent;
-      const amountFinanced = totalPriceNum - downPaymentAmount;
-      const monthlyPayment = calculateMonthlyPayment(amountFinanced, interestRate, months);
-
-      const monthlyPaymentFormatted = '$' + monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const totalFinancingPrice = downPaymentAmount + (monthlyPayment * months);
-
-      document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      document.getElementById('monthlyPayment').textContent = monthlyPaymentFormatted;
-
-      // Update financing header
-      document.getElementById('financingRate').textContent = (interestRate * 100).toFixed(0);
-      document.getElementById('financingTotalPrice').textContent = '$' + totalFinancingPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    // Add event listeners
-    setTimeout(() => {
-      // Check URL parameters and set values if present
-      // Support both new short params (a, m, i) and old long params for backwards compatibility
-      const urlParams = new URLSearchParams(window.location.search);
-      const downpaymentParam = urlParams.get('a') || urlParams.get('downpayment');
-      const monthsParam = urlParams.get('m') || urlParams.get('months');
-
-      const downPaymentSelect = document.getElementById('downPaymentCalc');
-      const installmentsSelect = document.getElementById('installmentsCalc');
-
-      if (downpaymentParam && downPaymentSelect) {
-        downPaymentSelect.value = downpaymentParam;
-      }
-      if (monthsParam && installmentsSelect) {
-        installmentsSelect.value = monthsParam;
-      }
-
-      downPaymentSelect?.addEventListener('change', updateCalculations);
-      installmentsSelect?.addEventListener('change', updateCalculations);
-      updateCalculations(); // Initial calculation with URL params
-    }, 100);
+    // Update enganche amount (based on discounted price for 50/50 and 85/15)
+    const downPaymentAmount = downPaymentPercent === 0.50 ? (totalPriceNum * 0.95 * 0.50) :
+                              downPaymentPercent === 0.85 ? (totalPriceNum * 0.88 * 0.85) :
+                              (totalPriceNum * downPaymentPercent);
+    document.getElementById('downPaymentAmount').textContent = '$' + downPaymentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+
+  // Add event listener
+  setTimeout(() => {
+    const downPaymentSelect = document.getElementById('downPaymentCalc');
+    downPaymentSelect?.addEventListener('change', updatePresaleCalculations);
+    updatePresaleCalculations(); // Initial calculation
+  }, 100);
 
   // CTA Buttons Section
   const ctaSection = document.createElement('div');
@@ -6656,14 +6757,13 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'cta-buttons-row';
   buttonsRow.style.position = 'relative';
-  // Show COTIZAR when authenticated OR agent, CÓMO LLEGAR otherwise
+  // Show COTIZAR when authenticated, CÓMO LLEGAR when not
   const isAuthenticated = window.isUserAuthenticated === true;
-  const isAgent = window.isAgent === true;
   const apartarEnabled = getCommunityByFracc(CURRENT_CLIENT, lot.fraccionamiento)?.apartarEnabled === true;
   buttonsRow.innerHTML = `
     <button class="cta-button first" id="separarBtn" translate="no"${!apartarEnabled ? ' disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>APARTAR</button>
-    ${(isAuthenticated || isAgent)
-      ? `<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>`
+    ${isAuthenticated
+      ? `<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZACIÓN*</button>`
       : `<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>`
     }
     <button class="cta-button second" id="chatearBtn" translate="no">CHATEAR</button>
@@ -6700,38 +6800,390 @@ document.getElementById('authControls').classList.add('hide-in-detail');
         console.error('Payment view not available or lot data missing');
       }
     } else if (e.target.id === 'descargarPdfBtn') {
-      // Generate PDF quote
+      // Expand modal into cotizador mode
       e.stopPropagation();
-
-      // Prompt user for dynamic text
+      openCotizadorInModal(lot);
+    } else if (e.target.id === '__disabled_old_cotizar__') {
+      // OLD PDF generation code (disabled - replaced by cotizador page)
+      e.stopPropagation();
       const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
-      if (!dynamicText) return; // User cancelled
+      if (!dynamicText) return;
 
-      // Track agent quote if this is an agent
-      if (window.isAgent && window.currentLead?.phone) {
-        window.supabaseClient
-          .from('agent_quotes')
-          .insert({
-            agent_phone: window.currentLead.phone,
-            client_id: CURRENT_CLIENT,
-            lot_name: lot?.name || null,
-            lead_name: dynamicText
-          })
-          .then(({ error }) => {
-            if (error) console.error('Error tracking agent quote:', error);
-            else console.log('✅ Agent quote tracked:', dynamicText);
+      // Create progress overlay
+      const progressOverlay = document.createElement('div');
+      progressOverlay.id = 'pdf-progress-overlay';
+      progressOverlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+      `;
+      progressOverlay.innerHTML = `
+        <div style="background: white; padding: 32px 48px; border-radius: 12px; text-align: center; font-family: Arial, sans-serif;">
+          <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Generando PDF...</div>
+          <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Cargando plantilla...</div>
+          <div style="width: 200px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
+            <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: ${CONFIG.colors?.primary || '#007bff'}; transition: width 0.3s;"></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(progressOverlay);
+
+      const progressText = document.getElementById('pdf-progress-text');
+      const progressBar = document.getElementById('pdf-progress-bar');
+
+      // Calculate lot values for placeholders
+      function getLotValues(lot, dynamicText) {
+        const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
+        const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+        const totalPrice = size * priceM2;
+
+        // Calculate category based on priceM2 tier
+        // Get unique priceM2 values from all lots, sorted descending (highest first)
+        const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+        const uniquePrices = [...new Set(allLotsData.map(l =>
+          parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+        ))].filter(p => p > 0).sort((a, b) => b - a);
+
+        // Determine category: AAA+ (highest), AAA (2nd), AA (3rd), A (lowest)
+        const categories = ['AAA+', 'AAA', 'AA', 'A'];
+        // Find price tier index (use tolerance for floating point comparison)
+        const priceIndex = uniquePrices.findIndex(p => Math.abs(p - priceM2) < 0.01);
+        const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+        // Format currency helper
+        const formatCurrency = (num) => '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const formatNumber = (num) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        // Discount calculations
+        const discount5 = totalPrice * 0.05;
+        const discount12 = totalPrice * 0.12;
+        const priceWith5Discount = totalPrice * 0.95;
+        const priceWith12Discount = totalPrice * 0.88;
+
+        // 25% plan: no discount, 25% down, 45% in 24 months, 30% contra escritura
+        const downpayment25 = totalPrice * 0.25;
+        const monthly25 = (totalPrice * 0.45) / 24;
+        const contraEscritura30 = totalPrice * 0.30;
+
+        // 50% plan: 5% discount, 50% down, 50% contra escritura
+        const downpayment50 = priceWith5Discount * 0.50;
+        const contraEscritura50 = priceWith5Discount * 0.50;
+
+        // 85% plan: 12% discount, 85% down, 15% contra escritura
+        const downpayment85 = priceWith12Discount * 0.85;
+        const contraEscritura15 = priceWith12Discount * 0.15;
+
+        return {
+          'dynamicText': dynamicText,
+          'lot.number': lot.number || '',
+          'lot.category': category || 'A',
+          'lot.size': formatNumber(size) + ' m²',
+          'lot.pricePerM2': formatCurrency(priceM2),
+          'lot.totalPrice': formatCurrency(totalPrice),
+          'lot.downpayment25': formatCurrency(downpayment25),
+          'lot.downpayment50': formatCurrency(downpayment50),
+          'lot.downpayment85': formatCurrency(downpayment85),
+          'lot.monthly25': formatCurrency(monthly25),
+          'lot.discount0': formatCurrency(0),
+          'lot.discount5': formatCurrency(discount5),
+          'lot.discount12': formatCurrency(discount12),
+          'lot.priceWith5Discount': formatCurrency(priceWith5Discount),
+          'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
+          'lot.contraEscritura30': formatCurrency(contraEscritura30),
+          'lot.contraEscritura50': formatCurrency(contraEscritura50),
+          'lot.contraEscritura15': formatCurrency(contraEscritura15)
+        };
+      }
+
+      // Replace placeholders in text
+      function replacePlaceholders(text, values) {
+        if (!text) return '';
+        return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+          return values[key.trim()] !== undefined ? values[key.trim()] : match;
+        });
+      }
+
+      // Create hidden container for rendering pages
+      const pdfContainer = document.createElement('div');
+      pdfContainer.id = 'pdf-generation-container';
+      pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+      document.body.appendChild(pdfContainer);
+
+      // Function to create a page with template elements
+      function createPage(pageNum, template, lotValues) {
+        const pdfPage = document.createElement('div');
+        pdfPage.style.cssText = `
+          width: 1224px;
+          height: 1584px;
+          position: relative;
+          background-image: url("https://la-la.land/cpi/pdf/page.${pageNum}.png");
+          background-size: cover;
+          background-repeat: no-repeat;
+          background-position: top left;
+        `;
+
+        // Get page data from template
+        const pageIndex = parseInt(pageNum, 10);
+        const pageData = template?.pages?.[pageIndex];
+
+        if (pageData) {
+          // Render text boxes
+          if (pageData.textBoxes) {
+            pageData.textBoxes.forEach(tb => {
+              const textEl = document.createElement('div');
+              textEl.textContent = replacePlaceholders(tb.content, lotValues);
+              textEl.style.cssText = `
+                position: absolute;
+                left: ${tb.x}px;
+                top: ${tb.y}px;
+                ${tb.width ? `width: ${tb.width}px;` : ''}
+                ${tb.height ? `height: ${tb.height}px;` : ''}
+                font-size: ${tb.fontSize || 24}px;
+                font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+                color: ${tb.color || '#000000'};
+                font-weight: ${tb.bold ? '700' : '400'};
+                font-style: ${tb.italic ? 'italic' : 'normal'};
+                text-decoration: ${tb.underline ? 'underline' : 'none'};
+                text-align: ${tb.textAlign || 'left'};
+                white-space: pre-wrap;
+              `;
+              pdfPage.appendChild(textEl);
+            });
+          }
+
+          // Render tables
+          if (pageData.tables) {
+            pageData.tables.forEach(tableData => {
+              // Get column widths and row heights (with defaults)
+              const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
+              const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
+              const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
+
+              const tableContainer = document.createElement('div');
+              tableContainer.style.cssText = `
+                position: absolute;
+                left: ${tableData.x}px;
+                top: ${tableData.y}px;
+              `;
+
+              const table = document.createElement('table');
+              table.style.cssText = `
+                border-collapse: collapse;
+                table-layout: fixed;
+                width: ${totalWidth}px;
+              `;
+
+              for (let r = 0; r < tableData.rows; r++) {
+                const tr = document.createElement('tr');
+                tr.style.height = rowHeights[r] + 'px';
+
+                for (let c = 0; c < tableData.cols; c++) {
+                  const cellData = tableData.cells?.[r]?.[c];
+                  if (!cellData || cellData.hidden) continue;
+
+                  const td = document.createElement('td');
+                  td.textContent = replacePlaceholders(cellData.content || '', lotValues);
+
+                  // Border properties
+                  const borderWidth = cellData.borderWidth || 1;
+                  const borderStyle = cellData.borderStyle || 'solid';
+                  const borderColor = cellData.borderColor || '#000000';
+                  const borderPosition = cellData.borderPosition || 'all';
+
+                  let borderCss = '';
+                  if (borderPosition === 'bottom') {
+                    borderCss = `border: none; border-bottom: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                  } else if (borderPosition === 'top') {
+                    borderCss = `border: none; border-top: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                  } else {
+                    borderCss = `border: ${borderWidth}px ${borderStyle} ${borderColor};`;
+                  }
+
+                  td.style.cssText = `
+                    width: ${colWidths[c]}px;
+                    height: ${rowHeights[r]}px;
+                    box-sizing: border-box;
+                    overflow: hidden;
+                    background-color: ${cellData.bgColor || '#ffffff'};
+                    color: ${cellData.textColor || '#000000'};
+                    font-family: "${cellData.fontFamily || 'Arial'}", sans-serif;
+                    font-size: ${cellData.fontSize || 14}px;
+                    font-weight: ${cellData.bold ? '700' : '400'};
+                    font-style: ${cellData.italic ? 'italic' : 'normal'};
+                    text-decoration: ${cellData.underline ? 'underline' : 'none'};
+                    ${borderCss}
+                    padding: 0;
+                    text-align: ${cellData.textAlign || 'left'};
+                    vertical-align: middle;
+                  `;
+
+                  if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
+                  if (cellData.rowSpan > 1) td.rowSpan = cellData.rowSpan;
+
+                  tr.appendChild(td);
+                }
+                table.appendChild(tr);
+              }
+
+              tableContainer.appendChild(table);
+              pdfPage.appendChild(tableContainer);
+            });
+          }
+
+          // Render images
+          if (pageData.images) {
+            pageData.images.forEach(imgData => {
+              const imgEl = document.createElement('div');
+
+              // Determine image URL based on type
+              let imageUrl = '';
+              if (imgData.type === '{{lot.landscape}}') {
+                imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_landscape.jpg`;
+              } else if (imgData.type === '{{lot.map}}') {
+                imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_map.jpg`;
+              } else if (imgData.type === 'static' && imgData.url) {
+                imageUrl = imgData.url;
+              }
+
+              imgEl.style.cssText = `
+                position: absolute;
+                left: ${imgData.x}px;
+                top: ${imgData.y}px;
+                width: ${imgData.width}px;
+                height: ${imgData.height}px;
+                background-image: url("${imageUrl}");
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+              `;
+              pdfPage.appendChild(imgEl);
+            });
+          }
+        }
+
+        return pdfPage;
+      }
+
+      // Generate PDF
+      async function generateMultiPagePDF() {
+        // Step 1: Fetch template
+        progressText.textContent = 'Cargando plantilla...';
+        let template = { pages: {} };
+        try {
+          const response = await fetch('/cpi/pdf/pdf-template.json');
+          if (response.ok) {
+            template = await response.json();
+          }
+        } catch (err) {
+          console.warn('Could not load PDF template, using defaults:', err);
+        }
+
+        // Calculate lot values
+        const lotValues = getLotValues(lot, dynamicText);
+
+        // Step 2: Preload ALL images in parallel
+        progressText.textContent = 'Cargando imágenes...';
+        progressBar.style.width = '10%';
+
+        const imagePromises = [];
+
+        // Preload page backgrounds
+        for (let i = 1; i <= 8; i++) {
+          const pageNum = String(i).padStart(3, '0');
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = resolve;
+            img.onerror = resolve;
+            img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
+          }));
+        }
+
+        // Preload lot-specific images (landscape and map)
+        const lotNum = lotValues['lot.number'];
+        if (lotNum) {
+          ['landscape', 'map'].forEach(type => {
+            imagePromises.push(new Promise(resolve => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = resolve;
+              img.onerror = resolve;
+              img.src = `/cpi/pdf/lotcpi1-${lotNum}_${type}.jpg`;
+            }));
           });
+
+          // Preload any static images from the template
+          Object.values(template.pages || {}).forEach(pageData => {
+            (pageData.images || []).forEach(imgData => {
+              if (imgData.type === 'static' && imgData.url) {
+                imagePromises.push(new Promise(resolve => {
+                  const img = new Image();
+                  img.crossOrigin = 'anonymous';
+                  img.onload = resolve;
+                  img.onerror = resolve;
+                  img.src = imgData.url;
+                }));
+              }
+            });
+          });
+        }
+
+        await Promise.all(imagePromises);
+        progressBar.style.width = '40%';
+
+        // Step 3: Generate PDF pages sequentially (required by jsPDF)
+        progressText.textContent = 'Generando PDF...';
+
+        const worker = html2pdf().set({
+          margin: 0,
+          filename: 'CPI-documento.pdf',
+          image: { type: 'jpeg', quality: 1 },
+          html2canvas: { scale: 1, useCORS: true },
+          jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
+        });
+
+        for (let i = 1; i <= 8; i++) {
+          progressText.textContent = `Renderizando página ${i} de 8`;
+          progressBar.style.width = `${40 + (i / 8) * 55}%`;
+
+          const pageNum = String(i).padStart(3, '0');
+
+          // Create page with template elements
+          const page = createPage(pageNum, template, lotValues);
+          pdfContainer.innerHTML = '';
+          pdfContainer.appendChild(page);
+
+          if (i === 1) {
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          } else {
+            await worker.get('pdf').then(pdf => {
+              pdf.addPage([1224, 1584], 'portrait');
+            });
+            await worker.from(page).toContainer().toCanvas().toPdf();
+          }
+        }
+
+        // Save the final PDF
+        progressText.textContent = 'Descargando...';
+        progressBar.style.width = '100%';
+        await worker.save();
+
+        // Clean up
+        document.body.removeChild(pdfContainer);
+        document.body.removeChild(progressOverlay);
       }
 
-      // Generate PDF if function is available
-      if (lot && window.generateMultiPagePDF) {
-        window.generateMultiPagePDF(lot, dynamicText, {});
-      } else {
-        console.error('PDF generation not available or lot data missing');
-        window.showToaster?.('PDF generation not available');
-      }
+      generateMultiPagePDF();
     } else if (e.target.id === 'visitarBtn') {
-      // Open driving directions to this lot
+      // Open driving directions to this lot (shown when not authenticated)
       e.stopPropagation();
 
       // Use the lotMapData already calculated in showDetailViewForLot
@@ -6804,6 +7256,19 @@ backButton.addEventListener('click', () => {
   const plusIcon = document.querySelector('.plus-button .plus-icon');
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const calendly = document.getElementById('calendlyEmbed');
+
+  // Handle cotizador back navigation
+  const cotPanel = document.getElementById('cotizadorPanel');
+  if (cotPanel && cotPanel.style.display !== 'none') {
+    cotPanel.style.display = 'none';
+    document.getElementById('lotDetails').style.display = 'block';
+    const mInfo = document.getElementById('modalInfo');
+    if (mInfo) mInfo.style.display = '';
+    modal.classList.remove('expanded');
+    if (plusIcon) plusIcon.style.display = 'block';
+    if (minusIcon) minusIcon.style.display = 'none';
+    return;
+  }
 
   // 🟢 FIX: Handle 360 viewer back navigation FIRST
   if (modal.classList.contains('viewer-mode')) {
@@ -6933,7 +7398,8 @@ function render() {
 const state = (lot.availability ?? '').toString().toLowerCase();
 const isFeatured  = state === 'featured';
 const isAvailable = state === 'available';
-const isSold      = state === 'sold' || state === 'blocked';
+const isBlocked   = state === 'blocked';
+const isSold      = state === 'sold' || isBlocked;
 
 // Calculate price: (price_m2 × size)
 // Round to nearest thousand first, then decide unit
@@ -6941,15 +7407,15 @@ let calculatedPrice = lot.price;
 let priceUnit = 'MIL';
 if (!isSold && lot.priceM2 && lot.size) {
   const totalPrice = cleanNumber(lot.priceM2) * cleanNumber(lot.size);
+  const roundedPrice = Math.round(totalPrice / 1000) * 1000;
 
-  if (totalPrice >= 1000000) {
-    // 1 million or more: round to nearest thousand, show as MDP with 2 decimals
-    const roundedPrice = Math.round(totalPrice / 1000) * 1000;
+  if (roundedPrice >= 1000000) {
+    // 1 million or more: show as MDP with 2 decimals
     calculatedPrice = (roundedPrice / 1000000).toFixed(2);
     priceUnit = 'MDP';
   } else {
-    // Under 1 million: floor to thousands (never overstate), show as MIL
-    calculatedPrice = Math.floor(totalPrice / 1000).toString();
+    // Under 1 million: show as MIL (in thousands)
+    calculatedPrice = (roundedPrice / 1000).toString();
     priceUnit = 'MIL';
   }
 }
@@ -6960,20 +7426,18 @@ const calculatedPriceFormatted = calculatedPrice.toString().replace(/\B(?=(\d{3}
 // Format price per m2 from Supabase
 const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '');
 
-    const isSaved = window.currentLead && window.leadSavedLots?.has(lot.name);
     if (isFeatured) row.classList.add('info-row--featured');
-    if (isSaved && !isSold) row.classList.add('info-row--saved');
 
 row.innerHTML = `
   <div class="lot-left">
-    <div class="lote-label">MZ-L</div>
+    <div class="lote-label">LOTE</div>
     <div class="lote-number">${lot.number}</div>
   </div>
 
       <div class="lot-middle ${isSold ? 'lot-middle--sold' : ''}">
         ${
           isSold
-            ? `<div style="font-size:48px; font-weight:700; color:${CONFIG.colors.primary};">VENDIDO</div>`
+            ? `<div style="font-size:48px; font-weight:700; color:${CONFIG.colors.primary};">${isBlocked ? 'BLOQUEADO' : 'VENDIDO'}</div>`
             : `${lot.size}<span class="sup">M2</span>`
         }
       </div>
@@ -7006,12 +7470,6 @@ row.innerHTML = `
               <path d="M23 4L23 10 17 10M1 20L1 14 7 14M3.51 9a9 9 0 0114.85-3.36L23 10M20.49 15a9 9 0 01-14.85 3.36L1 14"/>
             </svg>
           </button>
-        ` : (window.currentLead && !isSold) ? `
-          <button class="row-action-btn heart-btn ${window.leadSavedLots?.has(lot.name) ? 'saved' : ''}" title="Guardar" data-lot-name="${lot.name}">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="${window.leadSavedLots?.has(lot.name) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-            </svg>
-          </button>
         ` : ''}
       </div>
 
@@ -7036,22 +7494,6 @@ row.innerHTML = `
       const label = document.createElement('div');
       label.classList.add('featured-label');
       label.textContent = 'RECOMENDADO';
-      row.appendChild(label);
-    }
-
-    // Add saved lot styling (similar to featured but with heart)
-    if (isSaved && !isSold && !isFeatured) {
-      const left = document.createElement('div');
-      left.classList.add('border-left', 'border-left--saved');
-      row.appendChild(left);
-
-      const top = document.createElement('div');
-      top.classList.add('border-top', 'border-top--saved');
-      row.appendChild(top);
-
-      const label = document.createElement('div');
-      label.classList.add('saved-label');
-      label.innerHTML = 'FAVORITO';
       row.appendChild(label);
     }
 
@@ -7170,61 +7612,6 @@ function setupRowActionButtons() {
         if (typeof window.cycleSelectedLotAvailability === 'function') {
           window.cycleSelectedLotAvailability();
         }
-        return;
-      }
-
-      // Handle heart button clicks (save lot for leads)
-      const heartBtn = e.target.closest('.row-action-btn.heart-btn');
-      if (heartBtn) {
-        e.stopPropagation();
-        heartBtn.closest('.info-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const lotName = heartBtn.dataset.lotName;
-
-        if (!window.currentLead || !window.supabaseClient) {
-          console.error('Lead not authenticated');
-          return;
-        }
-
-        const isSaved = window.leadSavedLots?.has(lotName);
-
-        try {
-          if (isSaved) {
-            // Remove from saved
-            await window.supabaseClient
-              .from('lead_saved_lots')
-              .delete()
-              .eq('lead_id', window.currentLead.id)
-              .eq('lot_name', lotName)
-              .eq('client', CURRENT_CLIENT);
-
-            window.leadSavedLots.delete(lotName);
-            heartBtn.classList.remove('saved');
-            heartBtn.querySelector('svg').setAttribute('fill', 'none');
-            showToaster('Removed from favorites');
-          } else {
-            // Add to saved
-            await window.supabaseClient
-              .from('lead_saved_lots')
-              .insert({
-                lead_id: window.currentLead.id,
-                lot_name: lotName,
-                client: CURRENT_CLIENT
-              });
-
-            window.leadSavedLots.add(lotName);
-            heartBtn.classList.add('saved');
-            heartBtn.querySelector('svg').setAttribute('fill', 'currentColor');
-            showToaster('Saved to favorites');
-          }
-
-          // Refresh map layer and list
-          if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
-          if (typeof render === 'function') render();
-        } catch (err) {
-          console.error('Error saving lot:', err);
-          showToaster('Error saving');
-        }
-        return;
       }
     });
   }
@@ -7238,12 +7625,14 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   }
 
   // Authentication check - trigger login if not authenticated
-  const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
-  const isLoggedIn = !!(session && session.user);
-  if (!isLoggedIn) {
-    showToaster('Please login to edit prices');
-    document.getElementById('globe-login-btn')?.click();
-    return;
+  if (!IS_DEMO) {
+    const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
+    const isLoggedIn = !!(session && session.user);
+    if (!isLoggedIn) {
+      showToaster('Please login to edit prices');
+      document.getElementById('globe-login-btn')?.click();
+      return;
+    }
   }
 
   // Strip commas and parse values
@@ -7280,6 +7669,15 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   }
 
   console.log(`Updating ${affectedLots.length} lots from ${oldValue} to ${newValue}`);
+
+  if (IS_DEMO) {
+    lotData.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); lot.price_m2 = newValue; } });
+    baseLots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
+    lots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
+    showToaster(`✓ Updated ${affectedLots.length} lot${affectedLots.length > 1 ? 's' : ''} (demo)`);
+    render(); highlightCenter(); updateScrollbar();
+    return;
+  }
 
   try {
     // Update all matching lots in Supabase using bulk .in() operation
@@ -7472,18 +7870,6 @@ function highlightCenter(isClamping = false) {
           void row.offsetWidth;
           row.classList.add('animate-featured');
           animatedFeaturedLots.add(featureIndex);
-        } else {
-          row.classList.add('animate-featured');
-        }
-      }
-
-      // Animate saved lots (same as featured)
-      if (row.classList.contains('info-row--saved')) {
-        const savedIndex = row.dataset.index;
-        if (!animatedFeaturedLots.has('saved-' + savedIndex)) {
-          void row.offsetWidth;
-          row.classList.add('animate-featured');
-          animatedFeaturedLots.add('saved-' + savedIndex);
         } else {
           row.classList.add('animate-featured');
         }
@@ -7782,6 +8168,606 @@ modalInfo.addEventListener('wheel', (e) => {
   });
 });
 
+// ===== COTIZADOR ESPECIAL (in-modal) =====
+
+const COT_PCT_FIELDS = ['cotSeparacionPct', 'cotEnganchePct', 'cotMensualidadesPct', 'cotAnualidadesPct', 'cotEscrituracionPct'];
+
+let cotCurrentLot = null;
+
+function cotFormatCurrency(num) {
+  return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function cotFormatNumber(num) {
+  return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function cotFormatPct(num) {
+  const s = num.toFixed(1);
+  return (s.endsWith('.0') ? Math.round(num).toString() : s) + '%';
+}
+
+const COT_MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+const COT_FECHA_FIELDS = [
+  { month: 'cotFechaSeparacionMonth', year: 'cotFechaSeparacionYear', key: 'lot.fechaSeparacion' },
+  { month: 'cotFechaEngancheMonth', year: 'cotFechaEngancheYear', key: 'lot.fechaEnganche' },
+  { month: 'cotFechaMensualidadesMonth', year: 'cotFechaMensualidadesYear', key: 'lot.fechaMensualidades' },
+  { month: 'cotFechaAnualidadesMonth', year: 'cotFechaAnualidadesYear', key: 'lot.fechaAnualidades' },
+  { month: 'cotFechaEscrituracionMonth', year: 'cotFechaEscrituracionYear', key: 'lot.fechaEscrituracion' }
+];
+
+// Populate date dropdowns with months and years
+(function initDateDropdowns() {
+  const now = new Date();
+  const curMonth = now.getMonth(); // 0-based
+  const curYear = now.getFullYear();
+  COT_FECHA_FIELDS.forEach(f => {
+    const monthSel = document.getElementById(f.month);
+    const yearSel = document.getElementById(f.year);
+    COT_MONTHS.forEach((m, i) => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      if (i === curMonth) opt.selected = true;
+      monthSel.appendChild(opt);
+    });
+    for (let y = curYear; y <= curYear + 10; y++) {
+      const opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y;
+      if (y === curYear) opt.selected = true;
+      yearSel.appendChild(opt);
+    }
+  });
+})();
+
+// Toggle switch: convert between % and $ display
+function cotIsToggleDollar(fieldId) {
+  const btn = document.querySelector(`.cot-toggle-btn[data-field="${fieldId}"]`);
+  return btn && btn.classList.contains('active');
+}
+
+function cotOnToggleSwitch(fieldId) {
+  const btn = document.querySelector(`.cot-toggle-btn[data-field="${fieldId}"]`);
+  const input = document.getElementById(fieldId);
+  const unitId = fieldId.replace('Pct', 'Unit');
+  const unitEl = document.getElementById(unitId);
+  if (!btn || !input || !unitEl) return;
+
+  // Toggle active state
+  const wasDollar = btn.classList.contains('active');
+  btn.classList.toggle('active');
+  const nowDollar = !wasDollar;
+
+  // Compute base price for conversion
+  const size = parseFloat(String((cotCurrentLot||{}).size || (cotCurrentLot||{}).rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+  const pm2 = parseFloat(String((cotCurrentLot||{}).priceM2 || (cotCurrentLot||{}).price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+  const totalPrice = size * pm2;
+
+  const basePrice = (fieldId === 'cotDescuentoPct') ? totalPrice : (function() {
+    const descPct = cotReadPct('cotDescuentoPct', totalPrice, 0);
+    return totalPrice - (totalPrice * descPct / 100);
+  })();
+
+  if (nowDollar) {
+    const pct = parseFloat(input.value) || 0;
+    input.value = (basePrice * pct / 100).toFixed(2);
+    input.step = '100'; input.min = '0'; input.max = '';
+    unitEl.textContent = '$';
+  } else {
+    const dollar = parseFloat(input.value) || 0;
+    input.value = basePrice > 0 ? (dollar / basePrice * 100).toFixed(1) : '0';
+    input.step = '0.5'; input.min = '0'; input.max = '100';
+    unitEl.textContent = '%';
+  }
+  cotRecalculate();
+}
+
+// Read a pct field value, converting from $ if toggle is active
+function cotReadPct(fieldId, totalPrice, precioFinal) {
+  const val = parseFloat(document.getElementById(fieldId).value) || 0;
+  if (cotIsToggleDollar(fieldId)) {
+    if (fieldId === 'cotDescuentoPct') {
+      return totalPrice > 0 ? (val / totalPrice * 100) : 0;
+    } else {
+      return precioFinal > 0 ? (val / precioFinal * 100) : 0;
+    }
+  }
+  return val;
+}
+
+function cotGetBalancer() {
+  return document.getElementById('cotBalancerField').value;
+}
+
+function cotOnBalancerChange() {
+  const balancer = cotGetBalancer();
+  COT_PCT_FIELDS.forEach(id => {
+    const isBalancer = (id === balancer);
+    document.getElementById(id).readOnly = isBalancer;
+    const btn = document.querySelector(`.cot-toggle-btn[data-field="${id}"]`);
+    if (btn) {
+      btn.disabled = isBalancer;
+      if (isBalancer && btn.classList.contains('active')) {
+        // Force balancer back to % mode
+        btn.classList.remove('active');
+        const unitId = id.replace('Pct', 'Unit');
+        const unitEl = document.getElementById(unitId);
+        if (unitEl) unitEl.textContent = '%';
+        // Convert value back to %
+        const input = document.getElementById(id);
+        const size = parseFloat(String((cotCurrentLot||{}).size || (cotCurrentLot||{}).rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+        const pm2 = parseFloat(String((cotCurrentLot||{}).priceM2 || (cotCurrentLot||{}).price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+        const totalPrice = size * pm2;
+        const descPct = cotReadPct('cotDescuentoPct', totalPrice, 0);
+        const precioFinal = totalPrice - (totalPrice * descPct / 100);
+        const dollar = parseFloat(input.value) || 0;
+        input.value = precioFinal > 0 ? (dollar / precioFinal * 100).toFixed(1) : '0';
+        input.step = '0.5'; input.min = '0'; input.max = '100';
+      }
+    }
+  });
+  cotRecalculate();
+}
+
+function cotRecalculate() {
+  if (!cotCurrentLot) return;
+
+  const size = parseFloat(String(cotCurrentLot.size || cotCurrentLot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+  const pm2 = parseFloat(String(cotCurrentLot.priceM2 || cotCurrentLot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+  const totalPrice = size * pm2;
+
+  // Read descuento (may be in $ mode)
+  const descuentoPct = cotReadPct('cotDescuentoPct', totalPrice, 0);
+  const descuentoAmount = totalPrice * (descuentoPct / 100);
+  const precioFinal = totalPrice - descuentoAmount;
+
+  // Read non-balancer fields once, keep full precision in a map
+  const balancer = cotGetBalancer();
+  const pctMap = {};
+  COT_PCT_FIELDS.forEach(id => {
+    if (id !== balancer) pctMap[id] = cotReadPct(id, totalPrice, precioFinal);
+  });
+  const otherSum = Object.values(pctMap).reduce((s, v) => s + v, 0);
+  const balancerValue = 100 - otherSum;
+  pctMap[balancer] = balancerValue;
+  // Display rounded value in the balancer input (display only)
+  document.getElementById(balancer).value = Math.round(balancerValue * 10) / 10;
+
+  // Use pctMap directly — never re-read from DOM — so math is exact
+  const separacionPct = pctMap['cotSeparacionPct'];
+  const enganchePct = pctMap['cotEnganchePct'];
+  const mensualidadesPct = pctMap['cotMensualidadesPct'];
+  const anualidadesPct = pctMap['cotAnualidadesPct'];
+  const escrituracionPct = pctMap['cotEscrituracionPct'];
+
+  const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
+  const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
+  const numAnualidades = parseInt(document.getElementById('cotNumAnualidades').value) || 1;
+
+  const separacion = precioFinal * (separacionPct / 100);
+  const engancheAmount = precioFinal * (enganchePct / 100);
+  const enganche = numEnganche > 0 ? engancheAmount / numEnganche : 0;
+  const mensualidadesTotal = precioFinal * (mensualidadesPct / 100);
+  const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
+  const anualidadesTotal = precioFinal * (anualidadesPct / 100);
+  const anualidad = numAnualidades > 0 ? anualidadesTotal / numAnualidades : 0;
+  const escrituracion = precioFinal * (escrituracionPct / 100);
+
+  document.getElementById('cotTotalPrice').value = cotFormatCurrency(totalPrice);
+  // Descuento: show opposite value ($ mode → show %, % mode → show $)
+  document.getElementById('cotDescuentoAmountDisplay').textContent =
+    cotIsToggleDollar('cotDescuentoPct') ? cotFormatPct(descuentoPct) : cotFormatCurrency(descuentoAmount);
+  document.getElementById('cotPrecioFinal').value = cotFormatCurrency(precioFinal);
+
+  // Payment fields: show opposite value on right side
+  document.getElementById('cotSeparacionDisplay').textContent =
+    cotIsToggleDollar('cotSeparacionPct') ? cotFormatPct(separacionPct) : cotFormatCurrency(separacion);
+  document.getElementById('cotEngancheDisplay').textContent =
+    cotIsToggleDollar('cotEnganchePct') ? cotFormatPct(enganchePct) : cotFormatCurrency(engancheAmount);
+  document.getElementById('cotEnganchePerPayDisplay').textContent = cotFormatCurrency(enganche) + '/pago';
+  document.getElementById('cotMensualidadesTotalDisplay').textContent =
+    cotIsToggleDollar('cotMensualidadesPct') ? cotFormatPct(mensualidadesPct) : cotFormatCurrency(mensualidadesTotal);
+  document.getElementById('cotMensualidadMesDisplay').textContent = cotFormatCurrency(mensualidadMes) + '/mes';
+  document.getElementById('cotAnualidadesTotalDisplay').textContent =
+    cotIsToggleDollar('cotAnualidadesPct') ? cotFormatPct(anualidadesPct) : cotFormatCurrency(anualidadesTotal);
+  document.getElementById('cotAnualidadDisplay').textContent = cotFormatCurrency(anualidad) + '/pago';
+  document.getElementById('cotEscrituracionDisplay').textContent =
+    cotIsToggleDollar('cotEscrituracionPct') ? cotFormatPct(escrituracionPct) : cotFormatCurrency(escrituracion);
+  document.getElementById('cotTotalDisplay').value = cotFormatCurrency(precioFinal);
+
+  const errorMsg = document.getElementById('cotErrorMsg');
+  if (balancerValue < 0) {
+    errorMsg.textContent = 'Error: Los porcentajes exceden 100%';
+    errorMsg.style.display = 'block';
+  } else {
+    errorMsg.style.display = 'none';
+  }
+}
+
+function cotBuildLotValues() {
+  if (!cotCurrentLot) return null;
+
+  const size = parseFloat(String(cotCurrentLot.size || cotCurrentLot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+  const pm2 = parseFloat(String(cotCurrentLot.priceM2 || cotCurrentLot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+  const totalPrice = size * pm2;
+  const lotNum = cotCurrentLot.number || '';
+
+  const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+  const uniquePrices = [...new Set(allLotsData.map(l =>
+    parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+  ))].filter(p => p > 0).sort((a, b) => b - a);
+  const categories = ['AAA+', 'AAA', 'AA', 'A'];
+  const priceIndex = uniquePrices.findIndex(p => Math.abs(p - pm2) < 0.01);
+  const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+  const descuentoPct = cotReadPct('cotDescuentoPct', totalPrice, 0);
+  const descuentoAmount = totalPrice * (descuentoPct / 100);
+  const precioFinal = totalPrice - descuentoAmount;
+
+  // Use same pctMap approach as cotRecalculate — full precision, no DOM round-trip
+  const balancerId = cotGetBalancer();
+  const pctMap = {};
+  COT_PCT_FIELDS.forEach(id => {
+    if (id !== balancerId) pctMap[id] = cotReadPct(id, totalPrice, precioFinal);
+  });
+  const otherSum = Object.values(pctMap).reduce((s, v) => s + v, 0);
+  pctMap[balancerId] = 100 - otherSum;
+
+  const separacionPct = pctMap['cotSeparacionPct'];
+  const enganchePct = pctMap['cotEnganchePct'];
+  const mensualidadesPct = pctMap['cotMensualidadesPct'];
+  const anualidadesPct = pctMap['cotAnualidadesPct'];
+  const escrituracionPct = pctMap['cotEscrituracionPct'];
+
+  const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
+  const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
+  const numAnualidades = parseInt(document.getElementById('cotNumAnualidades').value) || 1;
+
+  const separacion = precioFinal * (separacionPct / 100);
+  const engancheAmount = precioFinal * (enganchePct / 100);
+  const enganche = numEnganche > 0 ? engancheAmount / numEnganche : 0;
+  const mensualidadesTotal = precioFinal * (mensualidadesPct / 100);
+  const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
+  const anualidadesTotal = precioFinal * (anualidadesPct / 100);
+  const anualidad = numAnualidades > 0 ? anualidadesTotal / numAnualidades : 0;
+  const escrituracion = precioFinal * (escrituracionPct / 100);
+
+  const clientName = document.getElementById('cotClientName').value || 'Estimada Familia';
+
+  // Build fecha values from dropdowns
+  const fechaValues = {};
+  COT_FECHA_FIELDS.forEach(f => {
+    const m = document.getElementById(f.month).value;
+    const y = document.getElementById(f.year).value;
+    fechaValues[f.key] = m + ' ' + y;
+  });
+
+  return {
+    'dynamicText': clientName,
+    'lot.number': lotNum,
+    'lot.category': category,
+    'lot.size': cotFormatNumber(size) + ' m²',
+    'lot.pricePerM2': cotFormatCurrency(pm2),
+    'lot.totalPrice': cotFormatCurrency(totalPrice),
+    'lot.descuentoPct': cotFormatPct(descuentoPct),
+    'lot.descuentoAmount': cotFormatCurrency(descuentoAmount),
+    'lot.precioFinal': cotFormatCurrency(precioFinal),
+    'lot.clientName': clientName,
+    'lot.separacionPct': cotFormatPct(separacionPct),
+    'lot.separacion': cotFormatCurrency(separacion),
+    'lot.enganchePct': cotFormatPct(enganchePct),
+    'lot.engancheAmount': cotFormatCurrency(engancheAmount),
+    'lot.numEnganche': numEnganche.toString(),
+    'lot.enganche': cotFormatCurrency(enganche),
+    'lot.mensualidadesPct': cotFormatPct(mensualidadesPct),
+    'lot.mensualidadesTotal': cotFormatCurrency(mensualidadesTotal),
+    'lot.numMensualidades': numMensualidades.toString(),
+    'lot.mensualidadMes': cotFormatCurrency(mensualidadMes),
+    'lot.anualidadesPct': cotFormatPct(anualidadesPct),
+    'lot.anualidad': cotFormatCurrency(anualidad),
+    'lot.numAnualidades': numAnualidades.toString(),
+    'lot.anualidadesTotal': cotFormatCurrency(anualidadesTotal),
+    'lot.escrituracionPct': cotFormatPct(escrituracionPct),
+    'lot.escrituracion': cotFormatCurrency(escrituracion),
+    ...fechaValues
+  };
+}
+
+function cotReplacePlaceholders(text, values) {
+  if (!text) return '';
+  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+    return values[key.trim()] !== undefined ? values[key.trim()] : match;
+  });
+}
+
+function cotCreatePage(pageNum, template, lotValues) {
+  const pdfPage = document.createElement('div');
+  pdfPage.style.cssText = `
+    width: 1224px; height: 1584px; position: relative;
+    background-image: url("https://la-la.land/cpi/pdf/page.${pageNum}.png");
+    background-size: cover; background-repeat: no-repeat; background-position: top left;
+  `;
+  const pageIndex = parseInt(pageNum, 10);
+  const pageData = template?.pages?.[pageIndex];
+  if (!pageData) return pdfPage;
+
+  if (pageData.textBoxes) {
+    pageData.textBoxes.forEach(tb => {
+      const el = document.createElement('div');
+      el.textContent = cotReplacePlaceholders(tb.content, lotValues);
+      el.style.cssText = `
+        position: absolute; left: ${tb.x}px; top: ${tb.y}px;
+        ${tb.width ? `width: ${tb.width}px;` : ''} ${tb.height ? `height: ${tb.height}px;` : ''}
+        font-size: ${tb.fontSize || 24}px; font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
+        color: ${tb.color || '#000000'}; font-weight: ${tb.bold ? '700' : '400'};
+        font-style: ${tb.italic ? 'italic' : 'normal'}; text-decoration: ${tb.underline ? 'underline' : 'none'};
+        text-align: ${tb.textAlign || 'left'}; white-space: pre-wrap;
+      `;
+      pdfPage.appendChild(el);
+    });
+  }
+
+  if (pageData.tables) {
+    pageData.tables.forEach(tableData => {
+      const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
+      const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
+      const totalWidth = colWidths.reduce((s, w) => s + w, 0);
+      const container = document.createElement('div');
+      container.style.cssText = `position: absolute; left: ${tableData.x}px; top: ${tableData.y}px;`;
+      const table = document.createElement('table');
+      table.style.cssText = `border-collapse: collapse; table-layout: fixed; width: ${totalWidth}px;`;
+      for (let r = 0; r < tableData.rows; r++) {
+        const tr = document.createElement('tr');
+        tr.style.height = rowHeights[r] + 'px';
+        for (let c = 0; c < tableData.cols; c++) {
+          const cell = tableData.cells?.[r]?.[c];
+          if (!cell || cell.hidden) continue;
+          const td = document.createElement('td');
+          td.textContent = cotReplacePlaceholders(cell.content || '', lotValues);
+          const bw = cell.borderWidth || 1, bs = cell.borderStyle || 'solid';
+          const bc = cell.borderColor || '#000000', bp = cell.borderPosition || 'all';
+          let borderCss = '';
+          if (bp === 'bottom') borderCss = `border: none; border-bottom: ${bw}px ${bs} ${bc};`;
+          else if (bp === 'top') borderCss = `border: none; border-top: ${bw}px ${bs} ${bc};`;
+          else if (bp === 'none') borderCss = 'border: none;';
+          else borderCss = `border: ${bw}px ${bs} ${bc};`;
+          td.style.cssText = `
+            width: ${colWidths[c]}px; height: ${rowHeights[r]}px; box-sizing: border-box; overflow: hidden;
+            background-color: ${cell.bgColor || '#ffffff'}; color: ${cell.textColor || '#000000'};
+            font-family: "${cell.fontFamily || 'Arial'}", sans-serif; font-size: ${cell.fontSize || 14}px;
+            font-weight: ${cell.bold ? '700' : '400'}; font-style: ${cell.italic ? 'italic' : 'normal'};
+            text-decoration: ${cell.underline ? 'underline' : 'none'}; ${borderCss}
+            padding: 0; text-align: ${cell.textAlign || 'left'}; vertical-align: middle;
+            line-height: ${rowHeights[r]}px; white-space: nowrap; text-overflow: clip;
+          `;
+          if (cell.colSpan > 1) td.colSpan = cell.colSpan;
+          if (cell.rowSpan > 1) td.rowSpan = cell.rowSpan;
+          tr.appendChild(td);
+        }
+        table.appendChild(tr);
+      }
+      container.appendChild(table);
+      pdfPage.appendChild(container);
+    });
+  }
+
+  if (pageData.images) {
+    pageData.images.forEach(imgData => {
+      let imageUrl = '';
+      if (imgData.type === '{{lot.landscape}}') imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_landscape.jpg`;
+      else if (imgData.type === '{{lot.map}}') imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_map.jpg`;
+      else if (imgData.type === 'static' && imgData.url) imageUrl = imgData.url;
+      const el = document.createElement('div');
+      el.style.cssText = `
+        position: absolute; left: ${imgData.x}px; top: ${imgData.y}px;
+        width: ${imgData.width}px; height: ${imgData.height}px;
+        background-image: url("${imageUrl}");
+        background-size: cover; background-position: center; background-repeat: no-repeat;
+      `;
+      pdfPage.appendChild(el);
+    });
+  }
+
+  return pdfPage;
+}
+
+async function cotGeneratePDF() {
+  const lotValues = cotBuildLotValues();
+  if (!lotValues) { alert('Error: datos de lote no disponibles.'); return; }
+
+  const balancer = cotGetBalancer();
+  const balancerValue = parseFloat(document.getElementById(balancer).value) || 0;
+  if (balancerValue < 0) { alert('Los porcentajes exceden 100%. Ajuste los valores.'); return; }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 999999;
+  `;
+  overlay.innerHTML = `
+    <div style="background:white; padding:32px 48px; border-radius:12px; text-align:center; font-family:Arial,sans-serif;">
+      <div style="font-size:18px; font-weight:600; margin-bottom:16px;">Generando PDF...</div>
+      <div id="cot-progress-text" style="font-size:14px; color:#666; margin-bottom:12px;">Cargando plantilla...</div>
+      <div style="width:200px; height:8px; background:#eee; border-radius:4px; overflow:hidden;">
+        <div id="cot-progress-bar" style="width:0%; height:100%; background:#8f5e38; transition:width 0.3s;"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const progressText = document.getElementById('cot-progress-text');
+  const progressBar = document.getElementById('cot-progress-bar');
+
+  try {
+    const response = await fetch('/cpi/pdf/pdf-template-especial.json');
+    const template = await response.json();
+    progressBar.style.width = '5%';
+
+    progressText.textContent = 'Cargando imágenes...';
+    const imagePromises = [];
+    for (let i = 1; i <= 8; i++) {
+      const pageNum = String(i).padStart(3, '0');
+      imagePromises.push(new Promise(resolve => {
+        const img = new Image(); img.crossOrigin = 'anonymous';
+        img.onload = resolve; img.onerror = resolve;
+        img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
+      }));
+    }
+    const lotNum = lotValues['lot.number'];
+    if (lotNum) {
+      ['landscape', 'map'].forEach(type => {
+        imagePromises.push(new Promise(resolve => {
+          const img = new Image(); img.crossOrigin = 'anonymous';
+          img.onload = resolve; img.onerror = resolve;
+          img.src = `/cpi/pdf/lotcpi1-${lotNum}_${type}.jpg`;
+        }));
+      });
+    }
+    Object.values(template.pages || {}).forEach(pageData => {
+      (pageData.images || []).forEach(imgData => {
+        if (imgData.type === 'static' && imgData.url) {
+          imagePromises.push(new Promise(resolve => {
+            const img = new Image(); img.crossOrigin = 'anonymous';
+            img.onload = resolve; img.onerror = resolve; img.src = imgData.url;
+          }));
+        }
+      });
+    });
+    await Promise.all(imagePromises);
+    progressBar.style.width = '40%';
+
+    const pdfContainer = document.createElement('div');
+    pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
+    document.body.appendChild(pdfContainer);
+
+    progressText.textContent = 'Generando PDF...';
+    const worker = html2pdf().set({
+      margin: 0,
+      filename: 'CPI-cotizacion-especial.pdf',
+      image: { type: 'jpeg', quality: 1 },
+      html2canvas: { scale: 1, useCORS: true, scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
+    });
+
+    for (let i = 1; i <= 8; i++) {
+      progressText.textContent = `Renderizando página ${i} de 8`;
+      progressBar.style.width = `${40 + (i / 8) * 55}%`;
+      const pageNum = String(i).padStart(3, '0');
+      const page = cotCreatePage(pageNum, template, lotValues);
+      pdfContainer.innerHTML = '';
+      pdfContainer.appendChild(page);
+      if (i === 1) {
+        await worker.from(page).toContainer().toCanvas().toPdf();
+      } else {
+        await worker.get('pdf').then(pdf => { pdf.addPage([1224, 1584], 'portrait'); });
+        await worker.from(page).toContainer().toCanvas().toPdf();
+      }
+    }
+
+    progressText.textContent = 'Descargando...';
+    progressBar.style.width = '100%';
+    await worker.save();
+    document.body.removeChild(pdfContainer);
+  } catch (err) {
+    console.error('PDF generation error:', err);
+    alert('Error generando PDF: ' + err.message);
+  } finally {
+    document.body.removeChild(overlay);
+  }
+
+  // After PDF, collapse back to detail view
+  const modal = document.getElementById('lotModal');
+  document.getElementById('cotizadorPanel').style.display = 'none';
+  document.getElementById('lotDetails').style.display = 'block';
+  modal.classList.remove('expanded');
+}
+
+function openCotizadorInModal(lot) {
+  cotCurrentLot = lot;
+  const modal = document.getElementById('lotModal');
+
+  const size = parseFloat(String(lot.size || lot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
+  const pm2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
+
+  const allLotsData = lotData || window.baseLotsAll || baseLots || [];
+  const uniquePrices = [...new Set(allLotsData.map(l =>
+    parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
+  ))].filter(p => p > 0).sort((a, b) => b - a);
+  const categories = ['AAA+', 'AAA', 'AA', 'A'];
+  const priceIndex = uniquePrices.findIndex(p => Math.abs(p - pm2) < 0.01);
+  const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
+
+  document.getElementById('cotLotNumber').value = lot.number || '';
+  document.getElementById('cotLotCategory').value = category;
+  document.getElementById('cotLotSize').value = cotFormatNumber(size) + ' m²';
+  document.getElementById('cotPriceM2').value = cotFormatCurrency(pm2);
+
+  // Reset form defaults
+  document.getElementById('cotDescuentoPct').value = '0';
+  document.getElementById('cotClientName').value = 'Estimada Familia';
+  document.getElementById('cotSeparacionPct').value = '0';
+  document.getElementById('cotEnganchePct').value = '20';
+  document.getElementById('cotNumEnganche').value = '1';
+  document.getElementById('cotMensualidadesPct').value = '30';
+  document.getElementById('cotNumMensualidades').value = '24';
+  document.getElementById('cotAnualidadesPct').value = '0';
+  document.getElementById('cotNumAnualidades').value = '2';
+  document.getElementById('cotEscrituracionPct').value = '50';
+  document.getElementById('cotBalancerField').value = 'cotEscrituracionPct';
+
+  // Reset all toggle buttons to % mode
+  document.querySelectorAll('#cotizadorPanel .cot-toggle-btn[data-field]').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  ['cotDescuentoUnit','cotSeparacionUnit','cotEngancheUnit','cotMensualidadesUnit','cotAnualidadesUnit','cotEscrituracionUnit'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '%';
+  });
+  // Reset step/min/max on pct inputs
+  ['cotDescuentoPct', ...COT_PCT_FIELDS].forEach(id => {
+    const inp = document.getElementById(id);
+    inp.step = '0.5'; inp.min = '0'; inp.max = '100';
+  });
+
+  // Reset date dropdowns to current month/year
+  const now = new Date();
+  const curMonthName = COT_MONTHS[now.getMonth()];
+  const curYear = now.getFullYear().toString();
+  COT_FECHA_FIELDS.forEach(f => {
+    document.getElementById(f.month).value = curMonthName;
+    document.getElementById(f.year).value = curYear;
+  });
+
+  cotOnBalancerChange();
+
+  // Swap content — hide both lotDetails and modalInfo so scroll doesn't bleed
+  document.getElementById('lotDetails').style.display = 'none';
+  const modalInfoEl = document.getElementById('modalInfo');
+  if (modalInfoEl) modalInfoEl.style.display = 'none';
+  document.getElementById('cotizadorPanel').style.display = 'block';
+  modal.classList.add('expanded');
+
+  cotRecalculate();
+}
+
+// Wire up cotizador event listeners
+document.getElementById('cotBalancerField').addEventListener('change', cotOnBalancerChange);
+document.getElementById('cotDescuentoPct').addEventListener('input', cotRecalculate);
+document.getElementById('cotNumEnganche').addEventListener('input', cotRecalculate);
+document.getElementById('cotNumMensualidades').addEventListener('input', cotRecalculate);
+document.getElementById('cotNumAnualidades').addEventListener('input', cotRecalculate);
+COT_PCT_FIELDS.forEach(id => {
+  document.getElementById(id).addEventListener('input', cotRecalculate);
+});
+document.getElementById('cotGenerateBtn').addEventListener('click', cotGeneratePDF);
+
+// Wire up toggle buttons (% ↔ $)
+document.querySelectorAll('#cotizadorPanel .cot-toggle-btn[data-field]').forEach(btn => {
+  btn.addEventListener('click', () => cotOnToggleSwitch(btn.dataset.field));
+});
 
 
 
@@ -7802,12 +8788,16 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     const customScrollbar = document.getElementById('customScrollbar');
     const loadingSpinner = document.getElementById('loadingSpinner');
     
+    // Always hide cotizador panel on fresh open
+    const cotPanelOpen = document.getElementById('cotizadorPanel');
+    if (cotPanelOpen) cotPanelOpen.style.display = 'none';
+
     if (lotDetails) {
       lotDetails.classList.remove('active');
       lotDetails.style.display = 'block';
       lotDetails.innerHTML = '';
     }
-    
+
     if (modalInfo) {
       modalInfo.style.display = '';
       modalInfo.style.opacity = '1';
@@ -7816,6 +8806,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     
     if (calendly) calendly.style.display = 'none';
     if (viewerContainer) viewerContainer.style.display = 'none';
+    stopAnimateViewer();
     if (customScrollbar) {
     customScrollbar.style.display = '';
     customScrollbar.style.visibility = '';
@@ -7947,7 +8938,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
   // Prevent button animations on initial modal open
   if (wasHidden) {
     modal.classList.add('initial-load');
-    if (!skipPan) {
+    if (!skipPan && !window.isLeadsOpen) {
       adjustMapForModal();
     } else {
       console.log('⏭️ Skipping map pan (already positioned from dashboard)');
@@ -8140,6 +9131,11 @@ function closeModal() {
   const bottomPlus = document.querySelector('.bottom-plus-button');
   
   // --- 1) Kill special modes / embeds
+  // Always hide cotizador panel and restore detail view
+  const cotPanelClose = document.getElementById('cotizadorPanel');
+  if (cotPanelClose) cotPanelClose.style.display = 'none';
+  if (lotDetails) lotDetails.style.display = 'block';
+  if (modalInfo) { modalInfo.style.display = ''; modalInfo.style.opacity = '1'; }
   modal.classList.remove('info-mode', 'pin-mode', 'expanded', 'lot-mode');
   hideCalendlyEmbed();
   window.isDetailOpen = false;
@@ -8687,6 +9683,10 @@ function hideCalendlyEmbed() {
     await window.supabaseReady;
 
     // Get authenticated user for RLS policy
+    if (IS_DEMO) {
+      toast('Pins are read-only in demo mode');
+      return;
+    }
     const { data: { user } } = await window.supabaseClient.auth.getUser();
     if (!user) {
       console.error('User not authenticated');
@@ -9331,22 +10331,36 @@ const nextState = cur => {
       const baseIdx = baseLots.findIndex(b => b.name === mapLot.name);
       return { lotName: mapLot.name, number: n, baseIndex: baseIdx };
     }
-    // list-centered path
+    // list-centered path — only use if the centered row belongs to the current fracc
     const centered = document.querySelector('.info-row.center');
-    if (!centered) return null;
-    const baseIndex = parseInt(centered.dataset.baseIndex, 10);
-    if (isNaN(baseIndex) || baseIndex < 0) return null;
-    const base = baseLots[baseIndex];
-    if (!base) return null;
-
-    // 🔥 FIX: Search for lot matching BOTH number AND fraccionamiento
-    // This prevents selecting the wrong lot when duplicate numbers exist (e.g., lot 17-05 in both marsella and sierraalta)
-    const mapIdx = lotData.findIndex(l =>
-      extractLotNumber(l.name) === base.number &&
-      l.fraccionamiento === base.fraccionamiento
+    if (centered) {
+      const baseIndex = parseInt(centered.dataset.baseIndex, 10);
+      if (!isNaN(baseIndex) && baseIndex >= 0) {
+        const base = baseLots[baseIndex];
+        if (base && base.fraccionamiento === currentFraccionamiento) {
+          // 🔥 FIX: Search for lot matching BOTH number AND fraccionamiento
+          const mapIdx = lotData.findIndex(l =>
+            extractLotNumber(l.name) === base.number &&
+            l.fraccionamiento === base.fraccionamiento
+          );
+          if (mapIdx !== -1) {
+            return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
+          }
+        }
+      }
+    }
+    // 🔥 FIX: Fallback — select first available lot in currentFraccionamiento
+    // Handles the case where the user navigated to a new fracc via nav dots
+    // and the centered row belongs to a different community.
+    const firstAvailable = lotData.find(l =>
+      l.fraccionamiento === currentFraccionamiento &&
+      normalize(l.availability || 'available') !== 'sold'
     );
-    if (mapIdx === -1) return null;
-    return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
+    if (firstAvailable) {
+      const baseIdx = baseLots.findIndex(b => b.name === firstAvailable.name);
+      return { lotName: firstAvailable.name, number: extractLotNumber(firstAvailable.name), baseIndex: baseIdx };
+    }
+    return null;
   } 
 
   // Visual re-apply: map hover + list active row + button color
@@ -9386,7 +10400,7 @@ const nextState = cur => {
     btn.classList.remove('sold','featured','blocked');
     if (state === 'sold') btn.classList.add('sold');
     if (state === 'featured') btn.classList.add('featured');
-    if (state === 'blocked') btn.classList.add('sold'); // blocked looks like sold
+    if (state === 'blocked') btn.classList.add('blocked');
   }
 
   // Keep button color synced when UI changes
@@ -9460,6 +10474,7 @@ function refreshFeaturedLayer() {
 
   // --- auth guard ---
   async function ensureLoggedIn() {
+    if (IS_DEMO) return true;
     const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
     return !!(session && session.user);
   }
@@ -9484,8 +10499,9 @@ function refreshFeaturedLayer() {
     applyAvailabilityLocal(sel.lotName, next);
     // button feedback
     btn.classList.remove('sold','featured','blocked');
-    if (next === 'sold' || next === 'blocked') btn.classList.add('sold');
+    if (next === 'sold') btn.classList.add('sold');
     if (next === 'featured') btn.classList.add('featured');
+    if (next === 'blocked') btn.classList.add('blocked');
 
     // Show immediate feedback
     const LABELS = { available:'disponible', sold:'vendido', featured:'destacado', blocked:'bloqueado' };
@@ -9497,6 +10513,7 @@ function refreshFeaturedLayer() {
 
     // Save to database in background (don't await - fire and forget with error handling)
     (async () => {
+      if (IS_DEMO) return;
       try {
         // Mark this lot to skip next realtime re-render
         if (!window.skipNextRealtimeRender) window.skipNextRealtimeRender = new Set();
@@ -9545,8 +10562,9 @@ try {
         // revert
         applyAvailabilityLocal(sel.lotName, current);
         btn.classList.remove('sold','featured','blocked');
-        if (current === 'sold' || current === 'blocked') btn.classList.add('sold');
+        if (current === 'sold') btn.classList.add('sold');
         if (current === 'featured') btn.classList.add('featured');
+        if (current === 'blocked') btn.classList.add('blocked');
 
         refreshVisuals();
         setSelectedLotByName(selectedLotName, { scroll:false });
@@ -9622,8 +10640,9 @@ try {
           // Just update button color without touching hover state
           const state = normalize(mapData?.availability || 'available');
           btn.classList.remove('sold','featured','blocked');
-          if (state === 'sold' || state === 'blocked') btn.classList.add('sold');
+          if (state === 'sold') btn.classList.add('sold');
           if (state === 'featured') btn.classList.add('featured');
+          if (state === 'blocked') btn.classList.add('blocked');
         }
       } catch {}
       return res;
@@ -10068,47 +11087,67 @@ try {
 
 
 <script>
-// Toggle admin-only buttons based on Supabase session (isAuthenticated)
+// TEMPORARY FOR YC DEMO: All buttons visible regardless of auth status
+// Function to check authentication status and toggle buttons visibility hide buttons
 function toggleAuthButtons(isAuthenticated) {
-  if (IS_DEMO) isAuthenticated = false;
   const cycleAvailabilityBtn = document.getElementById('cycleAvailabilityBtn');
-  const editBtn = document.getElementById('editBtn');
-  const poiButton = document.getElementById('poiButton');
+  const addPinBtn = document.getElementById('addPinBtn');
+  const gpsButton = document.getElementById('gpsButton');
+  const driveBtn = document.getElementById('driveBtn');
+  const compareBtn = document.getElementById('compareBtn'); // Added compareBtn
+  const editBtn = document.getElementById('editBtn'); // Added editBtn
 
-  if (cycleAvailabilityBtn) {
-    cycleAvailabilityBtn.classList.toggle('hide-button', !isAuthenticated);
-  }
-  if (editBtn) {
-    editBtn.classList.toggle('hide-button', !isAuthenticated);
-  }
-  if (poiButton) {
-    poiButton.style.display = isAuthenticated ? '' : 'none';
-  }
+  console.log('Toggle buttons - Authenticated:', isAuthenticated);
+  
+  // COMMENTED OUT FOR YC DEMO - Show all buttons always
+  // if (cycleAvailabilityBtn) {
+  //   cycleAvailabilityBtn.classList.toggle('hide-button', !isAuthenticated);
+  // }
+  // if (addPinBtn) {
+  //   addPinBtn.classList.toggle('hide-button', !isAuthenticated);
+  // }
+  // if (gpsButton) {
+  //   gpsButton.classList.toggle('hide-button', !isAuthenticated);
+  // }
+  // if (driveBtn) {
+  //   driveBtn.classList.toggle('hide-button', !isAuthenticated);
+  // }
+  // if (compareBtn) { // Added compareBtn condition
+  //   compareBtn.classList.toggle('hide-button', !isAuthenticated);
+  // }
+  // if (editBtn) { // Added editBtn condition
+  //   editBtn.classList.toggle('hide-button', !isAuthenticated);
+  // }
 }
 
-// Hide admin buttons immediately on page load
+// COMMENTED OUT FOR YC DEMO - Don't hide buttons on page load
+// Hide buttons immediately on page load
 document.addEventListener('DOMContentLoaded', function() {
-  toggleAuthButtons(false);
-
-  // Refine once Supabase is ready
+  console.log('DOM loaded - showing all buttons for YC demo');
+  // toggleAuthButtons(false); // COMMENTED OUT FOR YC DEMO
+  
+  // Check auth status once Supabase is likely ready
   const checkAuth = setInterval(function() {
     if (window.supabaseClient && typeof window.supabaseClient.auth.getSession === 'function') {
       clearInterval(checkAuth);
       window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
         const isAuthenticated = !!(session && session.user);
-        toggleAuthButtons(isAuthenticated);
+        console.log('Initial auth check - Authenticated:', isAuthenticated);
+        // toggleAuthButtons(isAuthenticated); // COMMENTED OUT FOR YC DEMO
       });
     }
   }, 100);
 });
-
-// Keep in sync with auth state changes
+  
+// COMMENTED OUT FOR YC DEMO - Don't toggle buttons on auth change
+// Listen for auth changes once Supabase is ready
 const setupAuthListener = setInterval(function() {
   if (window.supabaseClient && typeof window.supabaseClient.auth.onAuthStateChange === 'function') {
     clearInterval(setupAuthListener);
     window.supabaseClient.auth.onAuthStateChange((_event, session) => {
       const isAuthenticated = !!(session && session.user);
-      toggleAuthButtons(isAuthenticated);
+      console.log('Auth state changed - Authenticated:', isAuthenticated);
+      // toggleAuthButtons(isAuthenticated); // COMMENTED OUT FOR YC DEMO
     });
   }
 }, 100);
@@ -11118,8 +12157,19 @@ function shareCurrentLot() {
   }
   
   // Get financing calculator values
-  const downPaymentPercent = document.getElementById('downPaymentCalc')?.value || '20';
-  const installments = document.getElementById('installmentsCalc')?.value || '72';
+  const downPaymentPercent = document.getElementById('downPaymentCalc')?.value || '25';
+
+  // Calculate installments based on down payment (presale structure)
+  let installments;
+  if (downPaymentPercent === '25') {
+    installments = '24'; // 25% down = 24 months
+  } else if (downPaymentPercent === '50') {
+    installments = '1'; // 50% down = 1 payment
+  } else if (downPaymentPercent === '85') {
+    installments = '1'; // 85% down = 1 payment
+  } else {
+    installments = '24'; // default
+  }
 
   // Get community from modal dataset (current selected fracc), fallback to lot data, then default
   const modal = document.getElementById('lotModal');
@@ -11307,7 +12357,7 @@ function setupChatButton() {
       const lotNum = lot?.number || lot?.name || (document.getElementById('headerLotNumber')?.textContent || '').trim();
       const community = (document.getElementById('headerFracc')?.textContent || '').trim();
       const msg = encodeURIComponent('Me interesa el Lote ' + lotNum + ' en ' + community + ', ¿podemos programar una visita?');
-      window.open('https://wa.me/5212976905326?text=' + msg, '_blank');
+      window.open('https://wa.me/5218128600017?text=' + msg, '_blank');
     });
   }
 }
@@ -11394,23 +12444,19 @@ document.getElementById('compareBtn').addEventListener('click', function() {
     }
 });
 
-// Edit button event listener
+// Edit button — trigger inline price edit on the currently centered list row
 document.getElementById('editBtn').addEventListener('click', function() {
-    window.editMode = !window.editMode;
-    
-    if (window.editMode) {
-        // Enter edit mode
-        this.style.boxShadow = `0 0 0 3px ${CONFIG.colors.primaryFull}`;
-        this.style.backgroundColor = CONFIG.colors.primary;
-        showToaster('✏️ Edit mode ON - Edit prices in detail view');
-        console.log('Edit mode ON');
-} else {
-    // Exit edit mode
-    this.style.boxShadow = '';
-    this.style.backgroundColor = CONFIG.colors.cream;
-    showToaster('Edit mode OFF');
-    console.log('Edit mode OFF');
-}
+    const centered = document.querySelector('.info-row.center');
+    if (!centered) {
+        showToaster('Selecciona un lote primero.');
+        return;
+    }
+    const rowEditBtn = centered.querySelector('.row-action-btn.edit-btn');
+    if (rowEditBtn) {
+        rowEditBtn.click();
+    } else {
+        showToaster('No hay precio editable para este lote.');
+    }
 });
 
 // Compare mode click handler (renamed from handleEditClick)
@@ -12093,226 +13139,6 @@ async function markLotAsSold(lot) {
 window.showPaymentViewInModal = showPaymentViewInModal;
 </script>
 
-<!-- ===== REGISTRO MODAL (agent-only) ===== -->
-<script>
-(function() {
-  const $ = (sel) => document.querySelector(sel);
-  window.isRegistroOpen = false;
-  const registroBtn = $('#registro-btn');
-  const registroOverlay = $('#registro-modal-overlay');
-  const registroContainer = $('#registro-modal-container');
-  const registroBackdrop = $('#registro-modal-backdrop');
-  const registroIframe = $('#registro-iframe');
-
-  let registroModalPanned = false;
-
-  function openRegistroModal() {
-    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
-    if (typeof closeModal === 'function') {
-      try { closeModal(); } catch(e) {}
-    }
-
-    registroModalPanned = false;
-    if (map && !lotModalWasOpen) {
-      const isMobile = window.innerWidth < 768;
-      const offset = isMobile ? [0, -Math.round(window.innerHeight * 0.23)] : [-240, 0];
-      map.panBy(offset, { duration: 400 });
-      registroModalPanned = true;
-    }
-
-    window.isRegistroOpen = true;
-    registroIframe.src = 'registro-manual.html';
-    registroOverlay.style.display = 'block';
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        registroContainer.classList.add('show');
-      });
-    });
-    const openIcon = $('#registro-open-icon');
-    const closedIcon = $('#registro-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'inline-block';
-      closedIcon.style.display = 'none';
-    }
-    registroBtn.classList.add('active');
-  }
-
-  function closeRegistroModal() {
-    if (map && registroModalPanned) {
-      const isMobile = window.innerWidth < 768;
-      const offset = isMobile ? [0, Math.round(window.innerHeight * 0.23)] : [240, 0];
-      map.panBy(offset, { duration: 400 });
-      registroModalPanned = false;
-    }
-
-    window.isRegistroOpen = false;
-    registroContainer.classList.remove('show');
-    setTimeout(() => {
-      registroOverlay.style.display = 'none';
-      registroIframe.src = 'about:blank';
-    }, 400);
-    const openIcon = $('#registro-open-icon');
-    const closedIcon = $('#registro-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'none';
-      closedIcon.style.display = 'inline-block';
-    }
-    registroBtn.classList.remove('active');
-  }
-
-  registroBtn && registroBtn.addEventListener('click', () => {
-    if (window.isRegistroOpen) {
-      closeRegistroModal();
-    } else {
-      openRegistroModal();
-    }
-  });
-
-  registroBackdrop && registroBackdrop.addEventListener('click', () => {
-    closeRegistroModal();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && window.isRegistroOpen) {
-      closeRegistroModal();
-    }
-  });
-
-  window.addEventListener('message', (e) => {
-    if (e.data === 'closeRegistro' && window.isRegistroOpen) {
-      closeRegistroModal();
-    }
-  });
-})();
-</script>
-
-<!-- ===== LEADS MODAL (agent-only) ===== -->
-<script>
-(function() {
-  const $ = (sel) => document.querySelector(sel);
-  window.isLeadsOpen = false;
-  const leadsBtn = $('#leads-btn');
-  const leadsOverlay = $('#leads-modal-overlay');
-  const leadsContainer = $('#leads-modal-container');
-  const leadsBackdrop = $('#leads-modal-backdrop');
-  const leadsIframe = $('#leads-iframe');
-
-  let leadsModalPanned = false;
-
-  function openLeadsModal() {
-    // Close registro modal if open
-    if (window.isRegistroOpen && typeof closeRegistroModal === 'function') {
-      try { closeRegistroModal(); } catch(e) {}
-    }
-    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
-    if (typeof closeModal === 'function') {
-      try { closeModal(); } catch(e) {}
-    }
-
-    leadsModalPanned = false;
-    if (map && !lotModalWasOpen) {
-      const isMobile = window.innerWidth < 768;
-      const offset = isMobile ? [0, -Math.round(window.innerHeight * 0.23)] : [-240, 0];
-      map.panBy(offset, { duration: 400 });
-      leadsModalPanned = true;
-    }
-
-    window.isLeadsOpen = true;
-    const agentPhone = window.currentLead?.phone || '';
-    leadsIframe.src = `lead-dashboard.html?mode=agent&agent_phone=${encodeURIComponent(agentPhone)}`;
-    leadsOverlay.style.display = 'block';
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        leadsContainer.classList.add('show');
-      });
-    });
-    const openIcon = $('#leads-open-icon');
-    const closedIcon = $('#leads-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'inline-block';
-      closedIcon.style.display = 'none';
-    }
-    leadsBtn.classList.add('active');
-  }
-
-  function closeLeadsModal() {
-    if (map && leadsModalPanned) {
-      const isMobile = window.innerWidth < 768;
-      const offset = isMobile ? [0, Math.round(window.innerHeight * 0.23)] : [240, 0];
-      map.panBy(offset, { duration: 400 });
-      leadsModalPanned = false;
-    }
-
-    window.isLeadsOpen = false;
-    leadsContainer.classList.remove('show');
-    setTimeout(() => {
-      leadsOverlay.style.display = 'none';
-      leadsIframe.src = 'about:blank';
-    }, 400);
-    const openIcon = $('#leads-open-icon');
-    const closedIcon = $('#leads-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'none';
-      closedIcon.style.display = 'inline-block';
-    }
-    leadsBtn.classList.remove('active');
-  }
-
-  leadsBtn && leadsBtn.addEventListener('click', () => {
-    if (window.isLeadsOpen) {
-      closeLeadsModal();
-    } else {
-      openLeadsModal();
-    }
-  });
-
-  leadsBackdrop && leadsBackdrop.addEventListener('click', () => {
-    closeLeadsModal();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && window.isLeadsOpen) {
-      closeLeadsModal();
-    }
-  });
-
-  window.addEventListener('message', (e) => {
-    if (e.data === 'closeLeads' && window.isLeadsOpen) {
-      closeLeadsModal();
-    }
-  });
-})();
-</script>
-
-<style>
-  #leads-modal-overlay {
-    z-index: 10001;
-  }
-  #leads-modal-container {
-    opacity: 0;
-    transition: opacity 0.4s ease, transform 0.4s ease;
-    transform: translateY(-30px);
-  }
-  #leads-modal-container.show {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  @media (min-width: 768px) {
-    #leads-modal-container {
-      position: fixed;
-      top: 50%;
-      left: calc(5% + 400px);
-      width: 800px;
-      height: 90%;
-      max-height: 1000px;
-      transform: translate(-50%, -55%);
-    }
-    #leads-modal-container.show {
-      transform: translate(-50%, -50%);
-    }
-  }
-</style>
-
 <!-- ===== SEARCH BUTTON COMPONENT ===== -->
 <div class="search-btn-stage" id="searchBtnStage">
   <div class="search-btn-rotator" id="searchBtnRotator">
@@ -12379,7 +13205,7 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     }
   }
 
-  function buildDots() {
+function buildDots() {
   rotator.innerHTML = '';
   dots = [];
   const count = config.count;
@@ -12692,520 +13518,6 @@ window.showPaymentViewInModal = showPaymentViewInModal;
     .catch(err => {
       console.error('❌ Failed to load saved.json:', err);
     });
-})();
-</script>
-
-<script>
-(function() {
-  // PDF Generation for Inverta - Multi-template support based on community group
-
-  async function generateMultiPagePDF(lot, dynamicText, financingOptions = {}) {
-    if (!lot) {
-      console.error('No lot data provided');
-      window.showToaster?.('Error: No se pudo obtener datos del lote');
-      return;
-    }
-
-    // Default financing options (matches modal defaults)
-    const financing = {
-      downpaymentPercent: financingOptions.downpaymentPercent || 30,
-      installmentMonths: financingOptions.installmentMonths || 48
-    };
-
-    // Determine community group from fraccionamiento
-    const fraccionamiento = lot.fraccionamiento || lot.community || '';
-    const communityGroup = getCommunityGroup('inverta', fraccionamiento);
-
-    if (!communityGroup) {
-      console.error('Could not determine community group for:', fraccionamiento);
-      window.showToaster?.('Error: Plantilla no disponible para esta comunidad');
-      return;
-    }
-
-    // Create progress overlay
-    const progressOverlay = document.createElement('div');
-    progressOverlay.id = 'pdf-progress-overlay';
-    progressOverlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.7);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 99999;
-    `;
-    progressOverlay.innerHTML = `
-      <div style="background: white; padding: 32px 48px; border-radius: 12px; text-align: center; font-family: Arial, sans-serif;">
-        <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Generando PDF...</div>
-        <div id="pdf-progress-text" style="font-size: 14px; color: #666; margin-bottom: 12px;">Cargando plantilla...</div>
-        <div style="width: 200px; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
-          <div id="pdf-progress-bar" style="width: 0%; height: 100%; background: ${CONFIG?.colors?.primary || '#007bff'}; transition: width 0.3s;"></div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(progressOverlay);
-
-    const progressText = document.getElementById('pdf-progress-text');
-    const progressBar = document.getElementById('pdf-progress-bar');
-
-    // Create hidden container for rendering pages
-    const pdfContainer = document.createElement('div');
-    pdfContainer.id = 'pdf-generation-container';
-    pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
-    document.body.appendChild(pdfContainer);
-
-    // Calculate lot values for placeholders
-    function getLotValues(lot, dynamicText, financingOpts = {}) {
-      const size = parseFloat(String(lot.size || '0').replace(/[^0-9.]/g, '')) || 0;
-      const priceM2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
-      const totalPrice = size * priceM2;
-
-      // Calculate category based on priceM2 tier
-      const allLotsData = lotData || window.baseLotsAll || baseLots || [];
-      const uniquePrices = [...new Set(allLotsData.map(l =>
-        parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
-      ))].filter(p => p > 0).sort((a, b) => b - a);
-
-      const categories = ['AAA+', 'AAA', 'AA', 'A'];
-      const priceIndex = uniquePrices.findIndex(p => Math.abs(p - priceM2) < 0.01);
-      const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
-
-      // Format helpers
-      const formatCurrency = (num) => '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const formatNumber = (num) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-      // Discount calculations
-      const discount5 = totalPrice * 0.05;
-      const discount12 = totalPrice * 0.12;
-      const priceWith5Discount = totalPrice * 0.95;
-      const priceWith12Discount = totalPrice * 0.88;
-
-      // 25% plan: no discount, 25% down, 45% in 24 months, 30% contra escritura
-      const downpayment25 = totalPrice * 0.25;
-      const monthly25 = (totalPrice * 0.45) / 24;
-      const contraEscritura30 = totalPrice * 0.30;
-
-      // 50% plan: 5% discount, 50% down, 50% contra escritura
-      const downpayment50 = priceWith5Discount * 0.50;
-      const contraEscritura50 = priceWith5Discount * 0.50;
-
-      // 85% plan: 12% discount, 85% down, 15% contra escritura
-      const downpayment85 = priceWith12Discount * 0.85;
-      const contraEscritura15 = priceWith12Discount * 0.15;
-
-      // Dynamic financing calculations based on selected options
-      const selectedDownpaymentPercent = financingOpts.downpaymentPercent || 30;
-      const selectedInstallmentMonths = financingOpts.installmentMonths || 48;
-
-      // Interest rates by month term
-      const INTEREST_RATES = { 24: 0.13, 36: 0.14, 48: 0.15, 60: 0.16, 72: 0.17 };
-      const selectedInterestRate = INTEREST_RATES[selectedInstallmentMonths] || 0.15;
-
-      // Calculate dynamic financing values
-      const selectedDownpaymentAmount = totalPrice * (selectedDownpaymentPercent / 100);
-      const amountToFinance = totalPrice - selectedDownpaymentAmount;
-
-      // Monthly payment calculation helper
-      function calcMonthlyPayment(principal, annualRate, months) {
-        const monthlyRate = annualRate / 12;
-        if (monthlyRate === 0) return principal / months;
-        const numerator = principal * monthlyRate * Math.pow(1 + monthlyRate, months);
-        const denominator = Math.pow(1 + monthlyRate, months) - 1;
-        return numerator / denominator;
-      }
-
-      // Selected term calculation
-      const selectedMonthlyPayment = calcMonthlyPayment(amountToFinance, selectedInterestRate, selectedInstallmentMonths);
-      const selectedTotalFinancedPrice = selectedDownpaymentAmount + (selectedMonthlyPayment * selectedInstallmentMonths);
-
-      // Calculate all term options (using selected downpayment)
-      const terms = [24, 36, 48, 60, 72];
-      const termCalcs = {};
-      terms.forEach(months => {
-        const rate = INTEREST_RATES[months];
-        const monthly = calcMonthlyPayment(amountToFinance, rate, months);
-        const total = selectedDownpaymentAmount + (monthly * months);
-        termCalcs[months] = { rate, monthly, total };
-      });
-
-      // Parse lot number (e.g., "10-11" → "MZ10L11")
-      const lotNumberParts = (lot.number || '').split('-');
-      const lotFormatted = lotNumberParts.length === 2
-        ? `MZ${lotNumberParts[0]}L${lotNumberParts[1]}`
-        : lot.number || '';
-
-      // Current date in Spanish format (e.g., "28 ENE 2026")
-      const spanishMonths = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
-      const today = new Date();
-      const dateFormatted = `${today.getDate()} ${spanishMonths[today.getMonth()]} ${today.getFullYear()}`;
-
-      return {
-        'dynamicText': dynamicText,
-        'lot.number': lot.number || '',
-        'lot.nameA': lotNumberParts[0] || '',
-        'lot.nameB': lotNumberParts[1] || '',
-        'lot.numberFormatted': lotFormatted,
-        'lot.date': dateFormatted,
-        'lot.category': category || 'A',
-        'lot.size': formatNumber(size) + ' m²',
-        'lot.pricePerM2': formatCurrency(priceM2),
-        'lot.totalPrice': formatCurrency(totalPrice),
-        'lot.downpayment25': formatCurrency(downpayment25),
-        'lot.downpayment50': formatCurrency(downpayment50),
-        'lot.downpayment85': formatCurrency(downpayment85),
-        'lot.monthly25': formatCurrency(monthly25),
-        'lot.discount0': formatCurrency(0),
-        'lot.discount5': formatCurrency(discount5),
-        'lot.discount12': formatCurrency(discount12),
-        'lot.priceWith5Discount': formatCurrency(priceWith5Discount),
-        'lot.priceWith12Discount': formatCurrency(priceWith12Discount),
-        'lot.contraEscritura30': formatCurrency(contraEscritura30),
-        'lot.contraEscritura50': formatCurrency(contraEscritura50),
-        'lot.contraEscritura15': formatCurrency(contraEscritura15),
-        // New dynamic financing placeholders (selected)
-        'lot.selectedDownpaymentPercent': selectedDownpaymentPercent + '%',
-        'lot.selectedDownpaymentAmount': formatCurrency(selectedDownpaymentAmount),
-        'lot.selectedInstallmentMonths': String(selectedInstallmentMonths),
-        'lot.selectedMonthlyPayment': formatCurrency(selectedMonthlyPayment),
-        'lot.selectedInterestRate': (selectedInterestRate * 100).toFixed(0) + '%',
-        'lot.selectedTotalFinancedPrice': formatCurrency(selectedTotalFinancedPrice),
-        // All term options (using selected downpayment)
-        'lot.monthly24': formatCurrency(termCalcs[24].monthly),
-        'lot.rate24': (termCalcs[24].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced24': formatCurrency(termCalcs[24].total),
-        'lot.monthly36': formatCurrency(termCalcs[36].monthly),
-        'lot.rate36': (termCalcs[36].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced36': formatCurrency(termCalcs[36].total),
-        'lot.monthly48': formatCurrency(termCalcs[48].monthly),
-        'lot.rate48': (termCalcs[48].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced48': formatCurrency(termCalcs[48].total),
-        'lot.monthly60': formatCurrency(termCalcs[60].monthly),
-        'lot.rate60': (termCalcs[60].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced60': formatCurrency(termCalcs[60].total),
-        'lot.monthly72': formatCurrency(termCalcs[72].monthly),
-        'lot.rate72': (termCalcs[72].rate * 100).toFixed(0) + '%',
-        'lot.totalFinanced72': formatCurrency(termCalcs[72].total)
-      };
-    }
-
-    // Replace placeholders in text
-    function replacePlaceholders(text, values) {
-      if (!text) return '';
-      return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-        return values[key.trim()] !== undefined ? values[key.trim()] : match;
-      });
-    }
-
-    // Function to create a page with template elements
-    function createPage(pageNum, template, lotValues, settings) {
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImagePrefix = settings.lotImagePrefix || '';
-      const pageWidth = settings.pageWidth || 1224;
-      const pageHeight = settings.pageHeight || 1584;
-
-      const pdfPage = document.createElement('div');
-      pdfPage.style.cssText = `
-        width: ${pageWidth}px;
-        height: ${pageHeight}px;
-        position: relative;
-        overflow: visible;
-        background-image: url("${pageBackgroundBaseUrl}page.${pageNum}.png");
-        background-size: cover;
-        background-repeat: no-repeat;
-        background-position: top left;
-      `;
-
-      // Get page data from template
-      const pageIndex = parseInt(pageNum, 10);
-      const pageData = template?.pages?.[pageIndex];
-
-      if (pageData) {
-        // Render text boxes
-        if (pageData.textBoxes) {
-          pageData.textBoxes.forEach(tb => {
-            const textEl = document.createElement('div');
-            textEl.textContent = replacePlaceholders(tb.content, lotValues);
-            textEl.style.cssText = `
-              position: absolute;
-              left: ${tb.x}px;
-              top: ${tb.y}px;
-              ${tb.width ? `width: ${tb.width}px;` : ''}
-              ${tb.height ? `height: ${tb.height}px;` : ''}
-              font-size: ${tb.fontSize || 24}px;
-              font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
-              color: ${tb.color || '#000000'};
-              font-weight: ${tb.bold ? '700' : '400'};
-              font-style: ${tb.italic ? 'italic' : 'normal'};
-              text-decoration: ${tb.underline ? 'underline' : 'none'};
-              text-align: ${tb.textAlign || 'left'};
-              white-space: pre-wrap;
-              ${tb.zIndex !== undefined ? `z-index: ${tb.zIndex};` : ''}
-            `;
-            pdfPage.appendChild(textEl);
-          });
-        }
-
-        // Render tables
-        if (pageData.tables) {
-          pageData.tables.forEach(tableData => {
-            const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
-            const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
-            const totalWidth = colWidths.reduce((sum, w) => sum + w, 0);
-
-            const tableContainer = document.createElement('div');
-            tableContainer.style.cssText = `
-              position: absolute;
-              left: ${tableData.x}px;
-              top: ${tableData.y}px;
-              ${tableData.zIndex !== undefined ? `z-index: ${tableData.zIndex};` : ''}
-            `;
-
-            const table = document.createElement('table');
-            table.style.cssText = `
-              border-collapse: collapse;
-              table-layout: fixed;
-              width: ${totalWidth}px;
-            `;
-
-            for (let r = 0; r < tableData.rows; r++) {
-              const tr = document.createElement('tr');
-              tr.style.height = rowHeights[r] + 'px';
-
-              for (let c = 0; c < tableData.cols; c++) {
-                const cellData = tableData.cells?.[r]?.[c];
-                if (!cellData || cellData.hidden) continue;
-
-                const td = document.createElement('td');
-                td.textContent = replacePlaceholders(cellData.content || '', lotValues);
-
-                const borderWidth = cellData.borderWidth || 1;
-                const borderStyle = cellData.borderStyle || 'solid';
-                const borderColor = cellData.borderColor || '#000000';
-                const borderPosition = cellData.borderPosition || 'all';
-
-                let borderCss = '';
-                if (borderPosition === 'bottom') {
-                  borderCss = `border: none; border-bottom: ${borderWidth}px ${borderStyle} ${borderColor};`;
-                } else if (borderPosition === 'top') {
-                  borderCss = `border: none; border-top: ${borderWidth}px ${borderStyle} ${borderColor};`;
-                } else {
-                  borderCss = `border: ${borderWidth}px ${borderStyle} ${borderColor};`;
-                }
-
-                td.style.cssText = `
-                  width: ${colWidths[c]}px;
-                  height: ${rowHeights[r]}px;
-                  box-sizing: border-box;
-                  overflow: hidden;
-                  background-color: ${cellData.bgColor || '#ffffff'};
-                  color: ${cellData.textColor || '#000000'};
-                  font-family: "${cellData.fontFamily || 'Arial'}", sans-serif;
-                  font-size: ${cellData.fontSize || 14}px;
-                  font-weight: ${cellData.bold ? '700' : '400'};
-                  font-style: ${cellData.italic ? 'italic' : 'normal'};
-                  text-decoration: ${cellData.underline ? 'underline' : 'none'};
-                  ${borderCss}
-                  padding: 0;
-                  text-align: ${cellData.textAlign || 'left'};
-                  vertical-align: middle;
-                `;
-
-                if (cellData.colSpan > 1) td.colSpan = cellData.colSpan;
-                if (cellData.rowSpan > 1) td.rowSpan = cellData.rowSpan;
-
-                tr.appendChild(td);
-              }
-              table.appendChild(tr);
-            }
-
-            tableContainer.appendChild(table);
-            pdfPage.appendChild(tableContainer);
-          });
-        }
-
-        // Render images
-        if (pageData.images) {
-          pageData.images.forEach(imgData => {
-            const imgEl = document.createElement('div');
-
-            // Determine image URL based on type
-            let imageUrl = '';
-            if (imgData.type === '{{lot.landscape}}') {
-              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_landscape.jpg`;
-            } else if (imgData.type === '{{lot.map}}') {
-              imageUrl = `${lotImageBaseUrl}${lotImagePrefix}${lotValues['lot.number']}_map.jpg`;
-            } else if (imgData.type === 'static' && imgData.url) {
-              imageUrl = imgData.url;
-            }
-
-            imgEl.style.cssText = `
-              position: absolute;
-              left: ${imgData.x}px;
-              top: ${imgData.y}px;
-              width: ${imgData.width}px;
-              height: ${imgData.height}px;
-              background-image: url("${imageUrl}");
-              background-size: cover;
-              background-position: center;
-              background-repeat: no-repeat;
-              ${imgData.borderWidth > 0 ? `border: ${imgData.borderWidth}px solid ${imgData.borderColor || '#000000'}; box-sizing: border-box;` : ''}
-              ${imgData.zIndex !== undefined ? `z-index: ${imgData.zIndex};` : ''}
-            `;
-            pdfPage.appendChild(imgEl);
-          });
-        }
-      }
-
-      return pdfPage;
-    }
-
-    try {
-      // Step 1: Fetch template for this community group
-      progressText.textContent = 'Cargando plantilla...';
-      const templatePath = `/inverta/pdf/${communityGroup}/pdf-template.json`;
-
-      let template = { pages: {}, settings: {} };
-      try {
-        const response = await fetch(templatePath);
-        if (response.ok) {
-          template = await response.json();
-        } else {
-          throw new Error(`Template not found: ${templatePath}`);
-        }
-      } catch (err) {
-        console.error('Could not load PDF template:', err);
-        window.showToaster?.('Error: No se pudo cargar la plantilla PDF');
-        document.body.removeChild(progressOverlay);
-        document.body.removeChild(pdfContainer);
-        return;
-      }
-
-      // Get settings from template or use defaults
-      const settings = template.settings || {};
-      const totalPages = settings.totalPages || Object.keys(template.pages || {}).length || 8;
-
-      // Calculate lot values with financing options
-      const lotValues = getLotValues(lot, dynamicText, financing);
-
-      // Step 2: Preload ALL images in parallel
-      progressText.textContent = 'Cargando imágenes...';
-      progressBar.style.width = '10%';
-
-      const pageBackgroundBaseUrl = settings.pageBackgroundBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImageBaseUrl = settings.lotImageBaseUrl || `/inverta/pdf/${communityGroup}/`;
-      const lotImagePrefix = settings.lotImagePrefix || '';
-
-      const imagePromises = [];
-
-      // Preload page backgrounds
-      for (let i = 1; i <= totalPages; i++) {
-        const pageNum = String(i).padStart(3, '0');
-        imagePromises.push(new Promise(resolve => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = resolve;
-          img.onerror = resolve;
-          img.src = `${pageBackgroundBaseUrl}page.${pageNum}.png`;
-        }));
-      }
-
-      // Preload lot-specific images (landscape and map)
-      const lotNum = lotValues['lot.number'];
-      if (lotNum) {
-        ['landscape', 'map'].forEach(type => {
-          imagePromises.push(new Promise(resolve => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = resolve;
-            img.onerror = resolve;
-            img.src = `${lotImageBaseUrl}${lotImagePrefix}${lotNum}_${type}.jpg`;
-          }));
-        });
-
-        // Preload any static images from the template
-        Object.values(template.pages || {}).forEach(pageData => {
-          (pageData.images || []).forEach(imgData => {
-            if (imgData.type === 'static' && imgData.url) {
-              imagePromises.push(new Promise(resolve => {
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
-                img.onload = resolve;
-                img.onerror = resolve;
-                img.src = imgData.url;
-              }));
-            }
-          });
-        });
-      }
-
-      await Promise.all(imagePromises);
-      progressBar.style.width = '40%';
-
-      // Step 3: Generate PDF pages sequentially (required by jsPDF)
-      progressText.textContent = 'Generando PDF...';
-
-      // Use page dimensions from template or defaults
-      const pageWidth = settings.pageWidth || 1224;
-      const pageHeight = settings.pageHeight || 1584;
-      const orientation = pageWidth > pageHeight ? 'landscape' : 'portrait';
-
-      const worker = html2pdf().set({
-        margin: 0,
-        filename: `Inverta-${communityGroup}-lote-${lotValues['lot.number']}.pdf`,
-        image: { type: 'jpeg', quality: 1 },
-        html2canvas: { scale: 1, useCORS: true },
-        jsPDF: { unit: 'px', format: [pageWidth, pageHeight], orientation: orientation }
-      });
-
-      for (let i = 1; i <= totalPages; i++) {
-        progressText.textContent = `Renderizando página ${i} de ${totalPages}`;
-        progressBar.style.width = `${40 + (i / totalPages) * 55}%`;
-
-        const pageNum = String(i).padStart(3, '0');
-
-        // Create page with template elements
-        const page = createPage(pageNum, template, lotValues, settings);
-        pdfContainer.innerHTML = '';
-        pdfContainer.appendChild(page);
-
-        if (i === 1) {
-          await worker.from(page).toContainer().toCanvas().toPdf();
-        } else {
-          await worker.get('pdf').then(pdf => {
-            pdf.addPage([pageWidth, pageHeight], orientation);
-          });
-          await worker.from(page).toContainer().toCanvas().toPdf();
-        }
-      }
-
-      // Save the final PDF
-      progressText.textContent = 'Descargando...';
-      progressBar.style.width = '100%';
-      await worker.save();
-
-      // Clean up
-      document.body.removeChild(pdfContainer);
-      document.body.removeChild(progressOverlay);
-
-    } catch (err) {
-      console.error('PDF generation error:', err);
-      window.showToaster?.('Error al generar el PDF');
-      if (document.getElementById('pdf-progress-overlay')) {
-        document.body.removeChild(progressOverlay);
-      }
-      if (document.getElementById('pdf-generation-container')) {
-        document.body.removeChild(pdfContainer);
-      }
-    }
-  }
-
-  // Expose to global scope
-  window.generateMultiPagePDF = generateMultiPagePDF;
 })();
 </script>
 
