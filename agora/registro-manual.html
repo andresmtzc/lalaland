@@ -357,6 +357,7 @@
     }
 
     let supabaseClient;
+    const IS_DEMO = new URLSearchParams(location.search).has('demo');
 
     // Get agent phone from parent window (passed when opened from index.html)
     const parentAgentPhone = window.parent?.currentLead?.phone || null;
@@ -374,13 +375,7 @@
 
     async function loadAgentsDropdown() {
       try {
-        // In demo mode, show fake names to protect real agent privacy
-        const isDemoMode = (() => {
-          try { return !!(window.parent?.IS_DEMO); }
-          catch(e) { return false; }
-        })();
-
-        if (isDemoMode) {
+        if (IS_DEMO) {
           const fakeAgents = [
             { phone: '5210000000001', name: 'María', last_name: 'García' },
             { phone: '5210000000002', name: 'Carlos', last_name: 'López' },
@@ -475,6 +470,26 @@
       }
 
       try {
+        // In demo mode, fake the entire flow — no Supabase writes
+        const isDemoMode = (() => {
+          try { return !!(window.parent?.IS_DEMO); }
+          catch(e) { return false; }
+        })();
+
+        if (isDemoMode) {
+          const fakeToken = 'DEMO_' + generateToken();
+          generatedLink = `https://la-la.land/${CURRENT_CLIENT}/index.html?token=${fakeToken}`;
+          generatedPhone = phone;
+          generatedName = firstName;
+
+          document.getElementById('linkBox').textContent = generatedLink;
+          document.getElementById('formContainer').classList.add('hidden');
+          document.getElementById('resultContainer').classList.add('show');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Generar Link';
+          return;
+        }
+
         let { data: existingLead } = await supabaseClient
           .from('leads')
           .select('id, client_id')
