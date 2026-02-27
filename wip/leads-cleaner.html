@@ -338,6 +338,13 @@
     margin-top: 6px;
     display: none;
   }
+
+  /* Row status after push */
+  tbody tr.row-inserted { background: #f0faf2; }
+  tbody tr.row-skipped  { background: #f7f7f6; opacity: 0.6; }
+
+  .tag-inserted { background: #e8f5e9; color: #2e7d32; }
+  .tag-skipped  { background: #f0f0ee; color: #8a8880; }
 </style>
 </head>
 <body>
@@ -397,7 +404,7 @@
 
     <div id="actions">
       <button onclick="downloadCSV()">↓ Descargar CSV</button>
-      <button id="push-btn" onclick="pushToSupabase()">↑ Push a Supabase</button>
+      <button id="push-btn" onclick="pushToSupabase()">↑ Push</button>
       <button class="secondary" onclick="resetTool()">✕ Limpiar</button>
       <span id="push-result"></span>
     </div>
@@ -625,21 +632,28 @@ async function pushToSupabase() {
   if (fetchErr) {
     resultEl.textContent = '✖ Error al verificar: ' + fetchErr.message;
     btn.disabled = false;
-    btn.textContent = '↑ Push a Supabase';
+    btn.textContent = '↑ Push';
     return;
   }
 
   const existingSet = new Set((existing || []).map(r => r.phone));
 
-  const toInsert = cleanedData
-    .filter(r => r['Cel.'] && !existingSet.has(r['Cel.']))
-    .map(r => {
+  // Build index of rows to insert, keyed by phone
+  const insertRows = [];
+  const indexMap   = {};  // phone → [row indices]
+
+  cleanedData.forEach((r, i) => {
+    if (!r['Cel.']) return;
+    if (existingSet.has(r['Cel.'])) {
+      markRowStatus(i, 'skipped');
+    } else {
+      if (!indexMap[r['Cel.']]) indexMap[r['Cel.']] = [];
+      indexMap[r['Cel.']].push(i);
       const parts     = (r['Nombre'] || '').trim().split(/\s+/);
-      const name      = parts[0] || '';
-      const last_name = parts.slice(1).join(' ');
-      return {
-        name,
-        last_name,
+      insertRows.push({
+        _idx:           i,
+        name:           parts[0] || '',
+        last_name:      parts.slice(1).join(' '),
         phone:          r['Cel.'],
         email:          r['Correo'] || null,
         campaign:       r['Campaña'] || null,
@@ -647,19 +661,22 @@ async function pushToSupabase() {
         assigned_agent: {},
         is_demo:        false,
         created_at:     r['Fecha'] ? new Date(r['Fecha']).toISOString() : new Date().toISOString(),
-      };
-    });
+      });
+    }
+  });
 
-  const skipped = cleanedData.length - toInsert.length;
+  const skipped = cleanedData.length - insertRows.length;
 
-  if (toInsert.length === 0) {
+  if (insertRows.length === 0) {
     resultEl.textContent = `✓ ${skipped} ya existían — nada nuevo`;
     btn.disabled = false;
-    btn.textContent = '↑ Push a Supabase';
+    btn.textContent = '↑ Push';
     return;
   }
 
-  btn.textContent = `Insertando ${toInsert.length}...`;
+  btn.textContent = `Insertando ${insertRows.length}...`;
+
+  const toInsert = insertRows.map(({ _idx, ...rest }) => rest);
 
   const { error: insertErr } = await supabaseClient
     .from('leads')
@@ -668,11 +685,12 @@ async function pushToSupabase() {
   if (insertErr) {
     resultEl.textContent = '✖ Error: ' + insertErr.message;
   } else {
-    resultEl.textContent = `✓ ${toInsert.length} insertados` + (skipped ? `, ${skipped} omitidos` : '');
+    insertRows.forEach(r => markRowStatus(r._idx, 'inserted'));
+    resultEl.textContent = `✓ ${insertRows.length} insertados` + (skipped ? `, ${skipped} omitidos` : '');
   }
 
   btn.disabled = false;
-  btn.textContent = '↑ Push a Supabase';
+  btn.textContent = '↑ Push';
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -744,10 +762,10 @@ function capitalize(str) {
 
 function renderTable() {
   document.getElementById('thead').innerHTML =
-    '<tr>' + COLS.map(c => `<th>${c}</th>`).join('') + '</tr>';
+    '<tr>' + COLS.map(c => `<th>${c}</th>`).join('') + '<th></th></tr>';
 
   document.getElementById('tbody').innerHTML = cleanedData.map((row, i) =>
-    '<tr>' + COLS.map(col => {
+    `<tr id="row-${i}">` + COLS.map(col => {
       const v = row[col] || '';
 
       if (col === 'Fuente') {
@@ -764,8 +782,21 @@ function renderTable() {
       }
 
       return `<td>${v}</td>`;
-    }).join('') + '</tr>'
+    }).join('') + `<td id="status-${i}"></td></tr>`
   ).join('');
+}
+
+function markRowStatus(i, status) {
+  const tr  = document.getElementById(`row-${i}`);
+  const td  = document.getElementById(`status-${i}`);
+  if (!tr || !td) return;
+  if (status === 'inserted') {
+    tr.className = 'row-inserted';
+    td.innerHTML = '<span class="tag tag-inserted">✓ nuevo</span>';
+  } else {
+    tr.className = 'row-skipped';
+    td.innerHTML = '<span class="tag tag-skipped">ya existe</span>';
+  }
 }
 
 function renderStats() {
