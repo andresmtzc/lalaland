@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --color-primary: #e91843;
@@ -43,18 +44,102 @@
     color: var(--color-primary);
   }
 
-  header span {
+  .header-right {
     position: absolute;
     right: 52px;
     top: 50%;
     transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .header-right span {
     font-size: 12px;
     color: var(--color-gray);
   }
 
-  .main {
-    padding: 12px;
+  .main { padding: 12px; }
+
+  /* ── Auth gate ── */
+  #auth-gate {
+    max-width: 300px;
+    margin: 60px auto;
+    background: #fff;
+    border: 1px solid #e0ddd5;
+    border-radius: 8px;
+    padding: 28px 24px;
   }
+
+  #auth-gate h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 18px;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+
+  .form-group { margin-bottom: 8px; }
+
+  .form-group input {
+    width: 100%;
+    font-family: 'Barlow Condensed', Arial, sans-serif;
+    font-size: 14px;
+    padding: 8px 10px;
+    border: 1px solid #e0ddd5;
+    border-radius: 4px;
+    outline: none;
+    background: var(--color-cream);
+    transition: border-color 0.2s;
+  }
+
+  .form-group input:focus { border-color: var(--color-primary); }
+
+  #login-submit {
+    width: 100%;
+    margin-top: 6px;
+    padding: 9px;
+    font-size: 14px;
+  }
+
+  #login-error {
+    display: none;
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: #fff0f2;
+    border: 1px solid var(--color-primary);
+    border-radius: 4px;
+    color: var(--color-primary);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  /* ── Access denied ── */
+  #access-denied {
+    display: none;
+    max-width: 320px;
+    margin: 60px auto;
+    text-align: center;
+    padding: 32px 24px;
+    background: #fff;
+    border: 1px solid #e0ddd5;
+    border-radius: 8px;
+  }
+
+  #access-denied h2 {
+    color: var(--color-primary);
+    font-size: 18px;
+    margin-bottom: 8px;
+  }
+
+  #access-denied p {
+    color: var(--color-gray);
+    font-size: 13px;
+  }
+
+  /* ── Tool ── */
+  #tool { display: none; }
 
   /* Drop Zone */
   #dropzone {
@@ -146,6 +231,7 @@
     display: none;
     gap: 8px;
     margin: 10px 0;
+    align-items: center;
   }
 
   button {
@@ -163,14 +249,20 @@
   }
 
   button:hover { text-decoration: underline; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:disabled:hover { text-decoration: none; }
 
   button.secondary {
     background: none;
     border: 1px solid #e0ddd5;
     color: var(--color-gray);
   }
-
   button.secondary:hover { background: rgba(0,0,0,0.05); text-decoration: none; }
+
+  #push-result {
+    font-size: 12px;
+    color: var(--color-gray);
+  }
 
   /* Table */
   #table-wrap {
@@ -182,10 +274,7 @@
     margin-top: 10px;
   }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
+  table { width: 100%; border-collapse: collapse; }
 
   thead { background: var(--color-primary); color: var(--color-cream); }
 
@@ -205,7 +294,6 @@
   tbody tr:hover { background: #faf8f3; }
 
   td { padding: 8px; font-size: 13px; }
-
   td.empty { color: var(--color-gray); }
 
   .tag {
@@ -215,10 +303,7 @@
     font-size: 11px;
     font-weight: 600;
   }
-  .tag-fb { background: #e8f0fe; color: #1a73e8; }
-  .tag-ig { background: #fce4ec; color: #e91843; }
-  .tag-leads { background: #e8f5e9; color: #2e7d32; }
-  .tag-vivir { background: #e8f5e9; color: #2e7d32; }
+  .tag-vivir    { background: #e8f5e9; color: #2e7d32; }
   .tag-invertir { background: #fff8e1; color: #f57f17; }
 
   .fuente-select {
@@ -247,56 +332,91 @@
     margin-top: 10px;
   }
 
-  .reset-btn {
-    margin-top: 10px;
-    display: none;
-  }
-
   #empty-cols-note {
     font-size: 11px;
     color: var(--color-gray);
     margin-top: 6px;
     display: none;
   }
+
+  /* Row status after push */
+  tbody tr.row-inserted { background: #f0faf2; }
+  tbody tr.row-skipped  { background: #f7f7f6; opacity: 0.6; }
+
+  .tag-inserted { background: #e8f5e9; color: #2e7d32; }
+  .tag-skipped  { background: #f0f0ee; color: #8a8880; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>Leads Cleaner</h1>
-  <span>Meta Ads CSV → CRM Format</span>
+  <div class="header-right">
+    <span id="header-subtitle">Meta Ads CSV → CRM Format</span>
+    <span id="header-user" style="display:none"></span>
+    <button id="logout-btn" class="secondary" style="display:none" onclick="handleLogout()">Salir</button>
+  </div>
 </header>
 
 <div class="main">
 
-  <div id="dropzone" onclick="document.getElementById('fileInput').click()">
-    <div class="icon">⬆</div>
-    <p>Arrastra tu CSV aquí<br>o <strong>haz clic para seleccionar</strong></p>
-    <input type="file" id="fileInput" accept=".csv">
+  <!-- AUTH GATE -->
+  <div id="auth-gate">
+    <h2>Leads Cleaner</h2>
+    <form id="login-form" onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <input type="email" id="login-email" placeholder="Correo electrónico" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <input type="password" id="login-password" placeholder="Contraseña" required autocomplete="current-password">
+      </div>
+      <button type="submit" id="login-submit">Entrar</button>
+      <div id="login-error"></div>
+    </form>
   </div>
 
-  <div id="error-msg"></div>
-
-  <div id="stats-bar" style="display:flex">
-    <div class="stat"><div class="label">Total Leads</div><div class="value" id="stat-total">0</div></div>
-    <div class="stat"><div class="label">Proyectos</div><div class="value" id="stat-proyectos">0</div></div>
-    <div class="stat"><div class="label">Plataformas</div><div class="value" id="stat-platforms">—</div></div>
-    <div class="stat"><div class="label">Rango Fechas</div><div class="value" id="stat-dates" style="font-size:1rem;padding-top:0.4rem">—</div></div>
+  <!-- ACCESS DENIED -->
+  <div id="access-denied">
+    <h2>Sin acceso</h2>
+    <p>Tu cuenta no tiene permiso para usar esta herramienta.</p>
+    <button class="secondary" style="margin-top:16px" onclick="handleLogout()">Cerrar sesión</button>
   </div>
 
-  <p id="empty-cols-note">* Atd. y Asignado se llenan manualmente.</p>
+  <!-- TOOL (shown after auth) -->
+  <div id="tool">
 
-  <div id="actions" style="display:flex">
-    <button onclick="downloadCSV()">↓ Descargar CSV limpio</button>
-    <button class="secondary" onclick="resetTool()">✕ Limpiar</button>
-  </div>
+    <div id="dropzone" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">⬆</div>
+      <p>Arrastra tu CSV aquí<br>o <strong>haz clic para seleccionar</strong></p>
+      <input type="file" id="fileInput" accept=".csv">
+    </div>
 
-  <div id="table-wrap">
-    <table>
-      <thead id="thead"></thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
+    <div id="error-msg"></div>
+
+    <div id="stats-bar">
+      <div class="stat"><div class="label">Total Leads</div><div class="value" id="stat-total">0</div></div>
+      <div class="stat"><div class="label">Proyectos</div><div class="value" id="stat-proyectos">0</div></div>
+      <div class="stat"><div class="label">Plataformas</div><div class="value" id="stat-platforms">—</div></div>
+      <div class="stat"><div class="label">Rango Fechas</div><div class="value" id="stat-dates" style="font-size:1rem;padding-top:0.4rem">—</div></div>
+    </div>
+
+    <p id="empty-cols-note">* Atd. y Asignado se llenan manualmente.</p>
+
+    <div id="actions">
+      <button onclick="downloadCSV()">↓ Descargar CSV</button>
+      <button id="push-btn" onclick="pushToSupabase()">↑ Push</button>
+      <button class="secondary" onclick="resetTool()">✕ Limpiar</button>
+      <span id="push-result"></span>
+    </div>
+
+    <div id="table-wrap">
+      <table>
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+  </div><!-- /tool -->
 
 </div>
 
@@ -305,11 +425,96 @@ const COLS = ['Fecha','Nombre','Cel.','Correo','Proyecto','Fuente','Interés','E
 const FUENTE_OPTS = ['Campaña','Whatsapp','FB/IG','Influencer','Telefono','Visita'];
 
 let cleanedData = [];
+let supabaseClient = null;
+let currentUser = null;
 
-// Drag & drop
+// ─── SUPABASE INIT & AUTH ────────────────────────────────────────────────────
+
+async function initSupabase() {
+  const cfg = await fetch('https://la-la.land/sb_config.json').then(r => r.json());
+  supabaseClient = window.supabase.createClient(cfg.url, cfg.key, {
+    auth: { storageKey: 'sb-agora-auth' }
+  });
+  await checkAuth();
+}
+
+async function checkAuth() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) { showSection('auth-gate'); return; }
+  await verifyEditor(session);
+}
+
+async function verifyEditor(session) {
+  const { data: editor } = await supabaseClient
+    .from('editors')
+    .select('id')
+    .eq('email', session.user.email)
+    .eq('client_id', 'agora')
+    .maybeSingle();
+
+  if (!editor) { showSection('access-denied'); return; }
+
+  currentUser = session.user;
+  showSection('tool');
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const email    = document.getElementById('login-email').value;
+  const password = document.getElementById('login-password').value;
+  const btn      = document.getElementById('login-submit');
+  const errEl    = document.getElementById('login-error');
+
+  btn.disabled = true;
+  btn.textContent = 'Entrando...';
+  errEl.style.display = 'none';
+
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+  if (error || !data.session) {
+    errEl.textContent = 'Correo o contraseña incorrectos.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Entrar';
+    return;
+  }
+
+  await verifyEditor(data.session);
+}
+
+async function handleLogout() {
+  await supabaseClient.auth.signOut();
+  currentUser = null;
+  resetTool();
+  showSection('auth-gate');
+}
+
+function showSection(id) {
+  ['auth-gate', 'access-denied', 'tool'].forEach(s => {
+    document.getElementById(s).style.display = s === id ? (s === 'tool' ? 'block' : 'block') : 'none';
+  });
+
+  const isAuthed = id === 'tool';
+  document.getElementById('header-subtitle').style.display = isAuthed ? 'none' : 'inline';
+  document.getElementById('header-user').style.display    = isAuthed ? 'inline' : 'none';
+  document.getElementById('logout-btn').style.display     = isAuthed ? 'inline-block' : 'none';
+
+  if (isAuthed && currentUser) {
+    document.getElementById('header-user').textContent = currentUser.email;
+  }
+
+  // Reset login form state when returning to auth gate
+  if (id === 'auth-gate') {
+    document.getElementById('login-submit').disabled = false;
+    document.getElementById('login-submit').textContent = 'Entrar';
+  }
+}
+
+// ─── DRAG & DROP ─────────────────────────────────────────────────────────────
+
 const dz = document.getElementById('dropzone');
-dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', ()  => dz.classList.remove('drag-over'));
 dz.addEventListener('drop', e => {
   e.preventDefault();
   dz.classList.remove('drag-over');
@@ -319,6 +524,26 @@ dz.addEventListener('drop', e => {
 document.getElementById('fileInput').addEventListener('change', e => {
   if (e.target.files[0]) processFile(e.target.files[0]);
 });
+
+// ─── PHONE NORMALIZATION ─────────────────────────────────────────────────────
+// Target: WhatsApp ID format — digits only, full country code, no + prefix
+// Mexican mobile: 521XXXXXXXXXX (13 digits)
+
+function normalizePhone(raw) {
+  if (!raw) return '';
+  // Strip +, spaces, dashes, parens, dots
+  let d = raw.replace(/[\s\-.()+"]/g, '');
+  // International dialing prefix 00 → strip
+  if (d.startsWith('00')) d = d.slice(2);
+  // 10-digit → assume Mexico mobile → 521XXXXXXXXXX
+  if (d.length === 10) return '521' + d;
+  // 12-digit starting with 52 but not 521 → insert 1 (521XXXXXXXXXX)
+  if (d.length === 12 && d.startsWith('52') && !d.startsWith('521')) return '521' + d.slice(2);
+  // Otherwise trust the number already has a country code
+  return d;
+}
+
+// ─── CSV PROCESSING ───────────────────────────────────────────────────────────
 
 function processFile(file) {
   if (!file.name.endsWith('.csv')) { showError('Por favor sube un archivo .csv'); return; }
@@ -332,22 +557,23 @@ function parseCSV(text) {
   if (lines.length < 2) { showError('El archivo no tiene datos.'); return; }
 
   const headers = parseRow(lines[0]).map(h => h.trim().toLowerCase());
-
   const idx = name => headers.findIndex(h => h.includes(name));
 
-  const iCreated   = idx('created_time');
-  const iName      = idx('full name');
-  const iPhone     = idx('phone');
-  const iEmail     = idx('email');
-  const iAdset     = idx('adset_name');
-  const iPlatform  = idx('platform');
-  const iInteres   = headers.findIndex(h => h.includes('vivir') || h.includes('buscas'));
-  const iEnganche  = headers.findIndex(h => h.includes('enganche'));
-  const iPref      = headers.findIndex(h => h.includes('contacten') || h.includes('deseas'));
-  const iCampaign  = idx('ad_name');
-  const iFuente    = idx('fuente');
+  const iCreated  = idx('created_time');
+  const iName     = idx('full name');
+  const iPhone    = idx('phone');
+  const iEmail    = idx('email');
+  const iAdset    = idx('adset_name');
+  const iInteres  = headers.findIndex(h => h.includes('vivir') || h.includes('buscas'));
+  const iEnganche = headers.findIndex(h => h.includes('enganche'));
+  const iPref     = headers.findIndex(h => h.includes('contacten') || h.includes('deseas'));
+  const iCampaign = idx('ad_name');
+  const iFuente   = idx('fuente');
 
-  if (iCreated === -1 || iName === -1) { showError('No se reconoce el formato del CSV. ¿Es un dump de Meta Ads?'); return; }
+  if (iCreated === -1 || iName === -1) {
+    showError('No se reconoce el formato del CSV. ¿Es un dump de Meta Ads?');
+    return;
+  }
 
   cleanedData = [];
 
@@ -355,27 +581,19 @@ function parseCSV(text) {
     const row = parseRow(lines[i]);
     if (!row[iName] || !row[iName].trim()) continue;
 
-    const proyecto = extractLastWord(row[iAdset] || '');
-    const enganche = extractEnganche(row[iEnganche] || '');
-    const fecha    = formatDate(row[iCreated] || '');
-    const fuente   = iFuente !== -1 ? normalizeFuente(row[iFuente] || '') : 'Campaña';
-    const pref     = capitalize(cleanValue(row[iPref] || ''));
-    const interes  = capitalize(cleanValue(row[iInteres] || ''));
-    const campaña  = cleanCampaignName(row[iCampaign] || '');
-
     cleanedData.push({
-      'Fecha':      fecha,
-      'Nombre':     capitalize(row[iName] || ''),
-      'Cel.':       row[iPhone] || '',
-      'Correo':     (row[iEmail] || '').trim(),
-      'Proyecto':   proyecto,
-      'Fuente':     fuente,
-      'Interés':    interes,
-      'Enganche':   enganche,
-      'Preferencia':pref,
-      'Atd.':       '',
-      'Asignado':   '',
-      'Campaña':    campaña,
+      'Fecha':       formatDate(row[iCreated] || ''),
+      'Nombre':      capitalize(row[iName] || ''),
+      'Cel.':        normalizePhone(row[iPhone] || ''),
+      'Correo':      (row[iEmail] || '').trim(),
+      'Proyecto':    extractLastWord(row[iAdset] || ''),
+      'Fuente':      iFuente !== -1 ? normalizeFuente(row[iFuente] || '') : 'Campaña',
+      'Interés':     capitalize(cleanValue(row[iInteres] || '')),
+      'Enganche':    extractEnganche(row[iEnganche] || ''),
+      'Preferencia': capitalize(cleanValue(row[iPref] || '')),
+      'Atd.':        '',
+      'Asignado':    '',
+      'Campaña':     cleanCampaignName(row[iCampaign] || ''),
     });
   }
 
@@ -384,12 +602,98 @@ function parseCSV(text) {
   hideError();
   renderTable();
   renderStats();
-  document.getElementById('stats-bar').style.display = 'flex';
-  document.getElementById('actions').style.display = 'flex';
-  document.getElementById('table-wrap').style.display = 'block';
+  document.getElementById('stats-bar').style.display   = 'flex';
+  document.getElementById('actions').style.display     = 'flex';
+  document.getElementById('table-wrap').style.display  = 'block';
   document.getElementById('empty-cols-note').style.display = 'block';
   dz.style.display = 'none';
 }
+
+// ─── PUSH TO SUPABASE ─────────────────────────────────────────────────────────
+
+async function pushToSupabase() {
+  if (!supabaseClient || cleanedData.length === 0) return;
+
+  const btn      = document.getElementById('push-btn');
+  const resultEl = document.getElementById('push-result');
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+  resultEl.textContent = '';
+
+  const phones = [...new Set(cleanedData.map(r => r['Cel.']).filter(Boolean))];
+
+  // Check which phones already exist for agora
+  const { data: existing, error: fetchErr } = await supabaseClient
+    .from('leads')
+    .select('phone')
+    .in('phone', phones)
+    .contains('client_id', ['agora']);
+
+  if (fetchErr) {
+    resultEl.textContent = '✖ Error al verificar: ' + fetchErr.message;
+    btn.disabled = false;
+    btn.textContent = '↑ Push';
+    return;
+  }
+
+  const existingSet = new Set((existing || []).map(r => r.phone));
+
+  // Build index of rows to insert, keyed by phone
+  const insertRows = [];
+  const indexMap   = {};  // phone → [row indices]
+
+  cleanedData.forEach((r, i) => {
+    if (!r['Cel.']) return;
+    if (existingSet.has(r['Cel.'])) {
+      markRowStatus(i, 'skipped');
+    } else {
+      if (!indexMap[r['Cel.']]) indexMap[r['Cel.']] = [];
+      indexMap[r['Cel.']].push(i);
+      const parts     = (r['Nombre'] || '').trim().split(/\s+/);
+      insertRows.push({
+        _idx:           i,
+        name:           parts[0] || '',
+        last_name:      parts.slice(1).join(' '),
+        phone:          r['Cel.'],
+        email:          r['Correo'] || null,
+        campaign:       r['Campaña'] || null,
+        client_id:      ['agora'],
+        assigned_agent: {},
+        is_demo:        false,
+        created_at:     r['Fecha'] ? new Date(r['Fecha']).toISOString() : new Date().toISOString(),
+      });
+    }
+  });
+
+  const skipped = cleanedData.length - insertRows.length;
+
+  if (insertRows.length === 0) {
+    resultEl.textContent = `✓ ${skipped} ya existían — nada nuevo`;
+    btn.disabled = false;
+    btn.textContent = '↑ Push';
+    return;
+  }
+
+  btn.textContent = `Insertando ${insertRows.length}...`;
+
+  const toInsert = insertRows.map(({ _idx, ...rest }) => rest);
+
+  const { error: insertErr } = await supabaseClient
+    .from('leads')
+    .insert(toInsert);
+
+  if (insertErr) {
+    resultEl.textContent = '✖ Error: ' + insertErr.message;
+  } else {
+    insertRows.forEach(r => markRowStatus(r._idx, 'inserted'));
+    resultEl.textContent = `✓ ${insertRows.length} insertados` + (skipped ? `, ${skipped} omitidos` : '');
+  }
+
+  btn.disabled = false;
+  btn.textContent = '↑ Push';
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function parseRow(line) {
   const result = [];
@@ -405,18 +709,14 @@ function parseRow(line) {
 }
 
 function extractLastWord(str) {
-  // e.g. "26_ENE Leads CAMPESTRE" → "Campestre"
   const cleaned = str.replace(/_/g, ' ').trim();
-  const parts = cleaned.split(/\s+/);
-  const last = parts[parts.length - 1] || str;
-  return capitalize(last.toLowerCase());
+  const parts   = cleaned.split(/\s+/);
+  return capitalize((parts[parts.length - 1] || str).toLowerCase());
 }
 
 function extractEnganche(str) {
-  // find a number followed by %
   const match = str.match(/(\d+)\s*%/);
   if (match) return match[1] + '%';
-  // fallback: find number
   const num = str.match(/(\d+)/);
   if (num) return num[1] + '%';
   return cleanValue(str);
@@ -426,8 +726,8 @@ function formatDate(str) {
   // "1/5/26" → "2026-01-05"
   const parts = str.split('/');
   if (parts.length === 3) {
-    const m = parts[0].padStart(2,'0');
-    const d = parts[1].padStart(2,'0');
+    const m = parts[0].padStart(2, '0');
+    const d = parts[1].padStart(2, '0');
     const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
     return `${y}-${m}-${d}`;
   }
@@ -439,7 +739,6 @@ function cleanValue(str) {
 }
 
 function cleanCampaignName(str) {
-  // "26_Campestre Ene Ad 1" → keep as is, just clean underscores
   return str.replace(/^[\d_]+/, '').replace(/_/g, ' ').trim() || str;
 }
 
@@ -448,7 +747,7 @@ function normalizeFuente(str) {
   if (s.includes('campa'))                                    return 'Campaña';
   if (s.includes('whatsapp') || s.includes('whats'))         return 'Whatsapp';
   if (s.includes('facebook') || s.includes('instagram') ||
-      s.includes('fb') || s.includes('ig'))                  return 'FB/IG';
+      s.includes('fb')       || s.includes('ig'))            return 'FB/IG';
   if (s.includes('influencer'))                              return 'Influencer';
   if (s.includes('tel') || s.includes('llam'))               return 'Telefono';
   if (s.includes('visita') || s.includes('visit'))           return 'Visita';
@@ -459,32 +758,45 @@ function capitalize(str) {
   return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// ─── TABLE & STATS ────────────────────────────────────────────────────────────
+
 function renderTable() {
-  const thead = document.getElementById('thead');
-  const tbody = document.getElementById('tbody');
+  document.getElementById('thead').innerHTML =
+    '<tr>' + COLS.map(c => `<th>${c}</th>`).join('') + '<th></th></tr>';
 
-  thead.innerHTML = '<tr>' + COLS.map(c => `<th>${c}</th>`).join('') + '</tr>';
-
-  tbody.innerHTML = cleanedData.map((row, i) => {
-    const cells = COLS.map(col => {
+  document.getElementById('tbody').innerHTML = cleanedData.map((row, i) =>
+    `<tr id="row-${i}">` + COLS.map(col => {
       const v = row[col] || '';
 
       if (col === 'Fuente') {
-        const opts = FUENTE_OPTS.map(o => `<option${o === v ? ' selected' : ''}>${o}</option>`).join('');
+        const opts = FUENTE_OPTS.map(o =>
+          `<option${o === v ? ' selected' : ''}>${o}</option>`).join('');
         return `<td><select class="fuente-select" onchange="cleanedData[${i}]['Fuente']=this.value">${opts}</select></td>`;
       }
 
       if (!v) return `<td class="empty">—</td>`;
 
-      let display = v;
       if (col === 'Interés') {
         const cls = v.toLowerCase().includes('invertir') ? 'tag-invertir' : 'tag-vivir';
-        display = `<span class="tag ${cls}">${v}</span>`;
+        return `<td><span class="tag ${cls}">${v}</span></td>`;
       }
-      return `<td>${display}</td>`;
-    });
-    return '<tr>' + cells.join('') + '</tr>';
-  }).join('');
+
+      return `<td>${v}</td>`;
+    }).join('') + `<td id="status-${i}"></td></tr>`
+  ).join('');
+}
+
+function markRowStatus(i, status) {
+  const tr  = document.getElementById(`row-${i}`);
+  const td  = document.getElementById(`status-${i}`);
+  if (!tr || !td) return;
+  if (status === 'inserted') {
+    tr.className = 'row-inserted';
+    td.innerHTML = '<span class="tag tag-inserted">✓ nuevo</span>';
+  } else {
+    tr.className = 'row-skipped';
+    td.innerHTML = '<span class="tag tag-skipped">ya existe</span>';
+  }
 }
 
 function renderStats() {
@@ -498,23 +810,24 @@ function renderStats() {
 
   const dates = cleanedData.map(r => r['Fecha']).filter(Boolean).sort();
   if (dates.length) {
-    const first = dates[0].slice(5).replace('-','/');
-    const last  = dates[dates.length-1].slice(5).replace('-','/');
-    document.getElementById('stat-dates').textContent = first === last ? first : `${first} – ${last}`;
+    const first = dates[0].slice(5).replace('-', '/');
+    const last  = dates[dates.length - 1].slice(5).replace('-', '/');
+    document.getElementById('stat-dates').textContent =
+      first === last ? first : `${first} – ${last}`;
   }
 }
 
 function downloadCSV() {
   const header = COLS.join(',');
-  const rows = cleanedData.map(row =>
+  const rows   = cleanedData.map(row =>
     COLS.map(c => {
       const v = row[c] || '';
-      return v.includes(',') || v.includes('"') ? `"${v.replace(/"/g,'""')}"` : v;
+      return v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v;
     }).join(',')
   );
   const blob = new Blob(['\uFEFF' + [header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
   a.href = url;
   a.download = 'leads_limpio.csv';
   a.click();
@@ -526,21 +839,26 @@ function showError(msg) {
   el.textContent = '⚠ ' + msg;
   el.style.display = 'block';
 }
+
 function hideError() {
   document.getElementById('error-msg').style.display = 'none';
 }
 
 function resetTool() {
   cleanedData = [];
-  document.getElementById('stats-bar').style.display = 'none';
-  document.getElementById('actions').style.display = 'none';
-  document.getElementById('table-wrap').style.display = 'none';
-  document.getElementById('empty-cols-note').style.display = 'none';
-  document.getElementById('tbody').innerHTML = '';
-  document.getElementById('fileInput').value = '';
+  document.getElementById('stats-bar').style.display        = 'none';
+  document.getElementById('actions').style.display          = 'none';
+  document.getElementById('table-wrap').style.display       = 'none';
+  document.getElementById('empty-cols-note').style.display  = 'none';
+  document.getElementById('push-result').textContent        = '';
+  document.getElementById('tbody').innerHTML                 = '';
+  document.getElementById('fileInput').value                = '';
   dz.style.display = 'block';
   hideError();
 }
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+initSupabase();
 </script>
 </body>
 </html>
