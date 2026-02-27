@@ -700,7 +700,10 @@
 
         // In agent mode: only show leads assigned to this agent
         if (DASHBOARD_MODE === 'agent' && AGENT_PHONE) {
-          leads = leads.filter(l => l.assigned_agent === AGENT_PHONE);
+          leads = leads.filter(l => {
+            const agent = (typeof l.assigned_agent === 'object' && l.assigned_agent) ? l.assigned_agent[CURRENT_CLIENT] : l.assigned_agent;
+            return agent === AGENT_PHONE;
+          });
         }
 
         if (leads.length === 0) {
@@ -1078,8 +1081,10 @@
           aVal = getMexicanState(a.phone);
           bVal = getMexicanState(b.phone);
         } else if (col === 'assigned_agent') {
-          aVal = a.assigned_agent ? (agentNameMap[a.assigned_agent] || a.assigned_agent) : '';
-          bVal = b.assigned_agent ? (agentNameMap[b.assigned_agent] || b.assigned_agent) : '';
+          const aAgent = (typeof a.assigned_agent === 'object' && a.assigned_agent) ? a.assigned_agent[CURRENT_CLIENT] : a.assigned_agent;
+          const bAgent = (typeof b.assigned_agent === 'object' && b.assigned_agent) ? b.assigned_agent[CURRENT_CLIENT] : b.assigned_agent;
+          aVal = aAgent ? (agentNameMap[aAgent] || aAgent) : '';
+          bVal = bAgent ? (agentNameMap[bAgent] || bAgent) : '';
         }
 
         if (currentSort.direction === 'asc') {
@@ -1137,9 +1142,13 @@
             <td class="score-cell">${getScoreEmoji(lead.score)}</td>
             <td style="text-align: center;">${lead.exported ? 'Sí' : 'No'}</td>
             <td>${lead.campaign || '-'}</td>
-            ${DASHBOARD_MODE === 'admin'
-              ? `<td class="assign-cell" onclick="openAssignDropdown(this, '${lead.id}', '${lead.assigned_agent || ''}')">${lead.assigned_agent ? (agentNameMap[lead.assigned_agent] || lead.assigned_agent) : '-'}</td>`
-              : `<td>${lead.assigned_agent ? (agentNameMap[lead.assigned_agent] || lead.assigned_agent) : '-'}</td>`}
+            ${(() => {
+              const agentVal = (typeof lead.assigned_agent === 'object' && lead.assigned_agent) ? lead.assigned_agent[CURRENT_CLIENT] : lead.assigned_agent;
+              const agentDisplay = agentVal ? (agentNameMap[agentVal] || agentVal) : '-';
+              return DASHBOARD_MODE === 'admin'
+                ? `<td class="assign-cell" onclick="openAssignDropdown(this, '${lead.id}', '${agentVal || ''}')">${agentDisplay}</td>`
+                : `<td>${agentDisplay}</td>`;
+            })()}
             ${DASHBOARD_MODE === 'admin'
               ? `<td class="col-agent-toggle" style="text-align:center;"><button onclick="toggleAgent('${lead.id}', true)" class="agent-btn" title="Hacer agente">+</button></td>`
               : ''}
@@ -1234,16 +1243,26 @@
 
     async function assignAgent(leadId, agentPhone, cell) {
       try {
+        // Read current assigned_agent to merge
+        const lead = allLeads.find(l => l.id === leadId);
+        const existing = (typeof lead?.assigned_agent === 'object' && lead?.assigned_agent) || {};
+        const updated = { ...existing };
+        if (agentPhone) {
+          updated[CURRENT_CLIENT] = agentPhone;
+        } else {
+          delete updated[CURRENT_CLIENT];
+        }
+        const newValue = Object.keys(updated).length > 0 ? updated : null;
+
         const { error } = await supabaseClient
           .from('leads')
-          .update({ assigned_agent: agentPhone || null })
+          .update({ assigned_agent: newValue })
           .eq('id', leadId);
 
         if (error) throw error;
 
         // Update local data
-        const lead = allLeads.find(l => l.id === leadId);
-        if (lead) lead.assigned_agent = agentPhone || null;
+        if (lead) lead.assigned_agent = newValue;
 
         // Restore cell text
         const name = agentPhone ? (agentNameMap[agentPhone] || agentPhone) : '-';
