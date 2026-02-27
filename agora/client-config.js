@@ -101,8 +101,8 @@ const CLIENT_CONFIGS = {
 
       // Initial map view (can be overridden by default community)
       initialView: {
-        center: [-100.178178, 25.441325], // Marsella center-100.1534, 25.4255 - 12
-        zoom: 16.4
+        center: [-100.179293, 25.436671], // Marsella center-100.1534, 25.4255 - 12
+        zoom: 15.6
       }
     },
 
