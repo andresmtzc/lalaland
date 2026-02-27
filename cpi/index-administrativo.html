@@ -869,6 +869,28 @@ let currentImages = [];
 let currentImageIndex = -1;
 let imageNumberToArrayIndex = {}; // Maps original image number (from filename) to currentImages array position
 let preloadedImages = {};
+let preloadLRU = [];
+const MAX_CACHED_IMAGES = 3;
+let viewerAnimationId = null;
+
+function cacheImage(url, img) {
+  const idx = preloadLRU.indexOf(url);
+  if (idx !== -1) preloadLRU.splice(idx, 1);
+  while (preloadLRU.length >= MAX_CACHED_IMAGES) {
+    const evictUrl = preloadLRU.shift();
+    if (preloadedImages[evictUrl]) {
+      preloadedImages[evictUrl].src = '';
+      delete preloadedImages[evictUrl];
+    }
+  }
+  preloadedImages[url] = img;
+  preloadLRU.push(url);
+}
+
+function touchCache(url) {
+  const idx = preloadLRU.indexOf(url);
+  if (idx !== -1) { preloadLRU.splice(idx, 1); preloadLRU.push(url); }
+}
 let viewConeMarker = null;
 let isSwitchingTrack = false;
 
@@ -1100,7 +1122,7 @@ function initThreeJSViewer() {
 
   renderer = new THREE.WebGLRenderer({
     canvas, 
-    antialias: true, 
+    antialias: window.devicePixelRatio < 3,
     alpha: false, 
     powerPreference: 'high-performance'
   });
@@ -1119,12 +1141,19 @@ function initThreeJSViewer() {
 
 function animateViewer(){
   if (!viewerInitialized) return;
-  requestAnimationFrame(animateViewer);
+  viewerAnimationId = requestAnimationFrame(animateViewer);
   updateNavigationRing();
   if (renderer && scene && camera) {
     try {
       renderer.render(scene, camera);
     } catch(e) {}
+  }
+}
+
+function stopAnimateViewer() {
+  if (viewerAnimationId) {
+    cancelAnimationFrame(viewerAnimationId);
+    viewerAnimationId = null;
   }
 }
 
@@ -1788,7 +1817,7 @@ function preloadMarriedMarbleImages() {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
       img.onload = () => {
-        preloadedImages[url] = img;
+        cacheImage(url, img);
         console.log('Preloaded married marble image:', url);
       };
       img.onerror = () => console.log('Failed to preload:', url);
@@ -1912,6 +1941,7 @@ function showImageInViewer(imageUrl, imageData) {
 
   if (preloadedImages[imageUrl]) {
     console.log('✅ Using preloaded image');
+    touchCache(imageUrl);
     hideViewerLoading();
     applyImageToSphere(preloadedImages[imageUrl], imageData);
     preloadAdjacentImages();
@@ -1923,7 +1953,7 @@ function showImageInViewer(imageUrl, imageData) {
   
   img.onload = function() {
     console.log('✅ Image loaded successfully:', imageUrl);
-    preloadedImages[imageUrl] = img;
+    cacheImage(imageUrl, img);
     hideViewerLoading();
     applyImageToSphere(img, imageData);
     preloadAdjacentImages();
@@ -2002,7 +2032,7 @@ function preloadOne(index) {
     if (preloadedImages[src]) return res();
     const img = new Image();
     img.crossOrigin = 'Anonymous';
-    img.onload = () => { preloadedImages[src] = img; res(); };
+    img.onload = () => { cacheImage(src, img); res(); };
     img.onerror = () => res();
     img.src = src;
     if (img.decode) img.decode().catch(() => {});
@@ -2073,6 +2103,7 @@ function showImageByIndex(index) {
   if (arrayIdx < 0 || arrayIdx >= currentImages.length) return;
   const image = currentImages[arrayIdx];
   if (preloadedImages[image.url]) {
+    touchCache(image.url);
     applyImageToSphere(preloadedImages[image.url], image);
     currentImageIndex = index;
     updateViewerUI();
@@ -2294,6 +2325,9 @@ function open360ViewerInModal() {
     viewerContainer.style.display = 'block';
   }
 
+  // Resume animation loop
+  if (viewerInitialized && !viewerAnimationId) animateViewer();
+
   // Update modal classes and state
   modal.classList.add('viewer-mode');
   modal.classList.remove('pin-mode', 'info-mode', 'lot-mode');
@@ -2349,6 +2383,7 @@ function close360ViewerInModal(targetBaseIndex = null) {
 
   // Hide viewer
   if (viewerContainer) viewerContainer.style.display = 'none';
+    stopAnimateViewer();
 
   // --- Copy working logic from closeModal ---
   
@@ -8770,6 +8805,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     
     if (calendly) calendly.style.display = 'none';
     if (viewerContainer) viewerContainer.style.display = 'none';
+    stopAnimateViewer();
     if (customScrollbar) {
     customScrollbar.style.display = '';
     customScrollbar.style.visibility = '';
