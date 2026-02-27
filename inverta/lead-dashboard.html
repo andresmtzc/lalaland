@@ -535,6 +535,14 @@
     const DASHBOARD_MODE = dashParams.get('mode') || 'admin'; // 'admin' or 'agent'
     const AGENT_PHONE = dashParams.get('agent_phone') || null;
 
+    // Supabase may return JSONB columns as strings — parse safely
+    function parseJSONB(val) {
+      if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
+        try { return JSON.parse(val); } catch(e) {}
+      }
+      return val;
+    }
+
     let supabaseClient;
     let currentUser = null;
     let allLeads = [];
@@ -674,9 +682,8 @@
           const idx = allLeads.findIndex(l => l.id === payload.new.id);
           if (idx !== -1) {
             // Realtime may return JSONB columns as strings — parse them
-            if (typeof payload.new.assigned_agent === 'string') {
-              try { payload.new.assigned_agent = JSON.parse(payload.new.assigned_agent); } catch(e) {}
-            }
+            payload.new.assigned_agent = parseJSONB(payload.new.assigned_agent);
+            payload.new.is_agent = parseJSONB(payload.new.is_agent);
             allLeads[idx] = { ...allLeads[idx], ...payload.new };
             renderLeads();
             updateStats();
@@ -700,15 +707,17 @@
         if (error) throw error;
 
         // Filter out agents and demo leads for this client (client-side)
-        let leads = (allData || []).filter(l => (!l.is_agent || !l.is_agent.includes(CURRENT_CLIENT)) && !l.is_demo);
+        let leads = (allData || []).filter(l => {
+          const ia = parseJSONB(l.is_agent);
+          return (!ia || (Array.isArray(ia) ? !ia.includes(CURRENT_CLIENT) : true)) && !l.is_demo;
+        });
 
         // In agent mode: only show leads assigned to this agent
         if (DASHBOARD_MODE === 'agent' && AGENT_PHONE) {
           leads = leads.filter(l => {
-            let raw = l.assigned_agent;
-            if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch(e) {} }
+            const raw = parseJSONB(l.assigned_agent);
             const agent = (typeof raw === 'object' && raw) ? raw[CURRENT_CLIENT] : raw;
-            return agent === AGENT_PHONE;
+            return String(agent || '') === AGENT_PHONE;
           });
         }
 
@@ -1087,8 +1096,10 @@
           aVal = getMexicanState(a.phone);
           bVal = getMexicanState(b.phone);
         } else if (col === 'assigned_agent') {
-          const aAgent = (typeof a.assigned_agent === 'object' && a.assigned_agent) ? a.assigned_agent[CURRENT_CLIENT] : a.assigned_agent;
-          const bAgent = (typeof b.assigned_agent === 'object' && b.assigned_agent) ? b.assigned_agent[CURRENT_CLIENT] : b.assigned_agent;
+          const aRaw = parseJSONB(a.assigned_agent);
+          const bRaw = parseJSONB(b.assigned_agent);
+          const aAgent = (typeof aRaw === 'object' && aRaw) ? aRaw[CURRENT_CLIENT] : aRaw;
+          const bAgent = (typeof bRaw === 'object' && bRaw) ? bRaw[CURRENT_CLIENT] : bRaw;
           aVal = aAgent ? (agentNameMap[aAgent] || aAgent) : '';
           bVal = bAgent ? (agentNameMap[bAgent] || bAgent) : '';
         }
@@ -1135,8 +1146,7 @@
         }
 
         // Assigned agent name (clickable dropdown for admin)
-        let rawAgent = lead.assigned_agent;
-        if (typeof rawAgent === 'string') { try { rawAgent = JSON.parse(rawAgent); } catch(e) {} }
+        const rawAgent = parseJSONB(lead.assigned_agent);
         const agentVal = (typeof rawAgent === 'object' && rawAgent) ? rawAgent[CURRENT_CLIENT] : rawAgent;
         const assignedName = agentVal ? (agentNameMap[agentVal] || agentVal) : '-';
         const assignedCell = DASHBOARD_MODE === 'admin'
@@ -1257,7 +1267,8 @@
       try {
         // Read current assigned_agent to merge
         const lead = allLeads.find(l => l.id === leadId);
-        const existing = (typeof lead?.assigned_agent === 'object' && lead?.assigned_agent) || {};
+        const parsed = parseJSONB(lead?.assigned_agent);
+        const existing = (typeof parsed === 'object' && parsed) || {};
         const updated = { ...existing };
         if (agentPhone) {
           updated[CURRENT_CLIENT] = agentPhone;
@@ -1295,7 +1306,7 @@
           .single();
         if (fetchErr) throw fetchErr;
 
-        let currentArr = lead.is_agent || [];
+        let currentArr = parseJSONB(lead.is_agent) || [];
 
         if (makeAgent) {
           // Add CURRENT_CLIENT to array
