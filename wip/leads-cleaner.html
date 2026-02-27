@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leads Cleaner</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --surface: #161616;
+    --border: #2a2a2a;
+    --accent: #c8f04a;
+    --accent2: #4af0c8;
+    --text: #f0f0f0;
+    --muted: #666;
+    --danger: #f04a4a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  header {
+    padding: 2.5rem 3rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 1.5rem;
+  }
+
+  header h1 {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 2rem;
+    letter-spacing: -0.03em;
+    color: var(--accent);
+  }
+
+  header span {
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .main {
+    padding: 2.5rem 3rem;
+  }
+
+  /* Drop Zone */
+  #dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: 4px;
+    padding: 4rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    background: var(--surface);
+  }
+
+  #dropzone:hover, #dropzone.drag-over {
+    border-color: var(--accent);
+    background: #1a1f0d;
+  }
+
+  #dropzone.drag-over::after {
+    content: 'SOLTAR';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Syne', sans-serif;
+    font-size: 3rem;
+    font-weight: 800;
+    color: var(--accent);
+    background: rgba(200,240,74,0.06);
+    border-radius: 4px;
+  }
+
+  #dropzone .icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    opacity: 0.4;
+  }
+
+  #dropzone p {
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.7;
+  }
+
+  #dropzone strong {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  #fileInput { display: none; }
+
+  /* Stats bar */
+  #stats-bar {
+    display: none;
+    gap: 0;
+    margin: 2rem 0 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .stat {
+    flex: 1;
+    padding: 1.2rem 1.5rem;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .stat:last-child { border-right: none; }
+
+  .stat .label {
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+
+  .stat .value {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  /* Actions */
+  #actions {
+    display: none;
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+  }
+
+  button {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    padding: 0.7rem 1.4rem;
+    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+
+  button:hover { border-color: var(--accent); color: var(--accent); }
+
+  button.primary {
+    background: var(--accent);
+    color: #0d0d0d;
+    border-color: var(--accent);
+    font-weight: 500;
+  }
+  button.primary:hover { background: #d4f55a; border-color: #d4f55a; color: #0d0d0d; }
+
+  /* Table */
+  #table-wrap {
+    display: none;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-top: 1.5rem;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+
+  thead tr {
+    background: #1c1c1c;
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    padding: 0.9rem 1rem;
+    text-align: left;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent2);
+    font-weight: 500;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--surface); }
+
+  td {
+    padding: 0.75rem 1rem;
+    color: #ccc;
+  }
+
+  td.empty { color: var(--muted); font-style: italic; }
+
+  .tag {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 2px;
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+  .tag-fb { background: #1a2a4a; color: #6ab0f5; }
+  .tag-ig { background: #2a1a2a; color: #f56ab0; }
+  .tag-leads { background: #1a2a1a; color: var(--accent2); }
+  .tag-vivir { background: #1a2a2a; color: var(--accent2); }
+  .tag-invertir { background: #2a2a1a; color: #f0c84a; }
+
+  /* Error */
+  #error-msg {
+    display: none;
+    padding: 1rem 1.5rem;
+    background: #1a0d0d;
+    border: 1px solid var(--danger);
+    border-radius: 4px;
+    color: var(--danger);
+    font-size: 0.8rem;
+    margin-top: 1rem;
+  }
+
+  .reset-btn {
+    margin-top: 1.5rem;
+    display: none;
+  }
+
+  #empty-cols-note {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: 0.75rem;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Leads Cleaner</h1>
+  <span>Meta Ads CSV → CRM Format</span>
+</header>
+
+<div class="main">
+
+  <div id="dropzone" onclick="document.getElementById('fileInput').click()">
+    <div class="icon">⬆</div>
+    <p>Arrastra tu CSV aquí<br>o <strong>haz clic para seleccionar</strong></p>
+    <input type="file" id="fileInput" accept=".csv">
+  </div>
+
+  <div id="error-msg"></div>
+
+  <div id="stats-bar" style="display:flex">
+    <div class="stat"><div class="label">Total Leads</div><div class="value" id="stat-total">0</div></div>
+    <div class="stat"><div class="label">Proyectos</div><div class="value" id="stat-proyectos">0</div></div>
+    <div class="stat"><div class="label">Plataformas</div><div class="value" id="stat-platforms">—</div></div>
+    <div class="stat"><div class="label">Rango Fechas</div><div class="value" id="stat-dates" style="font-size:1rem;padding-top:0.4rem">—</div></div>
+  </div>
+
+  <p id="empty-cols-note">* Atd. y Asignado se llenan manualmente.</p>
+
+  <div id="actions" style="display:flex">
+    <button class="primary" onclick="downloadCSV()">↓ Descargar CSV limpio</button>
+    <button onclick="resetTool()">✕ Limpiar</button>
+  </div>
+
+  <div id="table-wrap">
+    <table>
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+const COLS = ['Fecha','Nombre','Cel.','Correo','Proyecto','Fuente','Interés','Enganche','Preferencia','Atd.','Asignado','Campaña'];
+
+let cleanedData = [];
+
+// Drag & drop
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+});
+document.getElementById('fileInput').addEventListener('change', e => {
+  if (e.target.files[0]) processFile(e.target.files[0]);
+});
+
+function processFile(file) {
+  if (!file.name.endsWith('.csv')) { showError('Por favor sube un archivo .csv'); return; }
+  const reader = new FileReader();
+  reader.onload = e => parseCSV(e.target.result);
+  reader.readAsText(file, 'latin1');
+}
+
+function parseCSV(text) {
+  const lines = text.split('\n').filter(l => l.trim().replace(/,+/g, '').trim() !== '');
+  if (lines.length < 2) { showError('El archivo no tiene datos.'); return; }
+
+  const headers = parseRow(lines[0]).map(h => h.trim().toLowerCase());
+
+  const idx = name => headers.findIndex(h => h.includes(name));
+
+  const iCreated   = idx('created_time');
+  const iName      = idx('full name');
+  const iPhone     = idx('phone');
+  const iEmail     = idx('email');
+  const iAdset     = idx('adset_name');
+  const iPlatform  = idx('platform');
+  const iInteres   = headers.findIndex(h => h.includes('vivir') || h.includes('buscas'));
+  const iEnganche  = headers.findIndex(h => h.includes('enganche'));
+  const iPref      = headers.findIndex(h => h.includes('contacten') || h.includes('deseas'));
+  const iCampaign  = idx('ad_name');
+
+  if (iCreated === -1 || iName === -1) { showError('No se reconoce el formato del CSV. ¿Es un dump de Meta Ads?'); return; }
+
+  cleanedData = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const row = parseRow(lines[i]);
+    if (!row[iName] || !row[iName].trim()) continue;
+
+    const proyecto = extractLastWord(row[iAdset] || '');
+    const enganche = extractEnganche(row[iEnganche] || '');
+    const fecha    = formatDate(row[iCreated] || '');
+    const fuente   = 'Leads';
+    const pref     = capitalize(cleanValue(row[iPref] || ''));
+    const interes  = capitalize(cleanValue(row[iInteres] || ''));
+    const campaña  = cleanCampaignName(row[iCampaign] || '');
+
+    cleanedData.push({
+      'Fecha':      fecha,
+      'Nombre':     capitalize(row[iName] || ''),
+      'Cel.':       row[iPhone] || '',
+      'Correo':     (row[iEmail] || '').trim(),
+      'Proyecto':   proyecto,
+      'Fuente':     fuente,
+      'Interés':    interes,
+      'Enganche':   enganche,
+      'Preferencia':pref,
+      'Atd.':       '',
+      'Asignado':   '',
+      'Campaña':    campaña,
+    });
+  }
+
+  if (cleanedData.length === 0) { showError('No se encontraron leads con datos completos.'); return; }
+
+  hideError();
+  renderTable();
+  renderStats();
+  document.getElementById('stats-bar').style.display = 'flex';
+  document.getElementById('actions').style.display = 'flex';
+  document.getElementById('table-wrap').style.display = 'block';
+  document.getElementById('empty-cols-note').style.display = 'block';
+  dz.style.display = 'none';
+}
+
+function parseRow(line) {
+  const result = [];
+  let inQ = false, cur = '';
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur);
+  return result.map(v => v.trim().replace(/^"|"$/g, ''));
+}
+
+function extractLastWord(str) {
+  // e.g. "26_ENE Leads CAMPESTRE" → "Campestre"
+  const cleaned = str.replace(/_/g, ' ').trim();
+  const parts = cleaned.split(/\s+/);
+  const last = parts[parts.length - 1] || str;
+  return capitalize(last.toLowerCase());
+}
+
+function extractEnganche(str) {
+  // find a number followed by %
+  const match = str.match(/(\d+)\s*%/);
+  if (match) return match[1] + '%';
+  // fallback: find number
+  const num = str.match(/(\d+)/);
+  if (num) return num[1] + '%';
+  return cleanValue(str);
+}
+
+function formatDate(str) {
+  // "1/5/26" → "2026-01-05"
+  const parts = str.split('/');
+  if (parts.length === 3) {
+    const m = parts[0].padStart(2,'0');
+    const d = parts[1].padStart(2,'0');
+    const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+    return `${y}-${m}-${d}`;
+  }
+  return str;
+}
+
+function cleanValue(str) {
+  return str.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function cleanCampaignName(str) {
+  // "26_Campestre Ene Ad 1" → keep as is, just clean underscores
+  return str.replace(/^[\d_]+/, '').replace(/_/g, ' ').trim() || str;
+}
+
+function capitalize(str) {
+  return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function renderTable() {
+  const thead = document.getElementById('thead');
+  const tbody = document.getElementById('tbody');
+
+  thead.innerHTML = '<tr>' + COLS.map(c => `<th>${c}</th>`).join('') + '</tr>';
+
+  tbody.innerHTML = cleanedData.map(row => {
+    const cells = COLS.map(col => {
+      const v = row[col] || '';
+      if (!v) return `<td class="empty">—</td>`;
+
+      let display = v;
+      if (col === 'Fuente') display = `<span class="tag tag-leads">${v}</span>`;
+      else if (col === 'Interés') {
+        const cls = v.toLowerCase().includes('invertir') ? 'tag-invertir' : 'tag-vivir';
+        display = `<span class="tag ${cls}">${v}</span>`;
+      }
+      return `<td>${display}</td>`;
+    });
+    return '<tr>' + cells.join('') + '</tr>';
+  }).join('');
+}
+
+function renderStats() {
+  document.getElementById('stat-total').textContent = cleanedData.length;
+
+  const proyectos = new Set(cleanedData.map(r => r['Proyecto']));
+  document.getElementById('stat-proyectos').textContent = proyectos.size;
+
+  const platforms = [...new Set(cleanedData.map(r => r['Fuente']))];
+  document.getElementById('stat-platforms').textContent = platforms.join(', ');
+
+  const dates = cleanedData.map(r => r['Fecha']).filter(Boolean).sort();
+  if (dates.length) {
+    const first = dates[0].slice(5).replace('-','/');
+    const last  = dates[dates.length-1].slice(5).replace('-','/');
+    document.getElementById('stat-dates').textContent = first === last ? first : `${first} – ${last}`;
+  }
+}
+
+function downloadCSV() {
+  const header = COLS.join(',');
+  const rows = cleanedData.map(row =>
+    COLS.map(c => {
+      const v = row[c] || '';
+      return v.includes(',') || v.includes('"') ? `"${v.replace(/"/g,'""')}"` : v;
+    }).join(',')
+  );
+  const blob = new Blob(['\uFEFF' + [header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'leads_limpio.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = '⚠ ' + msg;
+  el.style.display = 'block';
+}
+function hideError() {
+  document.getElementById('error-msg').style.display = 'none';
+}
+
+function resetTool() {
+  cleanedData = [];
+  document.getElementById('stats-bar').style.display = 'none';
+  document.getElementById('actions').style.display = 'none';
+  document.getElementById('table-wrap').style.display = 'none';
+  document.getElementById('empty-cols-note').style.display = 'none';
+  document.getElementById('tbody').innerHTML = '';
+  document.getElementById('fileInput').value = '';
+  dz.style.display = 'block';
+  hideError();
+}
+</script>
+</body>
+</html>
