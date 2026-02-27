@@ -533,7 +533,23 @@ let lastHopBearingDeg = null;
 let currentImages = [];
 let currentImageIndex = -1;
 let imageNumberToArrayIndex = {}; // Maps original image number (from filename) to currentImages array position
+// LRU image cache – keeps at most 10 decoded images in memory
+const IMAGE_CACHE_MAX = 10;
 let preloadedImages = {};
+let preloadedImagesOrder = []; // oldest → newest URLs
+
+function lruCachePut(url, img) {
+  if (preloadedImages[url]) {
+    // Move to end (most recent)
+    preloadedImagesOrder = preloadedImagesOrder.filter(u => u !== url);
+  } else if (preloadedImagesOrder.length >= IMAGE_CACHE_MAX) {
+    // Evict oldest
+    const evict = preloadedImagesOrder.shift();
+    delete preloadedImages[evict];
+  }
+  preloadedImages[url] = img;
+  preloadedImagesOrder.push(url);
+}
 let viewConeMarker = null;
 let isSwitchingTrack = false;
 
@@ -915,15 +931,35 @@ function handleWheelZoom(e){
 }
 
 // ===== NAVIGATION CONTROLS =====
+// Cached DOM refs – looked up once, reused every frame
+let _navRing = null, _nextBtn = null, _prevBtn = null, _branchBtn = null;
+function getNavElements() {
+  if (!_navRing) _navRing = document.querySelector('.navigation-ring');
+  if (!_nextBtn) _nextBtn = document.getElementById('nextImageBtn');
+  if (!_prevBtn) _prevBtn = document.getElementById('prevImageBtn');
+  if (!_branchBtn) _branchBtn = document.getElementById('branchImageBtn');
+  return { ring: _navRing, nextBtn: _nextBtn, prevBtn: _prevBtn, branchBtn: _branchBtn };
+}
+
+// Lightweight per-frame call: only rotates the ring CSS transform
 function updateNavigationRing(instant = false) {
-  const ring = document.querySelector('.navigation-ring');
-  const nextBtn = document.getElementById('nextImageBtn');
-  const prevBtn = document.getElementById('prevImageBtn');
-  const branchBtn = document.getElementById('branchImageBtn');
+  const { ring } = getNavElements();
   if (!ring || !sphere) return;
 
   const yawDegrees = THREE.MathUtils.radToDeg(currentYaw);
   ring.style.transform = `rotateZ(${-yawDegrees}deg)`;
+
+  // Full navigation state is refreshed only on marble change (see updateNavigationState)
+  if (instant) {
+    ring.style.transition = 'none';
+    requestAnimationFrame(() => (ring.style.transition = ''));
+  }
+}
+
+// Heavy navigation state – call only when marble selection changes
+function updateNavigationState() {
+  const { ring, nextBtn, prevBtn, branchBtn } = getNavElements();
+  if (!ring || !sphere) return;
 
   const track = getCurrentTrack();
   if (!track || !selectedMarbleId) return;
@@ -931,7 +967,6 @@ function updateNavigationRing(instant = false) {
   const marbleIndex = track.marbles.findIndex(m => m.id === selectedMarbleId);
   const total = track.marbles.length;
 
-  // Detect position in track (including anti-marriage blocks)
   const isFirst = marbleIndex === 0;
   const isLast = marbleIndex === total - 1;
   const nextBlocked = !isLast && isAntiMarriageBlocked(selectedMarbleId, 'forward', track);
@@ -939,33 +974,25 @@ function updateNavigationRing(instant = false) {
   const canForward = !isLast && !nextBlocked;
   const canBackward = !isFirst && !prevBlocked;
 
-  // Branch only available if marble has married partners
   const canBranch = hasMarriedPartners(selectedMarbleId);
 
-  // Clear all branch position classes
   ring.classList.remove('branch-left', 'branch-right', 'branch-top', 'branch-bottom');
 
-  // Determine branch button position
   if (canBranch) {
     if (isFirst && !canBackward) {
-      // At first marble, no previous button - branch takes 6 o'clock
       ring.classList.add('branch-bottom');
     } else if (isLast && !canForward) {
-      // At last marble, no next button - branch takes 12 o'clock
       ring.classList.add('branch-top');
     } else {
-      // Middle marble - calculate if branch should be left or right
       const branchPosition = calculateBranchPosition();
       if (branchPosition === 'left') {
         ring.classList.add('branch-left');
       } else {
-        // Default to right (3 o'clock)
         ring.classList.add('branch-right');
       }
     }
   }
 
-  // Show/hide buttons based on availability
   nextBtn.style.opacity = canForward ? 1 : 0;
   nextBtn.style.pointerEvents = canForward ? 'auto' : 'none';
 
@@ -975,15 +1002,9 @@ function updateNavigationRing(instant = false) {
   branchBtn.style.opacity = canBranch ? 1 : 0;
   branchBtn.style.pointerEvents = canBranch ? 'auto' : 'none';
 
-  // Update titles
   nextBtn.title = canForward ? 'Move forward' : 'No next marble';
   prevBtn.title = canBackward ? 'Move backward' : 'No previous marble';
   branchBtn.title = canBranch ? 'Branch to married partner' : 'No branch available';
-
-  if (instant) {
-    ring.style.transition = 'none';
-    requestAnimationFrame(() => (ring.style.transition = ''));
-  }
 }
 
 // Calculate if branch button should be on left or right based on married marble position
@@ -1101,10 +1122,7 @@ async function loadGPXFromManifest() {
       selectTrack(firstTrackId);
       console.log(`Loaded ${loadedCount} GPX files from ${framesBaseUrls.size} sources`);
 
-      // Preload images for married marbles after tracks are loaded
-      if (marriageGroups.length > 0) {
-        setTimeout(() => preloadMarriedMarbleImages(), 500);
-      }
+      // preloadMarriedMarbleImages removed – images load on demand when branching
     }
 
   } catch(e) {
@@ -1289,7 +1307,7 @@ async function selectTrackWithoutMapReset(trackId){
     viewConeMarker = null;
   }
 
-  updateNavigationRing(true);
+  updateNavigationRing(true); updateNavigationState();
   updateViewCone();
   await load360Images();
 
@@ -1428,39 +1446,8 @@ function isAntiMarriageBlocked(marbleId, direction, track) {
   return false;
 }
 
-// Preload images for all married marbles
-function preloadMarriedMarbleImages() {
-  const imagesToPreload = new Set();
-
-  for (const group of marriageGroups) {
-    for (const identifier of group) {
-      const result = findMarbleByIdentifier(identifier);
-      if (result && result.marble.assignedImage !== null) {
-        // Find the image URL for this marble
-        const trackName = result.track.name.replace(/\.gpx$/i, '');
-        const imageIndex = result.marble.assignedImage;
-        const imageUrl = `${getFramesBase()}${trackName}-${imageIndex + 1}.jpg`;
-        imagesToPreload.add(imageUrl);
-      }
-    }
-  }
-
-  console.log(`Preloading ${imagesToPreload.size} married marble images`);
-
-  // Preload each image
-  for (const url of imagesToPreload) {
-    if (!preloadedImages[url]) {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        preloadedImages[url] = img;
-        console.log('Preloaded married marble image:', url);
-      };
-      img.onerror = () => console.log('Failed to preload:', url);
-      img.src = url;
-    }
-  }
-}
+// preloadMarriedMarbleImages removed – was eagerly downloading all marriage-group
+// images at startup. They now load on demand when the user branches.
 
 // Branch button main handler - jump to married partner
 document.getElementById('branchImageBtn').addEventListener('click', async () => {
@@ -1588,7 +1575,7 @@ function showImageInViewer(imageUrl, imageData) {
   
   img.onload = function() {
     console.log('✅ Image loaded successfully:', imageUrl);
-    preloadedImages[imageUrl] = img;
+    lruCachePut(imageUrl, img);
     hideViewerLoading();
     applyImageToSphere(img, imageData);
     preloadAdjacentImages();
@@ -1601,43 +1588,51 @@ function showImageInViewer(imageUrl, imageData) {
   };
   
   console.log('📤 Setting image src:', imageUrl);
-  img.src = imageUrl + (imageUrl.includes('?')?'&':'?') + 't=' + Date.now();
+  img.src = imageUrl;
+}
+
+// Cached sphere geometry – recreated only when yawFixDeg changes
+let _cachedSphereGeom = null;
+let _cachedYawFix = null;
+
+function getSphereGeometry(yawFixDeg) {
+  if (_cachedSphereGeom && _cachedYawFix === yawFixDeg) return _cachedSphereGeom;
+  if (_cachedSphereGeom) _cachedSphereGeom.dispose();
+  const geom = new THREE.SphereGeometry(500, 60, 40);
+  geom.scale(-1, 1, 1);
+  geom.rotateY(Math.PI);
+  if (yawFixDeg) geom.rotateY(THREE.MathUtils.degToRad(yawFixDeg));
+  _cachedSphereGeom = geom;
+  _cachedYawFix = yawFixDeg;
+  return geom;
 }
 
 function applyImageToSphere(img, imageData) {
- 
+  // Dispose old material/texture only (geometry is cached and reused)
   if (sphere) {
     panoGroup.remove(sphere);
-    sphere.geometry?.dispose();
     if (sphere.material) {
       sphere.material.map?.dispose();
       sphere.material.dispose();
     }
   }
 
-  const geometry = new THREE.SphereGeometry(500, 60, 40);
-  geometry.scale(-1, 1, 1);
-  geometry.rotateY(Math.PI);
-
-  // Apply per-track yaw correction
   const track = getCurrentTrack();
-  if (track && track.yawFixDeg) {
-    geometry.rotateY(THREE.MathUtils.degToRad(track.yawFixDeg));
-  }
+  const yawFix = (track && track.yawFixDeg) ? track.yawFixDeg : 0;
+  const geometry = getSphereGeometry(yawFix);
 
   const texture = new THREE.Texture(img);
   texture.needsUpdate = true;
 
   const material = new THREE.MeshBasicMaterial({ map: texture });
   sphere = new THREE.Mesh(geometry, material);
-  
-  // Apply the current orientation to the sphere
+
   sphere.rotation.y = currentYaw;
   sphere.rotation.x = currentPitch;
-  
+
   panoGroup.add(sphere);
 
-  updateNavigationRing(true);
+  updateNavigationRing(true); updateNavigationState();
 }
 
 function preloadAdjacentImages() {
@@ -1667,10 +1662,10 @@ function preloadOne(index) {
     if (preloadedImages[src]) return res();
     const img = new Image();
     img.crossOrigin = 'Anonymous';
-    img.onload = () => { preloadedImages[src] = img; res(); };
+    img.onload = () => { lruCachePut(src, img); res(); };
     img.onerror = () => res();
     img.src = src;
-    if (img.decode) img.decode().catch(() => {});
+    // img.decode() removed – forces eager ~32MB bitmap allocation per image
   });
 }
 
@@ -1706,7 +1701,7 @@ function nextImage() {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
     selectMarble(nextMarble.id);
     showImageByIndex(nextMarble.assignedImage);
-    updateNavigationRing(true);
+    updateNavigationRing(true); updateNavigationState();
     const newPos = nextMarble.position;
     panMapToFollowMarble(oldPos, newPos);
   }
@@ -1724,7 +1719,7 @@ function previousImage() {
     const oldPos = getMarblePositionByImageIndex(currentImageIndex);
     selectMarble(prevMarble.id);
     showImageByIndex(prevMarble.assignedImage);
-    updateNavigationRing(true);
+    updateNavigationRing(true); updateNavigationState();
     const newPos = prevMarble.position;
     panMapToFollowMarble(oldPos, newPos);
   }
@@ -1819,7 +1814,7 @@ async function load360Images() {
     await createImagesFromFramesFolder();
     if (currentImages.length > 0) {
 
-      startBackgroundPreload(3);
+      // startBackgroundPreload removed – adjacency preload in preloadAdjacentImages() is sufficient
     }
   } catch(e) { 
     console.error(e);
@@ -1891,33 +1886,8 @@ async function createImagesFromFramesFolder() {
   });
 }
 
-// Background preload
-function startBackgroundPreload(concurrency = 3) {
-  if (currentImages.length <= 1) return;
-  const order = buildPreloadOrder(currentImageIndex, currentImages.length);
-  runPreloadPool(order, concurrency);
-}
-
-function buildPreloadOrder(center, total) {
-  const seq = []; 
-  for (let step = 1; step < total; step++) { 
-    const f = center + step, b = center - step; 
-    if (f < total) seq.push(f); 
-    if (b >= 0) seq.push(b); 
-  }
-  return seq;
-}
-
-function runPreloadPool(indexes, concurrency) {
-  let i = 0;
-  const workers = Array.from({length: Math.min(concurrency, indexes.length)}, async () => {
-    while (i < indexes.length) { 
-      const idx = indexes[i++]; 
-      await preloadOne(idx).catch(() => {}); 
-    }
-  });
-  Promise.all(workers).then(() => console.log('Background preload complete'));
-}
+// Background preload removed – was downloading entire track into memory.
+// Adjacent-marble preloading in preloadAdjacentImages() handles the ±2 neighbours.
 
 // ===== MODAL INTEGRATION FUNCTIONS =====
 function open360ViewerInModal() {
@@ -2008,6 +1978,9 @@ function close360ViewerInModal(targetBaseIndex = null) {
   const headerFracc = document.getElementById('headerFracc');
   const plusBtn = document.querySelector('.plus-button');
   const bottomPlus = document.querySelector('.bottom-plus-button');
+
+  // Stop the animation loop so we don't render to a hidden canvas
+  viewerInitialized = false;
 
   // Hide viewer
   if (viewerContainer) viewerContainer.style.display = 'none';
