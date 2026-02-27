@@ -673,6 +673,10 @@
           if (!payload.new.client_id || !payload.new.client_id.includes(CURRENT_CLIENT)) return;
           const idx = allLeads.findIndex(l => l.id === payload.new.id);
           if (idx !== -1) {
+            // Realtime may return JSONB columns as strings — parse them
+            if (typeof payload.new.assigned_agent === 'string') {
+              try { payload.new.assigned_agent = JSON.parse(payload.new.assigned_agent); } catch(e) {}
+            }
             allLeads[idx] = { ...allLeads[idx], ...payload.new };
             renderLeads();
             updateStats();
@@ -1129,7 +1133,9 @@
         }
 
         // Assigned agent name (clickable dropdown for admin)
-        const agentVal = (typeof lead.assigned_agent === 'object' && lead.assigned_agent) ? lead.assigned_agent[CURRENT_CLIENT] : lead.assigned_agent;
+        let rawAgent = lead.assigned_agent;
+        if (typeof rawAgent === 'string') { try { rawAgent = JSON.parse(rawAgent); } catch(e) {} }
+        const agentVal = (typeof rawAgent === 'object' && rawAgent) ? rawAgent[CURRENT_CLIENT] : rawAgent;
         const assignedName = agentVal ? (agentNameMap[agentVal] || agentVal) : '-';
         const assignedCell = DASHBOARD_MODE === 'admin'
           ? `<td class="assign-cell" onclick="openAssignDropdown(this, '${lead.id}', '${agentVal || ''}')">${assignedName}</td>`
