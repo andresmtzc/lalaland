@@ -634,6 +634,268 @@ server.tool(
   }
 );
 
+// ── Street view / 360 imagery helpers ──────────────────────────────
+
+// Community → framesBase URL mapping (from client-config.js files)
+const FRAMES_BASE: Record<string, string> = {
+  // inverta communities
+  barcelona: "https://andresmtzc.github.io/barcelona/frames/",
+  marsella: "https://andresmtzc.github.io/marsella/frames/",
+  sierraalta: "https://andresmtzc.github.io/sierraalta/frames/",
+  sierrabaja: "https://andresmtzc.github.io/geepeeX/sierrabaja/frames/",
+  cortezia: "https://andresmtzc.github.io/geepeeX/cortezia/frames/",
+  ebano: "https://andresmtzc.github.io/geepeeX/ebano/frames/",
+  verdalia: "https://andresmtzc.github.io/geepeeX/verdalia/frames/",
+  frondia: "https://andresmtzc.github.io/geepeeX/frondia/frames/",
+  almaterra: "https://andresmtzc.github.io/geepeeX/almaterra/frames/",
+  // cpi
+  senterra: "https://andresmtzc.github.io/geepeeX/senterra/frames/",
+  // agora
+  "amani-pietra": "https://andresmtzc.github.io/geepeeX/pietra/frames/",
+  "amani-aqua": "https://andresmtzc.github.io/aqua/frames/",
+  "cañadas-vergel": "https://andresmtzc.github.io/geepeeX/canadas/frames/",
+};
+
+interface StreetViewFrame {
+  lat: number;
+  lng: number;
+  imageUrl: string;
+  gpxFile: string;
+  frameIndex: number;
+}
+
+// Cache for parsed street view frames (framesBase → frames[])
+const streetViewCache = new Map<
+  string,
+  { data: StreetViewFrame[]; fetchedAt: number }
+>();
+
+async function getStreetViewFrames(
+  framesBase: string
+): Promise<StreetViewFrame[]> {
+  const cached = streetViewCache.get(framesBase);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) return cached.data;
+
+  // 1. Fetch index.json to discover GPX files
+  const indexResp = await fetch(framesBase + "index.json");
+  if (!indexResp.ok) return [];
+  const manifest = await indexResp.json();
+
+  const gpxFiles: string[] =
+    manifest.gpxFiles?.length > 0
+      ? manifest.gpxFiles
+      : (manifest.files || []).filter((f: string) =>
+          f.toLowerCase().endsWith(".gpx")
+        );
+
+  const allFrames: StreetViewFrame[] = [];
+
+  // 2. Fetch each GPX and parse trackpoints
+  for (const gpxFile of gpxFiles) {
+    try {
+      const gpxUrl = gpxFile.startsWith("http")
+        ? gpxFile
+        : framesBase + gpxFile;
+      const gpxResp = await fetch(gpxUrl);
+      if (!gpxResp.ok) continue;
+      const gpxText = await gpxResp.text();
+
+      // Parse trackpoints from GPX XML
+      const gpxName = gpxFile.replace(/\.gpx$/i, "").split("/").pop() || "";
+      const trkptRegex =
+        /<trkpt\s+lat="([-\d.]+)"\s+lon="([-\d.]+)"/g;
+      let match: RegExpExecArray | null;
+      let idx = 1;
+      while ((match = trkptRegex.exec(gpxText)) !== null) {
+        allFrames.push({
+          lat: parseFloat(match[1]),
+          lng: parseFloat(match[2]),
+          imageUrl: `${framesBase}${gpxName}-${idx}.jpg`,
+          gpxFile: gpxName,
+          frameIndex: idx,
+        });
+        idx++;
+      }
+    } catch {
+      // Skip failing GPX files
+    }
+  }
+
+  streetViewCache.set(framesBase, { data: allFrames, fetchedAt: Date.now() });
+  return allFrames;
+}
+
+// ── Tool: get_nearby_streetview ────────────────────────────────────
+server.tool(
+  "get_nearby_streetview",
+  "Find the closest 360° street view images near a lot or geographic point. " +
+    "Returns image URLs and distances. Use this to show what a lot or area looks like.",
+  {
+    lot_name: z
+      .string()
+      .optional()
+      .describe(
+        "Lot identifier — will use its centroid as the search point. " +
+          "Either lot_name or lat+lng must be provided."
+      ),
+    lat: z.number().optional().describe("Latitude of the search point"),
+    lng: z.number().optional().describe("Longitude of the search point"),
+    community: z
+      .string()
+      .optional()
+      .describe(
+        "Community name to search in (e.g. 'barcelona', 'senterra'). " +
+          "Required if using lat/lng instead of lot_name."
+      ),
+    max_results: z
+      .number()
+      .optional()
+      .default(3)
+      .describe("Number of nearest frames to return (default 3, max 10)"),
+  },
+  async (params) => {
+    let searchLat: number;
+    let searchLng: number;
+    let communityId: string | undefined = params.community?.toLowerCase();
+
+    // Resolve lot_name to centroid + community
+    if (params.lot_name) {
+      const clientId = clientForLotName(params.lot_name);
+      if (!clientId) {
+        return {
+          content: [
+            { type: "text", text: `Unknown lot prefix: "${params.lot_name}"` },
+          ],
+        };
+      }
+
+      // Get centroid from lots.txt
+      const lotsMap = await getLotsTextForClient(clientId);
+      const vertices = lotsMap.get(params.lot_name);
+      if (!vertices || vertices.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Lot "${params.lot_name}" not found in geometry data.`,
+            },
+          ],
+        };
+      }
+      searchLat =
+        vertices.reduce((s, v) => s + v.lat, 0) / vertices.length;
+      searchLng =
+        vertices.reduce((s, v) => s + v.lng, 0) / vertices.length;
+
+      // Get community from DB if not provided
+      if (!communityId) {
+        try {
+          const sb = getSupabase();
+          const { data: lotRow } = await sb
+            .from("lots")
+            .select("fraccionamiento")
+            .eq("lot_name", params.lot_name)
+            .maybeSingle();
+          if (lotRow?.fraccionamiento) {
+            communityId = lotRow.fraccionamiento.toLowerCase();
+          }
+        } catch { /* will fail gracefully below */ }
+      }
+    } else if (params.lat != null && params.lng != null) {
+      searchLat = params.lat;
+      searchLng = params.lng;
+    } else {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Provide either lot_name or both lat and lng.",
+          },
+        ],
+      };
+    }
+
+    if (!communityId) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Could not determine community. Provide the 'community' parameter.",
+          },
+        ],
+      };
+    }
+
+    const framesBase = FRAMES_BASE[communityId];
+    if (!framesBase) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `No street view data available for community "${communityId}". ` +
+              `Available: ${Object.keys(FRAMES_BASE).join(", ")}`,
+          },
+        ],
+      };
+    }
+
+    let frames: StreetViewFrame[];
+    try {
+      frames = await getStreetViewFrames(framesBase);
+    } catch (err: any) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error fetching street view data: ${err.message}`,
+          },
+        ],
+      };
+    }
+
+    if (frames.length === 0) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `No street view frames found for "${communityId}".`,
+          },
+        ],
+      };
+    }
+
+    // Find nearest frames by haversine distance
+    const withDistance = frames.map((f) => ({
+      ...f,
+      distance_m: haversineMeters(searchLat, searchLng, f.lat, f.lng),
+    }));
+    withDistance.sort((a, b) => a.distance_m - b.distance_m);
+
+    const cap = Math.min(params.max_results ?? 3, 10);
+    const nearest = withDistance.slice(0, cap);
+
+    const result = {
+      search_point: {
+        lat: Math.round(searchLat * 1e6) / 1e6,
+        lng: Math.round(searchLng * 1e6) / 1e6,
+      },
+      community: communityId,
+      nearest_frames: nearest.map((f) => ({
+        image_url: f.imageUrl,
+        lat: f.lat,
+        lng: f.lng,
+        distance_m: Math.round(f.distance_m * 10) / 10,
+        gpx_track: f.gpxFile,
+        frame_index: f.frameIndex,
+      })),
+    };
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
 // ── Start ──────────────────────────────────────────────────────────
 async function main() {
   const transport = new StdioServerTransport();
