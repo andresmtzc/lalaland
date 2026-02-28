@@ -53,12 +53,8 @@
       // Check for session cookie
       const sessionToken = getCookie('lead_session_' + CURRENT_CLIENT);
 
-      // If no token in URL and no session, redirect to registro
-      if (!urlToken && !sessionToken) {
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
-        // Stop execution
-        throw new Error('Redirecting to registro');
-      }
+      // Track auth state for view counter gating
+      window.__leadAuthenticated = !!(urlToken || sessionToken);
 
       // Store token for later validation (after Supabase loads)
       window.__leadAuthToken = urlToken;
@@ -2467,7 +2463,7 @@ ctaobserver.observe(ctaToaster, {
         // Session token no longer valid
         console.error('Session token invalid');
         document.cookie = 'lead_session_' + CURRENT_CLIENT + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
-        window.location.href = '/' + CURRENT_CLIENT + '/registro.html';
+        window.location.reload();
         return;
       }
 
@@ -13032,5 +13028,204 @@ function buildDots() {
 </script>
 
 <div style="position:fixed;bottom:0;left:0;width:100%;text-align:center;font-size:12px;z-index:9999;pointer-events:none;"><span style="background:rgba(0,0,0,0.75);color:#fff;">Precios sujetos a cambio sin previo aviso.</span></div>
+<!-- ===== VIEW COUNTER + SIGNUP MODAL ===== -->
+<script src="https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/intlTelInput.min.js"></script>
+<script>
+(function() {
+  // Inject intl-tel-input CSS
+  (function() {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/css/intlTelInput.css';
+    document.head.appendChild(l);
+  })();
+
+  // Skip if already authenticated (has session cookie or arrived with token)
+  if (window.__leadAuthenticated) return;
+
+  const VC_KEY = 'vc_' + CURRENT_CLIENT;
+  const FREE_VIEWS = 2;
+  let pendingLot = null, browserId = null, pendingToken = null, pollInterval = null, itiInstance = null;
+
+  function genId(len) {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let s = '';
+    for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+
+  // Intercept openModal to add view counter gate
+  const _orig = openModal;
+  window.openModal = function(lot, baseIndex, skipPan) {
+    if (window.__leadAuthenticated) return _orig(lot, baseIndex, skipPan);
+    const count = parseInt(localStorage.getItem(VC_KEY) || '0');
+    if (count < FREE_VIEWS) {
+      localStorage.setItem(VC_KEY, count + 1);
+      return _orig(lot, baseIndex, skipPan);
+    }
+    pendingLot = { lot, baseIndex, skipPan };
+    showSignupModal();
+  };
+
+  function injectModal() {
+    if (document.getElementById('signupGateModal')) return;
+    const el = document.createElement('div');
+    el.id = 'signupGateModal';
+    el.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:20000;align-items:center;justify-content:center;padding:20px;';
+    el.innerHTML = `<div style="background:#fcfaf3;border-radius:16px;padding:40px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.4);font-family:'Barlow Condensed',Arial,sans-serif;">
+  <div id="sgFormView">
+    <p style="color:#8a8880;font-size:14px;text-align:center;margin-bottom:0;font-style:italic;">Para seguir explorando...</p>
+    <h2 style="color:#1a1a1a;font-size:32px;font-weight:700;text-align:center;margin:6px 0 8px;text-transform:uppercase;">CREA TU CUENTA</h2>
+    <p style="color:#8a8880;font-size:17px;text-align:center;margin-bottom:28px;line-height:1.4;">Te llegará tu link de acceso a tu WhatsApp.</p>
+    <div id="sgError" style="display:none;background:#fff3cd;border:1px solid #ffc107;color:#856404;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:14px;text-align:center;"></div>
+    <div style="margin-bottom:20px;">
+      <label style="display:block;color:#1a1a1a;font-size:14px;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Tu WhatsApp</label>
+      <input type="tel" id="sgPhone" style="width:100%;padding:16px;border:2px solid #e0ddd5;border-radius:8px;font-size:18px;font-family:'Barlow Condensed',sans-serif;background:#fff;box-sizing:border-box;">
+    </div>
+    <button id="sgSubmit" style="width:100%;padding:18px;background:var(--color-primary,#e91843);color:#fff;border:none;border-radius:8px;font-size:20px;font-weight:700;text-transform:uppercase;font-family:'Barlow Condensed',sans-serif;cursor:pointer;letter-spacing:0.5px;">¡Recibir Acceso!</button>
+  </div>
+  <div id="sgWaitView" style="display:none;text-align:center;padding:20px 0;">
+    <p style="font-size:48px;margin-bottom:16px;">📱</p>
+    <h3 style="font-size:24px;font-weight:700;color:#1a1a1a;margin-bottom:10px;">Revisando tu WhatsApp...</h3>
+    <p style="color:#8a8880;font-size:16px;line-height:1.5;">Abre el link que te enviamos y regresa aquí.</p>
+  </div>
+</div>`;
+    document.body.appendChild(el);
+    if (window.intlTelInput) initITI();
+    document.getElementById('sgSubmit').addEventListener('click', handleSubmit);
+  }
+
+  function showSignupModal() {
+    injectModal();
+    document.getElementById('signupGateModal').style.display = 'flex';
+  }
+
+  function initITI() {
+    const input = document.getElementById('sgPhone');
+    if (!input || !window.intlTelInput || itiInstance) return;
+    itiInstance = window.intlTelInput(input, {
+      initialCountry: 'mx',
+      preferredCountries: ['mx', 'us', 'ar', 'es'],
+      separateDialCode: true,
+      utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js',
+    });
+  }
+
+  function formatPhone() {
+    if (!itiInstance) return document.getElementById('sgPhone').value.replace(/\D/g, '');
+    const d = itiInstance.getSelectedCountryData();
+    const raw = itiInstance.getNumber().replace(/\D/g, '');
+    if (d.iso2 === 'mx' && raw.startsWith('52') && !raw.startsWith('521')) return '521' + raw.substring(2);
+    if (d.iso2 === 'ar' && raw.startsWith('54') && !raw.startsWith('549')) return '549' + raw.substring(2);
+    return raw;
+  }
+
+  async function handleSubmit() {
+    const btn = document.getElementById('sgSubmit');
+    const errEl = document.getElementById('sgError');
+    errEl.style.display = 'none';
+    if (itiInstance && !itiInstance.isValidNumber()) {
+      errEl.textContent = 'Número inválido. Revisa los dígitos.';
+      errEl.style.display = 'block';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Procesando...';
+
+    await window.supabaseReady;
+    const sb = window.supabaseClient;
+    const phone = formatPhone();
+
+    try {
+      let { data: lead } = await sb
+        .from('leads')
+        .select('id,last_link_requested_at,link_request_count,client_id')
+        .eq('phone', phone)
+        .single();
+
+      let leadId;
+      if (lead) {
+        leadId = lead.id;
+        if (lead.last_link_requested_at && lead.link_request_count > 0) {
+          const secs = (Date.now() - new Date(lead.last_link_requested_at).getTime()) / 1000;
+          if (secs < 86400) {
+            const wait = Math.min(60 * Math.pow(2, lead.link_request_count - 1), 900);
+            if (secs < wait) {
+              const rem = Math.ceil(wait - secs), m = Math.floor(rem / 60), s = rem % 60;
+              errEl.textContent = `Por favor espera ${m > 0 ? m + 'm ' : ''}${s}s antes de solicitar otro link.`;
+              errEl.style.display = 'block';
+              btn.disabled = false;
+              btn.textContent = '¡Recibir Acceso!';
+              return;
+            }
+          }
+        }
+        const newCount = lead.last_link_requested_at && (Date.now() - new Date(lead.last_link_requested_at).getTime()) / 1000 < 86400
+          ? (lead.link_request_count || 0) + 1 : 1;
+        const upd = {
+          last_seen_at: new Date().toISOString(),
+          last_link_requested_at: new Date().toISOString(),
+          link_request_count: newCount
+        };
+        const cur = lead.client_id || [];
+        if (!cur.includes(CURRENT_CLIENT)) upd.client_id = [...cur, CURRENT_CLIENT];
+        await sb.from('leads').update(upd).eq('id', leadId);
+      } else {
+        const { data: nl, error: le } = await sb
+          .from('leads')
+          .insert({ phone, client_id: [CURRENT_CLIENT], last_link_requested_at: new Date().toISOString(), link_request_count: 1, campaign: '-' })
+          .select('id')
+          .single();
+        if (le) throw le;
+        leadId = nl.id;
+      }
+
+      pendingToken = genId(10);
+      browserId = genId(12);
+
+      const { error: te } = await sb.from('lead_tokens').insert({ lead_id: leadId, token: pendingToken });
+      if (te) throw te;
+
+      const { error: lre } = await sb.from('link_requests').insert({
+        phone,
+        token: pendingToken,
+        client: CURRENT_CLIENT,
+        status: 'pending',
+        browser_id: browserId
+      });
+      if (lre) throw lre;
+
+      document.getElementById('sgFormView').style.display = 'none';
+      document.getElementById('sgWaitView').style.display = 'block';
+      startPolling();
+    } catch (e) {
+      console.error('Signup error:', e);
+      errEl.textContent = 'Hubo un error. Por favor intenta de nuevo.';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '¡Recibir Acceso!';
+    }
+  }
+
+  function startPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(async () => {
+      try {
+        const { data } = await window.supabaseClient
+          .from('link_requests')
+          .select('activated_at')
+          .eq('browser_id', browserId)
+          .not('activated_at', 'is', null)
+          .single();
+        if (data) {
+          clearInterval(pollInterval);
+          document.cookie = `lead_session_${CURRENT_CLIENT}=${pendingToken}; expires=${new Date(Date.now() + 365 * 864e5).toUTCString()}; path=/; SameSite=Lax`;
+          window.location.reload();
+        }
+      } catch (_) {}
+    }, 3000);
+  }
+})();
+</script>
 </body>
 </html>

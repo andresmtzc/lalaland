@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirmando acceso...</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fcfaf3;
+      border-radius: 16px;
+      padding: 40px;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+      animation: fadeIn 0.4s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .icon { font-size: 52px; margin-bottom: 16px; }
+    h1 { font-size: 28px; font-weight: 700; color: #1a1a1a; margin-bottom: 10px; text-transform: uppercase; }
+    p { color: #8a8880; font-size: 17px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon" id="icon">⏳</div>
+    <h1 id="title">Confirmando...</h1>
+    <p id="msg">Un momento.</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+  (async function() {
+    const params = new URLSearchParams(location.search);
+    const token = params.get('token');
+    const browserId = params.get('browser');
+
+    function show(icon, title, msg) {
+      document.getElementById('icon').textContent = icon;
+      document.getElementById('title').textContent = title;
+      document.getElementById('msg').textContent = msg;
+    }
+
+    if (!token || !browserId) {
+      show('❌', 'Link inválido', 'Parámetros faltantes.');
+      return;
+    }
+
+    try {
+      const cfgRes = await fetch('https://la-la.land/sb_config.json');
+      const cfg = await cfgRes.json();
+      const sb = supabase.createClient(cfg.url, cfg.key);
+
+      const { error } = await sb
+        .from('link_requests')
+        .update({ activated_at: new Date().toISOString() })
+        .eq('token', token)
+        .eq('browser_id', browserId);
+
+      if (error) throw error;
+
+      show('✓', '¡Listo!', 'Regresa al mapa para continuar explorando.');
+      setTimeout(() => { try { window.close(); } catch (_) {} }, 500);
+    } catch (e) {
+      console.error(e);
+      show('❌', 'Error', 'No se pudo confirmar. Intenta de nuevo.');
+    }
+  })();
+  </script>
+</body>
+</html>
