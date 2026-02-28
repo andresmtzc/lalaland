@@ -255,11 +255,59 @@ server.tool(
   }
 );
 
+// ── Lot image helpers ──────────────────────────────────────────────
+// Maps community (fraccionamiento) → PDF subfolder for lot images
+// inverta: barcelona/marsella → mediterraneo, sierraalta/sierrabaja → puntolomas,
+//          cortezia/ebano/verdalia/frondia → arborea, almaterra → almaterra
+// cpi: flat (no subfolder)
+// agora: mediterraneo / puntolomas (but no images yet)
+const COMMUNITY_TO_PDF_FOLDER: Record<string, string> = {
+  // inverta
+  barcelona: "mediterraneo",
+  marsella: "mediterraneo",
+  sierraalta: "puntolomas",
+  sierrabaja: "puntolomas",
+  cortezia: "arborea",
+  ebano: "arborea",
+  verdalia: "arborea",
+  frondia: "arborea",
+  almaterra: "almaterra",
+  // agora
+  "amani-pietra": "mediterraneo",
+  "amani-aqua": "puntolomas",
+  "cañadas-vergel": "puntolomas",
+};
+
+function getLotImageUrls(
+  lotName: string,
+  clientId: string,
+  community: string
+): { map_image: string | null; landscape_image: string | null } {
+  const comm = community.toLowerCase();
+
+  if (clientId === "cpi") {
+    // CPI has flat structure: /cpi/pdf/{lot_name}_map.jpg
+    return {
+      map_image: `https://la-la.land/cpi/pdf/${lotName}_map.jpg`,
+      landscape_image: `https://la-la.land/cpi/pdf/${lotName}_landscape.jpg`,
+    };
+  }
+
+  const folder = COMMUNITY_TO_PDF_FOLDER[comm];
+  if (!folder) return { map_image: null, landscape_image: null };
+
+  return {
+    map_image: `https://la-la.land/${clientId}/pdf/${folder}/${lotName}_map.jpg`,
+    landscape_image: `https://la-la.land/${clientId}/pdf/${folder}/${lotName}_landscape.jpg`,
+  };
+}
+
 // ── Tool: get_lot_details ──────────────────────────────────────────
 server.tool(
   "get_lot_details",
   "Get full details for a specific lot by its lot_name. Returns area, price, " +
-    "availability, community, and a link to view it on the interactive map.",
+    "availability, community, images (map closeup and landscape context), " +
+    "and a link to view it on the interactive map.",
   {
     lot_name: z
       .string()
@@ -289,8 +337,13 @@ server.tool(
         ],
       };
 
-    // Build a direct link to the lot on the interactive map
+    // Build links
     const mapUrl = `https://la-la.land/${data.client_id}/index.html?lot=${data.lot_name}`;
+    const lotImages = getLotImageUrls(
+      data.lot_name,
+      data.client_id,
+      data.fraccionamiento || ""
+    );
 
     const result = {
       lot_name: data.lot_name,
@@ -303,6 +356,8 @@ server.tool(
       nickname: data.nickname || null,
       subtitle: data.subtitle || null,
       image: data.image || null,
+      map_image: lotImages.map_image,
+      landscape_image: lotImages.landscape_image,
       view_on_map: mapUrl,
     };
 
