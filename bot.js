@@ -486,8 +486,8 @@ async function processLinkRequest(request) {
 
         console.log(`✅ Claimed request ${request.id}`)
 
-        // Build the map link
-        const mapLink = `https://la-la.land/${request.client}/index.html?token=${request.token}`;
+        // Build the confirmation link (opens confirm.html in WhatsApp, activates session in original tab)
+        const mapLink = `https://la-la.land/${request.client}/confirm.html?token=${request.token}&browser=${request.browser_id}`;
 
         // Build WhatsApp message — just the link so they can copy-paste if needed
         const message = mapLink;
@@ -499,20 +499,37 @@ async function processLinkRequest(request) {
 
         console.log(`✅ Link sent to ${request.phone}`);
 
-        // Notify the client's advisor about the new lead
+        // Notify the client's advisor about the new lead (skip if already notified for this phone+client)
         try {
-            const { data: notifyRow } = await supabase
-                .from('client_notify_numbers')
-                .select('phone')
+            const { data: alreadyNotified } = await supabase
+                .from('link_requests')
+                .select('id')
+                .eq('phone', request.phone)
                 .eq('client', request.client)
-                .single();
+                .eq('client_notified', true)
+                .limit(1);
 
-            if (notifyRow && notifyRow.phone) {
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                const notifyJid = notifyRow.phone + '@s.whatsapp.net';
-                const notifyMsg = `Nuevo lead registrado.\nWhatsApp: +${request.phone}`;
-                await sock.sendMessage(notifyJid, { text: notifyMsg });
-                console.log(`📢 Notified ${request.client} advisor at ${notifyRow.phone}`);
+            if (!alreadyNotified || alreadyNotified.length === 0) {
+                const { data: notifyRow } = await supabase
+                    .from('client_notify_numbers')
+                    .select('phone')
+                    .eq('client', request.client)
+                    .single();
+
+                if (notifyRow && notifyRow.phone) {
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    const notifyJid = notifyRow.phone + '@s.whatsapp.net';
+                    const notifyMsg = `Nuevo lead registrado.\nWhatsApp: +${request.phone}`;
+                    await sock.sendMessage(notifyJid, { text: notifyMsg });
+                    console.log(`📢 Notified ${request.client} advisor at ${notifyRow.phone}`);
+                }
+
+                await supabase
+                    .from('link_requests')
+                    .update({ client_notified: true })
+                    .eq('id', request.id);
+            } else {
+                console.log(`⏭️ Skipped client notification for ${request.phone} (already notified)`);
             }
         } catch (notifyErr) {
             console.error(`⚠️ Failed to notify ${request.client} advisor:`, notifyErr.message);
