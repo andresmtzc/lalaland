@@ -592,6 +592,24 @@ server.tool(
         ) / 1e6,
     };
 
+    // Fetch community from DB to build the la-la.land map link
+    let mapUrl: string | null = null;
+    try {
+      const sb = getSupabase();
+      const { data: lotRow } = await sb
+        .from("lots")
+        .select("fraccionamiento")
+        .eq("lot_name", params.lot_name)
+        .maybeSingle();
+      if (lotRow?.fraccionamiento) {
+        const community = lotRow.fraccionamiento.toLowerCase();
+        const lotNumber = params.lot_name
+          .replace(/^lot[a-z]+/i, "")
+          .replace(/^p/i, "");
+        mapUrl = `https://la-la.land/${clientId}/lot/${community}-${lotNumber}.html`;
+      }
+    } catch { /* non-critical — just skip the link */ }
+
     const result = {
       lot_name: params.lot_name,
       client: clientId,
@@ -605,7 +623,7 @@ server.tool(
       perimeter_m: Math.round(perimeter * 100) / 100,
       calculated_area_m2: Math.round(area * 100) / 100,
       centroid,
-      google_maps_link: `https://www.google.com/maps?q=${centroid.lat},${centroid.lng}`,
+      view_on_map: mapUrl,
     };
 
     return {
