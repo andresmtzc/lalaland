@@ -85,6 +85,26 @@ const CLIENTS: Record<
   },
 };
 
+// ── Helpers: parse formatted DB strings into numbers ───────────────
+// "4,098" → 4098  |  "$10.25" → 10250000  |  "2,500" → 2500
+function parseArea(raw: any): number {
+  if (typeof raw === "number") return raw;
+  if (!raw) return 0;
+  return parseFloat(String(raw).replace(/[$,\s]/g, "")) || 0;
+}
+function parsePrice(raw: any): number {
+  // millones is stored like "$10.25" meaning 10.25 million MXN → 10,250,000
+  if (typeof raw === "number") return raw;
+  if (!raw) return 0;
+  const num = parseFloat(String(raw).replace(/[$,\s]/g, "")) || 0;
+  return Math.round(num * 1_000_000);
+}
+function parsePriceM2(raw: any): number {
+  if (typeof raw === "number") return raw;
+  if (!raw) return 0;
+  return parseFloat(String(raw).replace(/[$,\s]/g, "")) || 0;
+}
+
 // ── Helper: paginated Supabase fetch ───────────────────────────────
 async function fetchAllLots(query: any): Promise<any[]> {
   // Supabase caps at 1000 rows per request.  Paginate transparently.
@@ -123,8 +143,9 @@ const server = new McpServer({
 server.tool(
   "search_lots",
   "Search for real estate lots with filters. Returns lot name, area (m²), price (MXN), " +
-    "price per m², availability status, and community. Use this to answer questions like " +
-    '"find lots under $500,000", "available lots in Barcelona", "lots bigger than 200m²".',
+    "price per m², availability status, and community. Prices in the DB are stored as " +
+    "millions of MXN (e.g. '$10.25' = $10,250,000 MXN). Use this to answer questions like " +
+    '"find lots under 500000 MXN", "available lots in Barcelona", "lots bigger than 200m²".',
   {
     client_id: z
       .enum(["inverta", "cpi", "agora"])
@@ -145,11 +166,11 @@ server.tool(
     min_price: z
       .number()
       .optional()
-      .describe("Minimum total price in MXN (e.g. 300000)"),
+      .describe("Minimum total price in MXN (e.g. 300000 for $300K)"),
     max_price: z
       .number()
       .optional()
-      .describe("Maximum total price in MXN (e.g. 800000)"),
+      .describe("Maximum total price in MXN (e.g. 800000 for $800K)"),
     min_area: z
       .number()
       .optional()
@@ -171,6 +192,7 @@ server.tool(
   },
   async (params) => {
     const sb = getSupabase();
+    // Fetch from Supabase with server-side filters that work on strings
     let query = sb
       .from("lots")
       .select(
@@ -182,48 +204,51 @@ server.tool(
       query = query.ilike("fraccionamiento", `%${params.community}%`);
     if (params.availability)
       query = query.eq("availability", params.availability);
-    if (params.min_price) query = query.gte("millones", params.min_price);
-    if (params.max_price) query = query.lte("millones", params.max_price);
-    if (params.min_area) query = query.gte("rSize", params.min_area);
-    if (params.max_area) query = query.lte("rSize", params.max_area);
 
-    const cap = Math.min(params.limit ?? 25, 100);
-    query = query
-      .order("millones", { ascending: true })
-      .range(params.offset ?? 0, (params.offset ?? 0) + cap - 1);
+    // Price/area are formatted strings in DB, so we fetch all and filter in memory
+    const allRows = await fetchAllLots(query);
 
-    const { data, error } = await query;
-    if (error)
-      return { content: [{ type: "text", text: `Error: ${error.message}` }] };
-
-    if (!data || data.length === 0) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "No lots found matching the given filters.",
-          },
-        ],
-      };
-    }
-
-    const lots = data.map((row: any) => ({
+    // Parse, filter by price/area, sort by price ascending
+    let lots = allRows.map((row: any) => ({
       lot_name: row.lot_name,
       client: row.client_id,
       community: row.fraccionamiento,
       availability: row.availability,
-      area_m2: row.rSize,
-      price_mxn: row.millones,
-      price_per_m2: row.price_m2,
+      area_m2: parseArea(row.rSize),
+      price_mxn: parsePrice(row.millones),
+      price_per_m2: parsePriceM2(row.price_m2),
       nickname: row.nickname || null,
       subtitle: row.subtitle || null,
     }));
+
+    if (params.min_price) lots = lots.filter((l) => l.price_mxn >= params.min_price!);
+    if (params.max_price) lots = lots.filter((l) => l.price_mxn <= params.max_price!);
+    if (params.min_area) lots = lots.filter((l) => l.area_m2 >= params.min_area!);
+    if (params.max_area) lots = lots.filter((l) => l.area_m2 <= params.max_area!);
+
+    lots.sort((a, b) => a.price_mxn - b.price_mxn);
+
+    const cap = Math.min(params.limit ?? 25, 100);
+    const start = params.offset ?? 0;
+    const page = lots.slice(start, start + cap);
+
+    if (page.length === 0) {
+      return {
+        content: [
+          { type: "text", text: "No lots found matching the given filters." },
+        ],
+      };
+    }
 
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify({ count: lots.length, lots }, null, 2),
+          text: JSON.stringify(
+            { total_matching: lots.length, showing: page.length, offset: start, lots: page },
+            null,
+            2
+          ),
         },
       ],
     };
@@ -265,21 +290,16 @@ server.tool(
       };
 
     // Build a direct link to the lot on the interactive map
-    const client = data.client_id;
-    const lotNumber = data.lot_name
-      .replace(/^lot[a-z]+/i, "")
-      .replace(/^p/i, "");
-    const community = (data.fraccionamiento || "").toLowerCase();
-    const mapUrl = `https://la-la.land/${client}/lot/${community}-${lotNumber}.html`;
+    const mapUrl = `https://la-la.land/${data.client_id}/index.html?lot=${data.lot_name}`;
 
     const result = {
       lot_name: data.lot_name,
       client: data.client_id,
       community: data.fraccionamiento,
       availability: data.availability,
-      area_m2: data.rSize,
-      price_mxn: data.millones,
-      price_per_m2: data.price_m2,
+      area_m2: parseArea(data.rSize),
+      price_mxn: parsePrice(data.millones),
+      price_per_m2: parsePriceM2(data.price_m2),
       nickname: data.nickname || null,
       subtitle: data.subtitle || null,
       image: data.image || null,
@@ -371,19 +391,19 @@ server.tool(
       const avail = lot.availability || "Available";
       stats.by_availability[avail] = (stats.by_availability[avail] || 0) + 1;
 
-      if (lot.millones && lot.millones > 0) {
-        if (lot.millones < stats.price_mxn.min)
-          stats.price_mxn.min = lot.millones;
-        if (lot.millones > stats.price_mxn.max)
-          stats.price_mxn.max = lot.millones;
-        priceSum += lot.millones;
+      const price = parsePrice(lot.millones);
+      if (price > 0) {
+        if (price < stats.price_mxn.min) stats.price_mxn.min = price;
+        if (price > stats.price_mxn.max) stats.price_mxn.max = price;
+        priceSum += price;
         priceCount++;
       }
 
-      if (lot.rSize && lot.rSize > 0) {
-        if (lot.rSize < stats.area_m2.min) stats.area_m2.min = lot.rSize;
-        if (lot.rSize > stats.area_m2.max) stats.area_m2.max = lot.rSize;
-        areaSum += lot.rSize;
+      const area = parseArea(lot.rSize);
+      if (area > 0) {
+        if (area < stats.area_m2.min) stats.area_m2.min = area;
+        if (area > stats.area_m2.max) stats.area_m2.max = area;
+        areaSum += area;
         areaCount++;
       }
 
@@ -592,24 +612,6 @@ server.tool(
         ) / 1e6,
     };
 
-    // Fetch community from DB to build the la-la.land map link
-    let mapUrl: string | null = null;
-    try {
-      const sb = getSupabase();
-      const { data: lotRow } = await sb
-        .from("lots")
-        .select("fraccionamiento")
-        .eq("lot_name", params.lot_name)
-        .maybeSingle();
-      if (lotRow?.fraccionamiento) {
-        const community = lotRow.fraccionamiento.toLowerCase();
-        const lotNumber = params.lot_name
-          .replace(/^lot[a-z]+/i, "")
-          .replace(/^p/i, "");
-        mapUrl = `https://la-la.land/${clientId}/lot/${community}-${lotNumber}.html`;
-      }
-    } catch { /* non-critical — just skip the link */ }
-
     const result = {
       lot_name: params.lot_name,
       client: clientId,
@@ -623,7 +625,7 @@ server.tool(
       perimeter_m: Math.round(perimeter * 100) / 100,
       calculated_area_m2: Math.round(area * 100) / 100,
       centroid,
-      view_on_map: mapUrl,
+      view_on_map: `https://la-la.land/${clientId}/index.html?lot=${params.lot_name}`,
     };
 
     return {
