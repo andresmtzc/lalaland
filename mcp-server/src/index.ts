@@ -24,66 +24,162 @@ function getSupabase(): SupabaseClient {
   return supabase;
 }
 
-// ── Clients / communities metadata ─────────────────────────────────
-// This is a lightweight mirror of what's in each client-config.js
-// so the MCP server can answer "what clients/communities exist?"
-// without needing to parse JS files.
-const CLIENTS: Record<
+// ── Known client IDs ───────────────────────────────────────────────
+// Only the slugs are listed here. All metadata (communities, framesBase,
+// communityLogos, lotsFile URLs, etc.) is fetched dynamically from each
+// client's config at https://la-la.land/{slug}/client-config.js
+const KNOWN_CLIENTS = ["inverta", "cpi", "agora"];
+
+// ── Dynamic client config loading ──────────────────────────────────
+interface CommunityInfo {
+  id: string;
+  name: string;
+  displayName: string;
+  center: [number, number];
+  framesBase?: string;
+}
+
+interface ParsedConfig {
+  name: string;
+  slug: string;
+  communities: Record<string, CommunityInfo>;
+  communityToGroup: Record<string, string>; // community id → group name (= PDF subfolder)
+  lotsFileUrl: string;
+}
+
+const configCache = new Map<
   string,
-  {
-    name: string;
-    communities: { id: string; name: string; center: [number, number] }[];
+  { data: ParsedConfig; fetchedAt: number }
+>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Extract the CLIENT_CONFIGS object from a client-config.js file
+function parseClientConfigJS(jsText: string): Record<string, any> | null {
+  const marker = "CLIENT_CONFIGS";
+  const markerIdx = jsText.indexOf(marker);
+  if (markerIdx === -1) return null;
+
+  const eqIdx = jsText.indexOf("=", markerIdx + marker.length);
+  if (eqIdx === -1) return null;
+  const braceIdx = jsText.indexOf("{", eqIdx);
+  if (braceIdx === -1) return null;
+
+  // Find matching closing brace, handling nested braces, strings, and comments
+  let depth = 0;
+  let inString = false;
+  let stringChar = "";
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = braceIdx; i < jsText.length; i++) {
+    const ch = jsText[i];
+    const next = i + 1 < jsText.length ? jsText[i + 1] : "";
+
+    if (inLineComment) {
+      if (ch === "\n") inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (ch === "*" && next === "/") {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (inString) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === stringChar) inString = false;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      inLineComment = true;
+      i++;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      inBlockComment = true;
+      i++;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") {
+      inString = true;
+      stringChar = ch;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        const objStr = jsText.substring(braceIdx, i + 1);
+        try {
+          return new Function(`return (${objStr})`)();
+        } catch {
+          return null;
+        }
+      }
+    }
   }
-> = {
-  inverta: {
-    name: "Inverta",
-    communities: [
-      { id: "barcelona", name: "Barcelona", center: [-96.0903, 19.0725] },
-      { id: "marsella", name: "Marsella", center: [-96.0785, 19.0647] },
-      {
-        id: "sierra-alta",
-        name: "Sierra Alta",
-        center: [-96.0614, 19.0583],
-      },
-      {
-        id: "sierra-baja",
-        name: "Sierra Baja",
-        center: [-96.065, 19.0536],
-      },
-      { id: "cortezia", name: "Cortezia", center: [-96.0675, 19.0575] },
-      { id: "ebano", name: "Ébano", center: [-96.0691, 19.0549] },
-      { id: "verdalia", name: "Verdalia", center: [-96.0719, 19.055] },
-      { id: "frondia", name: "Frondia", center: [-96.0748, 19.056] },
-      { id: "almaterra", name: "Almaterra", center: [-96.0639, 19.0525] },
-    ],
-  },
-  cpi: {
-    name: "CPI",
-    communities: [
-      { id: "senterra", name: "Senterra", center: [-100.1534, 25.4255] },
-    ],
-  },
-  agora: {
-    name: "Agora",
-    communities: [
-      {
-        id: "amani-pietra",
-        name: "Amani Pietra",
-        center: [-100.189895, 25.428123],
-      },
-      {
-        id: "amani-aqua",
-        name: "Amani Aqua",
-        center: [-100.179293, 25.436671],
-      },
-      {
-        id: "cañadas-vergel",
-        name: "Cañadas Vergel",
-        center: [-100.178178, 25.441325],
-      },
-    ],
-  },
-};
+  return null;
+}
+
+async function getClientConfig(
+  clientId: string
+): Promise<ParsedConfig | null> {
+  const cached = configCache.get(clientId);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) return cached.data;
+
+  try {
+    const url = `https://la-la.land/${clientId}/client-config.js`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+
+    const jsText = await resp.text();
+    const configs = parseClientConfigJS(jsText);
+    if (!configs) return null;
+
+    // The config object has a single key matching the client slug
+    const cfg = configs[clientId] || Object.values(configs)[0];
+    if (!cfg) return null;
+
+    // Build community → group mapping from communityLogos
+    const communityToGroup: Record<string, string> = {};
+    if (cfg.communityLogos) {
+      for (const [groupName, logoData] of Object.entries(cfg.communityLogos)) {
+        for (const comm of (logoData as any).communities || []) {
+          communityToGroup[comm] = groupName;
+        }
+      }
+    }
+
+    const parsed: ParsedConfig = {
+      name: cfg.name || clientId,
+      slug: cfg.slug || clientId,
+      communities: cfg.communities || {},
+      communityToGroup,
+      lotsFileUrl:
+        cfg.data?.lotsFile || `https://la-la.land/${clientId}/lots.txt`,
+    };
+
+    configCache.set(clientId, { data: parsed, fetchedAt: Date.now() });
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function getAllClientConfigs(): Promise<Map<string, ParsedConfig>> {
+  const results = new Map<string, ParsedConfig>();
+  await Promise.all(
+    KNOWN_CLIENTS.map(async (clientId) => {
+      const config = await getClientConfig(clientId);
+      if (config) results.set(clientId, config);
+    })
+  );
+  return results;
+}
 
 // ── Helpers: parse formatted DB strings into numbers ───────────────
 // "4,098" → 4098  |  "$10.25" → 10250000  |  "2,500" → 2500
@@ -107,7 +203,6 @@ function parsePriceM2(raw: any): number {
 
 // ── Helper: paginated Supabase fetch ───────────────────────────────
 async function fetchAllLots(query: any): Promise<any[]> {
-  // Supabase caps at 1000 rows per request.  Paginate transparently.
   const PAGE = 1000;
   let all: any[] = [];
   let offset = 0;
@@ -148,10 +243,10 @@ server.tool(
     '"find lots under 500000 MXN", "available lots in Barcelona", "lots bigger than 200m²".',
   {
     client_id: z
-      .enum(["inverta", "cpi", "agora"])
+      .string()
       .optional()
       .describe(
-        "Filter by client/developer. Options: inverta, cpi, agora. Omit to search all."
+        "Filter by client/developer (e.g. 'inverta', 'cpi', 'agora'). Omit to search all."
       ),
     community: z
       .string()
@@ -192,7 +287,6 @@ server.tool(
   },
   async (params) => {
     const sb = getSupabase();
-    // Fetch from Supabase with server-side filters that work on strings
     let query = sb
       .from("lots")
       .select(
@@ -205,10 +299,8 @@ server.tool(
     if (params.availability)
       query = query.eq("availability", params.availability);
 
-    // Price/area are formatted strings in DB, so we fetch all and filter in memory
     const allRows = await fetchAllLots(query);
 
-    // Parse, filter by price/area, sort by price ascending
     let lots = allRows.map((row: any) => ({
       lot_name: row.lot_name,
       client: row.client_id,
@@ -221,10 +313,14 @@ server.tool(
       subtitle: row.subtitle || null,
     }));
 
-    if (params.min_price) lots = lots.filter((l) => l.price_mxn >= params.min_price!);
-    if (params.max_price) lots = lots.filter((l) => l.price_mxn <= params.max_price!);
-    if (params.min_area) lots = lots.filter((l) => l.area_m2 >= params.min_area!);
-    if (params.max_area) lots = lots.filter((l) => l.area_m2 <= params.max_area!);
+    if (params.min_price)
+      lots = lots.filter((l) => l.price_mxn >= params.min_price!);
+    if (params.max_price)
+      lots = lots.filter((l) => l.price_mxn <= params.max_price!);
+    if (params.min_area)
+      lots = lots.filter((l) => l.area_m2 >= params.min_area!);
+    if (params.max_area)
+      lots = lots.filter((l) => l.area_m2 <= params.max_area!);
 
     lots.sort((a, b) => a.price_mxn - b.price_mxn);
 
@@ -245,7 +341,12 @@ server.tool(
         {
           type: "text",
           text: JSON.stringify(
-            { total_matching: lots.length, showing: page.length, offset: start, lots: page },
+            {
+              total_matching: lots.length,
+              showing: page.length,
+              offset: start,
+              lots: page,
+            },
             null,
             2
           ),
@@ -255,50 +356,22 @@ server.tool(
   }
 );
 
-// ── Lot image helpers ──────────────────────────────────────────────
-// Maps community (fraccionamiento) → PDF subfolder for lot images
-// inverta: barcelona/marsella → mediterraneo, sierraalta/sierrabaja → puntolomas,
-//          cortezia/ebano/verdalia/frondia → arborea, almaterra → almaterra
-// cpi: flat (no subfolder)
-// agora: mediterraneo / puntolomas (but no images yet)
-const COMMUNITY_TO_PDF_FOLDER: Record<string, string> = {
-  // inverta
-  barcelona: "mediterraneo",
-  marsella: "mediterraneo",
-  sierraalta: "puntolomas",
-  sierrabaja: "puntolomas",
-  cortezia: "arborea",
-  ebano: "arborea",
-  verdalia: "arborea",
-  frondia: "arborea",
-  almaterra: "almaterra",
-  // agora
-  "amani-pietra": "mediterraneo",
-  "amani-aqua": "puntolomas",
-  "cañadas-vergel": "puntolomas",
-};
-
-function getLotImageUrls(
+// ── Lot image helpers (dynamic from client-config.js) ──────────────
+async function getLotImageUrls(
   lotName: string,
   clientId: string,
   community: string
-): { map_image: string | null; landscape_image: string | null } {
+): Promise<{ map_image: string | null; landscape_image: string | null }> {
+  const config = await getClientConfig(clientId);
+  if (!config) return { map_image: null, landscape_image: null };
+
   const comm = community.toLowerCase();
-
-  if (clientId === "cpi") {
-    // CPI has flat structure: /cpi/pdf/{lot_name}_map.jpg
-    return {
-      map_image: `https://la-la.land/cpi/pdf/${lotName}_map.jpg`,
-      landscape_image: `https://la-la.land/cpi/pdf/${lotName}_landscape.jpg`,
-    };
-  }
-
-  const folder = COMMUNITY_TO_PDF_FOLDER[comm];
-  if (!folder) return { map_image: null, landscape_image: null };
+  const group = config.communityToGroup[comm];
+  if (!group) return { map_image: null, landscape_image: null };
 
   return {
-    map_image: `https://la-la.land/${clientId}/pdf/${folder}/${lotName}_map.jpg`,
-    landscape_image: `https://la-la.land/${clientId}/pdf/${folder}/${lotName}_landscape.jpg`,
+    map_image: `https://la-la.land/${clientId}/pdf/${group}/${lotName}_map.jpg`,
+    landscape_image: `https://la-la.land/${clientId}/pdf/${group}/${lotName}_landscape.jpg`,
   };
 }
 
@@ -330,16 +403,12 @@ server.tool(
     if (!data)
       return {
         content: [
-          {
-            type: "text",
-            text: `Lot "${params.lot_name}" not found.`,
-          },
+          { type: "text", text: `Lot "${params.lot_name}" not found.` },
         ],
       };
 
-    // Build links
     const mapUrl = `https://la-la.land/${data.client_id}/index.html?lot=${data.lot_name}`;
-    const lotImages = getLotImageUrls(
+    const lotImages = await getLotImageUrls(
       data.lot_name,
       data.client_id,
       data.fraccionamiento || ""
@@ -367,32 +436,39 @@ server.tool(
   }
 );
 
-// ── Tool: list_communities ─────────────────────────────────────────
+// ── Tool: list_communities (dynamic from configs) ──────────────────
 server.tool(
   "list_communities",
   "List all available communities/developments (fraccionamientos) and their clients. " +
     "Use this to discover what communities exist before searching lots.",
   {
     client_id: z
-      .enum(["inverta", "cpi", "agora"])
+      .string()
       .optional()
-      .describe("Filter by client. Omit to list all."),
+      .describe(
+        "Filter by client (e.g. 'inverta', 'cpi', 'agora'). Omit to list all."
+      ),
   },
   async (params) => {
-    const entries = params.client_id
-      ? { [params.client_id]: CLIENTS[params.client_id] }
-      : CLIENTS;
+    const clientIds = params.client_id ? [params.client_id] : KNOWN_CLIENTS;
+    const result = [];
 
-    const result = Object.entries(entries).map(([id, client]) => ({
-      client_id: id,
-      client_name: client.name,
-      communities: client.communities.map((c) => ({
-        id: c.id,
-        name: c.name,
-        center_lng: c.center[0],
-        center_lat: c.center[1],
-      })),
-    }));
+    for (const clientId of clientIds) {
+      const config = await getClientConfig(clientId);
+      if (!config) continue;
+      result.push({
+        client_id: clientId,
+        client_name: config.name,
+        communities: Object.entries(config.communities).map(
+          ([key, comm]) => ({
+            id: key,
+            name: comm.displayName || comm.name,
+            center_lng: comm.center?.[0],
+            center_lat: comm.center?.[1],
+          })
+        ),
+      });
+    }
 
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -408,9 +484,11 @@ server.tool(
     "'what's the price range in Barcelona?'.",
   {
     client_id: z
-      .enum(["inverta", "cpi", "agora"])
+      .string()
       .optional()
-      .describe("Filter by client. Omit for global stats."),
+      .describe(
+        "Filter by client (e.g. 'inverta', 'cpi', 'agora'). Omit for global stats."
+      ),
     community: z
       .string()
       .optional()
@@ -465,8 +543,10 @@ server.tool(
       if (lot.fraccionamiento) communitySet.add(lot.fraccionamiento);
     }
 
-    stats.price_mxn.avg = priceCount > 0 ? Math.round(priceSum / priceCount) : 0;
-    stats.area_m2.avg = areaCount > 0 ? Math.round(areaSum / areaCount) : 0;
+    stats.price_mxn.avg =
+      priceCount > 0 ? Math.round(priceSum / priceCount) : 0;
+    stats.area_m2.avg =
+      areaCount > 0 ? Math.round(areaSum / areaCount) : 0;
 
     if (stats.price_mxn.min === Infinity) stats.price_mxn.min = 0;
     if (stats.price_mxn.max === -Infinity) stats.price_mxn.max = 0;
@@ -482,14 +562,13 @@ server.tool(
 );
 
 // ── Geometry helpers ───────────────────────────────────────────────
-// Haversine distance between two [lat,lng] points, returns meters
 function haversineMeters(
   lat1: number,
   lng1: number,
   lat2: number,
   lng2: number
 ): number {
-  const R = 6371000; // earth radius in meters
+  const R = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLng = ((lng2 - lng1) * Math.PI) / 180;
   const a =
@@ -500,10 +579,8 @@ function haversineMeters(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Shoelace formula for polygon area in m² (approximate, works well for small polygons)
 function polygonAreaM2(vertices: { lat: number; lng: number }[]): number {
   if (vertices.length < 3) return 0;
-  // Convert to local meters using first vertex as origin
   const ref = vertices[0];
   const cosLat = Math.cos((ref.lat * Math.PI) / 180);
   const points = vertices.map((v) => ({
@@ -519,7 +596,6 @@ function polygonAreaM2(vertices: { lat: number; lng: number }[]): number {
   return Math.abs(area / 2);
 }
 
-// Parse lots.txt content into a map of lot_name → vertices
 function parseLotsText(
   text: string
 ): Map<string, { lat: number; lng: number }[]> {
@@ -531,12 +607,10 @@ function parseLotsText(
     const line = rawLine.trim();
     if (!line) continue;
 
-    // If line starts with "lot" it's a lot name
     if (/^lot[a-z]/i.test(line)) {
       currentName = line.replace(/,\s*$/, "");
       lots.set(currentName, []);
     } else if (currentName && line.includes("lat") && line.includes("lng")) {
-      // Parse "{ lat: 19.047808, lng: -96.037221},"
       const latMatch = line.match(/lat:\s*([-\d.]+)/);
       const lngMatch = line.match(/lng:\s*([-\d.]+)/);
       if (latMatch && lngMatch) {
@@ -550,18 +624,10 @@ function parseLotsText(
   return lots;
 }
 
-// Cache for fetched lots.txt files (client_id → parsed map)
 const lotsTextCache = new Map<
   string,
   { data: Map<string, { lat: number; lng: number }[]>; fetchedAt: number }
 >();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-const LOTS_TEXT_URLS: Record<string, string> = {
-  inverta: "https://la-la.land/inverta/lots.txt",
-  cpi: "https://la-la.land/cpi/lots.txt",
-  agora: "https://la-la.land/agora/lots.txt",
-};
 
 async function getLotsTextForClient(
   clientId: string
@@ -569,22 +635,23 @@ async function getLotsTextForClient(
   const cached = lotsTextCache.get(clientId);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) return cached.data;
 
-  const url = LOTS_TEXT_URLS[clientId];
-  if (!url) return new Map();
+  const config = await getClientConfig(clientId);
+  const url = config?.lotsFileUrl || `https://la-la.land/${clientId}/lots.txt`;
 
   const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Failed to fetch lots.txt for ${clientId}: ${resp.status}`);
+  if (!resp.ok)
+    throw new Error(`Failed to fetch lots.txt for ${clientId}: ${resp.status}`);
   const text = await resp.text();
   const parsed = parseLotsText(text);
   lotsTextCache.set(clientId, { data: parsed, fetchedAt: Date.now() });
   return parsed;
 }
 
-// Determine which client a lot_name belongs to
 function clientForLotName(lotName: string): string | null {
-  if (lotName.startsWith("lotinverta")) return "inverta";
-  if (lotName.startsWith("lotcpi")) return "cpi";
-  if (lotName.startsWith("lotagora")) return "agora";
+  const lower = lotName.toLowerCase();
+  for (const clientId of KNOWN_CLIENTS) {
+    if (lower.startsWith(`lot${clientId}`)) return clientId;
+  }
   return null;
 }
 
@@ -608,7 +675,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: `Cannot determine client for lot "${params.lot_name}". Expected prefix: lotinverta, lotcpi, or lotagora.`,
+            text: `Cannot determine client for lot "${params.lot_name}". Expected prefix: lot + client slug.`,
           },
         ],
       };
@@ -619,7 +686,12 @@ server.tool(
       lotsMap = await getLotsTextForClient(clientId);
     } catch (err: any) {
       return {
-        content: [{ type: "text", text: `Error fetching geometry data: ${err.message}` }],
+        content: [
+          {
+            type: "text",
+            text: `Error fetching geometry data: ${err.message}`,
+          },
+        ],
       };
     }
 
@@ -635,7 +707,6 @@ server.tool(
       };
     }
 
-    // Calculate side lengths
     const sides: { from: number; to: number; length_m: number }[] = [];
     let perimeter = 0;
     for (let i = 0; i < vertices.length; i++) {
@@ -654,7 +725,6 @@ server.tool(
       perimeter += len;
     }
 
-    // Calculate area and centroid
     const area = polygonAreaM2(vertices);
     const centroid = {
       lat:
@@ -676,7 +746,7 @@ server.tool(
         lat: v.lat,
         lng: v.lng,
       })),
-      sides: sides,
+      sides,
       perimeter_m: Math.round(perimeter * 100) / 100,
       calculated_area_m2: Math.round(area * 100) / 100,
       centroid,
@@ -690,27 +760,6 @@ server.tool(
 );
 
 // ── Street view / 360 imagery helpers ──────────────────────────────
-
-// Community → framesBase URL mapping (from client-config.js files)
-const FRAMES_BASE: Record<string, string> = {
-  // inverta communities
-  barcelona: "https://andresmtzc.github.io/barcelona/frames/",
-  marsella: "https://andresmtzc.github.io/marsella/frames/",
-  sierraalta: "https://andresmtzc.github.io/sierraalta/frames/",
-  sierrabaja: "https://andresmtzc.github.io/geepeeX/sierrabaja/frames/",
-  cortezia: "https://andresmtzc.github.io/geepeeX/cortezia/frames/",
-  ebano: "https://andresmtzc.github.io/geepeeX/ebano/frames/",
-  verdalia: "https://andresmtzc.github.io/geepeeX/verdalia/frames/",
-  frondia: "https://andresmtzc.github.io/geepeeX/frondia/frames/",
-  almaterra: "https://andresmtzc.github.io/geepeeX/almaterra/frames/",
-  // cpi
-  senterra: "https://andresmtzc.github.io/geepeeX/senterra/frames/",
-  // agora
-  "amani-pietra": "https://andresmtzc.github.io/geepeeX/pietra/frames/",
-  "amani-aqua": "https://andresmtzc.github.io/aqua/frames/",
-  "cañadas-vergel": "https://andresmtzc.github.io/geepeeX/canadas/frames/",
-};
-
 interface StreetViewFrame {
   lat: number;
   lng: number;
@@ -719,7 +768,6 @@ interface StreetViewFrame {
   frameIndex: number;
 }
 
-// Cache for parsed street view frames (framesBase → frames[])
 const streetViewCache = new Map<
   string,
   { data: StreetViewFrame[]; fetchedAt: number }
@@ -731,7 +779,6 @@ async function getStreetViewFrames(
   const cached = streetViewCache.get(framesBase);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) return cached.data;
 
-  // 1. Fetch index.json to discover GPX files
   const indexResp = await fetch(framesBase + "index.json");
   if (!indexResp.ok) return [];
   const manifest = await indexResp.json();
@@ -745,7 +792,6 @@ async function getStreetViewFrames(
 
   const allFrames: StreetViewFrame[] = [];
 
-  // 2. Fetch each GPX and parse trackpoints
   for (const gpxFile of gpxFiles) {
     try {
       const gpxUrl = gpxFile.startsWith("http")
@@ -755,7 +801,6 @@ async function getStreetViewFrames(
       if (!gpxResp.ok) continue;
       const gpxText = await gpxResp.text();
 
-      // Parse trackpoints from GPX XML
       const gpxName = gpxFile.replace(/\.gpx$/i, "").split("/").pop() || "";
       const trkptRegex =
         /<trkpt\s+lat="([-\d.]+)"\s+lon="([-\d.]+)"/g;
@@ -778,6 +823,19 @@ async function getStreetViewFrames(
 
   streetViewCache.set(framesBase, { data: allFrames, fetchedAt: Date.now() });
   return allFrames;
+}
+
+// Resolve community → framesBase URL by searching all client configs
+async function getFramesBaseForCommunity(
+  communityId: string
+): Promise<string | null> {
+  for (const clientId of KNOWN_CLIENTS) {
+    const cfg = await getClientConfig(clientId);
+    if (!cfg) continue;
+    const comm = cfg.communities[communityId];
+    if (comm?.framesBase) return comm.framesBase;
+  }
+  return null;
 }
 
 // ── Tool: get_nearby_streetview ────────────────────────────────────
@@ -813,18 +871,19 @@ server.tool(
     let searchLng: number;
     let communityId: string | undefined = params.community?.toLowerCase();
 
-    // Resolve lot_name to centroid + community
     if (params.lot_name) {
       const clientId = clientForLotName(params.lot_name);
       if (!clientId) {
         return {
           content: [
-            { type: "text", text: `Unknown lot prefix: "${params.lot_name}"` },
+            {
+              type: "text",
+              text: `Unknown lot prefix: "${params.lot_name}"`,
+            },
           ],
         };
       }
 
-      // Get centroid from lots.txt
       const lotsMap = await getLotsTextForClient(clientId);
       const vertices = lotsMap.get(params.lot_name);
       if (!vertices || vertices.length === 0) {
@@ -842,7 +901,6 @@ server.tool(
       searchLng =
         vertices.reduce((s, v) => s + v.lng, 0) / vertices.length;
 
-      // Get community from DB if not provided
       if (!communityId) {
         try {
           const sb = getSupabase();
@@ -854,7 +912,9 @@ server.tool(
           if (lotRow?.fraccionamiento) {
             communityId = lotRow.fraccionamiento.toLowerCase();
           }
-        } catch { /* will fail gracefully below */ }
+        } catch {
+          /* will fail gracefully below */
+        }
       }
     } else if (params.lat != null && params.lng != null) {
       searchLat = params.lat;
@@ -881,14 +941,14 @@ server.tool(
       };
     }
 
-    const framesBase = FRAMES_BASE[communityId];
+    // Get framesBase from dynamic config
+    const framesBase = await getFramesBaseForCommunity(communityId);
     if (!framesBase) {
       return {
         content: [
           {
             type: "text",
-            text: `No street view data available for community "${communityId}". ` +
-              `Available: ${Object.keys(FRAMES_BASE).join(", ")}`,
+            text: `No street view data available for community "${communityId}".`,
           },
         ],
       };
@@ -919,7 +979,6 @@ server.tool(
       };
     }
 
-    // Find nearest frames by haversine distance
     const withDistance = frames.map((f) => ({
       ...f,
       distance_m: haversineMeters(searchLat, searchLng, f.lat, f.lng),
@@ -956,6 +1015,9 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("La-La Land MCP server running on stdio");
+
+  // Pre-warm config cache in background
+  getAllClientConfigs().catch(() => {});
 }
 
 main().catch((err) => {
