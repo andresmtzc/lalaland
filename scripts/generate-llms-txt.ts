@@ -33,10 +33,12 @@ function parseArea(raw: any): number {
   return parseFloat(String(raw).replace(/[$,\s]/g, "")) || 0;
 }
 function parsePrice(raw: any): number {
+  // "millones" column stores values in thousands of MXN (miles):
+  // "580" → $580,000 MXN, "2,726" → $2,726,000 MXN
   if (typeof raw === "number") return raw;
   if (!raw) return 0;
   const num = parseFloat(String(raw).replace(/[$,\s]/g, "")) || 0;
-  return Math.round(num * 1_000_000);
+  return Math.round(num * 1_000);
 }
 function parsePriceM2(raw: any): number {
   if (typeof raw === "number") return raw;

@@ -182,18 +182,19 @@ async function getAllClientConfigs(): Promise<Map<string, ParsedConfig>> {
 }
 
 // ── Helpers: parse formatted DB strings into numbers ───────────────
-// "4,098" → 4098  |  "$10.25" → 10250000  |  "2,500" → 2500
+// "4,098" → 4098  |  "580" → 580000  |  "2,500" → 2500
 function parseArea(raw: any): number {
   if (typeof raw === "number") return raw;
   if (!raw) return 0;
   return parseFloat(String(raw).replace(/[$,\s]/g, "")) || 0;
 }
 function parsePrice(raw: any): number {
-  // millones is stored like "$10.25" meaning 10.25 million MXN → 10,250,000
+  // "millones" column stores values in thousands of MXN (miles):
+  // "580" → $580,000 MXN, "2,726" → $2,726,000 MXN
   if (typeof raw === "number") return raw;
   if (!raw) return 0;
   const num = parseFloat(String(raw).replace(/[$,\s]/g, "")) || 0;
-  return Math.round(num * 1_000_000);
+  return Math.round(num * 1_000);
 }
 function parsePriceM2(raw: any): number {
   if (typeof raw === "number") return raw;
