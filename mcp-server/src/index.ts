@@ -803,19 +803,28 @@ async function getStreetViewFrames(
       const gpxText = await gpxResp.text();
 
       const gpxName = gpxFile.replace(/\.gpx$/i, "").split("/").pop() || "";
-      const trkptRegex =
-        /<trkpt\s+lat="([-\d.]+)"\s+lon="([-\d.]+)"/g;
+
+      // Parse <wpt> waypoints — each has exact GPS + image number in name
+      const wptRegex =
+        /<wpt\s+lat="([-\d.]+)"\s+lon="([-\d.]+)"[^>]*>(.*?)<\/wpt>/gs;
+      const imageNumRegex = /image\s*(\d+)/i;
       let match: RegExpExecArray | null;
-      let idx = 1;
-      while ((match = trkptRegex.exec(gpxText)) !== null) {
+      while ((match = wptRegex.exec(gpxText)) !== null) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        const inner = match[3];
+        const nameMatch = inner.match(/<name>(.*?)<\/name>/);
+        const name = nameMatch ? nameMatch[1] : "";
+        const imgMatch = (name + " " + inner).match(imageNumRegex);
+        if (!imgMatch) continue;
+        const imgNum = parseInt(imgMatch[1]);
         allFrames.push({
-          lat: parseFloat(match[1]),
-          lng: parseFloat(match[2]),
-          imageUrl: `${framesBase}${gpxName}-${idx}.jpg`,
+          lat,
+          lng,
+          imageUrl: `${framesBase}${gpxName}-${imgNum}.jpg`,
           gpxFile: gpxName,
-          frameIndex: idx,
+          frameIndex: imgNum,
         });
-        idx++;
       }
     } catch {
       // Skip failing GPX files
