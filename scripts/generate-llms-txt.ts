@@ -713,8 +713,8 @@ Each lot record contains:
       // ── Available lots table ─────────────────────────────────────
       if (avail.length > 0) {
         out += `#### Available Lots\n\n`;
-        out += `| Lot | Area | Price | Price/m² | Centroid | Perimeter | Sides | Street View | Map Image |\n`;
-        out += `|-----|------|-------|----------|----------|-----------|-------|-------------|----------|\n`;
+        out += `| Lot | Area | Price | Price/m² | Centroid | Perimeter | Sides | Street View | Map Image | Landscape Image |\n`;
+        out += `|-----|------|-------|----------|----------|-----------|-------|-------------|-----------|----------------|\n`;
 
         for (const lot of avail) {
           const name = lot.nickname
@@ -736,9 +736,10 @@ Each lot record contains:
             ? `[View](${lot.streetview_image}) (${lot.streetview_distance_m}m)`
             : "—";
 
-          const imgStr = lot.map_image ? `[Map](${lot.map_image})` : "—";
+          const mapStr = lot.map_image ? `[Map](${lot.map_image})` : "—";
+          const landStr = lot.landscape_image ? `[Landscape](${lot.landscape_image})` : "—";
 
-          out += `| [${name}](https://la-la.land/${lot.client_id}/index.html?lot=${lot.lot_name}) | ${lot.area_m2}m² | ${fmt(lot.price_mxn)} | ${fmt(lot.price_per_m2)}/m² | ${centroidStr} | ${perimStr} | ${sidesStr} | ${svStr} | ${imgStr} |\n`;
+          out += `| [${name}](https://la-la.land/${lot.client_id}/index.html?lot=${lot.lot_name}) | ${lot.area_m2}m² | ${fmt(lot.price_mxn)} | ${fmt(lot.price_per_m2)}/m² | ${centroidStr} | ${perimStr} | ${sidesStr} | ${svStr} | ${mapStr} | ${landStr} |\n`;
         }
         out += `\n`;
       }
@@ -746,8 +747,8 @@ Each lot record contains:
       // ── Sold lots (collapsed) ────────────────────────────────────
       if (soldLots.length > 0) {
         out += `#### Sold Lots (${soldLots.length})\n\n`;
-        out += `| Lot | Area | Price | Centroid |\n`;
-        out += `|-----|------|-------|----------|\n`;
+        out += `| Lot | Area | Price | Centroid | Map Image | Landscape Image |\n`;
+        out += `|-----|------|-------|----------|-----------|----------------|\n`;
         for (const lot of soldLots.sort(
           (a, b) => a.price_mxn - b.price_mxn
         )) {
@@ -755,7 +756,9 @@ Each lot record contains:
             lot.centroid_lat && lot.centroid_lng
               ? `${lot.centroid_lat}, ${lot.centroid_lng}`
               : "—";
-          out += `| ${lot.lot_name} | ${lot.area_m2}m² | ${fmt(lot.price_mxn)} | ${centroidStr} |\n`;
+          const mapStr = lot.map_image ? `[Map](${lot.map_image})` : "—";
+          const landStr = lot.landscape_image ? `[Landscape](${lot.landscape_image})` : "—";
+          out += `| ${lot.lot_name} | ${lot.area_m2}m² | ${fmt(lot.price_mxn)} | ${centroidStr} | ${mapStr} | ${landStr} |\n`;
         }
         out += `\n`;
       }
