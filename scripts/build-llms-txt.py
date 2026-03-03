@@ -501,17 +501,9 @@ for client_id in CLIENTS:
 
         wb("")
 
-        # ── Available lots: summary in slim, full table in full ──
+        # ── Available lots: NO per-lot data in slim, full table in full ──
         if avail:
-            # Slim: just list lot names with prices (one line each)
-            ws("#### Available Lots")
-            ws("")
-            for lot in avail:
-                name = f'{lot["lot_name"]} "{lot["nickname"]}"' if lot["nickname"] else lot["lot_name"]
-                ws(f'- [{name}](https://la-la.land/{lot["client_id"]}/index.html?lot={lot["lot_name"]}): {lot["area_m2"]}m², {fmt(lot["price_mxn"])}')
-            ws("")
-
-            # Full: complete table with all columns
+            # Full only: complete table with all columns
             wf("#### Available Lots")
             wf("")
             wf("| Lot | Developer | Project | Community | City | Area | Price | Price/m² | Centroid | Perimeter | Sides | Street View | Map Image | Landscape Image |")
@@ -531,11 +523,8 @@ for client_id in CLIENTS:
 
             wf("")
 
-        # ── Sold lots: count only in slim, full table in full ──
+        # ── Sold lots: full table only ──
         if sold_lots:
-            ws(f"*{len(sold_lots)} sold lots in this community.*")
-            ws("")
-
             wf(f"#### Sold Lots ({len(sold_lots)})")
             wf("")
             wf("| Lot | Developer | Project | Community | City | Area | Centroid | Map Image | Landscape Image |")
