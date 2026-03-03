@@ -415,7 +415,8 @@ Each lot record contains:
 - Blocked: {len([l for l in lots if l['availability'] == 'Blocked'])}""")
 
 if available:
-    prices = [l["price_mxn"] for l in available if l["price_mxn"] > 0]
+    priced = [l for l in available if l["price_per_m2"] > 1]
+    prices = [l["price_mxn"] for l in priced]
     areas = [l["area_m2"] for l in available if l["area_m2"] > 0]
     if prices:
         h(f"- Price range (available): {fmt(min(prices))} — {fmt(max(prices))}")
@@ -423,6 +424,9 @@ if available:
     if areas:
         h(f"- Area range (available): {min(areas)}m² — {max(areas)}m²")
         h(f"- Average area (available): {round(sum(areas)/len(areas))}m²")
+    unpriced = len(available) - len(priced)
+    if unpriced:
+        h(f"- Lots without pricing yet: {unpriced}")
 
 h("")
 h("---")
@@ -456,7 +460,8 @@ for client_id in CLIENTS:
     wb(f"- Total lots: {len(client_lots)} ({len(client_avail)} available, {len(client_sold)} sold)")
 
     if client_avail:
-        prices = [l["price_mxn"] for l in client_avail if l["price_mxn"] > 0]
+        client_priced = [l for l in client_avail if l["price_per_m2"] > 1]
+        prices = [l["price_mxn"] for l in client_priced]
         areas = [l["area_m2"] for l in client_avail if l["area_m2"] > 0]
         if prices: wb(f"- Price range: {fmt(min(prices))} — {fmt(max(prices))}")
         if areas: wb(f"- Area range: {min(areas)}m² — {max(areas)}m²")
@@ -487,11 +492,14 @@ for client_id in CLIENTS:
         wb(f"- Lots: {len(avail)} available, {len(sold_lots)} sold")
 
         if avail:
-            prices = [l["price_mxn"] for l in avail if l["price_mxn"] > 0]
+            comm_priced = [l for l in avail if l["price_per_m2"] > 1]
+            prices = [l["price_mxn"] for l in comm_priced]
             areas = [l["area_m2"] for l in avail if l["area_m2"] > 0]
             if prices:
                 wb(f"- Price range: {fmt(min(prices))} — {fmt(max(prices))}")
                 wb(f"- Average price: {fmt(round(sum(prices)/len(prices)))}")
+            if not comm_priced and avail:
+                wb(f"- Pricing: not yet available ({len(avail)} lots)")
             if areas:
                 wb(f"- Area range: {min(areas)}m² — {max(areas)}m²")
 
@@ -519,7 +527,9 @@ for client_id in CLIENTS:
                 map_str = f'[Map]({lot["map_image"]})' if lot["map_image"] else "—"
                 land_str = f'[Landscape]({lot["landscape_image"]})' if lot["landscape_image"] else "—"
 
-                wf(f'| [{name}](https://la-la.land/{lot["client_id"]}/index.html?lot={lot["lot_name"]}) | {dev_name} | {lot["project"]} | {display} | {lot["city"]} | {lot["area_m2"]}m² | {fmt(lot["price_mxn"])} | {fmt(lot["price_per_m2"])}/m² | {centroid_str} | {perim_str} | {sides_str} | {sv_str} | {map_str} | {land_str} |')
+                price_str = fmt(lot["price_mxn"]) if lot["price_per_m2"] > 1 else "TBD"
+                pm2_str = f'{fmt(lot["price_per_m2"])}/m²' if lot["price_per_m2"] > 1 else "TBD"
+                wf(f'| [{name}](https://la-la.land/{lot["client_id"]}/index.html?lot={lot["lot_name"]}) | {dev_name} | {lot["project"]} | {display} | {lot["city"]} | {lot["area_m2"]}m² | {price_str} | {pm2_str} | {centroid_str} | {perim_str} | {sides_str} | {sv_str} | {map_str} | {land_str} |')
 
             wf("")
 
