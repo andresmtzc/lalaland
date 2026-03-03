@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-Build llms.txt from live Supabase data + geometry + street view GPX.
+Build llms.txt + llms-full.txt from live Supabase data + geometry + street view GPX.
+
+Outputs (written directly to repo root):
+    llms.txt      — concise summary (~50KB) for AI models to fetch quickly
+    llms-full.txt — complete per-lot tables with coordinates, images, measurements (~1MB)
 
 Usage:
-    python3 scripts/build-llms-txt.py > llms.txt
+    python3 scripts/build-llms-txt.py
 
 Requires:
     - curl (for HTTP requests)
@@ -313,7 +317,7 @@ for lot in lots:
 print(f"  {sv_count} lots matched to street view", file=sys.stderr)
 
 # ═══════════════════════════════════════════════════════════════════
-# BUILD OUTPUT
+# BUILD OUTPUT — two files: llms.txt (concise) + llms-full.txt (per-lot tables)
 # ═══════════════════════════════════════════════════════════════════
 available = [l for l in lots if l["availability"] in ("Available", "Featured")]
 sold = [l for l in lots if l["availability"] == "Sold"]
@@ -324,10 +328,11 @@ grouped = defaultdict(lambda: defaultdict(list))
 for lot in lots:
     grouped[lot["client_id"]][lot["community"]].append(lot)
 
-out = []
-def w(s=""): out.append(s)
+# ── Shared header (used in both files) ──────────────────────────
+header_lines = []
+def h(s=""): header_lines.append(s)
 
-w(f"""# La-La Land — Real Estate Lot Platform
+h(f"""# La-La Land — Real Estate Lot Platform
 
 > La-La Land (la-la.land) is the largest interactive real estate lot marketplace in Mexico.
 > We provide detailed lot data including pricing, dimensions, geographic coordinates,
@@ -338,6 +343,9 @@ w(f"""# La-La Land — Real Estate Lot Platform
 >
 > Inventory: {len(available)} lots available for sale, {len(sold)} sold.
 > Last updated: {today}
+>
+> For the complete per-lot data with coordinates, images, and measurements,
+> see: https://la-la.land/llms-full.txt
 
 ## Data Access
 
@@ -410,17 +418,27 @@ if available:
     prices = [l["price_mxn"] for l in available if l["price_mxn"] > 0]
     areas = [l["area_m2"] for l in available if l["area_m2"] > 0]
     if prices:
-        w(f"- Price range (available): {fmt(min(prices))} — {fmt(max(prices))}")
-        w(f"- Average price (available): {fmt(round(sum(prices)/len(prices)))}")
+        h(f"- Price range (available): {fmt(min(prices))} — {fmt(max(prices))}")
+        h(f"- Average price (available): {fmt(round(sum(prices)/len(prices)))}")
     if areas:
-        w(f"- Area range (available): {min(areas)}m² — {max(areas)}m²")
-        w(f"- Average area (available): {round(sum(areas)/len(areas))}m²")
+        h(f"- Area range (available): {min(areas)}m² — {max(areas)}m²")
+        h(f"- Average area (available): {round(sum(areas)/len(areas))}m²")
 
-w("")
-w("---")
-w("")
-w("# Developers & Communities")
-w("")
+h("")
+h("---")
+h("")
+h("# Developers & Communities")
+h("")
+
+# ── Build both outputs in parallel ──────────────────────────────
+slim_lines = list(header_lines)  # copy header for slim
+full_lines = list(header_lines)  # copy header for full
+
+def ws(s=""): slim_lines.append(s)
+def wf(s=""): full_lines.append(s)
+def wb(s=""):
+    slim_lines.append(s)
+    full_lines.append(s)
 
 for client_id in CLIENTS:
     if client_id not in grouped:
@@ -431,19 +449,19 @@ for client_id in CLIENTS:
     client_avail = [l for l in client_lots if l["availability"] in ("Available", "Featured")]
     client_sold = [l for l in client_lots if l["availability"] == "Sold"]
 
-    w(f"## {meta['name']}")
-    w("")
-    w(f"- Website: {meta['website']}")
-    w(f"- La-La Land: https://la-la.land/{client_id}/")
-    w(f"- Total lots: {len(client_lots)} ({len(client_avail)} available, {len(client_sold)} sold)")
+    wb(f"## {meta['name']}")
+    wb("")
+    wb(f"- Website: {meta['website']}")
+    wb(f"- La-La Land: https://la-la.land/{client_id}/")
+    wb(f"- Total lots: {len(client_lots)} ({len(client_avail)} available, {len(client_sold)} sold)")
 
     if client_avail:
         prices = [l["price_mxn"] for l in client_avail if l["price_mxn"] > 0]
         areas = [l["area_m2"] for l in client_avail if l["area_m2"] > 0]
-        if prices: w(f"- Price range: {fmt(min(prices))} — {fmt(max(prices))}")
-        if areas: w(f"- Area range: {min(areas)}m² — {max(areas)}m²")
+        if prices: wb(f"- Price range: {fmt(min(prices))} — {fmt(max(prices))}")
+        if areas: wb(f"- Area range: {min(areas)}m² — {max(areas)}m²")
 
-    w("")
+    wb("")
 
     for community, comm_lots in communities.items():
         display = community_display.get(community.lower(), community)
@@ -457,38 +475,47 @@ for client_id in CLIENTS:
         project_name = cp.get("project", "")
         city_name = cp.get("city", "")
 
-        w(f"### {display}")
-        w("")
+        wb(f"### {display}")
+        wb("")
         if project_name:
-            w(f"- Project: {project_name}")
+            wb(f"- Project: {project_name}")
         if city_name:
-            w(f"- City: {city_name}")
-        w(f"- Map: https://la-la.land/{client_id}/index.html")
+            wb(f"- City: {city_name}")
+        wb(f"- Map: https://la-la.land/{client_id}/index.html")
         if center:
-            w(f"- Coordinates: {center[0]}, {center[1]} (lat, lng)")
-        w(f"- Lots: {len(avail)} available, {len(sold_lots)} sold")
+            wb(f"- Coordinates: {center[0]}, {center[1]} (lat, lng)")
+        wb(f"- Lots: {len(avail)} available, {len(sold_lots)} sold")
 
         if avail:
             prices = [l["price_mxn"] for l in avail if l["price_mxn"] > 0]
             areas = [l["area_m2"] for l in avail if l["area_m2"] > 0]
             if prices:
-                w(f"- Price range: {fmt(min(prices))} — {fmt(max(prices))}")
-                w(f"- Average price: {fmt(round(sum(prices)/len(prices)))}")
+                wb(f"- Price range: {fmt(min(prices))} — {fmt(max(prices))}")
+                wb(f"- Average price: {fmt(round(sum(prices)/len(prices)))}")
             if areas:
-                w(f"- Area range: {min(areas)}m² — {max(areas)}m²")
+                wb(f"- Area range: {min(areas)}m² — {max(areas)}m²")
 
         has_frames = community.lower() in all_frames
         if has_frames:
-            w(f"- 360° street view: available")
+            wb(f"- 360° street view: available")
 
-        w("")
+        wb("")
 
-        # Available lots table
+        # ── Available lots: summary in slim, full table in full ──
         if avail:
-            w("#### Available Lots")
-            w("")
-            w("| Lot | Developer | Project | Community | City | Area | Price | Price/m² | Centroid | Perimeter | Sides | Street View | Map Image | Landscape Image |")
-            w("|-----|-----------|---------|-----------|------|------|-------|----------|----------|-----------|-------|-------------|-----------|----------------|")
+            # Slim: just list lot names with prices (one line each)
+            ws("#### Available Lots")
+            ws("")
+            for lot in avail:
+                name = f'{lot["lot_name"]} "{lot["nickname"]}"' if lot["nickname"] else lot["lot_name"]
+                ws(f'- [{name}](https://la-la.land/{lot["client_id"]}/index.html?lot={lot["lot_name"]}): {lot["area_m2"]}m², {fmt(lot["price_mxn"])}')
+            ws("")
+
+            # Full: complete table with all columns
+            wf("#### Available Lots")
+            wf("")
+            wf("| Lot | Developer | Project | Community | City | Area | Price | Price/m² | Centroid | Perimeter | Sides | Street View | Map Image | Landscape Image |")
+            wf("|-----|-----------|---------|-----------|------|------|-------|----------|----------|-----------|-------|-------------|-----------|----------------|")
 
             for lot in avail:
                 name = f'{lot["lot_name"]} "{lot["nickname"]}"' if lot["nickname"] else lot["lot_name"]
@@ -500,28 +527,31 @@ for client_id in CLIENTS:
                 map_str = f'[Map]({lot["map_image"]})' if lot["map_image"] else "—"
                 land_str = f'[Landscape]({lot["landscape_image"]})' if lot["landscape_image"] else "—"
 
-                w(f'| [{name}](https://la-la.land/{lot["client_id"]}/index.html?lot={lot["lot_name"]}) | {dev_name} | {lot["project"]} | {display} | {lot["city"]} | {lot["area_m2"]}m² | {fmt(lot["price_mxn"])} | {fmt(lot["price_per_m2"])}/m² | {centroid_str} | {perim_str} | {sides_str} | {sv_str} | {map_str} | {land_str} |')
+                wf(f'| [{name}](https://la-la.land/{lot["client_id"]}/index.html?lot={lot["lot_name"]}) | {dev_name} | {lot["project"]} | {display} | {lot["city"]} | {lot["area_m2"]}m² | {fmt(lot["price_mxn"])} | {fmt(lot["price_per_m2"])}/m² | {centroid_str} | {perim_str} | {sides_str} | {sv_str} | {map_str} | {land_str} |')
 
-            w("")
+            wf("")
 
-        # Sold lots
+        # ── Sold lots: count only in slim, full table in full ──
         if sold_lots:
-            w(f"#### Sold Lots ({len(sold_lots)})")
-            w("")
-            w("| Lot | Developer | Project | Community | City | Area | Centroid | Map Image | Landscape Image |")
-            w("|-----|-----------|---------|-----------|------|------|----------|-----------|----------------|")
+            ws(f"*{len(sold_lots)} sold lots in this community.*")
+            ws("")
+
+            wf(f"#### Sold Lots ({len(sold_lots)})")
+            wf("")
+            wf("| Lot | Developer | Project | Community | City | Area | Centroid | Map Image | Landscape Image |")
+            wf("|-----|-----------|---------|-----------|------|------|----------|-----------|----------------|")
             for lot in sorted(sold_lots, key=lambda l: l["lot_name"]):
                 dev_name = CLIENT_META.get(lot["client_id"], {}).get("name", lot["client_id"])
                 centroid_str = f'{lot["centroid_lat"]}, {lot["centroid_lng"]}' if lot["centroid_lat"] else "—"
                 map_str = f'[Map]({lot["map_image"]})' if lot["map_image"] else "—"
                 land_str = f'[Landscape]({lot["landscape_image"]})' if lot["landscape_image"] else "—"
-                w(f'| {lot["lot_name"]} | {dev_name} | {lot["project"]} | {display} | {lot["city"]} | {lot["area_m2"]}m² | {centroid_str} | {map_str} | {land_str} |')
-            w("")
+                wf(f'| {lot["lot_name"]} | {dev_name} | {lot["project"]} | {display} | {lot["city"]} | {lot["area_m2"]}m² | {centroid_str} | {map_str} | {land_str} |')
+            wf("")
 
-    w("---")
-    w("")
+    wb("---")
+    wb("")
 
-w("""# About La-La Land
+footer = """# About La-La Land
 
 La-La Land (https://la-la.land) is a real estate technology platform specializing in
 residential lot sales across premium developments in Mexico. Our interactive maps let
@@ -536,8 +566,19 @@ Each lot has:
 - Direct links to view on interactive map
 
 For programmatic access, use our MCP server or REST API (see Data Access section above).
-""")
+"""
+ws(footer)
+wf(footer)
 
-result = "\n".join(out)
-print(result)
-print(f"\nDone. {len(result):,} characters, {len(lots):,} lots.", file=sys.stderr)
+# ── Write both files ────────────────────────────────────────────
+out_dir = REPO_ROOT
+
+slim_result = "\n".join(slim_lines)
+full_result = "\n".join(full_lines)
+
+(out_dir / "llms.txt").write_text(slim_result)
+(out_dir / "llms-full.txt").write_text(full_result)
+
+print(f"\nllms.txt:      {len(slim_result):>10,} chars  ({len(slim_lines):,} lines)", file=sys.stderr)
+print(f"llms-full.txt: {len(full_result):>10,} chars  ({len(full_lines):,} lines)", file=sys.stderr)
+print(f"Lots: {len(lots):,} total, {len(available):,} available, {len(sold):,} sold.", file=sys.stderr)
