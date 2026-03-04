@@ -107,9 +107,9 @@ const CLIENT_CONFIGS = {
       },
       labels: {
         baseRevealOffset: 0,
-        manzana: { revealOffset: 0.3, fadeDuration: 0.5, sizeStops: [0, 14, 1, 16, 2, 18, 3, 20] },
-        marbles: { revealOffset: 0.6, fadeDuration: 0.5 },
-        lot:     { revealOffset: 0.9, fadeDuration: 0.5, sizeStops: [0, 10, 1, 12, 2, 14, 3, 16] }
+        manzana: { revealOffset: 0.1, fadeDuration: 0.5, sizeStops: [0, 14, 1, 16, 2, 18, 3, 20] },
+        marbles: { revealOffset: 0.7, fadeDuration: 0.5 },
+        lot:     { revealOffset: 0.4, fadeDuration: 0.5, sizeStops: [0, 10, 1, 12, 2, 14, 3, 16] }
       }
     },
 
