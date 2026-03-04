@@ -104,6 +104,10 @@ const CLIENT_CONFIGS = {
         center: [-100.179293, 25.436671], // Marsella center-100.1534, 25.4255 - 12
         zoom: 15.6,
         desktopZoomOffset: 1.4
+      },
+      labels: {
+        lotSizeStops:     [17, 10, 18, 12, 19, 14, 20, 16],
+        manzanaSizeStops: [15, 14, 16, 16, 17, 18, 18, 20]
       }
     },
 

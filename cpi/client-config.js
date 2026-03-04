@@ -53,6 +53,10 @@ const CLIENT_CONFIGS = {
         center: [-99.9490, 25.1474], // Senterra center
         zoom: 14.1,
         desktopZoomOffset: 1.65
+      },
+      labels: {
+        lotSizeStops:     [17, 10, 18, 12, 19, 14, 20, 16],
+        manzanaSizeStops: [15, 14, 16, 16, 17, 18, 18, 20]
       }
     },
 
