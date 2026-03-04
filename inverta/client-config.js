@@ -111,7 +111,7 @@ const CLIENT_CONFIGS = {
       initialView: {
         center: [-96.062906, 19.073475], // Marsella center
         zoom: 12.1,
-        desktopZoomOffset: 1.5
+        desktopZoomOffset: 1.4
       }
     },
 
