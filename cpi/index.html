@@ -529,6 +529,7 @@ let scene, camera, renderer, sphere, panoGroup;
 let currentYaw = 0, currentPitch = 0, currentFov = 75;
 let viewerInitialized = false;
 let selectedMarbleId = null;
+let hoveredMarbleId = null;
 // Marriage system
 let marriageGroups = []; // Array of arrays: [["gpxName.gpx:15", "gpxName2.gpx:42"], ...]
 let antiMarriageGroups = []; // Array of arrays: pairs that block navigation between them
@@ -1504,6 +1505,7 @@ function updateMarbleDisplay(){
           trackId,
           index,
           isSelected: (m.id === selectedMarbleId),
+          isHovered: (m.id === hoveredMarbleId),
           hasImage
         }
       });
@@ -1517,7 +1519,20 @@ function updateMarbleDisplay(){
 function setupMapInteractions(){
   map.on('move', ()=> { if (selectedMarbleId) updateViewCone(); });
   map.on('zoom', ()=> { if (selectedMarbleId) updateViewCone(); });
-  
+
+  map.on('mouseenter', 'marbles-click-layer', (e) => {
+    map.getCanvas().style.cursor = 'pointer';
+    if (e.features.length > 0) {
+      hoveredMarbleId = e.features[0].properties.id;
+      updateMarbleDisplay();
+    }
+  });
+  map.on('mouseleave', 'marbles-click-layer', () => {
+    map.getCanvas().style.cursor = '';
+    hoveredMarbleId = null;
+    updateMarbleDisplay();
+  });
+
   // 🟢 ADD MARBLE CLICK HANDLERS
   enableMarbleClickOnly();
 }
@@ -4075,6 +4090,7 @@ function setupCommunitySearchMenu() {
             ],
             'circle-color': ['case',
               ['==', ['get', 'isSelected'], true], CONFIG.colors.primary,
+              ['==', ['get', 'isHovered'], true], CONFIG.colors.primary,
               ['==', ['get', 'hasImage'], true], CONFIG.colors.lotMarkerWithImage,
               CONFIG.colors.brown
             ],
@@ -4083,7 +4099,7 @@ function setupCommunitySearchMenu() {
               ['==', ['get', 'hasImage'], true], 1,
               0
             ],
-            'circle-stroke-color': CONFIG.colors.white,
+            'circle-stroke-color': CONFIG.colors.primary,
             'circle-opacity': [
               'interpolate', ['linear'], ['zoom'],
               _marblesReveal, 0,
