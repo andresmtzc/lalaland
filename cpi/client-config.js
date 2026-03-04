@@ -54,8 +54,12 @@ const CLIENT_CONFIGS = {
         zoom: 14.1,
         desktopZoomOffset: 1.65
       },
+      // labels.*SizeStops — pairs of [zoom, fontSize] at increasing zoom levels.
+      // Format: [zoom1, size1, zoom2, size2, ...] — Mapbox interpolates between them.
+      // These are BASE zoom values; desktopZoomOffset is added automatically on desktop.
+      // Increase the size values to make text bigger, or shift zoom values to appear earlier/later.
       labels: {
-        lotSizeStops:     [17, 10, 18, 12, 19, 14, 20, 16],
+        lotSizeStops:     [17, 12, 18, 14, 19, 16, 20, 18],
         manzanaSizeStops: [15, 14, 16, 16, 17, 18, 18, 20]
       }
     },
