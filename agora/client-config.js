@@ -103,13 +103,13 @@ const CLIENT_CONFIGS = {
       initialView: {
         center: [-100.179293, 25.436671], // Marsella center-100.1534, 25.4255 - 12
         zoom: 15.6,
-        desktopZoomOffset: 1.4
+        desktopZoomOffset: 1
       },
       labels: {
-        baseRevealOffset: 1,
-        manzana: { revealOffset: 0.5, fadeDuration: 0.5, sizeStops: [0, 14, 1, 16, 2, 18, 3, 20] },
-        marbles: { revealOffset: 1.5, fadeDuration: 0.5 },
-        lot:     { revealOffset: 1, fadeDuration: 0.5, sizeStops: [0, 10, 1, 12, 2, 14, 3, 16] }
+        baseRevealOffset: 0,
+        manzana: { revealOffset: 0.3, fadeDuration: 0.5, sizeStops: [0, 14, 1, 16, 2, 18, 3, 20] },
+        marbles: { revealOffset: 0.6, fadeDuration: 0.5 },
+        lot:     { revealOffset: 0.9, fadeDuration: 0.5, sizeStops: [0, 10, 1, 12, 2, 14, 3, 16] }
       }
     },
 
