@@ -106,9 +106,9 @@ const CLIENT_CONFIGS = {
         desktopZoomOffset: 1.4
       },
       labels: {
-        baseRevealZoom: 15,  // Change this one number to shift the entire staggered sequence
-        manzana: { revealOffset: 0, fadeDuration: 0.5, sizeStops: [0, 14, 1, 16, 2, 18, 3, 20] },
-        marbles: { revealOffset: 2, fadeDuration: 0.5 },
+        baseRevealOffset: 1,
+        manzana: { revealOffset: 0.5, fadeDuration: 0.5, sizeStops: [0, 14, 1, 16, 2, 18, 3, 20] },
+        marbles: { revealOffset: 1.5, fadeDuration: 0.5 },
         lot:     { revealOffset: 1, fadeDuration: 0.5, sizeStops: [0, 10, 1, 12, 2, 14, 3, 16] }
       }
     },
