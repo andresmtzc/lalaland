@@ -3797,7 +3797,7 @@ const _urlCommData = _urlComm && CONFIG.communities[_urlComm];
 const initialCenter = _urlCommData ? _urlCommData.center : CONFIG.mapbox.initialView.center;
 const _baseZoom = _urlCommData ? _urlCommData.zoom : CONFIG.mapbox.initialView.zoom;
 const _desktopOffset = window.innerWidth >= 768 ? (_urlCommData?.desktopZoomOffset ?? CONFIG.mapbox.initialView.desktopZoomOffset ?? 0) : 0;
-const _base            = CONFIG.mapbox.initialView.zoom + _desktopOffset + CONFIG.mapbox.labels.baseRevealOffset;
+const _base            = _baseZoom + _desktopOffset + CONFIG.mapbox.labels.baseRevealOffset;
 const _manzanaReveal   = _base + CONFIG.mapbox.labels.manzana.revealOffset;
 // When loading directly into a community, clamp to the reveal threshold so labels are not pre-revealed
 const initialZoom = _baseZoom + _desktopOffset;
@@ -3805,6 +3805,33 @@ const _lotReveal       = _base + CONFIG.mapbox.labels.lot.revealOffset;
 const _marblesReveal   = _base + CONFIG.mapbox.labels.marbles.revealOffset;
 const _adjLotStops     = applyRevealOffset(CONFIG.mapbox.labels.lot.sizeStops,     _lotReveal);
 const _adjManzanaStops = applyRevealOffset(CONFIG.mapbox.labels.manzana.sizeStops, _manzanaReveal);
+function updateLabelReveal(landingZoom) {
+  if (!window.map) return;
+  const cfg = CONFIG.mapbox.labels;
+  const base          = landingZoom + cfg.baseRevealOffset;
+  const lotReveal     = base + cfg.lot.revealOffset;
+  const manzanaReveal = base + cfg.manzana.revealOffset;
+  const marblesReveal = base + cfg.marbles.revealOffset;
+  if (map.getLayer('lot-labels')) {
+    map.setLayerZoomRange('lot-labels', lotReveal, 24);
+    map.setPaintProperty('lot-labels', 'text-opacity', ['interpolate', ['linear'], ['zoom'], lotReveal, 0, lotReveal + cfg.lot.fadeDuration, 1]);
+    map.setLayoutProperty('lot-labels', 'text-size', ['interpolate', ['linear'], ['zoom'], ...applyRevealOffset(cfg.lot.sizeStops, lotReveal)]);
+  }
+  if (map.getLayer('manzana-labels')) {
+    map.setLayerZoomRange('manzana-labels', manzanaReveal, 24);
+    map.setPaintProperty('manzana-labels', 'text-opacity', ['interpolate', ['linear'], ['zoom'], manzanaReveal, 0, manzanaReveal + cfg.manzana.fadeDuration, 1]);
+    map.setLayoutProperty('manzana-labels', 'text-size', ['interpolate', ['linear'], ['zoom'], ...applyRevealOffset(cfg.manzana.sizeStops, manzanaReveal)]);
+  }
+  if (map.getLayer('marbles-layer')) {
+    map.setLayerZoomRange('marbles-layer', marblesReveal, 24);
+    map.setPaintProperty('marbles-layer', 'circle-opacity', ['interpolate', ['linear'], ['zoom'], marblesReveal, 0, marblesReveal + cfg.marbles.fadeDuration, 1]);
+    map.setPaintProperty('marbles-layer', 'circle-stroke-opacity', ['interpolate', ['linear'], ['zoom'], marblesReveal, 0, marblesReveal + cfg.marbles.fadeDuration, 1]);
+  }
+  if (map.getLayer('marbles-click-layer')) {
+    map.setLayerZoomRange('marbles-click-layer', marblesReveal, 24);
+  }
+}
+
 
 fetch(mapboxTokenUrl)
   .then(r => r.text())
@@ -8830,6 +8857,7 @@ searchBtnStage?.classList.add('hide');
     resetBtn.addEventListener('click', () => {
       if (!window.map) return;
       const initialZoom = getCurrentFraccZoom();
+      updateLabelReveal(initialZoom);
       map.flyTo({
         center: [-100.15994, 25.461823],
         zoom: initialZoom,
@@ -10764,6 +10792,7 @@ function setupCommunitySearchMenu() {
           if (c.center && window.map) {
             const _miniDzOff = window.innerWidth >= 768 ? (CONFIG.mapbox.initialView.desktopZoomOffset ?? 0) : 0;
             map.flyTo({ center: c.center, zoom: (c.zoom ?? CONFIG.mapbox.initialView.zoom) + _miniDzOff, speed: 1.2, curve: 1.5 });
+            updateLabelReveal((c.zoom ?? CONFIG.mapbox.initialView.zoom) + _miniDzOff);
             const modal = document.getElementById('lotModal');
             if (modal) {
               // ALWAYS set fracc (not just when modal is open)
@@ -11112,6 +11141,7 @@ function closeModalWithZoomReset() {
     // Only fly to fracc center for lot modals (not POI)
     const fraccCenter = getCurrentFraccCenter();
     const initialZoom = getCurrentFraccZoom();
+      updateLabelReveal(initialZoom);
 
     if (map) {
       map.flyTo({
