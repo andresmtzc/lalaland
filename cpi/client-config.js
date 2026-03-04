@@ -57,10 +57,9 @@ const CLIENT_CONFIGS = {
       // labels.*SizeStops — pairs of [zoom, fontSize] at increasing zoom levels.
       // Format: [zoom1, size1, zoom2, size2, ...] — Mapbox interpolates between them.
       // These are BASE zoom values; desktopZoomOffset is added automatically on desktop.
-      // Increase the size values to make text bigger, or shift zoom values to appear earlier/later.
       labels: {
-        lotSizeStops:     [17, 12, 18, 14, 19, 16, 20, 18],
-        manzanaSizeStops: [15, 14, 16, 16, 17, 18, 18, 20]
+        lot:     { revealZoom: 17, fadeDuration: 0.5, sizeStops: [0, 12, 1, 14, 2, 16, 3, 18] },
+        manzana: { revealZoom: 15, fadeDuration: 0.5, sizeStops: [0, 14, 1, 16, 2, 18, 3, 20] }
       }
     },
 
@@ -575,6 +574,17 @@ function lotStyleWidth(widthValue) {
   return widthValue;
 }
 
+/**
+ * Convert relative label size stops to absolute zoom values.
+ * Stops are stored as [offset, size, offset, size, ...] relative to baseZoom.
+ * @param {array} stops - Relative stops, e.g. [0, 10, 1, 12, 2, 14, 3, 16]
+ * @param {number} baseZoom - Absolute base zoom (revealZoom + desktopOffset)
+ * @returns {array} Absolute stops for Mapbox interpolate expression
+ */
+function applyRevealOffset(stops, baseZoom) {
+  return stops.map((v, i) => i % 2 === 0 ? baseZoom + v : v);
+}
+
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -590,6 +600,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getColor,
     applyColorsToCSS,
     resolveLotStyleColor,
-    lotStyleWidth
+    lotStyleWidth,
+    applyRevealOffset
   };
 }

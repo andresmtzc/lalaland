@@ -3659,8 +3659,10 @@ const initialCenter = _urlCommData ? _urlCommData.center : CONFIG.mapbox.initial
 const _baseZoom = _urlCommData ? _urlCommData.zoom : CONFIG.mapbox.initialView.zoom;
 const _desktopOffset = window.innerWidth >= 768 ? (_urlCommData?.desktopZoomOffset ?? CONFIG.mapbox.initialView.desktopZoomOffset ?? 0) : 0;
 const initialZoom = _baseZoom + _desktopOffset;
-const _adjLotStops     = CONFIG.mapbox.labels.lotSizeStops.map((v, i) => i % 2 === 0 ? v + _desktopOffset : v);
-const _adjManzanaStops = CONFIG.mapbox.labels.manzanaSizeStops.map((v, i) => i % 2 === 0 ? v + _desktopOffset : v);
+const _lotReveal       = CONFIG.mapbox.labels.lot.revealZoom     + _desktopOffset;
+const _manzanaReveal   = CONFIG.mapbox.labels.manzana.revealZoom + _desktopOffset;
+const _adjLotStops     = applyRevealOffset(CONFIG.mapbox.labels.lot.sizeStops,     _lotReveal);
+const _adjManzanaStops = applyRevealOffset(CONFIG.mapbox.labels.manzana.sizeStops, _manzanaReveal);
 
 fetch(mapboxTokenUrl)
   .then(r => r.text())
@@ -5234,7 +5236,7 @@ function animateLots(map, cb) {
     id: "lot-labels",
     type: "symbol",
     source: "lot-labels-source", // Use separate Point source instead of polygon source
-    minzoom: 17 + _desktopOffset, // Only show labels when zoomed in enough
+    minzoom: _lotReveal, // Only show labels when zoomed in enough
     layout: {
       "text-field": ["get", "lotLabel"],
       "text-font": [CONFIG.misc.mapboxFont, "Arial Unicode MS Regular"],
@@ -5255,8 +5257,8 @@ function animateLots(map, cb) {
         "interpolate",
         ["linear"],
         ["zoom"],
-        17.0 + _desktopOffset, 0,   // Fully transparent at zoom 17 (matches minzoom)
-        17.5 + _desktopOffset, 1    // Fully visible at zoom 17.5+
+        _lotReveal,                                              0,  // Fully transparent at reveal zoom
+        _lotReveal + CONFIG.mapbox.labels.lot.fadeDuration,     1   // Fully visible after fade
       ]
     }
   });
@@ -5446,7 +5448,7 @@ async function loadManzanaLabels(map) {
       id: 'manzana-labels',
       type: 'symbol',
       source: 'manzana-labels-source',
-      minzoom: 15 + _desktopOffset, // Show earlier than lot labels since manzanas are larger areas
+      minzoom: _manzanaReveal, // Show earlier than lot labels since manzanas are larger areas
       layout: {
         'text-field': ['get', 'manzanaLabel'],
         'text-font': [CONFIG.misc.mapboxFont, 'Arial Unicode MS Regular'],
@@ -5467,8 +5469,8 @@ async function loadManzanaLabels(map) {
           'interpolate',
           ['linear'],
           ['zoom'],
-          15.0 + _desktopOffset, 0,   // Fully transparent at zoom 15
-          15.5 + _desktopOffset, 1    // Fully visible at zoom 15.5+
+          _manzanaReveal,                                              0,  // Fully transparent at reveal zoom
+          _manzanaReveal + CONFIG.mapbox.labels.manzana.fadeDuration,  1   // Fully visible after fade
         ]
       }
     });
