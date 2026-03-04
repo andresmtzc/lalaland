@@ -58,9 +58,9 @@ const CLIENT_CONFIGS = {
       // Format: [zoom1, size1, zoom2, size2, ...] — Mapbox interpolates between them.
       // These are BASE zoom values; desktopZoomOffset is added automatically on desktop.
       labels: {
-        baseRevealZoom: 15,  // Change this one number to shift the entire staggered sequence
-        manzana: { revealOffset: 0, fadeDuration: 0.5, sizeStops: [0, 14, 1, 16, 2, 18, 3, 20] },
-        marbles: { revealOffset: 2, fadeDuration: 0.5 },
+        baseRevealOffset: 1,
+        manzana: { revealOffset: 0.5, fadeDuration: 0.5, sizeStops: [0, 14, 1, 16, 2, 18, 3, 20] },
+        marbles: { revealOffset: 1.5, fadeDuration: 0.5 },
         lot:     { revealOffset: 1, fadeDuration: 0.5, sizeStops: [0, 12, 1, 14, 2, 16, 3, 18] }
       }
     },
