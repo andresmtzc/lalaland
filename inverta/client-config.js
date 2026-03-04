@@ -111,7 +111,7 @@ const CLIENT_CONFIGS = {
       initialView: {
         center: [-96.062906, 19.073475], // Marsella center
         zoom: 12.1,
-        desktopZoomOffset: 1.5
+        desktopZoomOffset: 1.4
       },
       labels: {
         lotSizeStops:     [17, 10, 18, 12, 19, 14, 20, 16],
@@ -497,7 +497,7 @@ const CLIENT_CONFIGS = {
       ctaColor: '#ff8400', // DEPRECATED: Use colors.primary instead
 
       // Number of free property detail views before login prompt (0 = always require login)
-      freeViews: 4
+      freeViews: 8
     }
 
   }
