@@ -59,9 +59,9 @@ const CLIENT_CONFIGS = {
       // These are BASE zoom values; desktopZoomOffset is added automatically on desktop.
       labels: {
         baseRevealOffset: 0,
-        manzana: { revealOffset: 0.1, fadeDuration: 0.5, sizeStops: [0, 16, 0.7, 20] },
+        manzana: { revealOffset: 0.05, fadeDuration: 0.5, sizeStops: [0, 18, 0.7, 22] },
         marbles: { revealOffset: 0.7, fadeDuration: 0.5 },
-        lot:     { revealOffset: 0.4, fadeDuration: 0.5, sizeStops: [0, 10, 0.7, 14] }
+        lot:     { revealOffset: 0.35, fadeDuration: 0.5, sizeStops: [0, 10, 0.7, 14] }
       }
     },
 
