@@ -52,7 +52,7 @@ const CLIENT_CONFIGS = {
       initialView: {
         center: [-99.9490, 25.1474], // Senterra center
         zoom: 14.1,
-        desktopZoomOffset: 2
+        desktopZoomOffset: 1.5
       }
     },
 
