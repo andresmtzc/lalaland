@@ -394,7 +394,7 @@ const CLIENT_CONFIGS = {
       skipListModal: false,
 
       // Allow clicking on sold lots (independent of skipListModal)
-      soldLotsClickable: true,
+      soldLotsClickable: false,
 
       // Minimum zoom level to show lot dimensions (lower = show at farther zoom)
       minZoomForDimensions: 18.8,
