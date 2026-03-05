@@ -61,7 +61,7 @@ const CLIENT_CONFIGS = {
         baseRevealOffset: 0,
         manzana: { revealOffset: 0.02, fadeDuration: 0.2, sizeStops: [0, 18, 0.7, 22] },
         marbles: { revealOffset: 0.7, fadeDuration: 0.5 },
-        lot:     { revealOffset: 0.35, fadeDuration: 0.5, sizeStops: [0, 10, 0.7, 14] }
+        lot:     { revealOffset: 0.35, fadeDuration: 0.5, sizeStops: [0, 8, 0.7, 13] }
       }
     },
 
