@@ -30,53 +30,88 @@
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
+    .icon-circle {
+      width: 64px;
+      height: 64px;
+      background: rgba(233, 24, 67, 0.1);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+    .icon-circle svg {
+      width: 32px;
+      height: 32px;
+      stroke: #e91843;
+      stroke-width: 2.5;
+      fill: none;
+    }
     .icon { font-size: 52px; margin-bottom: 16px; }
     h1 { font-size: 28px; font-weight: 700; color: #1a1a1a; margin-bottom: 10px; text-transform: uppercase; }
     p { color: #8a8880; font-size: 17px; line-height: 1.5; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="icon" id="icon">⏳</div>
-    <h1 id="title">Confirmando...</h1>
-    <p id="msg">Un momento.</p>
+  <div class="card" id="card">
+    <div class="icon">⏳</div>
+    <h1>Confirmando...</h1>
+    <p>Un momento.</p>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
   (async function() {
-    const params = new URLSearchParams(location.search);
-    const token = params.get('token');
-    const browserId = params.get('browser');
+    const params  = new URLSearchParams(location.search);
+    const token   = params.get('token');
+    const browser = params.get('browser');
+    const card    = document.getElementById('card');
 
-    function show(icon, title, msg) {
-      document.getElementById('icon').textContent = icon;
-      document.getElementById('title').textContent = title;
-      document.getElementById('msg').textContent = msg;
+    function showSuccess() {
+      card.innerHTML = `
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h1>¡Listo!</h1>
+        <p>Redirigiendo al mapa...</p>`;
     }
 
-    if (!token || !browserId) {
-      show('❌', 'Link inválido', 'Parámetros faltantes.');
+    function showError(msg) {
+      card.innerHTML = `
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h1>Error</h1>
+        <p>${msg}</p>`;
+    }
+
+    if (!token || !browser) {
+      showError('Link inválido. Parámetros faltantes.');
       return;
     }
 
     try {
-      const cfgRes = await fetch('https://la-la.land/sb_config.json');
-      const cfg = await cfgRes.json();
-      const sb = supabase.createClient(cfg.url, cfg.key);
+      const cfg = await fetch('https://la-la.land/sb_config.json').then(r => r.json());
+      const sb  = supabase.createClient(cfg.url, cfg.key);
 
-      const { error } = await sb
+      const { data, error } = await sb
         .from('link_requests')
         .update({ activated_at: new Date().toISOString() })
         .eq('token', token)
-        .eq('browser_id', browserId);
+        .eq('browser_id', browser)
+        .select('client')
+        .single();
 
-      if (error) throw error;
+      if (error || !data) throw error || new Error('not found');
 
-      show('✓', '¡Listo!', 'Regresa al mapa para continuar explorando.');
-    } catch (e) {
+      showSuccess();
+      setTimeout(() => {
+        window.location.href = `https://la-la.land/${data.client}/index.html?token=${token}`;
+      }, 1500);
+
+    } catch(e) {
       console.error(e);
-      show('❌', 'Error', 'No se pudo confirmar. Intenta de nuevo.');
+      showError('No se pudo confirmar. Intenta de nuevo.');
     }
   })();
   </script>
