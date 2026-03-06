@@ -362,6 +362,9 @@
     // Get agent phone from parent window (passed when opened from index.html)
     const parentAgentPhone = window.parent?.currentLead?.phone || null;
 
+    // Admin phone resolved from auth session email → leads table
+    let adminPhone = null;
+
     fetch('https://la-la.land/sb_config.json')
       .then(r => r.json())
       .then(async (cfg) => {
@@ -375,6 +378,23 @@
 
     async function loadAgentsDropdown() {
       try {
+        // Resolve admin phone from auth session
+        if (!parentAgentPhone) {
+          try {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session?.user?.email) {
+              const { data: adminLead } = await supabaseClient
+                .from('leads')
+                .select('phone')
+                .eq('email', session.user.email)
+                .single();
+              if (adminLead?.phone) adminPhone = adminLead.phone;
+            }
+          } catch (e) {
+            console.warn('Could not resolve admin phone:', e);
+          }
+        }
+
         if (IS_DEMO) {
           const fakeAgents = [
             { phone: '5210000000001', name: 'María', last_name: 'García' },
@@ -520,7 +540,7 @@
               updateData.agent_accepted_at = new Date().toISOString();
             } else {
               updateData.agent_assigned_at = { [CURRENT_CLIENT]: new Date().toISOString() };
-              updateData.assigned_by = { [CURRENT_CLIENT]: parentAgentPhone || 'admin' };
+              updateData.assigned_by = { [CURRENT_CLIENT]: parentAgentPhone || adminPhone || 'admin' };
             }
           }
 
@@ -542,7 +562,7 @@
               insertData.agent_accepted_at = new Date().toISOString();
             } else {
               insertData.agent_assigned_at = { [CURRENT_CLIENT]: new Date().toISOString() };
-              insertData.assigned_by = { [CURRENT_CLIENT]: parentAgentPhone || 'admin' };
+              insertData.assigned_by = { [CURRENT_CLIENT]: parentAgentPhone || adminPhone || 'admin' };
             }
           }
 
