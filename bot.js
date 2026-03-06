@@ -577,7 +577,7 @@ async function processLinkRequest(request) {
         console.log(`✅ Claimed request ${request.id}`)
 
         // Build the confirmation link (opens confirm.html in WhatsApp, activates session in original tab)
-        const mapLink = `https://la-la.land/${request.client}/confirm.html?token=${request.token}&browser=${request.browser_id}`;
+        const mapLink = `https://la-la.land/${request.client}/confirm.html?token=${request.token}${request.browser_id ? `&browser=${request.browser_id}` : ''}`;
 
         // Build WhatsApp message — just the link so they can copy-paste if needed
         const message = mapLink;
