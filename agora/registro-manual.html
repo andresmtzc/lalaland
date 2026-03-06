@@ -311,10 +311,8 @@
         <div class="icon-circle">
           <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
-        <h2 class="status-title">Link generado</h2>
-        <div class="link-box" id="linkBox"></div>
-        <button class="btn-copy" onclick="copyLink()">Copiar Link</button>
-        <button class="btn-whatsapp" onclick="sendWhatsApp()">Enviar por WhatsApp</button>
+        <h2 class="status-title">Lead registrado</h2>
+        <p id="successName" style="text-align:center;color:var(--text-secondary,#888);margin:0 0 16px"></p>
         <button class="btn-another" onclick="resetForm()">Registrar otro</button>
       </div>
     </div>
@@ -362,6 +360,9 @@
     // Get agent phone from parent window (passed when opened from index.html)
     const parentAgentPhone = window.parent?.currentLead?.phone || null;
 
+    // Admin phone resolved from auth session email → leads table
+    let adminPhone = null;
+
     fetch('https://la-la.land/sb_config.json')
       .then(r => r.json())
       .then(async (cfg) => {
@@ -375,6 +376,23 @@
 
     async function loadAgentsDropdown() {
       try {
+        // Resolve admin phone from auth session
+        if (!parentAgentPhone) {
+          try {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session?.user?.email) {
+              const { data: adminLead } = await supabaseClient
+                .from('leads')
+                .select('phone')
+                .eq('email', session.user.email)
+                .single();
+              if (adminLead?.phone) adminPhone = adminLead.phone;
+            }
+          } catch (e) {
+            console.warn('Could not resolve admin phone:', e);
+          }
+        }
+
         if (IS_DEMO) {
           const fakeAgents = [
             { phone: '5210000000001', name: 'María', last_name: 'García' },
@@ -472,12 +490,10 @@
       try {
         // In demo mode, fake the entire flow — no Supabase writes
         if (IS_DEMO) {
-          const fakeToken = 'DEMO_' + generateToken();
-          generatedLink = `https://la-la.land/${CURRENT_CLIENT}/index.html?token=${fakeToken}`;
           generatedPhone = phone;
           generatedName = firstName;
 
-          document.getElementById('linkBox').textContent = generatedLink;
+          document.getElementById('successName').textContent = [firstName, lastName].filter(Boolean).join(' ') || phone;
           document.getElementById('formContainer').classList.add('hidden');
           document.getElementById('resultContainer').classList.add('show');
           submitBtn.disabled = false;
@@ -519,8 +535,8 @@
             if (parentAgentPhone && assignedAgent === parentAgentPhone) {
               updateData.agent_accepted_at = new Date().toISOString();
             } else {
-              updateData.agent_assigned_at = new Date().toISOString();
-              updateData.assigned_by = 'admin';
+              updateData.agent_assigned_at = { [CURRENT_CLIENT]: new Date().toISOString() };
+              updateData.assigned_by = { [CURRENT_CLIENT]: parentAgentPhone || adminPhone || 'admin' };
             }
           }
 
@@ -541,8 +557,8 @@
             if (parentAgentPhone && assignedAgent === parentAgentPhone) {
               insertData.agent_accepted_at = new Date().toISOString();
             } else {
-              insertData.agent_assigned_at = new Date().toISOString();
-              insertData.assigned_by = 'admin';
+              insertData.agent_assigned_at = { [CURRENT_CLIENT]: new Date().toISOString() };
+              insertData.assigned_by = { [CURRENT_CLIENT]: parentAgentPhone || adminPhone || 'admin' };
             }
           }
 
@@ -556,19 +572,11 @@
           leadId = newLead.id;
         }
 
-        const token = generateToken();
-
-        const { error: tokenError } = await supabaseClient
-          .from('lead_tokens')
-          .insert({ lead_id: leadId, token });
-
-        if (tokenError) throw tokenError;
-
-        generatedLink = `https://la-la.land/${CURRENT_CLIENT}/index.html?token=${token}`;
+        // Build result
         generatedPhone = phone;
         generatedName = firstName;
 
-        document.getElementById('linkBox').textContent = generatedLink;
+        document.getElementById('successName').textContent = [firstName, lastName].filter(Boolean).join(' ') || phone;
         document.getElementById('formContainer').classList.add('hidden');
         document.getElementById('resultContainer').classList.add('show');
 
