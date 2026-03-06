@@ -6,10 +6,20 @@
 --
 -- ROLLBACK: See 20260306_scope_anon_lots_by_client_ROLLBACK.sql
 
--- Drop the wide-open policy
+-- 1. Drop the wide-open anon policy
 DROP POLICY IF EXISTS "Allow public read access to lots" ON lots;
 
--- Recreate with client_id scoping via request header
+-- 2. Fix the authenticated policy: it was missing TO clause (defaulted to PUBLIC,
+--    meaning anon could also use it to bypass client scoping)
+DROP POLICY IF EXISTS "Users can only access their client's lots" ON lots;
+
+CREATE POLICY "Users can only access their client's lots"
+ON lots
+FOR ALL
+TO authenticated
+USING (client_id = ANY(get_user_client_ids()));
+
+-- 3. Create scoped anon policy via request header
 CREATE POLICY "Allow public read access to lots"
 ON lots
 FOR SELECT
