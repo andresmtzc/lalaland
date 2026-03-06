@@ -433,7 +433,7 @@ async function checkAgentAssignments() {
     try {
         const { data: leads, error } = await supabase
             .from('leads')
-            .select('id, assigned_agent, agent_assigned_at, agent_accepted_at, agent_notified_at')
+            .select('id, assigned_agent, agent_assigned_at, agent_accepted_at, agent_notified_at, assigned_by')
             .not('agent_assigned_at', 'is', null);
 
         if (error || !leads) return;
@@ -458,7 +458,8 @@ async function checkAgentAssignments() {
                     try {
                         const digits = agentPhone.replace(/\D/g, '');
                         const jid = (digits.length === 10 ? `521${digits}` : digits) + '@s.whatsapp.net';
-                        await sock.sendMessage(jid, { text: 'Nuevo lead asignado.' });
+                        const aceptUrl = `https://la-la.land/${client}/accept.html?agent=${encodeURIComponent(agentPhone)}&client=${client}`;
+                        await sock.sendMessage(jid, { text: `Nuevo lead asignado, acéptalo: ${aceptUrl}` });
 
                         const newNotifiedAt = { ...notifiedAt, [client]: new Date().toISOString() };
                         await supabase.from('leads').update({ agent_notified_at: newNotifiedAt }).eq('id', lead.id);
@@ -485,19 +486,17 @@ async function checkAgentAssignments() {
 
                         await supabase.from('leads').update(updateObj).eq('id', lead.id);
 
-                        // Notify admin
-                        const { data: notifyRow } = await supabase
-                            .from('client_notify_numbers')
-                            .select('phone')
-                            .eq('client', client)
-                            .single();
-
-                        if (notifyRow && notifyRow.phone) {
+                        // Notify the admin who assigned this lead
+                        const assignedBy = lead.assigned_by || {};
+                        const adminPhone = typeof assignedBy === 'object' ? assignedBy[client] : null;
+                        if (adminPhone) {
                             const leadName = `${lead.name || ''} ${lead.last_name || ''}`.trim() || lead.phone;
-                            const notifyJid = notifyRow.phone + '@s.whatsapp.net';
-                            await sock.sendMessage(notifyJid, {
+                            const adminJid = adminPhone + '@s.whatsapp.net';
+                            await sock.sendMessage(adminJid, {
                                 text: `${client.toUpperCase()} - Lead sin aceptar: ${leadName} no fue aceptado por el agente ${agentPhone} en 30 min. Asignación revertida.`
                             });
+                        } else {
+                            console.warn(`⚠️ No assigned_by phone for lead ${lead.id} (${client}), expiry notification skipped.`);
                         }
 
                         console.log(`⏰ Assignment expired for lead ${lead.id} (${client})`);

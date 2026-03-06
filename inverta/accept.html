@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aceptar leads</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fcfaf3;
+      border-radius: 16px;
+      padding: 40px;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+      animation: fadeIn 0.4s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .icon-circle {
+      width: 64px;
+      height: 64px;
+      background: rgba(233, 24, 67, 0.1);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+    .icon-circle svg {
+      width: 32px;
+      height: 32px;
+      stroke: #2ac6f4;
+      stroke-width: 2.5;
+      fill: none;
+    }
+    .icon { font-size: 52px; margin-bottom: 16px; }
+    h1 { font-size: 28px; font-weight: 700; color: #1a1a1a; margin-bottom: 10px; text-transform: uppercase; }
+    p { color: #8a8880; font-size: 17px; line-height: 1.5; margin-bottom: 24px; }
+    .btn {
+      display: inline-block;
+      background: #2ac6f4;
+      color: #fff;
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      text-transform: uppercase;
+      border: none;
+      border-radius: 10px;
+      padding: 14px 32px;
+      cursor: pointer;
+      text-decoration: none;
+      letter-spacing: 0.5px;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.6; cursor: default; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="icon">⏳</div>
+    <h1>Cargando...</h1>
+    <p>Un momento.</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+  (async function() {
+    const params = new URLSearchParams(location.search);
+    const agent  = params.get('agent');
+    const client = params.get('client');
+    const card   = document.getElementById('card');
+
+    function parseJSONB(val) {
+      if (!val || typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch { return null; }
+    }
+
+    function showError(msg) {
+      card.innerHTML = `
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h1>Error</h1>
+        <p>${msg}</p>`;
+    }
+
+    if (!agent || !client) {
+      showError('Link inválido.');
+      return;
+    }
+
+    const cfg = await fetch('https://la-la.land/sb_config.json').then(r => r.json());
+    const sb  = supabase.createClient(cfg.url, cfg.key);
+
+    const { data: leads, error } = await sb
+      .from('leads')
+      .select('id, assigned_agent, agent_accepted_at')
+      .not('agent_assigned_at', 'is', null);
+
+    if (error) { showError('Error al cargar leads.'); return; }
+
+    const pending = (leads || []).filter(l => {
+      const assigned = parseJSONB(l.assigned_agent) || {};
+      const accepted = parseJSONB(l.agent_accepted_at) || {};
+      return assigned[client] === agent && !accepted[client];
+    });
+
+    if (pending.length === 0) {
+      card.innerHTML = `
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h1>Sin pendientes</h1>
+        <p>No tienes leads pendientes por aceptar.</p>
+        <a class="btn" href="index.html">Abrir Dashboard</a>`;
+      return;
+    }
+
+    card.innerHTML = `
+      <div class="icon">📋</div>
+      <h1>${pending.length} lead${pending.length > 1 ? 's' : ''} pendiente${pending.length > 1 ? 's' : ''}</h1>
+      <p>Tienes ${pending.length} lead${pending.length > 1 ? 's asignados' : ' asignado'} esperando tu confirmación.</p>
+      <button class="btn" id="acceptBtn">Aceptar</button>`;
+
+    document.getElementById('acceptBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('acceptBtn');
+      btn.disabled = true;
+      btn.textContent = 'Aceptando...';
+
+      const now = new Date().toISOString();
+      let allOk = true;
+
+      for (const lead of pending) {
+        const accepted = { ...(parseJSONB(lead.agent_accepted_at) || {}), [client]: now };
+        const { error: upErr } = await sb
+          .from('leads')
+          .update({ agent_accepted_at: accepted })
+          .eq('id', lead.id);
+        if (upErr) allOk = false;
+      }
+
+      if (allOk) {
+        card.innerHTML = `
+          <div class="icon-circle">
+            <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h1>¡Aceptado!</h1>
+          <p>Lead${pending.length > 1 ? 's' : ''} confirmado${pending.length > 1 ? 's' : ''}. Ya aparece${pending.length > 1 ? 'n' : ''} en tu dashboard.</p>
+          <a class="btn" href="index.html" style="margin-top:8px;display:inline-block;">Abrir Dashboard</a>`;
+      } else {
+        showError('Hubo un error al aceptar. Intenta de nuevo.');
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
