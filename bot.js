@@ -458,7 +458,7 @@ async function checkAgentAssignments() {
                     try {
                         const digits = agentPhone.replace(/\D/g, '');
                         const jid = (digits.length === 10 ? `521${digits}` : digits) + '@s.whatsapp.net';
-                        const aceptUrl = `https://la-la.land/${client}/acept.html?agent=${encodeURIComponent(agentPhone)}&client=${client}`;
+                        const aceptUrl = `https://la-la.land/${client}/accept.html?agent=${encodeURIComponent(agentPhone)}&client=${client}`;
                         await sock.sendMessage(jid, { text: `Nuevo lead asignado, acéptalo: ${aceptUrl}` });
 
                         const newNotifiedAt = { ...notifiedAt, [client]: new Date().toISOString() };
