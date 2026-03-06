@@ -436,7 +436,9 @@ async function checkAgentAssignments() {
             .select('id, name, last_name, phone, assigned_agent, agent_assigned_at, agent_accepted_at, agent_notified_at, assigned_by')
             .not('agent_assigned_at', 'is', null);
 
-        if (error || !leads) return;
+        if (error) { console.error('checkAgentAssignments query error:', error.message); return; }
+        if (!leads || leads.length === 0) return;
+        console.log(`[agentAssign] found ${leads.length} leads with agent_assigned_at`);
 
         for (const lead of leads) {
             const assignedAgent = lead.assigned_agent || {};
