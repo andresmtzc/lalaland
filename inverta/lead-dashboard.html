@@ -1346,11 +1346,28 @@
           delete notifiedAt[CURRENT_CLIENT];
         }
 
+        // Capture assigned_by (admin phone) when assigning
+        const assignedBy = { ...(parseJSONB(lead?.assigned_by) || {}) };
+        if (agentPhone) {
+          const { data: { user } } = await supabaseClient.auth.getUser();
+          if (user?.email) {
+            const { data: adminRecord } = await supabaseClient
+              .from('leads')
+              .select('phone')
+              .eq('email', user.email)
+              .single();
+            if (adminRecord?.phone) assignedBy[CURRENT_CLIENT] = adminRecord.phone;
+          }
+        } else {
+          delete assignedBy[CURRENT_CLIENT];
+        }
+
         const updateObj = {
           assigned_agent: newValue,
           agent_assigned_at: Object.keys(assignedAt).length > 0 ? assignedAt : null,
           agent_accepted_at: Object.keys(acceptedAt).length > 0 ? acceptedAt : null,
           agent_notified_at: Object.keys(notifiedAt).length > 0 ? notifiedAt : null,
+          assigned_by: Object.keys(assignedBy).length > 0 ? assignedBy : null,
         };
 
         const { error } = await supabaseClient
