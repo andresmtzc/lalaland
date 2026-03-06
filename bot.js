@@ -433,7 +433,7 @@ async function checkAgentAssignments() {
     try {
         const { data: leads, error } = await supabase
             .from('leads')
-            .select('id, name, last_name, phone, assigned_agent, agent_assigned_at, agent_accepted_at, agent_notified_at')
+            .select('id, assigned_agent, agent_assigned_at, agent_accepted_at, agent_notified_at')
             .not('agent_assigned_at', 'is', null);
 
         if (error || !leads) return;
@@ -458,8 +458,7 @@ async function checkAgentAssignments() {
                     try {
                         const digits = agentPhone.replace(/\D/g, '');
                         const jid = (digits.length === 10 ? `521${digits}` : digits) + '@s.whatsapp.net';
-                        const leadName = `${lead.name || ''} ${lead.last_name || ''}`.trim() || lead.phone;
-                        await sock.sendMessage(jid, { text: `Nuevo lead asignado: ${leadName}` });
+                        await sock.sendMessage(jid, { text: 'Nuevo lead asignado.' });
 
                         const newNotifiedAt = { ...notifiedAt, [client]: new Date().toISOString() };
                         await supabase.from('leads').update({ agent_notified_at: newNotifiedAt }).eq('id', lead.id);
