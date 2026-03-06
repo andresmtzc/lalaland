@@ -13088,7 +13088,7 @@ function buildDots() {
 
   const VC_KEY = 'vc_' + CURRENT_CLIENT;
   const FREE_VIEWS = (window.CONFIG && window.CONFIG.misc && window.CONFIG.misc.freeViews != null) ? window.CONFIG.misc.freeViews : 2;
-  let pendingLot = null, browserId = null, pendingToken = null, pollInterval = null, itiInstance = null;
+  let pendingLot = null, browserId = null, pendingToken = null, pollInterval = null, itiInstance = null, submitAttempts = 0, nextSubmitAllowed = 0;
 
   function genId(len) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -13155,14 +13155,17 @@ function buildDots() {
   </div>
   <div id="sgWaitView" style="display:none;text-align:center;padding:20px 0;">
     <p style="font-size:48px;margin-bottom:16px;">📱</p>
-    <h3 style="font-size:24px;font-weight:700;color:#1a1a1a;margin-bottom:10px;">Revisando tu WhatsApp...</h3>
+    <h3 style="font-size:24px;font-weight:700;color:#1a1a1a;margin-bottom:10px;">Revisa tu WhatsApp</h3>
+    <p id="sgPhoneDisplay" style="color:#1a1a1a;font-size:18px;font-weight:600;margin-bottom:10px;"></p>
     <p style="color:#8a8880;font-size:16px;line-height:1.5;">Abre el link que te enviamos y regresa aquí.</p>
     <p style="color:#b0aea6;font-size:12px;margin-top:8px;">*A veces tienes que enviar un &quot;.&quot; para habilitar el link.</p>
+    <button id="sgGoBack" style="margin-top:20px;background:none;border:none;color:#8a8880;font-size:14px;cursor:pointer;text-decoration:underline;font-family:'Barlow Condensed',sans-serif;">← Número equivocado</button>
   </div>
 </div>`;
     document.body.appendChild(el);
     if (window.intlTelInput) initITI();
     document.getElementById('sgSubmit').addEventListener('click', handleSubmit);
+    document.getElementById('sgGoBack').addEventListener('click', goBack);
   }
 
   function showSignupModal() {
@@ -13194,6 +13197,13 @@ function buildDots() {
     const btn = document.getElementById('sgSubmit');
     const errEl = document.getElementById('sgError');
     errEl.style.display = 'none';
+    const now = Date.now();
+    if (now < nextSubmitAllowed) {
+      const rem = Math.ceil((nextSubmitAllowed - now) / 1000), m = Math.floor(rem / 60), s = rem % 60;
+      errEl.textContent = `Espera ${m > 0 ? m + 'm ' : ''}${s}s antes de intentar con otro número.`;
+      errEl.style.display = 'block';
+      return;
+    }
     if (itiInstance && !itiInstance.isValidNumber()) {
       errEl.textContent = 'Número inválido. Revisa los dígitos.';
       errEl.style.display = 'block';
@@ -13265,6 +13275,10 @@ function buildDots() {
       });
       if (lre) throw lre;
 
+      const delays = [10, 30, 60];
+      nextSubmitAllowed = Date.now() + delays[Math.min(submitAttempts, 2)] * 1000;
+      submitAttempts++;
+      document.getElementById('sgPhoneDisplay').textContent = itiInstance ? itiInstance.getNumber() : phone;
       document.getElementById('sgFormView').style.display = 'none';
       document.getElementById('sgWaitView').style.display = 'block';
       startPolling();
@@ -13275,6 +13289,15 @@ function buildDots() {
       btn.disabled = false;
       btn.textContent = '¡Recibir Acceso!';
     }
+  }
+
+  function goBack() {
+    if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    document.getElementById('sgWaitView').style.display = 'none';
+    document.getElementById('sgFormView').style.display = 'block';
+    const btn = document.getElementById('sgSubmit');
+    btn.disabled = false;
+    btn.textContent = '¡Recibir Acceso!';
   }
 
   function startPolling() {
