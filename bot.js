@@ -436,9 +436,7 @@ async function checkAgentAssignments() {
             .select('id, name, last_name, phone, assigned_agent, agent_assigned_at, agent_accepted_at, agent_notified_at, assigned_by')
             .not('agent_assigned_at', 'is', null);
 
-        if (error) { console.error('checkAgentAssignments query error:', error.message); return; }
-        if (!leads || leads.length === 0) return;
-        console.log(`[agentAssign] found ${leads.length} leads with agent_assigned_at`);
+        if (error || !leads || leads.length === 0) return;
 
         for (const lead of leads) {
             const assignedAgent = typeof lead.assigned_agent === 'string' ? JSON.parse(lead.assigned_agent) : (lead.assigned_agent || {});
@@ -447,8 +445,8 @@ async function checkAgentAssignments() {
             const notifiedAt = lead.agent_notified_at || {};
 
             for (const client of Object.keys(assignedAt)) {
+                if (acceptedAt[client]) continue;
                 const agentPhone = typeof assignedAgent === 'object' ? assignedAgent[client] : null;
-                console.log(`[agentAssign] lead ${lead.id} client=${client} agentPhone=${agentPhone} notified=${!!notifiedAt[client]} accepted=${!!acceptedAt[client]}`);
                 if (!agentPhone) continue;
 
                 const assignedTime = new Date(assignedAt[client]);
