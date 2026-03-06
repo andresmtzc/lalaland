@@ -433,7 +433,7 @@ async function checkAgentAssignments() {
     try {
         const { data: leads, error } = await supabase
             .from('leads')
-            .select('id, assigned_agent, agent_assigned_at, agent_accepted_at, agent_notified_at, assigned_by')
+            .select('id, name, last_name, phone, assigned_agent, agent_assigned_at, agent_accepted_at, agent_notified_at, assigned_by')
             .not('agent_assigned_at', 'is', null);
 
         if (error || !leads) return;
