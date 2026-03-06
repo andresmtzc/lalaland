@@ -15,6 +15,8 @@ const MESSAGE_CONTEXT_COUNT = 5;
 const SUPABASE_POLL_INTERVAL = 10000; // 10 seconds
 const LINK_POLL_INTERVAL = 3000; // 3 seconds for faster link delivery
 const MAX_LINKS_PER_MINUTE = 3; // Global rate limit (conservative to avoid WhatsApp spam detection)
+const AGENT_ASSIGNMENT_POLL_INTERVAL = 15000; // 15 seconds
+const ASSIGNMENT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 // Supabase client
 const supabase = createClient(
@@ -37,6 +39,7 @@ const linksSentTimestamps = []; // Track timestamps for global rate limiting
 // Polling interval handles (cleared on each reconnect to prevent accumulation)
 let supabasePollingInterval = null;
 let linkPollingInterval = null;
+let agentAssignmentInterval = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = 60000; // 60 seconds cap
 
@@ -422,6 +425,94 @@ async function processRequest(request) {
     }
 }
 
+// ============================================================================
+// AGENT ASSIGNMENT POLLING
+// ============================================================================
+
+async function checkAgentAssignments() {
+    try {
+        const { data: leads, error } = await supabase
+            .from('leads')
+            .select('id, name, last_name, phone, assigned_agent, agent_assigned_at, agent_accepted_at, agent_notified_at')
+            .not('agent_assigned_at', 'is', null);
+
+        if (error || !leads) return;
+
+        for (const lead of leads) {
+            const assignedAgent = lead.assigned_agent || {};
+            const assignedAt = lead.agent_assigned_at || {};
+            const acceptedAt = lead.agent_accepted_at || {};
+            const notifiedAt = lead.agent_notified_at || {};
+
+            for (const client of Object.keys(assignedAt)) {
+                const agentPhone = typeof assignedAgent === 'object' ? assignedAgent[client] : null;
+                if (!agentPhone) continue;
+
+                const assignedTime = new Date(assignedAt[client]);
+                const isAccepted = !!acceptedAt[client];
+                const isNotified = !!notifiedAt[client];
+                const isExpired = !isAccepted && (Date.now() - assignedTime.getTime() > ASSIGNMENT_TIMEOUT_MS);
+
+                if (!isNotified && !isExpired) {
+                    // Notify agent via WhatsApp
+                    try {
+                        const digits = agentPhone.replace(/\D/g, '');
+                        const jid = (digits.length === 10 ? `521${digits}` : digits) + '@s.whatsapp.net';
+                        const leadName = `${lead.name || ''} ${lead.last_name || ''}`.trim() || lead.phone;
+                        await sock.sendMessage(jid, { text: `Nuevo lead asignado: ${leadName}` });
+
+                        const newNotifiedAt = { ...notifiedAt, [client]: new Date().toISOString() };
+                        await supabase.from('leads').update({ agent_notified_at: newNotifiedAt }).eq('id', lead.id);
+
+                        console.log(`📢 Agent ${agentPhone} notified for lead ${lead.id} (${client})`);
+                    } catch (err) {
+                        console.error(`Error notifying agent ${agentPhone}:`, err.message);
+                    }
+                } else if (isExpired) {
+                    // Revert assignment
+                    try {
+                        const newAssignedAgent = { ...assignedAgent };
+                        const newAssignedAt = { ...assignedAt };
+                        const newNotifiedAt = { ...notifiedAt };
+                        delete newAssignedAgent[client];
+                        delete newAssignedAt[client];
+                        delete newNotifiedAt[client];
+
+                        const updateObj = {
+                            assigned_agent: Object.keys(newAssignedAgent).length > 0 ? newAssignedAgent : null,
+                            agent_assigned_at: Object.keys(newAssignedAt).length > 0 ? newAssignedAt : null,
+                            agent_notified_at: Object.keys(newNotifiedAt).length > 0 ? newNotifiedAt : null,
+                        };
+
+                        await supabase.from('leads').update(updateObj).eq('id', lead.id);
+
+                        // Notify admin
+                        const { data: notifyRow } = await supabase
+                            .from('client_notify_numbers')
+                            .select('phone')
+                            .eq('client', client)
+                            .single();
+
+                        if (notifyRow && notifyRow.phone) {
+                            const leadName = `${lead.name || ''} ${lead.last_name || ''}`.trim() || lead.phone;
+                            const notifyJid = notifyRow.phone + '@s.whatsapp.net';
+                            await sock.sendMessage(notifyJid, {
+                                text: `${client.toUpperCase()} - Lead sin aceptar: ${leadName} no fue aceptado por el agente ${agentPhone} en 30 min. Asignación revertida.`
+                            });
+                        }
+
+                        console.log(`⏰ Assignment expired for lead ${lead.id} (${client})`);
+                    } catch (err) {
+                        console.error(`Error reverting assignment for lead ${lead.id}:`, err.message);
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        console.error('Error in checkAgentAssignments:', err);
+    }
+}
+
 function startPolling() {
     if (supabasePollingInterval) {
         clearInterval(supabasePollingInterval);
@@ -571,6 +662,13 @@ function startLinkPolling() {
     }
     linkPollingInterval = setInterval(checkPendingLinkRequests, LINK_POLL_INTERVAL);
     console.log('📨 Started polling Supabase for link requests...');
+
+    if (agentAssignmentInterval) {
+        clearInterval(agentAssignmentInterval);
+        agentAssignmentInterval = null;
+    }
+    agentAssignmentInterval = setInterval(checkAgentAssignments, AGENT_ASSIGNMENT_POLL_INTERVAL);
+    console.log('👤 Started polling for agent assignments...');
 }
 
 // ============================================================================

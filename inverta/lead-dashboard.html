@@ -330,6 +330,29 @@
     }
 
     .whatsapp-btn:hover { opacity: 0.8; }
+    .whatsapp-btn.token-sent { background: #28a745; }
+
+    /* Agent acceptance modal */
+    .agent-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .agent-modal {
+      background: var(--color-cream); border-radius: 12px;
+      padding: 28px 32px; max-width: 340px; width: 90%;
+      text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    .agent-modal h2 { font-size: 22px; font-weight: 700; color: var(--color-primary); margin-bottom: 12px; }
+    .agent-modal p { font-size: 15px; color: var(--color-dark); margin-bottom: 24px; }
+    .agent-modal-btn {
+      width: 100%; padding: 12px; font-size: 16px; font-weight: 700;
+      background: var(--color-primary); color: var(--color-cream);
+      border: none; border-radius: 6px; cursor: pointer;
+      font-family: 'Barlow Condensed', Arial, sans-serif;
+      transition: opacity 0.2s;
+    }
+    .agent-modal-btn:hover { opacity: 0.85; }
 
     .loading { text-align: center; padding: 40px; font-size: 16px; color: var(--color-gray); }
 
@@ -512,6 +535,15 @@
     </div><!-- end body-content -->
   </div>
 
+  <!-- Agent Acceptance Modal -->
+  <div class="agent-modal-overlay" id="agentModal" style="display:none;">
+    <div class="agent-modal">
+      <h2>Nuevos Leads</h2>
+      <p>Tienes <strong id="pendingLeadCount">0</strong> lead(s) nuevo(s) asignado(s) a ti.</p>
+      <button class="agent-modal-btn" onclick="acceptAllLeads()">Aceptar todos</button>
+    </div>
+  </div>
+
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="client-config.js"></script>
@@ -549,6 +581,7 @@
     let allAgents = [];
     let agentNameMap = {}; // phone -> name lookup for "Assigned Agent" column
     let currentSort = { column: 'score', direction: 'desc' };
+    let pendingLeadIds = [];
 
     // Initialize
     (async function init() {
@@ -607,6 +640,7 @@
           await loadAgents();
         }
         setupRealtime();
+        if (DASHBOARD_MODE === 'agent') checkPendingLeads();
 
       } catch (error) {
         console.error('Initialization error:', error);
@@ -684,9 +718,12 @@
             // Realtime may return JSONB columns as strings — parse them
             payload.new.assigned_agent = parseJSONB(payload.new.assigned_agent);
             payload.new.is_agent = parseJSONB(payload.new.is_agent);
+            payload.new.agent_assigned_at = parseJSONB(payload.new.agent_assigned_at);
+            payload.new.agent_accepted_at = parseJSONB(payload.new.agent_accepted_at);
             allLeads[idx] = { ...allLeads[idx], ...payload.new };
             renderLeads();
             updateStats();
+            if (DASHBOARD_MODE === 'agent') updateAgentModal();
           }
         })
         .subscribe();
@@ -735,6 +772,7 @@
             .eq('lead_id', lead.id);
 
           const hasClaimed = tokens?.some(t => t.claimed) || false;
+          const hasToken = tokens?.some(t => !t.claimed) || false;
 
           const { data: sessions } = await supabaseClient
             .from('lead_sessions')
@@ -767,6 +805,7 @@
           return {
             ...lead,
             hasClaimed,
+            hasToken,
             visits,
             uniqueDays,
             savedCount,
@@ -1149,14 +1188,29 @@
         const rawAgent = parseJSONB(lead.assigned_agent);
         const agentVal = (typeof rawAgent === 'object' && rawAgent) ? rawAgent[CURRENT_CLIENT] : rawAgent;
         const assignedName = agentVal ? (agentNameMap[agentVal] || agentVal) : '-';
+
+        // Pending/accepted coloring for admin
+        const assignedAtVal = (parseJSONB(lead.agent_assigned_at) || {})[CURRENT_CLIENT];
+        const acceptedAtVal = (parseJSONB(lead.agent_accepted_at) || {})[CURRENT_CLIENT];
+        let assignStyle = '';
+        if (DASHBOARD_MODE === 'admin' && agentVal) {
+          if (acceptedAtVal) assignStyle = 'background:#d4edda;';
+          else if (assignedAtVal) assignStyle = 'background:#fff3cd;';
+        }
+
         const assignedCell = DASHBOARD_MODE === 'admin'
-          ? `<td class="assign-cell col-assigned-agent" onclick="openAssignDropdown(this, '${lead.id}', '${agentVal || ''}')">${assignedName}</td>`
+          ? `<td class="assign-cell col-assigned-agent" style="${assignStyle}" onclick="openAssignDropdown(this, '${lead.id}', '${agentVal || ''}')">${assignedName}</td>`
           : `<td class="col-assigned-agent">${assignedName}</td>`;
 
         // Agent toggle column (hidden in agent mode)
         const agentToggleCell = DASHBOARD_MODE === 'admin'
           ? `<td class="col-agent-toggle" style="text-align:center;"><button onclick="toggleAgent('${lead.id}', true)" class="agent-btn" title="Hacer agente">+</button></td>`
           : '';
+
+        // Token send button — green for admin when unclaimed token exists
+        const tokenClass = (DASHBOARD_MODE === 'admin' && lead.hasToken) ? 'whatsapp-btn token-sent' : 'whatsapp-btn';
+        const safeName = (lead.name || '').replace(/'/g, "\\'");
+        const tokenBtn = `<button onclick="sendTokenToLead('${lead.id}', '${lead.phone}', '${safeName}')" class="${tokenClass}" title="Enviar acceso por WhatsApp">→</button>`;
 
         return `
           <tr>
@@ -1174,7 +1228,7 @@
             <td>${lead.campaign || '-'}</td>
             ${assignedCell}
             ${agentToggleCell}
-            <td style="text-align:center;"><a href="${waLink}" target="_blank" class="whatsapp-btn" title="WhatsApp">→</a></td>
+            <td style="text-align:center;">${tokenBtn}</td>
           </tr>
         `;
       }).join('');
@@ -1265,8 +1319,9 @@
 
     async function assignAgent(leadId, agentPhone, cell) {
       try {
-        // Read current assigned_agent to merge
         const lead = allLeads.find(l => l.id === leadId);
+
+        // Merge assigned_agent JSONB
         const parsed = parseJSONB(lead?.assigned_agent);
         const existing = (typeof parsed === 'object' && parsed) || {};
         const updated = { ...existing };
@@ -1277,15 +1332,41 @@
         }
         const newValue = Object.keys(updated).length > 0 ? updated : null;
 
+        // Merge agent_assigned_at and agent_accepted_at JSONB
+        const assignedAt = { ...(parseJSONB(lead?.agent_assigned_at) || {}) };
+        const acceptedAt = { ...(parseJSONB(lead?.agent_accepted_at) || {}) };
+        const notifiedAt = { ...(parseJSONB(lead?.agent_notified_at) || {}) };
+        if (agentPhone) {
+          assignedAt[CURRENT_CLIENT] = new Date().toISOString();
+          delete acceptedAt[CURRENT_CLIENT];
+          delete notifiedAt[CURRENT_CLIENT];
+        } else {
+          delete assignedAt[CURRENT_CLIENT];
+          delete acceptedAt[CURRENT_CLIENT];
+          delete notifiedAt[CURRENT_CLIENT];
+        }
+
+        const updateObj = {
+          assigned_agent: newValue,
+          agent_assigned_at: Object.keys(assignedAt).length > 0 ? assignedAt : null,
+          agent_accepted_at: Object.keys(acceptedAt).length > 0 ? acceptedAt : null,
+          agent_notified_at: Object.keys(notifiedAt).length > 0 ? notifiedAt : null,
+        };
+
         const { error } = await supabaseClient
           .from('leads')
-          .update({ assigned_agent: newValue })
+          .update(updateObj)
           .eq('id', leadId);
 
         if (error) throw error;
 
         // Update local data
-        if (lead) lead.assigned_agent = newValue;
+        if (lead) {
+          lead.assigned_agent = newValue;
+          lead.agent_assigned_at = updateObj.agent_assigned_at;
+          lead.agent_accepted_at = updateObj.agent_accepted_at;
+          lead.agent_notified_at = updateObj.agent_notified_at;
+        }
 
         // Restore cell text
         const name = agentPhone ? (agentNameMap[agentPhone] || agentPhone) : '-';
@@ -1386,6 +1467,81 @@
         allLeads.forEach(l => l.exported = true);
         renderLeads();
       }
+    }
+
+    // --- SEND TOKEN TO LEAD ---
+    async function sendTokenToLead(leadId, phone, name) {
+      const token = Math.random().toString(36).slice(2, 12);
+
+      await supabaseClient.from('lead_tokens').delete()
+        .eq('lead_id', leadId).eq('claimed', false);
+
+      const { error } = await supabaseClient.from('lead_tokens').insert({
+        lead_id: leadId,
+        token: token,
+        claimed: false
+      });
+
+      if (error) {
+        console.error('Error generating token:', error);
+        return;
+      }
+
+      const lead = allLeads.find(l => l.id === leadId);
+      if (lead) {
+        lead.hasToken = true;
+        renderLeads();
+      }
+
+      const mapUrl = `https://la-la.land/${CURRENT_CLIENT}?token=${token}`;
+      const greeting = name ? `Hola ${name}, ` : 'Hola, ';
+      const msg = encodeURIComponent(`${greeting}aquí tu acceso personalizado: ${mapUrl}`);
+      const digits = phone.replace(/\D/g, '');
+      const waPhone = digits.length === 10 ? `521${digits}` : digits;
+      window.open(`https://wa.me/${waPhone}?text=${msg}`, '_blank');
+    }
+
+    // --- AGENT MODAL ---
+    function checkPendingLeads() {
+      const pending = allLeads.filter(l => {
+        const acceptedAt = (parseJSONB(l.agent_accepted_at) || {})[CURRENT_CLIENT];
+        return !acceptedAt;
+      });
+      if (pending.length > 0) {
+        pendingLeadIds = pending.map(l => l.id);
+        document.getElementById('pendingLeadCount').textContent = pending.length;
+        document.getElementById('agentModal').style.display = 'flex';
+      }
+    }
+
+    function updateAgentModal() {
+      const pending = allLeads.filter(l => {
+        const rawAgent = parseJSONB(l.assigned_agent);
+        const agentVal = (typeof rawAgent === 'object' && rawAgent) ? rawAgent[CURRENT_CLIENT] : rawAgent;
+        if (String(agentVal || '') !== AGENT_PHONE) return false;
+        const acceptedAt = (parseJSONB(l.agent_accepted_at) || {})[CURRENT_CLIENT];
+        return !acceptedAt;
+      });
+      pendingLeadIds = pending.map(l => l.id);
+      document.getElementById('pendingLeadCount').textContent = pending.length;
+      if (pending.length === 0) {
+        document.getElementById('agentModal').style.display = 'none';
+      }
+    }
+
+    async function acceptAllLeads() {
+      const now = new Date().toISOString();
+      for (const leadId of pendingLeadIds) {
+        const lead = allLeads.find(l => l.id === leadId);
+        if (!lead) continue;
+        const existing = { ...(parseJSONB(lead.agent_accepted_at) || {}) };
+        existing[CURRENT_CLIENT] = now;
+        await supabaseClient.from('leads').update({ agent_accepted_at: existing }).eq('id', leadId);
+        lead.agent_accepted_at = existing;
+      }
+      pendingLeadIds = [];
+      document.getElementById('agentModal').style.display = 'none';
+      renderLeads();
     }
 
     function showError(message) {
