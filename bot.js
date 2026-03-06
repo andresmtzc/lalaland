@@ -448,6 +448,7 @@ async function checkAgentAssignments() {
 
             for (const client of Object.keys(assignedAt)) {
                 const agentPhone = typeof assignedAgent === 'object' ? assignedAgent[client] : null;
+                console.log(`[agentAssign] lead ${lead.id} client=${client} agentPhone=${agentPhone} notified=${!!notifiedAt[client]} accepted=${!!acceptedAt[client]}`);
                 if (!agentPhone) continue;
 
                 const assignedTime = new Date(assignedAt[client]);
