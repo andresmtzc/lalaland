@@ -1,6 +1,7 @@
 -- REVERT: Undo 20260306_allowed_communities_enforcement.sql
--- Restores the original single FOR ALL policy per table (no community-level gating on writes).
--- Run this if you need to roll back the allowed_communities enforcement.
+-- Restores the exact policies left by 20250124_fix_rls_recursion.sql
+-- (single FOR ALL using get_user_client_ids() on both lots and lot_updates_audit).
+-- Run this SQL in the Supabase dashboard if the feature needs to be rolled back.
 -- Date: 2026-03-06
 
 -- ============================================================================
@@ -13,12 +14,9 @@ DROP POLICY IF EXISTS "Editors can delete their client's lots" ON lots;
 DROP POLICY IF EXISTS "Editors can update their allowed communities' lots" ON lots;
 
 CREATE POLICY "Users can only access their client's lots"
-ON lots FOR ALL
-USING (
-  client_id IN (
-    SELECT DISTINCT e.client_id FROM editors e WHERE e.user_id = auth.uid()
-  )
-);
+ON lots
+FOR ALL
+USING (client_id = ANY(get_user_client_ids()));
 
 -- ============================================================================
 -- LOT_UPDATES_AUDIT table — drop split policies, restore original FOR ALL
@@ -30,9 +28,6 @@ DROP POLICY IF EXISTS "Editors can update their client's audit logs" ON lot_upda
 DROP POLICY IF EXISTS "Editors can delete their client's audit logs" ON lot_updates_audit;
 
 CREATE POLICY "Users can only access their client's audit logs"
-ON lot_updates_audit FOR ALL
-USING (
-  client_id IN (
-    SELECT DISTINCT e.client_id FROM editors e WHERE e.user_id = auth.uid()
-  )
-);
+ON lot_updates_audit
+FOR ALL
+USING (client_id = ANY(get_user_client_ids()));
