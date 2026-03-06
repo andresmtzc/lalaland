@@ -441,7 +441,7 @@ async function checkAgentAssignments() {
         console.log(`[agentAssign] found ${leads.length} leads with agent_assigned_at`);
 
         for (const lead of leads) {
-            const assignedAgent = lead.assigned_agent || {};
+            const assignedAgent = typeof lead.assigned_agent === 'string' ? JSON.parse(lead.assigned_agent) : (lead.assigned_agent || {});
             const assignedAt = lead.agent_assigned_at || {};
             const acceptedAt = lead.agent_accepted_at || {};
             const notifiedAt = lead.agent_notified_at || {};
