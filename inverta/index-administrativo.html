@@ -86,6 +86,13 @@ if (!CONFIG) {
 // ===== PERFORMANCE: Client Access Cache =====
 // Cache validation results per session to avoid repeated DB queries
 window.clientAccessCache = window.clientAccessCache || {};
+// Communities this editor is allowed to edit (null = unrestricted)
+window.ALLOWED_COMMUNITIES = window.ALLOWED_COMMUNITIES ?? null;
+
+function canEditCommunity(fracc) {
+  if (!window.ALLOWED_COMMUNITIES) return true;
+  return window.ALLOWED_COMMUNITIES.includes(fracc);
+}
 </script>
 
   <script>
@@ -2460,6 +2467,7 @@ ctaobserver.observe(ctaToaster, {
   confirmLogoutBtn && confirmLogoutBtn.addEventListener('click', async () => {
     try {
       window.clientAccessCache = {}; // PERFORMANCE: Clear cache on sign out
+      window.ALLOWED_COMMUNITIES = null;
       await window.supabaseClient?.auth.signOut();
       updateButtons(false);
       hideLogoutModal();
@@ -2872,7 +2880,7 @@ ctaobserver.observe(ctaToaster, {
       // Check if the authenticated user has access to the CURRENT_CLIENT
       const { data, error } = await window.supabaseClient
         .from('editors')
-        .select('id')
+        .select('id, allowed_communities')
         .eq('user_id', session.user.id)
         .eq('client_id', CURRENT_CLIENT)
         .maybeSingle();
@@ -2902,6 +2910,8 @@ ctaobserver.observe(ctaToaster, {
         return false;
       }
 
+      // Store community restrictions for this editor (null = unrestricted)
+      window.ALLOWED_COMMUNITIES = data.allowed_communities ?? null;
       // PERFORMANCE: Cache positive result
       window.clientAccessCache[cacheKey] = true;
       return true;
@@ -3360,11 +3370,12 @@ async function fetchGlobalDashboardData() {
   let hasMore = true;
 
   while (hasMore) {
-    const { data: batch, error: lotsError } = await window.supabaseClient
+    let globalLotsQuery = window.supabaseClient
       .from('lots')
       .select('*')
-      .eq('client_id', CURRENT_CLIENT)
-      .range(start, start + BATCH_SIZE - 1);
+      .eq('client_id', CURRENT_CLIENT);
+    if (window.ALLOWED_COMMUNITIES) globalLotsQuery = globalLotsQuery.in('fraccionamiento', window.ALLOWED_COMMUNITIES);
+    const { data: batch, error: lotsError } = await globalLotsQuery.range(start, start + BATCH_SIZE - 1);
 
     if (lotsError) {
       console.error('❌ ERROR fetching lots for GLOBAL dashboard:', lotsError);
@@ -3410,13 +3421,14 @@ async function fetchGlobalDashboardData() {
   let hasMoreAudit = true;
 
   while (hasMoreAudit) {
-    const auditQueryPromise = window.supabaseClient
+    let globalAuditQuery = window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
       .eq('client_id', CURRENT_CLIENT)
       .gte('updated_at', sixtyDaysAgo.toISOString())
-      .order('updated_at', { ascending: false })
-      .range(auditStart, auditStart + BATCH_SIZE - 1);
+      .order('updated_at', { ascending: false });
+    if (window.ALLOWED_COMMUNITIES) globalAuditQuery = globalAuditQuery.in('fraccionamiento', window.ALLOWED_COMMUNITIES);
+    const auditQueryPromise = globalAuditQuery.range(auditStart, auditStart + BATCH_SIZE - 1);
 
     const auditTimeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Audit query timeout')), 10000)
@@ -6772,7 +6784,7 @@ row.innerHTML = `
       </div>
 
       <div class="row-actions">
-        ${window.isUserAuthenticated ? `
+        ${window.isUserAuthenticated && canEditCommunity(lot.fraccionamiento) ? `
           ${!isSold ? `
           <button class="row-action-btn edit-btn" title="Edit Price" data-lot-name="${lot.name}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -6995,8 +7007,14 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   }
 
   try {
+    // Filter to communities this editor is allowed to edit
+    const editableLots = affectedLots.filter(l => canEditCommunity(l.fraccionamiento));
+    const skipped = affectedLots.length - editableLots.length;
+    if (skipped > 0) showToaster(`⚠️ ${skipped} lote${skipped > 1 ? 's' : ''} omitido${skipped > 1 ? 's' : ''} (comunidad restringida).`);
+    if (editableLots.length === 0) return;
+
     // Update all matching lots in Supabase using bulk .in() operation
-    const lotNames = affectedLots.map(l => l.name);
+    const lotNames = editableLots.map(l => l.name);
     console.log('Lot names to update:', lotNames);
     console.log('Update query:', { price_m2: newValue, lot_names: lotNames, client_id: CURRENT_CLIENT });
 
@@ -9116,6 +9134,11 @@ const nextState = cur => {
     const name = sel?.lotName ?? selectedLotName;
     if (!name) { btn.classList.remove('sold','featured','blocked'); return; }
     setSelectedLotByName(name, { scroll:false });
+    const _selLot = lotData.find(l => l.name === name);
+    const _canEdit = canEditCommunity(_selLot?.fraccionamiento);
+    btn.style.display = _canEdit ? '' : 'none';
+    const _editBtn = document.getElementById('editBtn');
+    if (_editBtn) _editBtn.style.display = _canEdit ? '' : 'none';
   }
 
   // --- local data updates (optimistic) ---
@@ -9232,6 +9255,11 @@ function refreshFeaturedLayer() {
 
         // Get fraccionamiento from lot data BEFORE the update
         const lotFracc = lotData[i]?.fraccionamiento || null;
+
+        if (!canEditCommunity(lotFracc)) {
+          showToaster('No tienes permiso para editar esta comunidad.');
+          return;
+        }
 
         const { error } = await window.supabaseClient
           .from('lots')
@@ -11799,6 +11827,10 @@ async function markLotAsSold(lot) {
     const lotMapData = lotData.find(l => extractLotNumber(l.name) === lot.number);
     if (!lotMapData) {
       throw new Error(`Could not find lot_name for lot number ${lot.number}`);
+    }
+
+    if (!canEditCommunity(lotMapData.fraccionamiento)) {
+      throw new Error('No tienes permiso para editar esta comunidad.');
     }
 
     const { error } = await window.supabaseClient
