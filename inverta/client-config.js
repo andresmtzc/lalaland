@@ -287,7 +287,9 @@ const CLIENT_CONFIGS = {
       sonora2: 'lotinvertasb',
       sonora3: 'lotinvertasc',
       sonora4: 'lotinvertasd',
-      allende: 'lotinvertaa',  // e.g., lotinvertap10-1
+      allende: 'lotinvertaa',
+      chapultepec: 'lotinvertch',
+      pedregal: 'lotinvertpe',  // e.g., lotinvertap10-1
       base: 'inverta'          // Used in some contexts
     },
 
