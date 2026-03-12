@@ -62,12 +62,6 @@ input[type=file]{display:none;}
 .eremove{width:20px;height:20px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;
   border-radius:3px;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0;}
 .eremove:hover{color:var(--danger);background:rgba(240,112,112,.1);}
-.sec-title.ignore-title{color:var(--danger);}
-.centry.ignore-entry{border-left:2px solid var(--danger);}
-.tslider.ignore-slider::-webkit-slider-thumb{background:var(--danger);}
-.pick-btn.ignore{color:var(--danger);border-color:rgba(240,112,112,.3);}
-.pick-btn.ignore:hover,.pick-btn.ignore.active{border-color:var(--danger);color:var(--danger);background:rgba(240,112,112,.1);}
-#mag.ignore-mag{border-color:var(--danger);}
 
 .pick-btn{display:flex;align-items:center;gap:7px;width:100%;padding:7px 10px;
   background:var(--surface);border:1px solid var(--border);border-radius:4px;
@@ -218,23 +212,6 @@ footer{grid-column:1/-1;background:var(--panel);border-top:1px solid var(--borde
       <button class="add-btn warn" id="add-border">+ Add border color manually</button>
     </div>
 
-    <!-- 03b IGNORE / HOLE FILL -->
-    <div class="sec">
-      <div class="sec-title ignore-title">03b · Ignore / Hole Fill <span style="color:var(--text);margin-left:4px" id="ic-count">(0)</span></div>
-      <div class="hint"><b>Why?</b> Markers or circles inside lots that interrupt fill. Matched pixels + outline are erased before extraction.</div>
-      <div class="palette" id="ignore-list"></div>
-      <button class="pick-btn ignore" id="pick-ignore">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
-        Pick ignore color from image
-      </button>
-      <button class="add-btn ignore" id="add-ignore">+ Add ignore color manually</button>
-      <div class="setting-row" style="margin-top:8px">
-        <label for="ignore-expand">Outline expand <span id="ignore-expand-val" style="color:var(--danger)">6px</span></label>
-      </div>
-      <input class="full-slider" type="range" id="ignore-expand" min="0" max="20" value="6" step="1">
-      <div class="hint">Expands ignored area to absorb the black outline ring around the marker.</div>
-    </div>
-
     <!-- 04 SETTINGS -->
     <div class="sec">
       <div class="sec-title">04 · Settings</div>
@@ -250,11 +227,6 @@ footer{grid-column:1/-1;background:var(--panel);border-top:1px solid var(--borde
       </div>
       <input class="full-slider" type="range" id="aspect-ratio" min="1" max="30" value="8" step="0.5">
       <div class="hint">Removes sliver-like shapes. Lower = stricter. 4–8 works well for lots.</div>
-      <div class="setting-row" style="margin-top:6px">
-        <label for="stitch-gap">Stitch gap <span id="stitch-gap-val" style="color:var(--accent)">0px</span></label>
-      </div>
-      <input class="full-slider" type="range" id="stitch-gap" min="0" max="50" value="0" step="1">
-      <div class="hint">Snaps nearby edges of adjacent lots to their shared midpoint, closing gaps.</div>
     </div>
 
     <!-- 05 VIEW -->
@@ -319,7 +291,7 @@ footer{grid-column:1/-1;background:var(--panel);border-top:1px solid var(--borde
 <div id="mag"><canvas id="mc" width="90" height="90"></canvas><div id="mr"></div><div id="ml"></div></div>
 
 <script>
-const S={img:null,imgW:0,imgH:0,scale:1,lotColors:[],borderColors:[],ignoreColors:[],polygons:[],hoveredId:null,picking:null,srcPx:null,
+const S={img:null,imgW:0,imgH:0,scale:1,lotColors:[],borderColors:[],polygons:[],hoveredId:null,picking:null,srcPx:null,
   viewMode:'normal',
   zoom:1,panX:0,panY:0,
   clsCache:null
@@ -343,48 +315,46 @@ const cw=$('cw');
 
 // ── PALETTE UI (shared for lot + border) ──────────────────
 function addColor(type,hex='#5a9fd4'){
-  const arr=type==='lot'?S.lotColors:type==='border'?S.borderColors:S.ignoreColors;
-  arr.push({hex,...h2r(hex),tol:type==='lot'?40:type==='border'?25:30});
+  const arr=type==='lot'?S.lotColors:S.borderColors;
+  arr.push({hex,...h2r(hex),tol:type==='lot'?40:25});
   renderPalette(type);
   checkRunnable();
   scheduleExtract();
 }
 
 function renderPalette(type){
-  const arr=type==='lot'?S.lotColors:type==='border'?S.borderColors:S.ignoreColors;
-  const listId=type==='lot'?'lot-list':type==='border'?'border-list':'ignore-list';
-  const countId=type==='lot'?'lc-count':type==='border'?'bc-count':'ic-count';
+  const arr=type==='lot'?S.lotColors:S.borderColors;
+  const listId=type==='lot'?'lot-list':'border-list';
+  const countId=type==='lot'?'lc-count':'bc-count';
   const isBorder=type==='border';
-  const isIgnore=type==='ignore';
   const list=$(listId);
   list.innerHTML='';
   $(countId).textContent=`(${arr.length})`;
   arr.forEach((c,i)=>{
     const div=document.createElement('div');
-    div.className='centry'+(isBorder?' border-entry':isIgnore?' ignore-entry':'');
+    div.className='centry'+(isBorder?' border-entry':'');
     div.innerHTML=`
       <div class="swatch" style="background:${c.hex}"><input type="color" value="${c.hex}" data-i="${i}" data-t="${type}"></div>
       <div class="einfo">
         <div class="ehex">${c.hex}</div>
         <div class="etol">
           <span class="etol-lbl">tol <b class="tv">${c.tol}</b></span>
-          <input class="tslider${isBorder?' warn-slider':isIgnore?' ignore-slider':''}" type="range" min="0" max="120" value="${c.tol}" data-i="${i}" data-t="${type}">
+          <input class="tslider${isBorder?' warn-slider':''}" type="range" min="0" max="120" value="${c.tol}" data-i="${i}" data-t="${type}">
         </div>
       </div>
       <button class="eremove" data-i="${i}" data-t="${type}">×</button>`;
-    const getArr=t=>t==='lot'?S.lotColors:t==='border'?S.borderColors:S.ignoreColors;
     div.querySelector('input[type=color]').addEventListener('input',e=>{
-      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=getArr(t);
+      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=t==='lot'?S.lotColors:S.borderColors;
       a[idx].hex=e.target.value;Object.assign(a[idx],h2r(e.target.value));renderPalette(t);
       scheduleExtract();
     });
     div.querySelector('.tslider').addEventListener('input',e=>{
-      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=getArr(t);
+      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=t==='lot'?S.lotColors:S.borderColors;
       a[idx].tol=+e.target.value;div.querySelector('.tv').textContent=e.target.value;
       scheduleExtract();
     });
     div.querySelector('.eremove').addEventListener('click',e=>{
-      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=getArr(t);
+      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=t==='lot'?S.lotColors:S.borderColors;
       a.splice(idx,1);renderPalette(t);checkRunnable();
       scheduleExtract();
     });
@@ -533,23 +503,12 @@ function togglePick(type){
   S.picking=active?null:type;
   $('pick-lot').classList.toggle('active',S.picking==='lot');
   $('pick-border').classList.toggle('active',S.picking==='border');
-  $('pick-ignore').classList.toggle('active',S.picking==='ignore');
   hc.style.cursor=S.picking?'crosshair':'default';
-  mag.className=S.picking==='border'?'warn-mag':S.picking==='ignore'?'ignore-mag':'';
+  mag.className=S.picking==='border'?'warn-mag':'';
   if(!S.picking)mag.style.display='none';
 }
 $('pick-lot').addEventListener('click',()=>{if(S.img)togglePick('lot');});
 $('pick-border').addEventListener('click',()=>{if(S.img)togglePick('border');});
-$('pick-ignore').addEventListener('click',()=>{if(S.img)togglePick('ignore');});
-$('add-ignore').addEventListener('click',()=>addColor('ignore'));
-$('ignore-expand').addEventListener('input',e=>{
-  $('ignore-expand-val').textContent=e.target.value+'px';
-  scheduleExtract();
-});
-$('stitch-gap').addEventListener('input',e=>{
-  $('stitch-gap-val').textContent=e.target.value+'px';
-  scheduleExtract();
-});
 
 // mousemove, mousedown, mouseup are handled in the SNAP & SPLIT TOOLS block below
 // which also handles eyedropper and polygon hover routing
@@ -623,36 +582,19 @@ async function extract(){
   const W=S.imgW,H=S.imgH,src=S.srcPx;
   const minArea=+$('min-area').value||200;
 
-  // 1. Classify pixels: 1=lot fill, 2=border/barrier, 3=ignored, 0=unknown
+  // 1. Classify each pixel: 1=lot fill, 2=border/barrier, 0=unknown
+  //    Border takes priority — if a pixel matches both, it's a barrier
   const cls=new Uint8Array(W*H);
   let filled=0;
-  const expand=parseInt($('ignore-expand').value)||0;
-  if(S.ignoreColors.length){
-    for(let i=0;i<W*H;i++){
-      const r=src[i*4],g=src[i*4+1],b=src[i*4+2];
-      for(const ci of S.ignoreColors){if(cd(r,g,b,ci.r,ci.g,ci.b)<=ci.tol){cls[i]=3;break;}}
-    }
-    if(expand>0){
-      const tmp=new Uint8Array(W*H);
-      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
-        if(cls[y*W+x]!==3)continue;
-        for(let dy=Math.max(0,y-expand);dy<=Math.min(H-1,y+expand);dy++)
-          for(let dx=Math.max(0,x-expand);dx<=Math.min(W-1,x+expand);dx++)
-            tmp[dy*W+dx]=3;
-      }
-      for(let i=0;i<W*H;i++) if(tmp[i]===3) cls[i]=3;
-    }
-  }
   for(let i=0;i<W*H;i++){
-    if(cls[i]===3)continue;
     const r=src[i*4],g=src[i*4+1],b=src[i*4+2];
+    // check border first (higher priority)
     let isBorder=false;
-    for(const ci of S.borderColors){if(cd(r,g,b,ci.r,ci.g,ci.b)<=ci.tol){isBorder=true;break;}}
+    for(const c of S.borderColors){if(cd(r,g,b,c.r,c.g,c.b)<=c.tol){isBorder=true;break;}}
     if(isBorder){cls[i]=2;continue;}
-    for(const ci of S.lotColors){if(cd(r,g,b,ci.r,ci.g,ci.b)<=ci.tol){cls[i]=1;filled++;break;}}
+    // check lot fill
+    for(const c of S.lotColors){if(cd(r,g,b,c.r,c.g,c.b)<=c.tol){cls[i]=1;filled++;break;}}
   }
-  // treat ignored pixels as lot fill so BFS flows through them (no holes)
-  for(let i=0;i<W*H;i++) if(cls[i]===3) cls[i]=1;
   prog.style.transform='scaleX(0.4)';await sl(10);
   S.clsCache=cls;
   const labels=new Int32Array(W*H).fill(-1);
@@ -706,8 +648,6 @@ async function extract(){
   }
 
   prog.style.transform='scaleX(0.88)';await sl(10);
-  const stitchGap=parseInt($('stitch-gap').value)||0;
-  if(stitchGap>0)stitchEdges(stitchGap);
   // if tool lines exist, replay them onto the fresh polygons
   if(T.lines.length){
     saveBase();
@@ -789,47 +729,6 @@ $('aspect-ratio').addEventListener('input',e=>{
   $('aspect-ratio-val').textContent=v>=30?'off':v.toFixed(1)+':1';
   scheduleExtract();
 });
-
-// ── STITCH EDGES ──────────────────────────────────
-function stitchEdges(gap){
-  if(!gap||gap<=0)return;
-  const polys=S.polygons;
-  const cell=Math.max(1,gap);
-  const grid=new Map();
-  const gkey=(x,y)=>`${Math.floor(x/cell)},${Math.floor(y/cell)}`;
-  polys.forEach((p,pi)=>p.points.forEach((pt,vi)=>{
-    const k=gkey(pt.x,pt.y);if(!grid.has(k))grid.set(k,[]);grid.get(k).push({pi,vi,x:pt.x,y:pt.y});
-  }));
-  const gap2=gap*gap;
-  const done=new Set();
-  polys.forEach((p,pi)=>p.points.forEach((pt,vi)=>{
-    const id=`${pi}-${vi}`;if(done.has(id))return;
-    // skip near-collinear vertices — only snap actual corners
-    const n=p.points.length;
-    const prev=p.points[(vi-1+n)%n],next=p.points[(vi+1)%n];
-    const ax=pt.x-prev.x,ay=pt.y-prev.y;
-    const bx=next.x-pt.x,by=next.y-pt.y;
-    const cross=Math.abs(ax*by-ay*bx);
-    const lenA=Math.hypot(ax,ay),lenB=Math.hypot(bx,by);
-    // if nearly collinear (cross/len < 0.15), skip — not a real corner
-    if(lenA>0&&lenB>0&&cross/(lenA*lenB)<0.15)return;
-    const gx=Math.floor(pt.x/cell),gy=Math.floor(pt.y/cell);
-    let best2=gap2,bestU=null;
-    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
-      const nb=grid.get(`${gx+dx},${gy+dy}`);if(!nb)continue;
-      nb.forEach(u=>{
-        if(u.pi===pi)return;
-        const d2=(pt.x-u.x)**2+(pt.y-u.y)**2;
-        if(d2<best2){best2=d2;bestU=u;}
-      });
-    }
-    if(!bestU)return;
-    const mx=(pt.x+bestU.x)/2,my=(pt.y+bestU.y)/2;
-    polys[pi].points[vi]={x:mx,y:my};
-    polys[bestU.pi].points[bestU.vi]={x:mx,y:my};
-    done.add(id);done.add(`${bestU.pi}-${bestU.vi}`);
-  }));
-}
 
 // ── RDP SIMPLIFY ──────────────────────────────────
 function rdpSimplify(pts,eps){

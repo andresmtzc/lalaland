@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lot Extractor</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');
+:root {
+  --bg:#111210;--panel:#181917;--surface:#1f211e;--border:#2c2e2b;
+  --accent:#c8f04a;--adim:rgba(200,240,74,0.11);
+  --text:#e6e3db;--muted:#6b6e67;--danger:#f07070;--warn:#f0a84a;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;
+  height:100vh;display:grid;grid-template-columns:310px 1fr;grid-template-rows:52px 1fr 36px;overflow:hidden;}
+
+header{grid-column:1/-1;background:var(--panel);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 20px;gap:14px;}
+.logo{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;color:var(--accent);}
+.logo em{color:var(--muted);font-style:normal;}
+.badge{font-size:9px;letter-spacing:.14em;text-transform:uppercase;border:1px solid var(--border);color:var(--muted);padding:2px 7px;border-radius:2px;}
+.hstatus{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:10px;color:var(--muted);}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--muted);transition:background .3s;}
+.dot.on{background:var(--accent);}
+
+aside{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.sb-scroll{flex:1;overflow-y:auto;padding-bottom:12px;}
+.sb-scroll::-webkit-scrollbar{width:3px;}
+.sb-scroll::-webkit-scrollbar-thumb{background:var(--border);}
+
+.sec{padding:14px 14px 0;margin-bottom:14px;}
+.sec-title{font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;
+  display:flex;align-items:center;gap:8px;}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.sec-title.warn-title{color:var(--warn);}
+
+input[type=file]{display:none;}
+.upload-lbl{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  border:1px dashed var(--border);border-radius:4px;padding:18px 12px;cursor:pointer;transition:all .18s;text-align:center;}
+.upload-lbl:hover,.upload-lbl.drag{border-color:var(--accent);background:var(--adim);}
+.upload-lbl svg{opacity:.3;}
+.upload-lbl span{font-size:10px;color:var(--muted);}
+.upload-lbl strong{color:var(--text);font-weight:500;font-size:11px;}
+
+/* color entry - shared between lot + border lists */
+.palette{display:flex;flex-direction:column;gap:5px;margin-bottom:7px;}
+.centry{display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border);
+  border-radius:4px;padding:6px 7px;transition:border-color .15s;}
+.centry:hover{border-color:var(--muted);}
+.centry.border-entry{border-left:2px solid var(--warn);}
+.swatch{width:24px;height:24px;border-radius:3px;flex-shrink:0;border:1px solid rgba(255,255,255,.1);
+  cursor:pointer;position:relative;overflow:hidden;}
+.swatch input[type=color]{position:absolute;inset:-4px;width:calc(100% + 8px);height:calc(100% + 8px);opacity:0;cursor:pointer;}
+.einfo{flex:1;min-width:0;}
+.ehex{font-size:11px;font-weight:500;}
+.etol{display:flex;align-items:center;gap:5px;margin-top:3px;}
+.etol-lbl{font-size:9px;color:var(--muted);white-space:nowrap;}
+.tslider{flex:1;height:2px;-webkit-appearance:none;background:var(--border);border-radius:1px;cursor:pointer;outline:none;}
+.tslider::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:var(--accent);cursor:pointer;}
+.tslider.warn-slider::-webkit-slider-thumb{background:var(--warn);}
+.eremove{width:20px;height:20px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;
+  border-radius:3px;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0;}
+.eremove:hover{color:var(--danger);background:rgba(240,112,112,.1);}
+
+.pick-btn{display:flex;align-items:center;gap:7px;width:100%;padding:7px 10px;
+  background:var(--surface);border:1px solid var(--border);border-radius:4px;
+  color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;}
+.pick-btn:hover{border-color:var(--accent);color:var(--accent);}
+.pick-btn.active{border-color:var(--accent);color:var(--accent);background:var(--adim);}
+.pick-btn.warn:hover{border-color:var(--warn);color:var(--warn);}
+.pick-btn.warn.active{border-color:var(--warn);color:var(--warn);background:rgba(240,168,74,.1);}
+.add-btn{width:100%;padding:6px;background:none;border:1px dashed var(--border);border-radius:4px;
+  color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;margin-top:5px;}
+.add-btn:hover{border-color:var(--accent);color:var(--accent);}
+.add-btn.warn:hover{border-color:var(--warn);color:var(--warn);}
+
+.setting-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;font-size:10px;color:var(--muted);}
+.setting-row input[type=checkbox]{accent-color:var(--accent);cursor:pointer;}
+.setting-row input[type=number]{width:52px;padding:3px 6px;background:var(--surface);border:1px solid var(--border);
+  border-radius:3px;color:var(--text);font-family:'DM Mono',monospace;font-size:10px;text-align:right;outline:none;}
+.setting-row input[type=number]:focus{border-color:var(--accent);}
+
+.hint{font-size:9px;color:var(--muted);line-height:1.7;padding:8px 9px;background:var(--bg);
+  border:1px solid var(--border);border-radius:3px;margin-bottom:8px;}
+.hint b{color:var(--text);font-weight:500;}
+
+.stats-row{display:flex;gap:7px;padding:10px 14px 0;}
+.stat{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:7px 9px;}
+.stat-n{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:var(--accent);}
+.stat-l{font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:1px;}
+
+.sb-footer{padding:11px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:5px;}
+.run-btn{width:100%;padding:11px;background:var(--accent);color:#0e0f0e;border:none;border-radius:4px;
+  font-family:'Syne',sans-serif;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  cursor:pointer;transition:all .18s;}
+.run-btn:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);}
+.run-btn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+.reset-btn{width:100%;padding:6px;background:none;border:1px solid var(--border);border-radius:4px;
+  color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;}
+.reset-btn:hover{color:var(--danger);border-color:var(--danger);}
+
+main{position:relative;overflow:hidden;background:#0a0b09;display:flex;align-items:center;justify-content:center;}
+.empty{text-align:center;color:var(--muted);pointer-events:none;}
+.empty-icon{font-size:40px;opacity:.2;margin-bottom:12px;}
+.empty p{font-size:11px;line-height:2;}
+#cw{position:relative;display:none;}
+#ic{display:block;}
+#pc{position:absolute;top:0;left:0;pointer-events:none;}
+#hc{position:absolute;top:0;left:0;opacity:0;pointer-events:all;cursor:default;}
+
+#mag{position:fixed;display:none;width:90px;height:90px;border-radius:50%;
+  border:1.5px solid var(--accent);overflow:hidden;pointer-events:none;z-index:999;
+  box-shadow:0 4px 24px rgba(0,0,0,.7);}
+#mag.warn-mag{border-color:var(--warn);}
+#mc{position:absolute;top:0;left:0;}
+#mr{position:absolute;inset:0;pointer-events:none;}
+#mr::before{content:'';position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(200,240,74,.6);transform:translateX(-50%);}
+#mr::after{content:'';position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(200,240,74,.6);transform:translateY(-50%);}
+#mag.warn-mag #mr::before,#mag.warn-mag #mr::after{background:rgba(240,168,74,.7);}
+#ml{position:absolute;bottom:0;left:0;right:0;height:20px;display:flex;align-items:center;justify-content:center;
+  font-size:8px;font-family:'DM Mono',monospace;letter-spacing:.1em;background:rgba(0,0,0,.75);border-top:1px solid rgba(255,255,255,.1);}
+
+.view-tabs{display:flex;gap:3px;background:var(--bg);padding:3px;border-radius:4px;border:1px solid var(--border);}
+.vtab{flex:1;text-align:center;padding:5px;font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+  cursor:pointer;border-radius:3px;transition:all .15s;color:var(--muted);}
+.vtab:hover{color:var(--text);}
+.vtab.active{background:var(--surface);color:var(--text);}
+
+#mask-canvas{position:absolute;top:0;left:0;pointer-events:none;display:none;}
+#tt{position:fixed;background:var(--panel);border:1px solid var(--border);border-radius:4px;
+  padding:8px 11px;font-size:10px;line-height:1.8;pointer-events:none;z-index:200;display:none;
+  min-width:130px;box-shadow:0 4px 16px rgba(0,0,0,.5);}
+#tt .tdot{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:middle;}
+
+#prog{position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);
+  transform-origin:left;transform:scaleX(0);transition:transform .25s;z-index:10;}
+
+footer{grid-column:1/-1;background:var(--panel);border-top:1px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:16px;font-size:10px;color:var(--muted);}
+#fc{flex:1;}
+.dl-btn{padding:5px 12px;background:none;border:1px solid var(--border);border-radius:3px;color:var(--muted);
+  font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:.05em;}
+.dl-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+.dl-btn:disabled{opacity:.3;cursor:not-allowed;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">La<em>·</em>La <em>/</em> Lot Extractor</div>
+  <div class="badge">alpha</div>
+  <div class="hstatus"><div class="dot" id="dot"></div><span id="hstat">no image</span></div>
+</header>
+
+<aside>
+  <div class="sb-scroll">
+
+    <!-- 01 IMAGE -->
+    <div class="sec">
+      <div class="sec-title">01 · Image</div>
+      <input type="file" id="fi" accept="image/*">
+      <label for="fi" class="upload-lbl" id="ul">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        <strong>Drop or click to load map</strong>
+        <span>PNG · JPG · WEBP · paste</span>
+      </label>
+    </div>
+
+    <!-- 02 LOT COLORS -->
+    <div class="sec">
+      <div class="sec-title">02 · Lot Fill Colors <span style="color:var(--text);margin-left:4px" id="lc-count">(0)</span></div>
+      <div class="palette" id="lot-list"></div>
+      <button class="pick-btn" id="pick-lot">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+        Pick lot color from image
+      </button>
+      <button class="add-btn" id="add-lot">+ Add lot color manually</button>
+    </div>
+
+    <!-- 03 BORDER COLORS -->
+    <div class="sec">
+      <div class="sec-title warn-title">03 · Border / Separator <span style="color:var(--text);margin-left:4px" id="bc-count">(0)</span></div>
+      <div class="hint"><b>Why?</b> Adjacent lots share a border line. Without knowing the border color, flood fill bleeds across lots.</div>
+      <div class="palette" id="border-list"></div>
+      <button class="pick-btn warn" id="pick-border">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+        Pick border color from image
+      </button>
+      <button class="add-btn warn" id="add-border">+ Add border color manually</button>
+    </div>
+
+    <!-- 04 SETTINGS -->
+    <div class="sec">
+      <div class="sec-title">04 · Settings</div>
+      <div class="setting-row"><label for="min-area">Min lot area (px²)</label><input type="number" id="min-area" value="200" min="10"></div>
+      <div class="setting-row"><label for="show-labels">Show lot numbers</label><input type="checkbox" id="show-labels" checked></div>
+    </div>
+
+    <!-- 05 VIEW -->
+    <div class="sec">
+      <div class="sec-title">05 · View</div>
+      <div class="view-tabs" id="view-tabs">
+        <div class="vtab active" data-v="normal">Original</div>
+        <div class="vtab" data-v="polygons">Polygons</div>
+        <div class="vtab" data-v="mask">Mask</div>
+      </div>
+      <div class="hint" style="margin-top:8px">Scroll to zoom · Right-drag to pan · Dbl-click to reset</div>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats-row">
+      <div class="stat"><div class="stat-n" id="s-lots">—</div><div class="stat-l">Lots</div></div>
+      <div class="stat"><div class="stat-n" id="s-fill">—</div><div class="stat-l">Fill px</div></div>
+      <div class="stat"><div class="stat-n" id="s-ms">—</div><div class="stat-l">ms</div></div>
+    </div>
+
+  </div>
+  <div class="sb-footer">
+    <button class="run-btn" id="run-btn" disabled>⬡ Extract Polygons</button>
+    <button class="reset-btn" id="reset-btn">Clear</button>
+  </div>
+</aside>
+
+<main id="main">
+  <div id="prog"></div>
+  <div class="empty" id="empty">
+    <div class="empty-icon">⬡</div>
+    <p>Load a map · pick lot colors · pick border color<br>Extract polygons.</p>
+  </div>
+  <div id="cw">
+    <canvas id="ic"></canvas>
+    <canvas id="pc"></canvas>
+    <canvas id="mask-canvas"></canvas>
+    <canvas id="hc"></canvas>
+  </div>
+</main>
+
+<footer>
+  <span id="fc">—</span>
+  <span id="fi2">—</span>
+  <button class="dl-btn" id="dl-svg" disabled>↓ SVG</button>
+  <button class="dl-btn" id="dl-json" disabled>↓ GeoJSON</button>
+  <button class="dl-btn" id="dl-png" disabled>↓ PNG</button>
+</footer>
+
+<div id="mag"><canvas id="mc" width="90" height="90"></canvas><div id="mr"></div><div id="ml"></div></div>
+
+<script>
+const S={img:null,imgW:0,imgH:0,scale:1,lotColors:[],borderColors:[],polygons:[],hoveredId:null,picking:null,srcPx:null,
+  viewMode:'normal',
+  zoom:1,panX:0,panY:0,
+  clsCache:null
+};
+const PCOLS=['#4fc3f7','#81c784','#ffb74d','#f06292','#ce93d8','#80cbc4','#fff176','#ff8a65','#aed581','#4dd0e1','#ef9a9a','#b39ddb','#ffe082','#c5e1a5','#f48fb1','#80deea','#ffcc80','#bcaaa4','#90a4ae','#a5d6a7'];
+let pci=0;
+const npc=()=>PCOLS[(pci++)%PCOLS.length];
+const h2r=h=>({r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)});
+const r2h=(r,g,b)=>'#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+const cd=(r1,g1,b1,r2,g2,b2)=>Math.sqrt((r1-r2)**2+(g1-g2)**2+(b1-b2)**2);
+const nf=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1000?(n/1000).toFixed(1)+'k':''+n;
+const sl=ms=>new Promise(r=>setTimeout(r,ms));
+const al=(h,a)=>{const{r,g,b}=h2r(h);return `rgba(${r},${g},${b},${a})`;};
+const $=id=>document.getElementById(id);
+const setStat=(msg,on=false)=>{$('hstat').textContent=msg;$('dot').className='dot'+(on?' on':'');};
+
+// canvas refs
+const ic=$('ic'),pc=$('pc'),hc=$('hc'),mkc=$('mask-canvas'),mag=$('mag'),mc=$('mc'),ml=$('ml'),tt=$('tt'),prog=$('prog');
+const ictx=ic.getContext('2d'),pctx=pc.getContext('2d'),hctx=hc.getContext('2d'),mktx=mkc.getContext('2d'),mctx=mc.getContext('2d');
+const cw=$('cw');
+
+// ── PALETTE UI (shared for lot + border) ──────────────────
+function addColor(type,hex='#5a9fd4'){
+  const arr=type==='lot'?S.lotColors:S.borderColors;
+  arr.push({hex,...h2r(hex),tol:type==='lot'?40:25});
+  renderPalette(type);
+  checkRunnable();
+}
+
+function renderPalette(type){
+  const arr=type==='lot'?S.lotColors:S.borderColors;
+  const listId=type==='lot'?'lot-list':'border-list';
+  const countId=type==='lot'?'lc-count':'bc-count';
+  const isBorder=type==='border';
+  const list=$(listId);
+  list.innerHTML='';
+  $(countId).textContent=`(${arr.length})`;
+  arr.forEach((c,i)=>{
+    const div=document.createElement('div');
+    div.className='centry'+(isBorder?' border-entry':'');
+    div.innerHTML=`
+      <div class="swatch" style="background:${c.hex}"><input type="color" value="${c.hex}" data-i="${i}" data-t="${type}"></div>
+      <div class="einfo">
+        <div class="ehex">${c.hex}</div>
+        <div class="etol">
+          <span class="etol-lbl">tol <b class="tv">${c.tol}</b></span>
+          <input class="tslider${isBorder?' warn-slider':''}" type="range" min="0" max="120" value="${c.tol}" data-i="${i}" data-t="${type}">
+        </div>
+      </div>
+      <button class="eremove" data-i="${i}" data-t="${type}">×</button>`;
+    div.querySelector('input[type=color]').addEventListener('input',e=>{
+      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=t==='lot'?S.lotColors:S.borderColors;
+      a[idx].hex=e.target.value;Object.assign(a[idx],h2r(e.target.value));renderPalette(t);
+    });
+    div.querySelector('.tslider').addEventListener('input',e=>{
+      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=t==='lot'?S.lotColors:S.borderColors;
+      a[idx].tol=+e.target.value;div.querySelector('.tv').textContent=e.target.value;
+    });
+    div.querySelector('.eremove').addEventListener('click',e=>{
+      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=t==='lot'?S.lotColors:S.borderColors;
+      a.splice(idx,1);renderPalette(t);checkRunnable();
+    });
+    list.appendChild(div);
+  });
+}
+
+$('add-lot').addEventListener('click',()=>addColor('lot'));
+$('add-border').addEventListener('click',()=>addColor('border'));
+
+function checkRunnable(){
+  $('run-btn').disabled=!(S.img&&S.lotColors.length>0&&S.borderColors.length>0);
+}
+
+// ── IMAGE LOAD ───────────────────────────────────
+function loadImage(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  const url=URL.createObjectURL(file);
+  const img=new Image();
+  img.onload=()=>{
+    S.img=img;S.imgW=img.width;S.imgH=img.height;
+    setupCanvas();URL.revokeObjectURL(url);
+    setStat(`${img.width}×${img.height}`,true);
+    $('fi2').textContent=`${file.name} · ${img.width}×${img.height}`;
+    $('empty').style.display='none';$('cw').style.display='block';
+    S.polygons=[];clearPolys();checkRunnable();
+  };
+  img.src=url;
+}
+
+function setupCanvas(){
+  const m=$('main'),mw=m.clientWidth-40,mh=m.clientHeight-40;
+  const sc=Math.min(mw/S.imgW,mh/S.imgH,2);S.scale=sc;
+  S.zoom=1;S.panX=0;S.panY=0;
+  const w=Math.round(S.imgW*sc),h=Math.round(S.imgH*sc);
+  [ic,pc,hc,mkc].forEach(c=>{c.width=w;c.height=h;});
+  applyTransform();
+  ictx.drawImage(S.img,0,0,w,h);
+  const off=document.createElement('canvas');
+  off.width=S.imgW;off.height=S.imgH;
+  off.getContext('2d').drawImage(S.img,0,0);
+  S.srcPx=off.getContext('2d').getImageData(0,0,S.imgW,S.imgH).data;
+}
+
+function applyTransform(){
+  cw.style.transform=`translate(${S.panX}px,${S.panY}px) scale(${S.zoom})`;
+  cw.style.transformOrigin='center center';
+}
+
+const fi=$('fi'),ul=$('ul');
+fi.addEventListener('change',e=>{if(e.target.files[0])loadImage(e.target.files[0]);e.target.value='';});
+ul.addEventListener('dragover',e=>{e.preventDefault();ul.classList.add('drag');});
+ul.addEventListener('dragleave',()=>ul.classList.remove('drag'));
+ul.addEventListener('drop',e=>{e.preventDefault();ul.classList.remove('drag');loadImage(e.dataTransfer.files[0]);});
+document.addEventListener('paste',e=>{const f=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'));if(f)loadImage(f.getAsFile());});
+
+// ── ZOOM & PAN ────────────────────────────────────
+const mainEl=$('main');
+
+mainEl.addEventListener('wheel',e=>{
+  if(!S.img)return;
+  e.preventDefault();
+  const factor=e.deltaY<0?1.12:1/1.12;
+  const newZoom=Math.min(Math.max(S.zoom*factor,0.5),12);
+  // zoom toward mouse position
+  const rect=mainEl.getBoundingClientRect();
+  const mx=e.clientX-rect.left-rect.width/2;
+  const my=e.clientY-rect.top-rect.height/2;
+  S.panX=mx+(S.panX-mx)*(newZoom/S.zoom);
+  S.panY=my+(S.panY-my)*(newZoom/S.zoom);
+  S.zoom=newZoom;
+  applyTransform();
+  updateZoomLabel();
+},{passive:false});
+
+// Right-click drag to pan
+let dragging=false,dragSX=0,dragSY=0,dragPX=0,dragPY=0;
+mainEl.addEventListener('mousedown',e=>{
+  if(e.button!==2||!S.img)return;
+  e.preventDefault();
+  dragging=true;dragSX=e.clientX;dragSY=e.clientY;dragPX=S.panX;dragPY=S.panY;
+  mainEl.style.cursor='grabbing';
+});
+window.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  S.panX=dragPX+(e.clientX-dragSX);
+  S.panY=dragPY+(e.clientY-dragSY);
+  applyTransform();
+});
+window.addEventListener('mouseup',e=>{
+  if(e.button!==2)return;
+  dragging=false;mainEl.style.cursor='';
+});
+mainEl.addEventListener('contextmenu',e=>e.preventDefault());
+
+// Double-click to reset
+mainEl.addEventListener('dblclick',e=>{
+  if(!S.img||S.picking)return;
+  S.zoom=1;S.panX=0;S.panY=0;applyTransform();updateZoomLabel();
+});
+
+function updateZoomLabel(){
+  $('fc').textContent=S.img?`${Math.round(S.zoom*100)}% zoom`:'—';
+}
+
+// ── VIEW MODE ─────────────────────────────────────
+document.getElementById('view-tabs').addEventListener('click',e=>{
+  const vtab=e.target.closest('.vtab');if(!vtab)return;
+  document.querySelectorAll('.vtab').forEach(t=>t.classList.remove('active'));
+  vtab.classList.add('active');
+  S.viewMode=vtab.dataset.v;
+  applyViewMode();
+});
+
+function applyViewMode(){
+  if(!S.img)return;
+  if(S.viewMode==='normal'){
+    ictx.clearRect(0,0,ic.width,ic.height);
+    ictx.drawImage(S.img,0,0,ic.width,ic.height);
+    pc.style.display='block';mkc.style.display='none';
+  } else if(S.viewMode==='polygons'){
+    ictx.clearRect(0,0,ic.width,ic.height);
+    ictx.fillStyle='#0a0b09';ictx.fillRect(0,0,ic.width,ic.height);
+    pc.style.display='block';mkc.style.display='none';
+  } else if(S.viewMode==='mask'){
+    pc.style.display='none';mkc.style.display='block';
+    drawMask();
+  }
+}
+
+function drawMask(){
+  if(!S.clsCache)return;
+  const W=S.imgW,H=S.imgH,cls=S.clsCache;
+  const imgd=new ImageData(W,H);const d=imgd.data;
+  for(let i=0;i<W*H;i++){
+    const v=cls[i]===1?255:cls[i]===2?80:0;
+    d[i*4]=v;d[i*4+1]=cls[i]===2?50:v;d[i*4+2]=cls[i]===2?50:v;d[i*4+3]=255;
+  }
+  const tmp=document.createElement('canvas');tmp.width=W;tmp.height=H;
+  tmp.getContext('2d').putImageData(imgd,0,0);
+  mktx.clearRect(0,0,mkc.width,mkc.height);
+  mktx.drawImage(tmp,0,0,mkc.width,mkc.height);
+}
+function togglePick(type){
+  const active=S.picking===type;
+  S.picking=active?null:type;
+  $('pick-lot').classList.toggle('active',S.picking==='lot');
+  $('pick-border').classList.toggle('active',S.picking==='border');
+  hc.style.cursor=S.picking?'crosshair':'default';
+  mag.className=S.picking==='border'?'warn-mag':'';
+  if(!S.picking)mag.style.display='none';
+}
+$('pick-lot').addEventListener('click',()=>{if(S.img)togglePick('lot');});
+$('pick-border').addEventListener('click',()=>{if(S.img)togglePick('border');});
+
+hc.addEventListener('mousemove',e=>{
+  const{cx,cy,sx,sy}=coords(e);
+  $('fc').textContent=`x:${sx} y:${sy}`;
+  if(S.picking)showMag(e.clientX,e.clientY,cx,cy);
+  else if(S.polygons.length)checkHover(cx,cy,e.clientX,e.clientY);
+});
+hc.addEventListener('mouseleave',()=>{
+  mag.style.display='none';$('fc').textContent='—';
+  if(S.hoveredId!==null){S.hoveredId=null;drawPolys();tt.style.display='none';}
+});
+hc.addEventListener('click',e=>{
+  if(!S.picking)return;
+  const{cx,cy}=coords(e);
+  const px=ictx.getImageData(Math.round(cx),Math.round(cy),1,1).data;
+  addColor(S.picking,r2h(px[0],px[1],px[2]));
+  togglePick(null);
+});
+
+function coords(e){
+  // hc.getBoundingClientRect() already accounts for CSS zoom+pan transform,
+  // so clientX/Y relative to the (transformed) canvas rect IS the correct
+  // canvas-space position — but we must then divide by the CSS zoom to get
+  // true canvas pixels, because the canvas internal size is pre-zoom.
+  const r=hc.getBoundingClientRect();
+  // position inside the zoomed canvas element (CSS pixels)
+  const ex=e.clientX-r.left, ey=e.clientY-r.top;
+  // canvas internal coords = divide by zoom (rect is already zoomed)
+  const cx=ex/S.zoom, cy=ey/S.zoom;
+  return{cx,cy,sx:Math.round(cx/S.scale),sy:Math.round(cy/S.scale)};
+}
+
+function showMag(mx,my,cx,cy){
+  const zoom=5,r=45,sz=Math.round(r*2/zoom);
+  mctx.clearRect(0,0,90,90);mctx.save();mctx.imageSmoothingEnabled=false;
+  mctx.drawImage(ic,Math.round(cx-r/zoom),Math.round(cy-r/zoom),sz,sz,0,0,90,90);mctx.restore();
+  const px=ictx.getImageData(Math.round(cx),Math.round(cy),1,1).data;
+  const hex=r2h(px[0],px[1],px[2]);
+  ml.style.background=hex;ml.style.color=(px[0]*.299+px[1]*.587+px[2]*.114)>128?'#000':'#fff';ml.textContent=hex;
+  mag.style.display='block';
+  let lx=mx+26,ly=my-115;
+  if(lx+90>window.innerWidth)lx=mx-116;if(ly<0)ly=my+26;
+  mag.style.left=lx+'px';mag.style.top=ly+'px';
+}
+
+// ── HOVER ────────────────────────────────────────
+function checkHover(cx,cy,mx,my){
+  const px=hctx.getImageData(Math.round(cx),Math.round(cy),1,1).data;
+  if(px[3]===0){
+    if(S.hoveredId!==null){S.hoveredId=null;drawPolys();tt.style.display='none';}
+    hc.style.cursor='default';return;
+  }
+  const id=(px[0]-1)+px[1]*255;
+  if(id<0||id>=S.polygons.length)return;
+  hc.style.cursor='pointer';
+  if(S.hoveredId===id){moveTT(mx,my);return;}
+  S.hoveredId=id;drawPolys();showTT(mx,my,id);
+}
+function showTT(mx,my,id){
+  const p=S.polygons[id];
+  tt.innerHTML=`<span class="tdot" style="background:${p.dc}"></span><strong>Lot ${p.id+1}</strong><br>Area: ${nf(Math.round(p.area))} px²<br>Center: ${p.cx}, ${p.cy}`;
+  moveTT(mx,my);
+}
+function moveTT(mx,my){
+  tt.style.display='block';
+  const w=tt.offsetWidth||140, h=tt.offsetHeight||80;
+  const x=mx+14+w>window.innerWidth ? mx-w-14 : mx+14;
+  const y=my-10+h>window.innerHeight ? my-h-10 : my-10;
+  tt.style.left=Math.max(4,x)+'px';
+  tt.style.top=Math.max(4,y)+'px';
+}
+
+// ── EXTRACTION ───────────────────────────────────
+$('run-btn').addEventListener('click',extract);
+
+async function extract(){
+  if(!S.img||!S.lotColors.length||!S.borderColors.length)return;
+  const btn=$('run-btn');btn.disabled=true;btn.textContent='Working…';
+  setStat('extracting…');prog.style.transform='scaleX(0.08)';await sl(16);
+
+  const t0=performance.now();
+  const W=S.imgW,H=S.imgH,src=S.srcPx;
+  const minArea=+$('min-area').value||200;
+
+  // 1. Classify each pixel: 1=lot fill, 2=border/barrier, 0=unknown
+  //    Border takes priority — if a pixel matches both, it's a barrier
+  const cls=new Uint8Array(W*H);
+  let filled=0;
+  for(let i=0;i<W*H;i++){
+    const r=src[i*4],g=src[i*4+1],b=src[i*4+2];
+    // check border first (higher priority)
+    let isBorder=false;
+    for(const c of S.borderColors){if(cd(r,g,b,c.r,c.g,c.b)<=c.tol){isBorder=true;break;}}
+    if(isBorder){cls[i]=2;continue;}
+    // check lot fill
+    for(const c of S.lotColors){if(cd(r,g,b,c.r,c.g,c.b)<=c.tol){cls[i]=1;filled++;break;}}
+  }
+  prog.style.transform='scaleX(0.4)';await sl(10);
+  S.clsCache=cls;
+  const labels=new Int32Array(W*H).fill(-1);
+  const sizes=[];
+  for(let s=0;s<W*H;s++){
+    if(cls[s]!==1||labels[s]>=0)continue;
+    const lbl=sizes.length;sizes.push(0);
+    const q=[s];let qi=0;
+    while(qi<q.length){
+      const idx=q[qi++];
+      if(labels[idx]>=0)continue;
+      labels[idx]=lbl;sizes[lbl]++;
+      const x=idx%W,y=Math.floor(idx/W);
+      if(x>0&&cls[idx-1]===1&&labels[idx-1]<0)q.push(idx-1);
+      if(x<W-1&&cls[idx+1]===1&&labels[idx+1]<0)q.push(idx+1);
+      if(y>0&&cls[idx-W]===1&&labels[idx-W]<0)q.push(idx-W);
+      if(y<H-1&&cls[idx+W]===1&&labels[idx+W]<0)q.push(idx+W);
+    }
+  }
+  prog.style.transform='scaleX(0.65)';await sl(10);
+
+  // 3. Collect bounding boxes + pixel coords per label
+  const boxes=Array.from({length:sizes.length},()=>({x0:W,y0:H,x1:0,y1:0,xs:[],ys:[]}));
+  for(let i=0;i<W*H;i++){
+    const l=labels[i];if(l<0)continue;
+    const x=i%W,y=Math.floor(i/W),b=boxes[l];
+    if(x<b.x0)b.x0=x;if(x>b.x1)b.x1=x;
+    if(y<b.y0)b.y0=y;if(y>b.y1)b.y1=y;
+    b.xs.push(x);b.ys.push(y);
+  }
+
+  // 4. Build polygons
+  pci=0;S.polygons=[];
+  for(let l=0;l<sizes.length;l++){
+    if(sizes[l]<minArea)continue;
+    const b=boxes[l];
+    const contour=traceContour(cls,labels,l,W,H,b);
+    if(contour.length<3)continue;
+    const cxv=Math.round(b.xs.reduce((a,v)=>a+v,0)/b.xs.length);
+    const cyv=Math.round(b.ys.reduce((a,v)=>a+v,0)/b.ys.length);
+    S.polygons.push({id:S.polygons.length,points:contour,area:sizes[l],cx:cxv,cy:cyv,dc:npc()});
+  }
+
+  prog.style.transform='scaleX(0.88)';await sl(10);
+  drawPolys();buildHit();applyViewMode();
+
+  const t1=performance.now();
+  $('s-lots').textContent=S.polygons.length;
+  $('s-fill').textContent=nf(filled);
+  $('s-ms').textContent=Math.round(t1-t0);
+  prog.style.transform='scaleX(1)';await sl(400);prog.style.transform='scaleX(0)';
+  btn.disabled=false;btn.textContent='⬡ Extract Polygons';
+  setStat(`${S.polygons.length} lots found`,true);
+  ['dl-svg','dl-json','dl-png'].forEach(id=>$(id).disabled=false);
+}
+
+// ── CONTOUR TRACE ─────────────────────────────────
+function traceContour(cls,labels,lbl,W,H,b){
+  let start=-1;
+  for(let y=b.y0;y<=b.y1&&start<0;y++)
+    for(let x=b.x0;x<=b.x1&&start<0;x++)
+      if(cls[y*W+x]===1&&labels[y*W+x]===lbl)start=y*W+x;
+  if(start<0)return[];
+  const dirs=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  const border=[];const visited=new Set();
+  let cx=start%W,cy=Math.floor(start/W),dir=6;
+  const limit=((b.x1-b.x0+1)*(b.y1-b.y0+1))*4+16;
+  let steps=0;
+  do{
+    const key=cy*W+cx;
+    if(!visited.has(key)){border.push({x:cx,y:cy});visited.add(key);}
+    let found=false;
+    for(let i=0;i<8;i++){
+      const d=(dir+i)%8,nx=cx+dirs[d][0],ny=cy+dirs[d][1];
+      if(nx<0||nx>=W||ny<0||ny>=H)continue;
+      if(cls[ny*W+nx]===1&&labels[ny*W+nx]===lbl){cx=nx;cy=ny;dir=(d+5)%8;found=true;break;}
+    }
+    if(!found)break;steps++;
+  }while((cx!==start%W||cy!==Math.floor(start/W)||border.length<3)&&steps<limit);
+  const step=Math.max(1,Math.floor(border.length/300));
+  if(step<=1)return border;
+  const out=[];for(let i=0;i<border.length;i+=step)out.push(border[i]);
+  return out;
+}
+
+// ── DRAW ──────────────────────────────────────────
+function drawPolys(){
+  const sc=S.scale,showL=$('show-labels').checked;
+  if(S.viewMode!=='mask'){
+    ictx.clearRect(0,0,ic.width,ic.height);
+    if(S.img){
+      if(S.viewMode==='normal')ictx.drawImage(S.img,0,0,ic.width,ic.height);
+      else{ictx.fillStyle='#0a0b09';ictx.fillRect(0,0,ic.width,ic.height);}
+    }
+  }
+  pctx.clearRect(0,0,pc.width,pc.height);
+  S.polygons.forEach(p=>{
+    if(p.points.length<2)return;
+    const hov=S.hoveredId===p.id,col=p.dc;
+    pctx.beginPath();
+    pctx.moveTo(p.points[0].x*sc,p.points[0].y*sc);
+    for(let i=1;i<p.points.length;i++)pctx.lineTo(p.points[i].x*sc,p.points[i].y*sc);
+    pctx.closePath();
+    pctx.fillStyle=al(col,hov?.6:.28);pctx.fill();
+    pctx.strokeStyle=hov?'#ffffff':col;pctx.lineWidth=hov?2:1;pctx.stroke();
+    if(showL){
+      const lx=p.cx*sc,ly=p.cy*sc,lbl=String(p.id+1);
+      pctx.textAlign='center';pctx.textBaseline='middle';
+      pctx.font=`${hov?'bold ':''} ${hov?12:9}px 'DM Mono',monospace`;
+      pctx.fillStyle='rgba(0,0,0,.55)';pctx.fillText(lbl,lx+1,ly+1);
+      pctx.fillStyle=hov?'#fff':col;pctx.fillText(lbl,lx,ly);
+    }
+  });
+}
+
+function buildHit(){
+  const sc=S.scale;hctx.clearRect(0,0,hc.width,hc.height);
+  S.polygons.forEach(p=>{
+    if(p.points.length<2)return;
+    const id1=p.id+1,r=(id1-1)%255+1,g=Math.floor((id1-1)/255);
+    hctx.beginPath();
+    hctx.moveTo(p.points[0].x*sc,p.points[0].y*sc);
+    for(let i=1;i<p.points.length;i++)hctx.lineTo(p.points[i].x*sc,p.points[i].y*sc);
+    hctx.closePath();hctx.fillStyle=`rgb(${r},${g},0)`;hctx.fill();
+  });
+}
+
+function clearPolys(){
+  pctx.clearRect(0,0,pc.width,pc.height);hctx.clearRect(0,0,hc.width,hc.height);
+  ['dl-svg','dl-json','dl-png'].forEach(id=>$(id).disabled=true);
+  ['s-lots','s-fill','s-ms'].forEach(id=>$(id).textContent='—');
+}
+
+$('reset-btn').addEventListener('click',()=>{
+  S.polygons=[];S.hoveredId=null;clearPolys();tt.style.display='none';
+  setStat(S.img?`${S.imgW}×${S.imgH}`:'no image',!!S.img);
+  if(S.img)drawPolys();
+});
+['show-labels'].forEach(id=>$(id).addEventListener('change',()=>{if(S.polygons.length)drawPolys();}));
+
+// ── DOWNLOADS ─────────────────────────────────────
+$('dl-png').addEventListener('click',()=>{
+  const out=document.createElement('canvas');out.width=pc.width;out.height=pc.height;
+  const ox=out.getContext('2d');ox.drawImage(ic,0,0);ox.drawImage(pc,0,0);
+  const a=document.createElement('a');a.href=out.toDataURL('image/png');a.download='lots.png';a.click();
+});
+$('dl-svg').addEventListener('click',()=>{
+  const sc=S.scale;
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${pc.width}" height="${pc.height}">\n`;
+  S.polygons.forEach(p=>{
+    const pts=p.points.map(pt=>`${(pt.x*sc).toFixed(1)},${(pt.y*sc).toFixed(1)}`).join(' ');
+    svg+=`  <polygon id="lot-${p.id+1}" points="${pts}" fill="${al(p.dc,.3)}" stroke="${p.dc}" stroke-width="1.5"/>\n`;
+  });
+  svg+='</svg>';
+  const a=document.createElement('a');a.href='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);a.download='lots.svg';a.click();
+});
+$('dl-json').addEventListener('click',()=>{
+  const fc={type:'FeatureCollection',features:S.polygons.map(p=>({
+    type:'Feature',
+    properties:{id:p.id+1,area_px:Math.round(p.area),color:p.dc},
+    geometry:{type:'Polygon',coordinates:[p.points.map(pt=>[pt.x,pt.y]).concat([[p.points[0].x,p.points[0].y]])]}
+  }))};
+  const a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(fc,null,2));a.download='lots.geojson';a.click();
+});
+
+window.addEventListener('resize',()=>{if(S.img){setupCanvas();if(S.polygons.length){drawPolys();buildHit();}applyViewMode();}});
+</script>
+<div id="tt"></div>
+</body>
+</html>

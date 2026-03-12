@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FloorVision v5</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0e0f11;--surface:#16181c;--border:#2a2d35;--accent:#00e5a0;--text:#e8eaed;--muted:#6b7280;--danger:#ff4d4d;--warn:#f59e0b;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;display:grid;grid-template-rows:auto 1fr;overflow:hidden;}
+header{padding:13px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--surface);}
+.logo{font-family:'Space Mono',monospace;font-size:12px;font-weight:700;letter-spacing:0.12em;color:var(--accent);text-transform:uppercase;}
+.sep{width:1px;height:16px;background:var(--border);}
+.header-sub{font-size:12px;color:var(--muted);}
+.badge{margin-left:auto;font-family:'Space Mono',monospace;font-size:10px;padding:3px 9px;border-radius:100px;border:1px solid var(--accent);color:var(--accent);}
+main{display:grid;grid-template-columns:270px 1fr;overflow:hidden;}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;}
+.section{padding:14px 16px;border-bottom:1px solid var(--border);}
+.stitle{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:0.14em;color:var(--muted);text-transform:uppercase;margin-bottom:10px;}
+.step-num{display:inline-block;width:18px;height:18px;border-radius:50%;background:var(--accent);color:#0e0f11;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;text-align:center;line-height:18px;margin-right:6px;flex-shrink:0;}
+.dropzone{border:1.5px dashed var(--border);border-radius:8px;padding:20px 12px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg);}
+.dropzone:hover,.dropzone.drag-over{border-color:var(--accent);background:rgba(0,229,160,0.03);}
+.dropzone input{display:none;}
+.drop-text{font-size:12px;color:var(--muted);line-height:1.6;}
+.drop-text strong{color:var(--text);}
+.thumb-wrap{display:none;border-radius:6px;overflow:hidden;background:var(--bg);border:1px solid var(--border);position:relative;margin-top:10px;}
+.thumb-wrap img{width:100%;display:block;max-height:110px;object-fit:contain;}
+.thumb-remove{position:absolute;top:5px;right:5px;background:rgba(0,0,0,0.75);border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:11px;padding:2px 6px;}
+.row{margin-bottom:10px;}
+.row label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px;}
+.row label span{color:var(--accent);font-family:'Space Mono',monospace;}
+input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;}
+input[type=number]{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--accent);font-family:'Space Mono',monospace;font-size:11px;padding:2px 5px;width:68px;text-align:right;}
+input[type=number]:focus{outline:none;border-color:var(--accent);}
+.row-inline{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+.row-inline label{font-size:11px;color:var(--muted);flex:1;}
+.btn{width:100%;padding:9px;border-radius:6px;border:none;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.06em;cursor:pointer;transition:all 0.2s;text-transform:uppercase;margin-bottom:5px;}
+.btn-primary{background:var(--accent);color:#0e0f11;}
+.btn-primary:hover{background:#00c98a;}
+.btn-primary:disabled{opacity:0.35;cursor:not-allowed;}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border);}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+.sample-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);margin-bottom:6px;cursor:pointer;transition:all 0.15s;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+.sample-row:hover,.sample-row.active{border-color:var(--accent);color:var(--accent);background:rgba(0,229,160,0.05);}
+.sample-row.warn-row:hover,.sample-row.warn-row.active{border-color:var(--warn);color:var(--warn);background:rgba(245,158,11,0.05);}
+.sample-row .swatch{width:14px;height:14px;border-radius:3px;flex-shrink:0;border:1px solid rgba(255,255,255,0.15);}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;min-height:18px;}
+.chip{display:flex;align-items:center;gap:4px;padding:2px 6px 2px 4px;border-radius:100px;font-family:'Space Mono',monospace;font-size:10px;cursor:pointer;border:1px solid rgba(255,255,255,0.1);transition:opacity 0.15s;}
+.chip:hover{opacity:0.6;}
+.chip .csw{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.no-chips{font-size:10px;color:var(--border);font-family:'Space Mono',monospace;}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.stat-box{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;text-align:center;}
+.stat-box .val{font-family:'Space Mono',monospace;font-size:15px;color:var(--accent);font-weight:700;}
+.stat-box .lbl{font-size:10px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em;}
+.log-area{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);line-height:2;padding:10px 16px;flex:1;overflow-y:auto;}
+.ll{display:flex;gap:6px;}
+.ll .ts{color:var(--border);flex-shrink:0;}
+.ll.ok .msg{color:var(--accent);}
+.ll.err .msg{color:var(--danger);}
+.ll.warn .msg{color:var(--warn);}
+.canvas-area{display:flex;flex-direction:column;overflow:hidden;}
+.canvas-wrap{flex:1;overflow:hidden;background:#07080a;position:relative;}
+#mainCanvas{display:block;position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixelated;}
+#mainCanvas.dropper-active{cursor:crosshair!important;}
+.placeholder{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--muted);font-size:13px;text-align:center;}
+.placeholder .big{font-size:40px;opacity:0.2;}
+.toolbar{position:absolute;top:12px;right:12px;display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:75%;}
+.tbtn{background:rgba(22,24,28,0.94);border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-size:10px;padding:5px 10px;font-family:'Space Mono',monospace;transition:all 0.15s;backdrop-filter:blur(8px);}
+.tbtn:hover{border-color:var(--accent);color:var(--accent);}
+.tbtn.active{border-color:var(--accent);color:var(--accent);background:rgba(0,229,160,0.1);}
+.hint-bar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);border-radius:6px;padding:6px 14px;font-family:'Space Mono',monospace;font-size:11px;pointer-events:none;display:none;white-space:nowrap;z-index:10;}
+.info-bar{background:var(--surface);border-top:1px solid var(--border);padding:7px 16px;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);display:flex;gap:18px;flex-shrink:0;}
+.info-bar span{color:var(--text);}
+@keyframes spin{to{transform:rotate(360deg);}}
+.spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;}
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+#offscreen{display:none;}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">FloorVision</div>
+  <div class="sep"></div>
+  <div class="header-sub">Lot Extractor &mdash; v5</div>
+  <div class="badge">Lines → Lots</div>
+</header>
+<main>
+  <div class="sidebar">
+
+    <div class="section">
+      <div class="stitle">01 · Image</div>
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept="image/*">
+        <div class="drop-text"><strong>Drop plan image</strong><br>PNG or JPG</div>
+      </div>
+      <div class="thumb-wrap" id="thumbWrap">
+        <img id="thumbImg" src="" alt="">
+        <button class="thumb-remove" id="removeBtn">✕</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="stitle">02 · Pick Border Lines</div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Click the eyedropper, then click on a lot border line. These pixels become hard walls — the flood fill never crosses them.</p>
+      <div class="sample-row" id="lineDropperBtn">
+        <div class="swatch" id="lineDropperSwatch" style="background:#444"></div>
+        <span id="lineDropperLabel">Pick border color</span>
+      </div>
+      <div class="chips" id="lineColorChips"><span class="no-chips">no border color set</span></div>
+      <div class="row">
+        <label>Line tolerance <span id="tolLineVal">18</span></label>
+        <input type="range" id="tolLine" min="1" max="80" value="18">
+      </div>
+      <div class="row">
+        <label>Thicken walls <span id="wallExpandVal">1</span>px</label>
+        <input type="range" id="wallExpand" min="0" max="10" value="1">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="stitle">03 · Exclude Zones</div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Optional. Sample colors to exclude entire regions (e.g. roads, logos, 3D renders).</p>
+      <div class="sample-row warn-row" id="avoidDropperBtn">
+        <div class="swatch" id="avoidDropperSwatch" style="background:#444"></div>
+        <span id="avoidDropperLabel">Pick exclude color</span>
+      </div>
+      <div class="chips" id="avoidColorChips"><span class="no-chips">no colors excluded</span></div>
+      <div class="row">
+        <label>Exclude tolerance <span id="tolAvoidVal">22</span></label>
+        <input type="range" id="tolAvoid" min="2" max="80" value="22">
+      </div>
+      <div class="row">
+        <label>Expand exclusion <span id="avoidExpandVal">8</span>px</label>
+        <input type="range" id="avoidExpand" min="0" max="60" value="8">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="stitle">03b · Include in Lots</div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Optional. Sample colors to absorb into lot fill (e.g. lot numbers, symbols, interior marks that block flood fill).</p>
+      <div class="sample-row" id="includeDropperBtn" style="border-color:rgba(96,165,250,0.4);">
+        <div class="swatch" id="includeDropperSwatch" style="background:#444"></div>
+        <span id="includeDropperLabel">Pick include color</span>
+      </div>
+      <div class="chips" id="includeColorChips"><span class="no-chips">no colors included</span></div>
+      <div class="row">
+        <label>Include tolerance <span id="tolIncludeVal">22</span></label>
+        <input type="range" id="tolInclude" min="2" max="80" value="22">
+      </div>
+      <div class="row">
+        <label>Expand include <span id="includeExpandVal">4</span>px</label>
+        <input type="range" id="includeExpand" min="0" max="40" value="4">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="stitle">04 · Filter &amp; Extract</div>
+      <div class="row">
+        <div class="row-inline">
+          <label>Min lot area px²</label>
+          <input type="number" id="minAreaNum" min="500" max="999999" value="800" step="100">
+        </div>
+        <input type="range" id="minArea" min="500" max="30000" value="800" step="100">
+      </div>
+      <div class="row">
+        <div class="row-inline">
+          <label>Max lot area px²</label>
+          <input type="number" id="maxAreaNum" min="0" max="9999999" value="0" step="1000" title="0 = no limit">
+        </div>
+        <input type="range" id="maxArea" min="0" max="200000" value="0" step="1000">
+      </div>
+      <div class="row">
+        <label>Simplify <span id="tolSimplVal">2.0</span>px</label>
+        <input type="range" id="tolSimpl" min="1" max="150" value="20">
+      </div>
+      <div class="row">
+        <label>Smooth passes <span id="smoothVal">0</span></label>
+        <input type="range" id="smooth" min="0" max="6" value="0" step="1">
+      </div>
+      <button class="btn btn-primary" id="runBtn" disabled>Extract Lots</button>
+      <button class="btn btn-ghost" id="clearBtn">Clear</button>
+    </div>
+
+    <div class="section">
+      <div class="stitle">05 · Display</div>
+      <div class="row">
+        <label>Overlay opacity <span id="opacVal">60</span>%</label>
+        <input type="range" id="opac" min="0" max="100" value="60">
+      </div>
+      <div class="row">
+        <label>Line width <span id="lwVal">1.5</span>px</label>
+        <input type="range" id="lw" min="5" max="60" value="15" step="5">
+      </div>
+    </div>
+
+    <div class="section" id="statsSection" style="display:none">
+      <div class="stitle">Results</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="val" id="statPolys">-</div><div class="lbl">Lots</div></div>
+        <div class="stat-box"><div class="val" id="statVerts">-</div><div class="lbl">Vertices</div></div>
+        <div class="stat-box"><div class="val" id="statPockets">-</div><div class="lbl">Pockets</div></div>
+        <div class="stat-box"><div class="val" id="statTime">-</div><div class="lbl">ms</div></div>
+      </div>
+    </div>
+
+    <div class="log-area" id="logArea"></div>
+  </div>
+
+  <div class="canvas-area">
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="placeholder" id="placeholder">
+        <div class="big">🗺</div>
+        <div>Drop plan image<br><span style="opacity:0.4;font-size:11px">Pick border color → Extract</span></div>
+      </div>
+      <canvas id="mainCanvas" style="display:none"></canvas>
+      <div class="toolbar" id="toolbar" style="display:none">
+        <button class="tbtn" id="btnZoomIn">＋</button>
+        <button class="tbtn" id="btnZoomOut">－</button>
+        <button class="tbtn" id="btnFit">Fit</button>
+        <button class="tbtn active" id="btnResult">Result</button>
+        <button class="tbtn" id="btnOriginal">Original</button>
+        <button class="tbtn" id="btnMask">Mask</button>
+        
+        <button class="tbtn" id="btnSVG">↓ SVG</button>
+        <button class="tbtn" id="btnJSON">↓ JSON</button>
+        <button class="tbtn" id="btnUndo" style="display:none">↩ Undo</button>
+        <button class="tbtn" id="btnHull" style="display:none;border-color:#a78bfa;color:#a78bfa">⬟ Hull</button>
+        
+      </div>
+      <div class="hint-bar" id="hintBar"></div>
+    </div>
+    <div class="info-bar" id="infoBar" style="display:none">
+      <div>View: <span id="viewLabel">Result</span></div>
+      <div>Size: <span id="dimLabel">-</span></div>
+      <div>Lots: <span id="polyLabel" style="color:var(--accent)">-</span></div>
+    </div>
+  </div>
+</main>
+<canvas id="offscreen"></canvas>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+var imageEl=null, currentView='result';
+var polygons=[], maskCache=null;
+var lineColors=[], avoidColors=[], includeColors=[];
+var activeLineDropper=false, activeAvoidDropper=false, activeIncludeDropper=false;
+var history=[], hoveredPoly=-1;
+var baseFilename='lots';
+var vp={zoom:1,ox:0,oy:0};
+var vpPanning=false, vpPanStart=null, vpDidPan=false;
+
+
+function $(id){ return document.getElementById(id); }
+var mainCanvas=$('mainCanvas'), ctx=mainCanvas.getContext('2d');
+var offscreen=$('offscreen');
+
+// ── Log ────────────────────────────────────────────────────────────────────
+function log(msg, type){
+  var ts=new Date().toTimeString().slice(0,8);
+  var d=document.createElement('div');
+  d.className='ll '+(type||'');
+  d.innerHTML='<span class="ts">'+ts+'</span><span class="msg">'+msg+'</span>';
+  $('logArea').appendChild(d); $('logArea').scrollTop=$('logArea').scrollHeight;
+}
+
+// ── Sliders ────────────────────────────────────────────────────────────────
+function wire(id,dispId,fn,autoRun){
+  $(id).addEventListener('input',function(){
+    $(dispId).textContent=fn?fn($(id).value):$(id).value;
+    if(autoRun&&imageEl&&lineColors.length) runExtraction();
+  });
+}
+wire('tolLine','tolLineVal',null,true);
+wire('wallExpand','wallExpandVal',null,true);
+wire('tolAvoid','tolAvoidVal',null,true);
+wire('avoidExpand','avoidExpandVal',null,true);
+wire('tolInclude','tolIncludeVal',null,true);
+wire('includeExpand','includeExpandVal',null,true);
+// Sync range ↔ number inputs for min/max area
+function syncPair(rangeId, numId){
+  var r=$(''+rangeId), n=$(''+numId);
+  r.addEventListener('input', function(){
+    n.value=r.value;
+    if(imageEl&&lineColors.length) runExtraction();
+  });
+  n.addEventListener('input', function(){
+    var v=parseInt(n.value)||0;
+    r.value=Math.min(v, parseInt(r.max));
+    if(imageEl&&lineColors.length) runExtraction();
+  });
+}
+syncPair('minArea','minAreaNum');
+syncPair('maxArea','maxAreaNum');
+wire('tolSimpl','tolSimplVal',function(v){return (v/10).toFixed(1);},true);
+wire('smooth','smoothVal',function(v){return v;},true);
+wire('opac','opacVal',null,false);
+wire('lw','lwVal',function(v){return (v/10).toFixed(1);},false);
+$('opac').addEventListener('input',function(){ if(polygons.length) redraw(); });
+$('lw').addEventListener('input',function(){ if(polygons.length) redraw(); });
+
+// ── File load ──────────────────────────────────────────────────────────────
+$('dropzone').addEventListener('click',function(){ $('fileInput').click(); });
+$('fileInput').addEventListener('change',function(e){ loadFile(e.target.files[0]); });
+$('dropzone').addEventListener('dragover',function(e){ e.preventDefault(); $('dropzone').classList.add('drag-over'); });
+$('dropzone').addEventListener('dragleave',function(){ $('dropzone').classList.remove('drag-over'); });
+$('dropzone').addEventListener('drop',function(e){ e.preventDefault(); $('dropzone').classList.remove('drag-over'); loadFile(e.dataTransfer.files[0]); });
+$('removeBtn').addEventListener('click', reset);
+
+function loadFile(file){
+  if(!file||!file.type.startsWith('image/')) return;
+  baseFilename=file.name.replace(/\.[^.]+$/,'');
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var img=new Image();
+    img.onload=function(){
+      imageEl=img; polygons=[]; maskCache=null;
+      mainCanvas.width=img.width; mainCanvas.height=img.height;
+      ctx.drawImage(img,0,0);
+      $('thumbImg').src=e.target.result;
+      $('dropzone').style.display='none'; $('thumbWrap').style.display='block';
+      $('placeholder').style.display='none'; mainCanvas.style.display='block';
+      $('toolbar').style.display='flex'; $('infoBar').style.display='flex';
+      $('dimLabel').textContent=img.width+'×'+img.height;
+      $('runBtn').disabled=lineColors.length===0;
+      currentView='result'; updateViewBtns(); vpFit();
+      log('Loaded '+file.name+' ('+img.width+'×'+img.height+')','ok');
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function reset(){
+  imageEl=null; polygons=[]; maskCache=null; lineColors=[]; avoidColors=[]; includeColors=[];
+  activeLineDropper=false; activeAvoidDropper=false; activeIncludeDropper=false;
+  renderLineChips(); renderAvoidChips(); renderIncludeChips();
+  $('thumbWrap').style.display='none'; $('dropzone').style.display='block';
+  mainCanvas.style.display='none'; $('placeholder').style.display='flex';
+  $('toolbar').style.display='none'; $('infoBar').style.display='none';
+  $('statsSection').style.display='none'; $('runBtn').disabled=true;
+  $('fileInput').value='';
+}
+
+// ── Dropper helpers ────────────────────────────────────────────────────────
+function stopAllDroppers(){
+  if(activeLineDropper){ activeLineDropper=false; $('lineDropperBtn').classList.remove('active'); $('lineDropperLabel').textContent='Pick border color'; }
+  if(activeAvoidDropper){ activeAvoidDropper=false; $('avoidDropperBtn').classList.remove('active'); $('avoidDropperLabel').textContent='Pick exclude color'; }
+  if(activeIncludeDropper){ activeIncludeDropper=false; $('includeDropperBtn').classList.remove('active'); $('includeDropperLabel').textContent='Pick include color'; }
+  mainCanvas.classList.remove('dropper-active');
+  $('hintBar').style.display='none';
+}
+
+function showHint(msg, color){
+  var hint=$('hintBar');
+  hint.style.display='block';
+  hint.style.background='rgba('+color+',0.1)';
+  hint.style.border='1px solid rgba('+color+',0.8)';
+  hint.style.color='rgb('+color+')';
+  hint.textContent=msg;
+}
+
+$('lineDropperBtn').addEventListener('click', function(){
+  if(!imageEl){ log('Load an image first','warn'); return; }
+  stopAllDroppers();
+  activeLineDropper=true;
+  $('lineDropperBtn').classList.add('active');
+  mainCanvas.classList.add('dropper-active');
+  $('lineDropperLabel').textContent='Click a border line';
+  showHint('Click a lot border/line — right-click or Esc to stop','0,229,160');
+  currentView='original'; updateViewBtns(); redraw();
+});
+
+$('avoidDropperBtn').addEventListener('click', function(){
+  if(!imageEl){ log('Load an image first','warn'); return; }
+  stopAllDroppers();
+  activeAvoidDropper=true;
+  $('avoidDropperBtn').classList.add('active');
+  mainCanvas.classList.add('dropper-active');
+  $('avoidDropperLabel').textContent='Click area to exclude';
+  showHint('Click a region to exclude — right-click or Esc to stop','245,158,11');
+  currentView='original'; updateViewBtns(); redraw();
+});
+
+$('includeDropperBtn').addEventListener('click', function(){
+  if(!imageEl){ log('Load an image first','warn'); return; }
+  stopAllDroppers();
+  activeIncludeDropper=true;
+  $('includeDropperBtn').classList.add('active');
+  mainCanvas.classList.add('dropper-active');
+  $('includeDropperLabel').textContent='Click color to absorb';
+  showHint('Click a color to absorb into lots — right-click or Esc to stop','96,165,250');
+  currentView='original'; updateViewBtns(); redraw();
+});
+
+document.addEventListener('keydown',function(e){ if(e.key==='Escape') stopAllDroppers(); });
+mainCanvas.addEventListener('contextmenu',function(e){ e.preventDefault(); stopAllDroppers(); });
+
+mainCanvas.addEventListener('click',function(e){
+  if(!imageEl||(e.button!==0)) return;
+  var p=canvasToImage(e);
+  var ix=Math.max(0,Math.min(imageEl.width-1,Math.floor(p.x)));
+  var iy=Math.max(0,Math.min(imageEl.height-1,Math.floor(p.y)));
+
+  if(activeLineDropper||activeAvoidDropper||activeIncludeDropper){
+    offscreen.width=imageEl.width; offscreen.height=imageEl.height;
+    var oc2=offscreen.getContext('2d'); oc2.drawImage(imageEl,0,0);
+    var pd=oc2.getImageData(ix,iy,1,1).data;
+    var col={r:pd[0],g:pd[1],b:pd[2]};
+    if(activeLineDropper){
+      lineColors.push(col); $('lineDropperSwatch').style.background='rgb('+col.r+','+col.g+','+col.b+')';
+      log('Line color: rgb('+col.r+','+col.g+','+col.b+')','ok');
+      renderLineChips(); $('runBtn').disabled=false; runExtraction();
+    } else if(activeAvoidDropper){
+      avoidColors.push(col); $('avoidDropperSwatch').style.background='rgb('+col.r+','+col.g+','+col.b+')';
+      log('Exclude: rgb('+col.r+','+col.g+','+col.b+')','warn');
+      renderAvoidChips(); if(lineColors.length) runExtraction();
+    } else {
+      includeColors.push(col); $('includeDropperSwatch').style.background='rgb('+col.r+','+col.g+','+col.b+')';
+      log('Include: rgb('+col.r+','+col.g+','+col.b+')','ok');
+      renderIncludeChips(); if(lineColors.length) runExtraction();
+    }
+    return;
+  }
+
+  // click on polygon to delete
+  if(!vpDidPan&&currentView==='result'&&polygons.length){
+    for(var i=polygons.length-1;i>=0;i--){
+      if(pointInPoly(p.x,p.y,polygons[i])){
+        saveHistory();
+        polygons.splice(i,1);
+        hoveredPoly=-1;
+        $('statPolys').textContent=polygons.length;
+        $('polyLabel').textContent=polygons.length;
+        log('Deleted lot #'+(i+1),'warn');
+        redraw(); return;
+      }
+    }
+  }
+  vpDidPan=false;
+});
+
+// ── Chip renderers ─────────────────────────────────────────────────────────
+function renderLineChips(){
+  var wrap=$('lineColorChips'); wrap.innerHTML='';
+  if(!lineColors.length){ wrap.innerHTML='<span class="no-chips">no border color set</span>'; return; }
+  lineColors.forEach(function(c,i){
+    var chip=document.createElement('div'); chip.className='chip';
+    chip.style.background='rgba('+c.r+','+c.g+','+c.b+',0.2)';
+    chip.style.borderColor='rgba(0,229,160,0.5)';
+    chip.innerHTML='<div class="csw" style="background:rgb('+c.r+','+c.g+','+c.b+')"></div><span>'+c.r+','+c.g+','+c.b+'</span><span style="color:var(--muted);margin-left:2px;font-size:9px">✕</span>';
+    chip.addEventListener('click',function(){ lineColors.splice(i,1); renderLineChips(); if(imageEl) runExtraction(); });
+    wrap.appendChild(chip);
+  });
+}
+
+function renderAvoidChips(){
+  var wrap=$('avoidColorChips'); wrap.innerHTML='';
+  if(!avoidColors.length){ wrap.innerHTML='<span class="no-chips">no colors excluded</span>'; return; }
+  avoidColors.forEach(function(c,i){
+    var chip=document.createElement('div'); chip.className='chip';
+    chip.style.background='rgba('+c.r+','+c.g+','+c.b+',0.2)';
+    chip.style.borderColor='rgba(245,158,11,0.5)';
+    chip.innerHTML='<div class="csw" style="background:rgb('+c.r+','+c.g+','+c.b+')"></div><span>'+c.r+','+c.g+','+c.b+'</span><span style="color:var(--muted);margin-left:2px;font-size:9px">✕</span>';
+    chip.addEventListener('click',function(){ avoidColors.splice(i,1); renderAvoidChips(); if(imageEl&&lineColors.length) runExtraction(); });
+    wrap.appendChild(chip);
+  });
+}
+
+function renderIncludeChips(){
+  var wrap=$('includeColorChips'); wrap.innerHTML='';
+  if(!includeColors.length){ wrap.innerHTML='<span class="no-chips">no colors included</span>'; return; }
+  includeColors.forEach(function(c,i){
+    var chip=document.createElement('div'); chip.className='chip';
+    chip.style.background='rgba('+c.r+','+c.g+','+c.b+',0.2)';
+    chip.style.borderColor='rgba(96,165,250,0.5)';
+    chip.innerHTML='<div class="csw" style="background:rgb('+c.r+','+c.g+','+c.b+')"></div><span>'+c.r+','+c.g+','+c.b+'</span><span style="color:var(--muted);margin-left:2px;font-size:9px">✕</span>';
+    chip.addEventListener('click',function(){ includeColors.splice(i,1); renderIncludeChips(); if(imageEl&&lineColors.length) runExtraction(); });
+    wrap.appendChild(chip);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PIPELINE
+// 1. Build line wall mask (pixels matching line color)
+// 2. Dilate wall by wallExpand to close micro-gaps
+// 3. Build avoid mask (pixels matching avoid color, dilated)
+// 4. Flood fill every non-wall, non-avoid pocket → connected components
+// 5. Exclude outer region (touches image border) and any pocket touching avoid
+// 6. Contour trace each pocket, RDP simplify
+// ══════════════════════════════════════════════════════════════════════════
+
+function dilate(mask, W, H, r){
+  if(r<=0) return mask;
+  var tmp=new Uint8Array(W*H), out=new Uint8Array(W*H);
+  for(var y=0;y<H;y++) for(var x=0;x<W;x++){
+    if(!mask[y*W+x]) continue;
+    for(var dx=-r;dx<=r;dx++){ var nx=x+dx; if(nx>=0&&nx<W) tmp[y*W+nx]=1; }
+  }
+  for(var y=0;y<H;y++) for(var x=0;x<W;x++){
+    if(!tmp[y*W+x]) continue;
+    for(var dy=-r;dy<=r;dy++){ var ny=y+dy; if(ny>=0&&ny<H) out[ny*W+x]=1; }
+  }
+  return out;
+}
+
+function floodFill(wall, W, H){
+  // Returns: {labels, count, sizes, borderLabels}
+  var labels=new Int32Array(W*H); // 0=unvisited wall, -1=wall, label>=1=pocket
+  var stack=new Int32Array(W*H);
+  var count=0, sizes=[], borderSet=new Set();
+
+  for(var i=0;i<W*H;i++) if(wall[i]) labels[i]=-1;
+
+  for(var seed=0;seed<W*H;seed++){
+    if(labels[seed]!==0) continue;
+    count++;
+    var size=0, top=0, touchesBorder=false;
+    stack[top++]=seed;
+    while(top>0){
+      var idx=stack[--top];
+      if(labels[idx]!==0) continue;
+      labels[idx]=count; size++;
+      var cx=idx%W, cy=(idx/W)|0;
+      if(cx===0||cx===W-1||cy===0||cy===H-1) touchesBorder=true;
+      if(cx>0)   stack[top++]=idx-1;
+      if(cx<W-1) stack[top++]=idx+1;
+      if(cy>0)   stack[top++]=idx-W;
+      if(cy<H-1) stack[top++]=idx+W;
+    }
+    sizes.push(size);
+    if(touchesBorder) borderSet.add(count);
+  }
+  return {labels:labels, count:count, sizes:sizes, borderLabels:borderSet};
+}
+
+function traceContour(binary, W, H, sx, sy){
+  var DX=[-1,-1,0,1,1,1,0,-1], DY=[0,-1,-1,-1,0,1,1,1];
+  function isSet(x,y){ return x>=0&&x<W&&y>=0&&y<H&&binary[y*W+x]===1; }
+  var entryDir=0;
+  for(var d=0;d<8;d++){ if(!isSet(sx+DX[d],sy+DY[d])){ entryDir=d; break; } }
+  var cx=sx, cy=sy, startDir=entryDir, pts=[], maxIter=(W+H)*4;
+  for(var iter=0;iter<maxIter;iter++){
+    pts.push({x:cx,y:cy});
+    var found=false;
+    for(var k=1;k<=8;k++){
+      var d=(startDir+k)%8, nx=cx+DX[d], ny=cy+DY[d];
+      if(isSet(nx,ny)){ startDir=(d+4+1)%8; cx=nx; cy=ny; found=true; break; }
+    }
+    if(!found) break;
+    if(iter>3&&cx===sx&&cy===sy) break;
+  }
+  return pts;
+}
+
+function rdp(pts,eps){
+  if(pts.length<=2) return pts;
+  var maxD=0,maxI=0,x1=pts[0].x,y1=pts[0].y,x2=pts[pts.length-1].x,y2=pts[pts.length-1].y;
+  var dx=x2-x1,dy=y2-y1,len=Math.sqrt(dx*dx+dy*dy);
+  for(var i=1;i<pts.length-1;i++){
+    var d=len===0?Math.hypot(pts[i].x-x1,pts[i].y-y1):Math.abs(dy*pts[i].x-dx*pts[i].y+x2*y1-y2*x1)/len;
+    if(d>maxD){maxD=d;maxI=i;}
+  }
+  if(maxD>eps){ var l=rdp(pts.slice(0,maxI+1),eps),r=rdp(pts.slice(maxI),eps); return l.slice(0,-1).concat(r); }
+  return [pts[0],pts[pts.length-1]];
+}
+
+// Chaikin corner-cutting: each pass replaces every edge with two points at 1/4 and 3/4
+function chaikin(pts, passes){
+  if(passes<=0||pts.length<3) return pts;
+  var p=pts;
+  for(var pass=0;pass<passes;pass++){
+    var n=p.length, out=[];
+    for(var i=0;i<n;i++){
+      var a=p[i], b=p[(i+1)%n];
+      out.push({x:a.x*0.75+b.x*0.25, y:a.y*0.75+b.y*0.25});
+      out.push({x:a.x*0.25+b.x*0.75, y:a.y*0.25+b.y*0.75});
+    }
+    p=out;
+  }
+  return p;
+}
+
+// Remove points that are nearly collinear with their neighbours (angle threshold in degrees)
+function removeCollinear(pts, angleDeg){
+  if(pts.length<=3) return pts;
+  var thresh=Math.cos((180-angleDeg)*Math.PI/180);
+  var changed=true, p=pts.slice();
+  while(changed){
+    changed=false;
+    var out=[];
+    var n=p.length;
+    for(var i=0;i<n;i++){
+      var prev=p[(i+n-1)%n], cur=p[i], next=p[(i+1)%n];
+      var ax=cur.x-prev.x, ay=cur.y-prev.y;
+      var bx=next.x-cur.x, by=next.y-cur.y;
+      var la=Math.sqrt(ax*ax+ay*ay), lb=Math.sqrt(bx*bx+by*by);
+      if(la<0.001||lb<0.001){ changed=true; continue; } // skip zero-length
+      var dot=(ax*bx+ay*by)/(la*lb);
+      if(dot>thresh){ changed=true; continue; } // nearly straight — drop it
+      out.push(cur);
+    }
+    if(out.length<3) break;
+    p=out;
+  }
+  return p;
+}
+
+// ── Run ────────────────────────────────────────────────────────────────────
+$('runBtn').addEventListener('click',runExtraction);
+$('clearBtn').addEventListener('click',function(){
+  polygons=[]; maskCache=null;
+  if(imageEl) ctx.drawImage(imageEl,0,0);
+  $('statsSection').style.display='none';
+  currentView='result'; updateViewBtns(); redraw();
+});
+
+function runExtraction(){
+  if(!imageEl||!lineColors.length) return;
+  $('runBtn').disabled=true;
+  $('runBtn').innerHTML='<span class="spinner"></span>Extracting...';
+  setTimeout(_extract, 20);
+}
+
+function _extract(){
+  try{
+    var t0=performance.now();
+    var W=imageEl.width, H=imageEl.height;
+    var tolLine=parseInt($('tolLine').value);
+    var wallExp=parseInt($('wallExpand').value);
+    var tolAvoid=parseInt($('tolAvoid').value);
+    var avoidExp=parseInt($('avoidExpand').value);
+    var tolInclude=parseInt($('tolInclude').value);
+    var includeExp=parseInt($('includeExpand').value);
+    var minArea=Math.max(500, parseInt($('minAreaNum').value)||500);
+    var maxArea=parseInt($('maxAreaNum').value)||0; // 0 = no limit
+    var simplEps=parseFloat($('tolSimpl').value)/10;
+    var smoothPasses=parseInt($('smooth').value);
+    offscreen.width=W; offscreen.height=H;
+    var oc=offscreen.getContext('2d'); oc.drawImage(imageEl,0,0);
+    var px=oc.getImageData(0,0,W,H).data;
+
+    // ── Build line wall mask ───────────────────────────────────────────
+    var rawWall=new Uint8Array(W*H);
+    for(var i=0;i<W*H;i++){
+      var r=px[i*4],g=px[i*4+1],b=px[i*4+2];
+      for(var li=0;li<lineColors.length;li++){
+        var lc=lineColors[li];
+        if(Math.abs(r-lc.r)<=tolLine&&Math.abs(g-lc.g)<=tolLine&&Math.abs(b-lc.b)<=tolLine){ rawWall[i]=1; break; }
+      }
+    }
+    var wall=dilate(rawWall, W, H, wallExp);
+    var wallPx=0; for(var i=0;i<W*H;i++) if(wall[i]) wallPx++;
+    log('Wall pixels: '+wallPx.toLocaleString(),'info');
+
+    // ── Build avoid mask ───────────────────────────────────────────────
+    var avoidMask=new Uint8Array(W*H);
+    if(avoidColors.length){
+      var rawAvoid=new Uint8Array(W*H);
+      for(var i=0;i<W*H;i++){
+        var r=px[i*4],g=px[i*4+1],b=px[i*4+2];
+        for(var ai=0;ai<avoidColors.length;ai++){
+          var ac=avoidColors[ai];
+          if(Math.abs(r-ac.r)<=tolAvoid&&Math.abs(g-ac.g)<=tolAvoid&&Math.abs(b-ac.b)<=tolAvoid){ rawAvoid[i]=1; break; }
+        }
+      }
+      avoidMask=dilate(rawAvoid, W, H, avoidExp);
+    }
+
+    // ── Build include mask — punch these out of the wall ──────────────
+    var includeMask=new Uint8Array(W*H);
+    if(includeColors.length){
+      var rawInclude=new Uint8Array(W*H);
+      for(var i=0;i<W*H;i++){
+        var r=px[i*4],g=px[i*4+1],b=px[i*4+2];
+        for(var ii=0;ii<includeColors.length;ii++){
+          var ic=includeColors[ii];
+          if(Math.abs(r-ic.r)<=tolInclude&&Math.abs(g-ic.g)<=tolInclude&&Math.abs(b-ic.b)<=tolInclude){ rawInclude[i]=1; break; }
+        }
+      }
+      includeMask=dilate(rawInclude, W, H, includeExp);
+    }
+
+    // Combined wall = (line wall OR avoid) AND NOT include
+    var combinedWall=new Uint8Array(W*H);
+    for(var i=0;i<W*H;i++) combinedWall[i]=((wall[i]||avoidMask[i])&&!includeMask[i])?1:0;
+
+
+    // ── Flood fill pockets ─────────────────────────────────────────────
+    var fill=floodFill(combinedWall, W, H);
+    log('Pockets found: '+fill.count+' ('+fill.borderLabels.size+' border)','info');
+
+    // ── Build mask preview ─────────────────────────────────────────────
+    var mdata=oc.createImageData(W,H);
+    for(var i=0;i<W*H;i++){
+      if(wall[i]){            mdata.data[i*4]=0;   mdata.data[i*4+1]=229; mdata.data[i*4+2]=160; } // green = walls
+      else if(avoidMask[i]){  mdata.data[i*4]=245; mdata.data[i*4+1]=158; mdata.data[i*4+2]=11;  } // amber = excluded
+      else if(includeMask[i]){ mdata.data[i*4]=96;  mdata.data[i*4+1]=165; mdata.data[i*4+2]=250; } // blue = included
+      else if(fill.borderLabels.has(fill.labels[i])){ mdata.data[i*4]=40; mdata.data[i*4+1]=40; mdata.data[i*4+2]=40; } // outer = dark
+      else if(fill.labels[i]>0){ // interior pocket — color by label
+        var h=(fill.labels[i]*137.5)%360, rgb=hsl2rgb(h,0.6,0.5);
+        mdata.data[i*4]=rgb[0]; mdata.data[i*4+1]=rgb[1]; mdata.data[i*4+2]=rgb[2];
+      } else { mdata.data[i*4]=20; mdata.data[i*4+1]=20; mdata.data[i*4+2]=20; }
+      mdata.data[i*4+3]=255;
+    }
+    maskCache=mdata;
+
+    // ── Contour trace each valid pocket ───────────────────────────────
+    var newPolys=[], totalVerts=0;
+    var starts=new Array(fill.count+1).fill(-1);
+    for(var i=W*H-1;i>=0;i--){
+      var lbl=fill.labels[i];
+      if(lbl>0) starts[lbl]=i;
+    }
+
+    for(var lbl=1;lbl<=fill.count;lbl++){
+      if(fill.borderLabels.has(lbl)) continue;
+      if(fill.sizes[lbl-1]<minArea) continue;
+      if(maxArea>0&&fill.sizes[lbl-1]>maxArea) continue;
+      var si=starts[lbl]; if(si<0) continue;
+
+      var labelBin=new Uint8Array(W*H);
+      for(var i=0;i<W*H;i++) if(fill.labels[i]===lbl) labelBin[i]=1;
+
+      var contour=traceContour(labelBin, W, H, si%W, (si/W)|0);
+      if(contour.length<4) continue;
+      var simp=rdp(contour, simplEps);
+      simp=removeCollinear(simp, 8);
+      simp=chaikin(simp, smoothPasses);
+      simp=rdp(simp, simplEps*0.5); // second RDP pass to clean up chaikin pts
+      if(simp.length<3) continue;
+      newPolys.push(simp);
+      totalVerts+=simp.length;
+    }
+
+    polygons=newPolys;
+    var elapsed=Math.round(performance.now()-t0);
+    if(currentView==='result'||currentView==='original') currentView='result';
+    updateViewBtns(); redraw();
+    $('statsSection').style.display='block';
+    $('statPolys').textContent=polygons.length;
+    $('statVerts').textContent=totalVerts;
+    $('statPockets').textContent=fill.count-fill.borderLabels.size;
+    $('statTime').textContent=elapsed;
+    $('polyLabel').textContent=polygons.length;
+    log('Done: '+polygons.length+' lots in '+elapsed+'ms','ok');
+
+    $('btnHull').style.display='block';
+  }catch(e){
+    log('Error: '+e.message,'err'); console.error(e);
+  }finally{
+    $('runBtn').disabled=false; $('runBtn').innerHTML='Extract Lots';
+  }
+}
+
+
+function hsl2rgb(h,s,l){
+  h/=360; var q=l<0.5?l*(1+s):l+s-l*s, p=2*l-q;
+  function hue(t){ t=(t+1)%1; if(t<1/6) return p+(q-p)*6*t; if(t<1/2) return q; if(t<2/3) return p+(q-p)*(2/3-t)*6; return p; }
+  return [Math.round(hue(h+1/3)*255),Math.round(hue(h)*255),Math.round(hue(h-1/3)*255)];
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+var COLORS=['#00e5a0','#f59e0b','#60a5fa','#f87171','#a78bfa','#34d399','#fbbf24','#38bdf8','#fb7185','#c084fc'];
+
+function redraw(){
+  if(!imageEl) return;
+  var W=imageEl.width, H=imageEl.height;
+  mainCanvas.width=W; mainCanvas.height=H;
+  ctx.drawImage(imageEl,0,0);
+  if(currentView==='original'){ $('viewLabel').textContent='Original'; return; }
+  if(currentView==='mask'){
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+    if(maskCache) ctx.putImageData(maskCache,0,0);
+    $('viewLabel').textContent='Mask'; return;
+  }
+
+  if(!polygons.length){ $('viewLabel').textContent='Result (no lots)'; return; }
+  var opac=parseInt($('opac').value)/100;
+  var lw=parseFloat($('lw').value)/10;
+  polygons.forEach(function(pts,pi){
+    var isHov=(pi===hoveredPoly), col=COLORS[pi%COLORS.length];
+    ctx.save();
+    ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+    for(var i=1;i<pts.length;i++) ctx.lineTo(pts[i].x,pts[i].y);
+    ctx.closePath();
+    ctx.globalAlpha=isHov?Math.min(1,opac*1.6):opac; ctx.fillStyle=col; ctx.fill(); ctx.globalAlpha=1;
+    ctx.strokeStyle=isHov?'#fff':col; ctx.lineWidth=isHov?lw*2.5:lw; ctx.lineJoin='round';
+    if(isHov){ ctx.shadowColor=col; ctx.shadowBlur=12; }
+    ctx.stroke(); ctx.shadowBlur=0;
+    ctx.fillStyle=isHov?'#fff':col;
+    var dr=isHov?lw*2.5:lw*1.5;
+    pts.forEach(function(p){ ctx.beginPath(); ctx.arc(p.x,p.y,dr,0,Math.PI*2); ctx.fill(); });
+    if(isHov){
+      var cx=0,cy=0; pts.forEach(function(p){cx+=p.x;cy+=p.y;}); cx/=pts.length; cy/=pts.length;
+      ctx.font='bold 12px Space Mono,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      var lbl='#'+(pi+1)+' · '+pts.length+' pts · click to delete';
+      var tw=ctx.measureText(lbl).width;
+      ctx.fillStyle='rgba(14,15,17,0.9)'; ctx.fillRect(cx-tw/2-6,cy-10,tw+12,20);
+      ctx.fillStyle='#fff'; ctx.fillText(lbl,cx,cy);
+    }
+    ctx.restore();
+  });
+  $('viewLabel').textContent='Result ('+polygons.length+' lots)';
+}
+
+// ── Hover / interactions ───────────────────────────────────────────────────
+function pointInPoly(px2,py2,pts){
+  var inside=false;
+  for(var i=0,j=pts.length-1;i<pts.length;j=i++){
+    var xi=pts[i].x,yi=pts[i].y,xj=pts[j].x,yj=pts[j].y;
+    if(((yi>py2)!==(yj>py2))&&(px2<(xj-xi)*(py2-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+mainCanvas.addEventListener('mousemove',function(e){
+  if(activeLineDropper||activeAvoidDropper||currentView!=='result'||!polygons.length) return;
+  var p=canvasToImage(e), found=-1;
+  for(var i=polygons.length-1;i>=0;i--){ if(pointInPoly(p.x,p.y,polygons[i])){ found=i; break; } }
+  if(found!==hoveredPoly){ hoveredPoly=found; redraw(); mainCanvas.style.cursor=found>=0?'pointer':'default'; }
+});
+mainCanvas.addEventListener('mouseleave',function(){ if(hoveredPoly>=0){ hoveredPoly=-1; redraw(); } });
+
+// ── History ────────────────────────────────────────────────────────────────
+function saveHistory(){
+  history.push(polygons.map(function(pts){ return pts.map(function(p){ return {x:p.x,y:p.y}; }); }));
+  if(history.length>30) history.shift();
+  $('btnUndo').style.display='block';
+}
+function undo(){
+  if(!history.length) return;
+  polygons=history.pop(); hoveredPoly=-1;
+  $('statPolys').textContent=polygons.length; $('polyLabel').textContent=polygons.length;
+  $('btnUndo').style.display=history.length?'block':'none';
+  log('Undo','info'); redraw();
+}
+$('btnUndo').addEventListener('click',undo);
+document.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'){ e.preventDefault(); undo(); }
+});
+
+// ── Export ─────────────────────────────────────────────────────────────────
+$('btnSVG').addEventListener('click',function(){
+  if(!polygons.length){ log('No polygons','warn'); return; }
+  var w=imageEl.width, h=imageEl.height;
+  var lines=['<?xml version="1.0" encoding="UTF-8"?>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'">'];
+  polygons.forEach(function(pts,pi){
+    var col=COLORS[pi%COLORS.length];
+    var d=pts.map(function(p,i){ return (i===0?'M':'L')+p.x.toFixed(1)+' '+p.y.toFixed(1); }).join(' ')+' Z';
+    lines.push('<path d="'+d+'" fill="'+col+'" fill-opacity="0.35" stroke="'+col+'" stroke-width="1.5" stroke-linejoin="round" id="lot-'+(pi+1)+'"/>');
+  });
+  lines.push('</svg>');
+  var a=document.createElement('a'); a.download=baseFilename+'.svg';
+  a.href='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(lines.join('\n'));
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  log('SVG exported ('+polygons.length+' lots)','ok');
+});
+$('btnJSON').addEventListener('click',function(){
+  if(!polygons.length){ log('No polygons','warn'); return; }
+  var out={lots:polygons.map(function(pts,pi){
+    return {id:pi+1,points:pts.map(function(p){ return [Math.round(p.x),Math.round(p.y)]; })};
+  })};
+  var a=document.createElement('a'); a.download=baseFilename+'.json';
+  a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(out,null,2));
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  log('JSON exported ('+polygons.length+' lots)','ok');
+});
+
+// ── Toolbar views ──────────────────────────────────────────────────────────
+function updateViewBtns(){
+  [{id:'btnResult',v:'result'},{id:'btnOriginal',v:'original'},{id:'btnMask',v:'mask'}]
+    .forEach(function(b){ $(b.id).classList.toggle('active',b.v===currentView); });
+}
+$('btnResult').addEventListener('click',  function(){ currentView='result';    updateViewBtns(); redraw(); });
+$('btnOriginal').addEventListener('click',function(){ currentView='original';  updateViewBtns(); redraw(); });
+$('btnMask').addEventListener('click',    function(){ currentView='mask';      updateViewBtns(); redraw(); });
+
+
+// ── Viewport ───────────────────────────────────────────────────────────────
+function vpApply(){ mainCanvas.style.transform='translate('+vp.ox+'px,'+vp.oy+'px) scale('+vp.zoom+')'; }
+function vpFit(){
+  if(!imageEl) return;
+  var w=$('canvasWrap').clientWidth, h=$('canvasWrap').clientHeight;
+  vp.zoom=Math.min(w/imageEl.width,h/imageEl.height)*0.98;
+  vp.ox=(w-imageEl.width*vp.zoom)/2; vp.oy=(h-imageEl.height*vp.zoom)/2; vpApply();
+}
+function vpZoomAt(sx,sy,f){
+  var r=$('canvasWrap').getBoundingClientRect(), cx=sx-r.left, cy=sy-r.top;
+  vp.ox=cx-(cx-vp.ox)*f; vp.oy=cy-(cy-vp.oy)*f;
+  vp.zoom=Math.max(0.05,Math.min(40,vp.zoom*f)); vpApply();
+}
+function canvasToImage(e){
+  var r=$('canvasWrap').getBoundingClientRect();
+  return {x:Math.max(0,Math.min(imageEl.width-1,(e.clientX-r.left-vp.ox)/vp.zoom)),
+          y:Math.max(0,Math.min(imageEl.height-1,(e.clientY-r.top-vp.oy)/vp.zoom))};
+}
+$('canvasWrap').addEventListener('wheel',function(e){ if(!imageEl)return; e.preventDefault(); vpZoomAt(e.clientX,e.clientY,e.deltaY<0?1.12:1/1.12); },{passive:false});
+$('canvasWrap').addEventListener('mousedown',function(e){
+  if(!imageEl)return;
+  if(e.button===2||e.button===1||(e.button===0&&e.altKey)){ e.preventDefault(); vpPanning=true; vpDidPan=false; vpPanStart={x:e.clientX-vp.ox,y:e.clientY-vp.oy}; $('canvasWrap').style.cursor='grabbing'; }
+});
+window.addEventListener('mousemove',function(e){ if(!vpPanning)return; vp.ox=e.clientX-vpPanStart.x; vp.oy=e.clientY-vpPanStart.y; vpDidPan=true; vpApply(); });
+window.addEventListener('mouseup',  function(){ if(vpPanning){vpPanning=false;$('canvasWrap').style.cursor='';} });
+document.addEventListener('keydown',function(e){
+  if(!imageEl)return;
+  var r=$('canvasWrap').getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  if(e.key==='='||e.key==='+'){ e.preventDefault(); vpZoomAt(cx,cy,1.2); }
+  if(e.key==='-'){ e.preventDefault(); vpZoomAt(cx,cy,1/1.2); }
+  if(e.key==='0'){ e.preventDefault(); vpFit(); }
+});
+$('btnZoomIn').addEventListener('click', function(){ var r=$('canvasWrap').getBoundingClientRect(); vpZoomAt(r.left+r.width/2,r.top+r.height/2,1.4); });
+$('btnZoomOut').addEventListener('click',function(){ var r=$('canvasWrap').getBoundingClientRect(); vpZoomAt(r.left+r.width/2,r.top+r.height/2,1/1.4); });
+$('btnFit').addEventListener('click',vpFit);
+if(window.ResizeObserver) new ResizeObserver(function(){ if(imageEl) vpFit(); }).observe($('canvasWrap'));
+
+log('v5 ready — pick border color → lots fill automatically','ok');
+});
+</script>
+</body>
+</html>
