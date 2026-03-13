@@ -1182,41 +1182,42 @@ function distToSegImg(px,py,x1,y1,x2,y2){
   const t=Math.max(0,Math.min(1,((px-x1)*dx+(py-y1)*dy)/len2));
   return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
 }
-// ── quadratic bezier helpers ──────────────────────────────────────────────
-// Point on quadratic bezier at parameter t
-function qbez(t,x1,y1,cx,cy,x2,y2){
-  const mt=1-t;
-  return{x:mt*mt*x1+2*mt*t*cx+t*t*x2, y:mt*mt*y1+2*mt*t*cy+t*t*y2};
+// ── cubic bezier helpers ─────────────────────────────────────────────────
+// Point on cubic bezier at parameter t: P = (1-t)³P1 + 3(1-t)²t·C1 + 3(1-t)t²·C2 + t³·P2
+function cbez(t,x1,y1,c1x,c1y,c2x,c2y,x2,y2){
+  const mt=1-t,mt2=mt*mt,t2=t*t;
+  return{
+    x:mt2*mt*x1+3*mt2*t*c1x+3*mt*t2*c2x+t2*t*x2,
+    y:mt2*mt*y1+3*mt2*t*c1y+3*mt*t2*c2y+t2*t*y2
+  };
 }
-// Tangent direction at t (for snap ray casting)
-function qbezTan(t,x1,y1,cx,cy,x2,y2){
-  const mt=1-t;
-  return{dx:2*mt*(cx-x1)+2*t*(x2-cx), dy:2*mt*(cy-y1)+2*t*(y2-cy)};
-}
-// Closest point on quadratic bezier to (px,py) — returns {x,y,t,dist}
-function closestOnQBez(px,py,x1,y1,cx,cy,x2,y2,steps=40){
+// Closest point on cubic bezier to (px,py) — returns {x,y,t,dist}
+function closestOnCBez(px,py,x1,y1,c1x,c1y,c2x,c2y,x2,y2,steps=60){
   let bestT=0,bestD=Infinity;
   for(let i=0;i<=steps;i++){
-    const t=i/steps,p=qbez(t,x1,y1,cx,cy,x2,y2);
+    const t=i/steps,p=cbez(t,x1,y1,c1x,c1y,c2x,c2y,x2,y2);
     const d=Math.hypot(px-p.x,py-p.y);
     if(d<bestD){bestD=d;bestT=t;}
   }
-  // refine with bisection
   let lo=Math.max(0,bestT-1/steps),hi=Math.min(1,bestT+1/steps);
   for(let i=0;i<16;i++){
     const m1=(2*lo+hi)/3,m2=(lo+2*hi)/3;
-    const d1=Math.hypot(px-qbez(m1,x1,y1,cx,cy,x2,y2).x,py-qbez(m1,x1,y1,cx,cy,x2,y2).y);
-    const d2=Math.hypot(px-qbez(m2,x1,y1,cx,cy,x2,y2).x,py-qbez(m2,x1,y1,cx,cy,x2,y2).y);
-    if(d1<d2)hi=m2;else lo=m1;
+    const p1=cbez(m1,x1,y1,c1x,c1y,c2x,c2y,x2,y2),p2=cbez(m2,x1,y1,c1x,c1y,c2x,c2y,x2,y2);
+    if(Math.hypot(px-p1.x,py-p1.y)<Math.hypot(px-p2.x,py-p2.y))hi=m2;else lo=m1;
   }
   bestT=(lo+hi)/2;
-  const p=qbez(bestT,x1,y1,cx,cy,x2,y2);
+  const p=cbez(bestT,x1,y1,c1x,c1y,c2x,c2y,x2,y2);
   return{x:p.x,y:p.y,t:bestT,dist:Math.hypot(px-p.x,py-p.y)};
 }
-// Distance from point to bezier curve
+// Evaluate snap line as cubic bezier (handles bent/straight)
+function evalLine(L,t){
+  if(!L.bent)return{x:L.x1+(L.x2-L.x1)*t, y:L.y1+(L.y2-L.y1)*t};
+  return cbez(t,L.x1,L.y1,L.c1x,L.c1y,L.c2x,L.c2y,L.x2,L.y2);
+}
+// Distance from point to snap line (straight or cubic bezier)
 function distToBezImg(px,py,L){
   if(!L.bent)return distToSegImg(px,py,L.x1,L.y1,L.x2,L.y2);
-  return closestOnQBez(px,py,L.x1,L.y1,L.cx,L.cy,L.x2,L.y2).dist;
+  return closestOnCBez(px,py,L.x1,L.y1,L.c1x,L.c1y,L.c2x,L.c2y,L.x2,L.y2).dist;
 }
 
 // ── base snapshot + replay ────────────────────────────────────────────────
@@ -1262,16 +1263,14 @@ function applySnap(L,tol){
           if(Math.abs(t)<bestDist){bestDist=Math.abs(t);best={x:Math.round(ix),y:Math.round(iy)};}
         });
       } else {
-        // bezier: for each edge direction, find closest point on curve within tol
-        // then project perpendicular-ish by finding where ray meets curve segments
-        const SEGS=60;
+        // cubic bezier: sample curve into chords, intersect ray with each chord
+        const SEGS=80;
         dirs.forEach(dir=>{
           const len=Math.hypot(dir.dx,dir.dy);if(len<0.5)return;
           const ndx=dir.dx/len,ndy=dir.dy/len;
-          // step along curve, intersect each chord with ray
-          let prev2=qbez(0,L.x1,L.y1,L.cx,L.cy,L.x2,L.y2);
+          let prev2=evalLine(L,0);
           for(let s=1;s<=SEGS;s++){
-            const cur=qbez(s/SEGS,L.x1,L.y1,L.cx,L.cy,L.x2,L.y2);
+            const cur=evalLine(L,s/SEGS);
             const h=segIntersect(pt.x,pt.y,pt.x+ndx*tol*2,pt.y+ndy*tol*2,prev2.x,prev2.y,cur.x,cur.y);
             if(h){
               const d=Math.hypot(pt.x-h.x,pt.y-h.y);
@@ -1280,9 +1279,9 @@ function applySnap(L,tol){
             prev2=cur;
           }
         });
-        // fallback: if no ray intersection, snap to closest point on curve if within tol
+        // fallback: snap to closest point on curve if within tol
         if(!best){
-          const cl=closestOnQBez(pt.x,pt.y,L.x1,L.y1,L.cx,L.cy,L.x2,L.y2);
+          const cl=closestOnCBez(pt.x,pt.y,L.x1,L.y1,L.c1x,L.c1y,L.c2x,L.c2y,L.x2,L.y2);
           if(cl.dist<=tol){best={x:Math.round(cl.x),y:Math.round(cl.y)};}
         }
       }
@@ -1337,10 +1336,9 @@ function applySplit(L){
 
 // ── render persisted guide lines on pctx ─────────────────────────────────
 function drawSnapLine(pctx,L,isSel,col,selCol,sc){
-  const c2=L.bent?{x:L.cx,y:L.cy}:{x:(L.x1+L.x2)/2,y:(L.y1+L.y2)/2};
   pctx.beginPath();
   pctx.moveTo(L.x1*sc,L.y1*sc);
-  if(L.bent) pctx.quadraticCurveTo(L.cx*sc,L.cy*sc,L.x2*sc,L.y2*sc);
+  if(L.bent) pctx.bezierCurveTo(L.c1x*sc,L.c1y*sc,L.c2x*sc,L.c2y*sc,L.x2*sc,L.y2*sc);
   else pctx.lineTo(L.x2*sc,L.y2*sc);
   pctx.stroke();
 }
@@ -1360,7 +1358,7 @@ function drawToolLines(){
     // draw the line/curve
     pctx.beginPath();
     pctx.moveTo(L.x1*sc,L.y1*sc);
-    if(isSnap&&L.bent) pctx.quadraticCurveTo(L.cx*sc,L.cy*sc,L.x2*sc,L.y2*sc);
+    if(isSnap&&L.bent) pctx.bezierCurveTo(L.c1x*sc,L.c1y*sc,L.c2x*sc,L.c2y*sc,L.x2*sc,L.y2*sc);
     else pctx.lineTo(L.x2*sc,L.y2*sc);
     pctx.stroke();
     pctx.setLineDash([]);pctx.shadowBlur=0;
@@ -1374,29 +1372,34 @@ function drawToolLines(){
         pctx.beginPath();pctx.arc(x*sc,y*sc,dotR+5,0,Math.PI*2);pctx.stroke();
       }
     });
-    // control point handle for bent snap lines
+    // control point handles for snap lines (2 CPs for cubic bezier)
     if(isSnap&&isSel){
-      const cpx=L.bent?L.cx:(L.x1+L.x2)/2;
-      const cpy=L.bent?L.cy:(L.y1+L.y2)/2;
-      // dashed lines from endpoints to CP
+      // default CP positions at 1/3 and 2/3 of the straight line
+      const d1x=L.bent?L.c1x:(L.x1*2+L.x2)/3;
+      const d1y=L.bent?L.c1y:(L.y1*2+L.y2)/3;
+      const d2x=L.bent?L.c2x:(L.x1+L.x2*2)/3;
+      const d2y=L.bent?L.c2y:(L.y1+L.y2*2)/3;
+      // dashed control polygon: P1 → C1 → C2 → P2
       pctx.strokeStyle='rgba(200,240,74,.25)';pctx.lineWidth=1;pctx.setLineDash([3,3]);
-      pctx.beginPath();pctx.moveTo(L.x1*sc,L.y1*sc);pctx.lineTo(cpx*sc,cpy*sc);
-      pctx.lineTo(L.x2*sc,L.y2*sc);pctx.stroke();
+      pctx.beginPath();pctx.moveTo(L.x1*sc,L.y1*sc);pctx.lineTo(d1x*sc,d1y*sc);
+      pctx.lineTo(d2x*sc,d2y*sc);pctx.lineTo(L.x2*sc,L.y2*sc);pctx.stroke();
       pctx.setLineDash([]);
-      // CP diamond
-      pctx.save();
-      pctx.translate(cpx*sc,cpy*sc);pctx.rotate(Math.PI/4);
-      const ds=L.bent?7:5;
-      pctx.fillStyle=L.bent?selCol:'rgba(200,240,74,.4)';
-      pctx.strokeStyle=selCol;pctx.lineWidth=1.5;
-      pctx.beginPath();pctx.rect(-ds/2,-ds/2,ds,ds);
-      pctx.fill();pctx.stroke();
-      pctx.restore();
+      // draw both CP diamonds
+      [[d1x,d1y],[d2x,d2y]].forEach(([cpx,cpy])=>{
+        pctx.save();
+        pctx.translate(cpx*sc,cpy*sc);pctx.rotate(Math.PI/4);
+        const ds=L.bent?7:5;
+        pctx.fillStyle=L.bent?selCol:'rgba(200,240,74,.4)';
+        pctx.strokeStyle=selCol;pctx.lineWidth=1.5;
+        pctx.beginPath();pctx.rect(-ds/2,-ds/2,ds,ds);
+        pctx.fill();pctx.stroke();
+        pctx.restore();
+      });
       if(!L.bent){
-        // label hint
+        const mx=(L.x1+L.x2)/2,my=(L.y1+L.y2)/2;
         pctx.font="10px 'DM Mono',monospace";pctx.fillStyle='rgba(200,240,74,.5)';
         pctx.textAlign='center';pctx.textBaseline='bottom';
-        pctx.fillText('drag to bend',cpx*sc,cpy*sc-10);
+        pctx.fillText('drag to bend',mx*sc,my*sc-10);
       }
     }
     pctx.restore();
@@ -1537,11 +1540,14 @@ function hitEndpoint(ix,iy){
   const L=T.lines[T.sel],thresh=EP_HIT/S.scale;
   if(Math.hypot(ix-L.x1,iy-L.y1)<=thresh)return'p1';
   if(Math.hypot(ix-L.x2,iy-L.y2)<=thresh)return'p2';
-  // control point (snap lines only, always shown when selected)
+  // two control points (snap lines only, always shown when selected)
   if(L.type==='snap'){
-    const cpx=L.bent?L.cx:(L.x1+L.x2)/2;
-    const cpy=L.bent?L.cy:(L.y1+L.y2)/2;
-    if(Math.hypot(ix-cpx,iy-cpy)<=thresh*1.5)return'cp';
+    const c1x=L.bent?L.c1x:(L.x1*2+L.x2)/3;
+    const c1y=L.bent?L.c1y:(L.y1*2+L.y2)/3;
+    const c2x=L.bent?L.c2x:(L.x1+L.x2*2)/3;
+    const c2y=L.bent?L.c2y:(L.y1+L.y2*2)/3;
+    if(Math.hypot(ix-c1x,iy-c1y)<=thresh*1.5)return'cp1';
+    if(Math.hypot(ix-c2x,iy-c2y)<=thresh*1.5)return'cp2';
   }
   return null;
 }
@@ -1581,23 +1587,18 @@ hc.addEventListener('mousedown',e=>{
   }
 });
 
+// ── coordsFromEvent: works even when mouse is outside the canvas ─────────
+function coordsGlobal(e){
+  const r=hc.getBoundingClientRect();
+  const ex=e.clientX-r.left,ey=e.clientY-r.top;
+  const cx=ex/S.zoom,cy=ey/S.zoom;
+  return{cx,cy,ix:cx/S.scale,iy:cy/S.scale};
+}
+
 hc.addEventListener('mousemove',e=>{
-  const{cx,cy,sx,sy}=coords(e);
-  const ix=cx/S.scale,iy=cy/S.scale;
-  $('fc').textContent='x:'+sx+' y:'+sy;
-  // dragging endpoint or control point
-  if(T.drag){
-    const L=T.lines[T.drag.li];
-    if(T.drag.ep==='p1'){L.x1=ix;L.y1=iy;}
-    else if(T.drag.ep==='p2'){L.x2=ix;L.y2=iy;}
-    else if(T.drag.ep==='cp'){
-      L.cx=ix;L.cy=iy;
-      // mark as bent only if moved meaningfully from midpoint
-      const mx=(L.x1+L.x2)/2,my=(L.y1+L.y2)/2;
-      L.bent=Math.hypot(ix-mx,iy-my)>3;
-    }
-    reapplyTools();renderLinesList();return;
-  }
+  if(T.drag)return; // handled by document-level handler
+  const{cx,cy,ix,iy}=coordsGlobal(e);
+  $('fc').textContent='x:'+Math.round(ix)+' y:'+Math.round(iy);
   // live draw preview
   if(T.mode&&T.start){
     T.preview={x1:T.start.x,y1:T.start.y,x2:ix,y2:iy};
@@ -1613,10 +1614,61 @@ hc.addEventListener('mousemove',e=>{
   if(!T.mode&&!S.picking)hc.style.cursor='default';
 });
 
-hc.addEventListener('mouseup',e=>{
+// ── document-level drag handlers (track mouse even outside canvas) ────────
+document.addEventListener('mousemove',e=>{
+  // handle drag or draw preview even outside canvas bounds
+  if(T.drag){
+    const{ix,iy}=coordsGlobal(e);
+    const L=T.lines[T.drag.li];
+    if(T.drag.ep==='p1'){L.x1=ix;L.y1=iy;}
+    else if(T.drag.ep==='p2'){L.x2=ix;L.y2=iy;}
+    else if(T.drag.ep==='cp1'||T.drag.ep==='cp2'){
+      // First drag initializes bent state with CPs at current 1/3 and 2/3
+      if(!L.bent){
+        L.c1x=(L.x1*2+L.x2)/3;L.c1y=(L.y1*2+L.y2)/3;
+        L.c2x=(L.x1+L.x2*2)/3;L.c2y=(L.y1+L.y2*2)/3;
+      }
+      if(T.drag.ep==='cp1'){L.c1x=ix;L.c1y=iy;}
+      else{L.c2x=ix;L.c2y=iy;}
+      // bent if either CP is meaningfully away from its default position
+      const d1x=(L.x1*2+L.x2)/3,d1y=(L.y1*2+L.y2)/3;
+      const d2x=(L.x1+L.x2*2)/3,d2y=(L.y1+L.y2*2)/3;
+      L.bent=Math.hypot(L.c1x-d1x,L.c1y-d1y)>3||Math.hypot(L.c2x-d2x,L.c2y-d2y)>3;
+    }
+    reapplyTools();renderLinesList();return;
+  }
+  // live draw preview — keep updating even when mouse is outside canvas
+  if(T.mode&&T.start){
+    const{ix,iy}=coordsGlobal(e);
+    T.preview={x1:T.start.x,y1:T.start.y,x2:ix,y2:iy};
+    drawPolys();
+  }
+});
+
+// finalize draw or drag on mouseup — document-level so it works outside canvas
+function finalizeMouseUp(e){
   if(T.drag){
     T.drag=null;hc.style.cursor=T.mode?'crosshair':'default';return;
   }
+  // finalize line drawing (works even if released outside canvas)
+  if(T.mode&&T.start&&T.preview){
+    const P=T.preview;
+    if(Math.hypot(P.x2-P.x1,P.y2-P.y1)<5){T.start=null;T.preview=null;drawPolys();return;}
+    const L={type:T.mode,x1:P.x1,y1:P.y1,x2:P.x2,y2:P.y2};
+    if(T.mode==='snap'){
+      L.tol=20;
+      L.c1x=(P.x1*2+P.x2)/3;L.c1y=(P.y1*2+P.y2)/3;
+      L.c2x=(P.x1+P.x2*2)/3;L.c2y=(P.y1+P.y2*2)/3;
+      L.bent=false;
+    }
+    T.lines.push(L);T.sel=T.lines.length-1;
+    T.start=null;T.preview=null;
+    reapplyTools();renderLinesList();return;
+  }
+}
+document.addEventListener('mouseup',finalizeMouseUp);
+
+hc.addEventListener('mouseup',e=>{
   // eyedropper pick on click (mousedown+mouseup without drag)
   if(S.picking&&!T.mode){
     const{cx,cy}=coords(e);
@@ -1625,17 +1677,6 @@ hc.addEventListener('mouseup',e=>{
     togglePick(null);
     return;
   }
-  if(!T.mode||!T.start||!T.preview)return;
-  const P=T.preview;
-  if(Math.hypot(P.x2-P.x1,P.y2-P.y1)<5){T.start=null;T.preview=null;return;}
-  const L={type:T.mode,x1:P.x1,y1:P.y1,x2:P.x2,y2:P.y2};
-  if(T.mode==='snap'){
-    L.tol=20;
-    L.cx=(P.x1+P.x2)/2;L.cy=(P.y1+P.y2)/2;L.bent=false;
-  }
-  T.lines.push(L);T.sel=T.lines.length-1;
-  T.start=null;T.preview=null;
-  reapplyTools();renderLinesList();
 });
 
 // ── reset on new extraction ───────────────────────────────────────────────
