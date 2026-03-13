@@ -679,7 +679,9 @@ async function extract(){
   prog.style.transform='scaleX(0.4)';await sl(10);
   S.clsCache=cls;
 
-  // ── 2. Connected-component BFS (8-connected) ─────────────────────────────
+  // ── 2. Connected-component BFS (4-connected) ──────────────────────────
+  // Keep 4-connected: 8-connected would merge lots that touch diagonally
+  // through a 1px border corner, causing everything to become one region.
   const labels=new Int32Array(W*H).fill(-1);
   const sizes=[];
   for(let s=0;s<W*H;s++){
@@ -691,16 +693,10 @@ async function extract(){
       if(labels[idx]>=0)continue;
       labels[idx]=lbl;sizes[lbl]++;
       const x=idx%W,y=Math.floor(idx/W);
-      // 4-connected (cardinal)
       if(x>0&&cls[idx-1]===1&&labels[idx-1]<0)q.push(idx-1);
       if(x<W-1&&cls[idx+1]===1&&labels[idx+1]<0)q.push(idx+1);
       if(y>0&&cls[idx-W]===1&&labels[idx-W]<0)q.push(idx-W);
       if(y<H-1&&cls[idx+W]===1&&labels[idx+W]<0)q.push(idx+W);
-      // 8-connected (diagonal) — catches lots connected through diagonal pixels
-      if(x>0&&y>0&&cls[idx-W-1]===1&&labels[idx-W-1]<0)q.push(idx-W-1);
-      if(x<W-1&&y>0&&cls[idx-W+1]===1&&labels[idx-W+1]<0)q.push(idx-W+1);
-      if(x>0&&y<H-1&&cls[idx+W-1]===1&&labels[idx+W-1]<0)q.push(idx+W-1);
-      if(x<W-1&&y<H-1&&cls[idx+W+1]===1&&labels[idx+W+1]<0)q.push(idx+W+1);
     }
   }
   prog.style.transform='scaleX(0.65)';await sl(10);
@@ -1050,96 +1046,32 @@ $('simplify-tol').addEventListener('input',e=>{
 });
 $('min-area').addEventListener('input',scheduleExtract);
 
-// ── CONTOUR TRACE (Marching Squares) ──────────────────────────────────
-// Produces sub-pixel boundary by walking the 0/1 boundary between cells.
-// Returns ordered {x,y} points forming a closed contour at half-pixel positions.
+// ── CONTOUR TRACE (Moore neighbor, no downsample) ─────────────────────
+// Walks the boundary of a labeled component using 8-direction Moore neighbor.
+// Unlike the original, does NOT downsample to 300 points — RDP handles that.
 function traceContour(cls,labels,lbl,W,H,b){
-  // Build a padded binary grid: 1 = inside this component, 0 = outside.
-  // Pad by 1 on all sides so marching squares can walk the full perimeter.
-  const bw=b.x1-b.x0+3, bh=b.y1-b.y0+3; // +2 padding +1 for grid
-  const ox=b.x0-1, oy=b.y0-1; // offset
-  const bin=new Uint8Array(bw*bh);
-  for(let y=b.y0;y<=b.y1;y++)
-    for(let x=b.x0;x<=b.x1;x++)
-      if(cls[y*W+x]===1&&labels[y*W+x]===lbl) bin[(y-oy)*bw+(x-ox)]=1;
-
-  // Find start: first cell where top-left=0, top-right or bottom-left=1
-  let sx=-1,sy=-1;
-  outer:
-  for(let y=0;y<bh-1;y++)
-    for(let x=0;x<bw-1;x++){
-      const tl=bin[y*bw+x],tr=bin[y*bw+x+1],bl=bin[(y+1)*bw+x],br=bin[(y+1)*bw+x+1];
-      const cfg=(tl<<3)|(tr<<2)|(br<<1)|bl;
-      if(cfg>0&&cfg<15){sx=x;sy=y;break outer;}
-    }
-  if(sx<0)return[];
-
-  // Marching squares walk
-  const border=[];
-  const visited=new Set();
-  let cx=sx,cy=sy;
-  const maxSteps=(bw+bh)*6+1000;
+  let start=-1;
+  for(let y=b.y0;y<=b.y1&&start<0;y++)
+    for(let x=b.x0;x<=b.x1&&start<0;x++)
+      if(cls[y*W+x]===1&&labels[y*W+x]===lbl)start=y*W+x;
+  if(start<0)return[];
+  const dirs=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  const border=[];const visited=new Set();
+  let cx=start%W,cy=Math.floor(start/W),dir=6;
+  const limit=((b.x1-b.x0+1)*(b.y1-b.y0+1))*4+16;
   let steps=0;
-
-  // direction: 0=right,1=down,2=left,3=up
-  let prevDir=0;
-
   do{
-    const k=cy*bw+cx;
-    if(visited.has(k)&&border.length>2)break;
-    visited.add(k);
-
-    const tl=bin[cy*bw+cx],tr=bin[cy*bw+cx+1],bl=bin[(cy+1)*bw+cx],br=bin[(cy+1)*bw+cx+1];
-    const cfg=(tl<<3)|(tr<<2)|(br<<1)|bl;
-
-    // Emit a point at the midpoint of the boundary crossing
-    // The cell (cx,cy) in padded coords → real image coords = (cx+ox, cy+oy)
-    // Marching squares edge midpoints:
-    let px,py;
-    switch(cfg){
-      case 1:case 14: px=cx-0.5;py=cy+0.5;break;      // left edge mid
-      case 2:case 13: px=cx+0.5;py=cy+1;break;         // bottom edge mid
-      case 3:case 12: px=cx-0.5;py=cy+1;break;          // bottom-left
-      case 4:case 11: px=cx+1;py=cy+0.5;break;          // right edge mid
-      case 6:case 9:  px=cx+0.5;py=cy+0.5;break;        // center
-      case 7:case 8:  px=cx-0.5;py=cy;break;             // top-left area
-      case 5:         px=cx+0.5;py=cy+0.5;break;         // saddle
-      case 10:        px=cx+0.5;py=cy+0.5;break;         // saddle
-      default:        px=cx+0.5;py=cy+0.5;
+    const key=cy*W+cx;
+    if(!visited.has(key)){border.push({x:cx,y:cy});visited.add(key);}
+    let found=false;
+    for(let i=0;i<8;i++){
+      const d=(dir+i)%8,nx=cx+dirs[d][0],ny=cy+dirs[d][1];
+      if(nx<0||nx>=W||ny<0||ny>=H)continue;
+      if(cls[ny*W+nx]===1&&labels[ny*W+nx]===lbl){cx=nx;cy=ny;dir=(d+5)%8;found=true;break;}
     }
-    border.push({x:px+ox+0.5, y:py+oy+0.5});
-
-    // Determine next direction
-    let dir;
-    switch(cfg){
-      case 1:  dir=3;break; // up
-      case 2:  dir=0;break; // right
-      case 3:  dir=3;break; // up
-      case 4:  dir=0;break; // right
-      case 5:  dir=(prevDir===3)?0:(prevDir===1)?2:prevDir;break; // saddle: keep direction
-      case 6:  dir=1;break; // down→right? no, right
-      case 7:  dir=3;break; // up
-      case 8:  dir=2;break; // left
-      case 9:  dir=2;break; // left
-      case 10: dir=(prevDir===0)?1:(prevDir===2)?3:prevDir;break; // saddle
-      case 11: dir=2;break; // left
-      case 12: dir=1;break; // down
-      case 13: dir=1;break; // down
-      case 14: dir=0;break; // right
-      default: dir=prevDir;
-    }
-    prevDir=dir;
-
-    // Move in direction
-    switch(dir){
-      case 0:cx++;break;case 1:cy++;break;case 2:cx--;break;case 3:cy--;break;
-    }
-    steps++;
-    // bounds safety
-    if(cx<0||cy<0||cx>=bw-1||cy>=bh-1)break;
-  }while(steps<maxSteps);
-
-  // No arbitrary 300-point cap — let RDP simplification handle vertex reduction
+    if(!found)break;steps++;
+  }while((cx!==start%W||cy!==Math.floor(start/W)||border.length<3)&&steps<limit);
+  // No 300-point cap — RDP simplification handles vertex reduction
   return border;
 }
 
