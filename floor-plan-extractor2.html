@@ -817,50 +817,24 @@ $('aspect-ratio').addEventListener('input',e=>{
   scheduleExtract();
 });
 
-// ── HEAL EDGES — nearest-neighbor shared-edge snapping ─────────────────
+// ── HEAL EDGES — midline-based shared-edge alignment ────────────────────
 // Goal: lots A, B, C side-by-side share exact edges (A|B|C not A B C).
 // Strategy:
-//   Pass 1 — Vertex-to-vertex: snap nearby vertices across polygons to same point
-//   Pass 2 — Vertex-to-edge: if a vertex is near another polygon's edge but not
-//            near any vertex, insert a matching vertex on that edge and snap both
-//   Pass 3 — Shared-edge alignment: for edge pairs that are close + roughly parallel,
-//            average them to a shared midline so adjacent lots touch perfectly.
+//   Pass 1 — Find pairs of nearby roughly-parallel edges from different polygons.
+//            Compute the midline between them. Project both edges' endpoints
+//            perpendicularly onto this midline so neither polygon "wins".
+//   Pass 2 — Vertex-to-vertex cleanup: merge any remaining vertices that ended
+//            up within gap distance of each other (from rounding / multi-edge cases).
+//   Pass 3 — Vertex-to-edge insertion: if a vertex lands near another polygon's
+//            edge mid-span, insert a matching vertex so the shared boundary has
+//            the same vertex count on both sides.
 // Uses a spatial grid for O(n) neighbor lookups instead of O(n²).
 function healEdges(gap){
   if(!gap||gap<=0)return;
   const polys=S.polygons;
-  const gap2=gap*gap; // squared distance threshold
+  const gap2=gap*gap;
 
-  // ── spatial grid for fast neighbor lookup ───────────────────────────────
-  const cellSize=Math.max(gap*2,8);
-  const grid=new Map();
-  function gkey(x,y){return((x/cellSize|0)+50000)*100000+((y/cellSize|0)+50000);}
-  function gridInsert(x,y,pi,vi){
-    const k=gkey(x,y);
-    if(!grid.has(k))grid.set(k,[]);
-    grid.get(k).push({x,y,pi,vi});
-  }
-  function gridQuery(x,y,radius){
-    const results=[];
-    const r=Math.ceil(radius/cellSize);
-    const cx=x/cellSize|0, cy=y/cellSize|0;
-    for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
-      const k=((cx+dx)+50000)*100000+((cy+dy)+50000);
-      const cell=grid.get(k);
-      if(cell) for(const e of cell){
-        const d2=(e.x-x)**2+(e.y-y)**2;
-        if(d2<=radius*radius) results.push({...e,d2});
-      }
-    }
-    return results;
-  }
-
-  // populate grid with all vertices
-  polys.forEach((p,pi)=>{
-    p.points.forEach((pt,vi)=>gridInsert(pt.x,pt.y,pi,vi));
-  });
-
-  // helper
+  // ── spatial helpers ─────────────────────────────────────────────────────
   function projectPtSeg(px,py,ax,ay,bx,by){
     const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
     if(len2===0)return{t:0,x:ax,y:ay,d2:(px-ax)**2+(py-ay)**2};
@@ -869,8 +843,119 @@ function healEdges(gap){
     return{t,x:rx,y:ry,d2:(px-rx)**2+(py-ry)**2};
   }
 
-  // ── Pass 1: vertex-to-vertex — merge nearby vertices across polygons ────
-  // Build union-find so clusters of nearby vertices all converge to one point
+  // ── Pass 1: edge-to-edge midline alignment ─────────────────────────────
+  // For each pair of nearby parallel edges from different polygons, compute
+  // the midline and project both sets of endpoints onto it. This ensures
+  // neither polygon overlaps the other — they meet exactly in the middle.
+  const cos15=Math.cos(15*Math.PI/180);
+  const edgePairs=[]; // collect pairs first, apply all at once
+
+  polys.forEach((pA,pi)=>{
+    const ptsA=pA.points,nA=ptsA.length;
+    for(let ei=0;ei<nA;ei++){
+      const a1=ptsA[ei],a2=ptsA[(ei+1)%nA];
+      const adx=a2.x-a1.x,ady=a2.y-a1.y,alen=Math.hypot(adx,ady);
+      if(alen<2)continue;
+      const anx=adx/alen,any=ady/alen;
+      // edge midpoint + perpendicular normal
+      const amx=(a1.x+a2.x)/2,amy=(a1.y+a2.y)/2;
+
+      let bestDist=Infinity,bestPj=-1,bestEj=-1;
+      polys.forEach((pB,pj)=>{
+        if(pj<=pi)return; // avoid double-processing
+        const ptsB=pB.points,nB=ptsB.length;
+        for(let ej=0;ej<nB;ej++){
+          const b1=ptsB[ej],b2=ptsB[(ej+1)%nB];
+          const bdx=b2.x-b1.x,bdy=b2.y-b1.y,blen=Math.hypot(bdx,bdy);
+          if(blen<2)continue;
+          const bnx=bdx/blen,bny=bdy/blen;
+          // must be roughly parallel (or anti-parallel)
+          if(Math.abs(anx*bnx+any*bny)<cos15)continue;
+          // midpoint distance between the two edges
+          const bmx=(b1.x+b2.x)/2,bmy=(b1.y+b2.y)/2;
+          const d=Math.hypot(amx-bmx,amy-bmy);
+          if(d<gap&&d<bestDist){bestDist=d;bestPj=pj;bestEj=ej;}
+        }
+      });
+      if(bestPj<0)continue;
+      edgePairs.push({pi,ei,pj:bestPj,ej:bestEj});
+    }
+  });
+
+  // Apply midline projection for each pair
+  for(const pair of edgePairs){
+    const ptsA=polys[pair.pi].points,nA=ptsA.length;
+    const ptsB=polys[pair.pj].points,nB=ptsB.length;
+    const a1=ptsA[pair.ei],a2=ptsA[(pair.ei+1)%nA];
+    const b1=ptsB[pair.ej],b2=ptsB[(pair.ej+1)%nB];
+
+    // Determine which pairing: same direction (a1↔b1,a2↔b2) or reversed (a1↔b2,a2↔b1)
+    const d_same=Math.hypot(a1.x-b1.x,a1.y-b1.y)+Math.hypot(a2.x-b2.x,a2.y-b2.y);
+    const d_rev=Math.hypot(a1.x-b2.x,a1.y-b2.y)+Math.hypot(a2.x-b1.x,a2.y-b1.y);
+    let pa1,pa2,pb1,pb2; // paired endpoints
+    let ai1=pair.ei,ai2=(pair.ei+1)%nA,bi1,bi2;
+    if(d_same<=d_rev){pa1=a1;pa2=a2;pb1=b1;pb2=b2;bi1=pair.ej;bi2=(pair.ej+1)%nB;}
+    else              {pa1=a1;pa2=a2;pb1=b2;pb2=b1;bi1=(pair.ej+1)%nB;bi2=pair.ej;}
+
+    // Compute midline direction from the average of the two edge directions
+    let dx1=pa2.x-pa1.x,dy1=pa2.y-pa1.y;
+    let dx2=pb2.x-pb1.x,dy2=pb2.y-pb1.y;
+    // Ensure both point in roughly the same direction
+    if(dx1*dx2+dy1*dy2<0){dx2=-dx2;dy2=-dy2;}
+    const mdx=dx1+dx2,mdy=dy1+dy2;
+    const mlen=Math.hypot(mdx,mdy);
+    if(mlen<1e-6)continue;
+    // Midline unit direction and perpendicular
+    const ux=mdx/mlen,uy=mdy/mlen;
+    const nx=-uy,ny=ux; // perpendicular to midline
+
+    // Midline passes through the average of all 4 endpoints
+    const cx=(pa1.x+pa2.x+pb1.x+pb2.x)/4;
+    const cy=(pa1.y+pa2.y+pb1.y+pb2.y)/4;
+
+    // Project each endpoint onto the midline:
+    // projected = center + dot(pt-center, u) * u
+    function projToMidline(px,py){
+      const dot=(px-cx)*ux+(py-cy)*uy;
+      return{x:cx+dot*ux,y:cy+dot*uy};
+    }
+
+    // Only move endpoints that are within gap distance of their paired endpoint
+    if(Math.hypot(pa1.x-pb1.x,pa1.y-pb1.y)<=gap){
+      const m=projToMidline((pa1.x+pb1.x)/2,(pa1.y+pb1.y)/2);
+      ptsA[ai1]={x:m.x,y:m.y};ptsB[bi1]={x:m.x,y:m.y};
+    }
+    if(Math.hypot(pa2.x-pb2.x,pa2.y-pb2.y)<=gap){
+      const m=projToMidline((pa2.x+pb2.x)/2,(pa2.y+pb2.y)/2);
+      ptsA[ai2]={x:m.x,y:m.y};ptsB[bi2]={x:m.x,y:m.y};
+    }
+  }
+
+  // ── Pass 2: vertex-to-vertex cleanup — merge nearby vertices ───────────
+  // After midline projection, some vertices from different polygons may be
+  // very close but not exactly equal. Average them so they share the same point.
+  const cellSize=Math.max(gap*2,8);
+  const grid=new Map();
+  function gkey(x,y){return((x/cellSize|0)+50000)*100000+((y/cellSize|0)+50000);}
+  function gridInsert(x,y,pi,vi){
+    const k=gkey(x,y);if(!grid.has(k))grid.set(k,[]);grid.get(k).push({x,y,pi,vi});
+  }
+  function gridQuery(x,y,radius){
+    const results=[];const r=Math.ceil(radius/cellSize);
+    const cx2=x/cellSize|0,cy2=y/cellSize|0;
+    for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+      const k=((cx2+dx)+50000)*100000+((cy2+dy)+50000);
+      const cell=grid.get(k);
+      if(cell) for(const e of cell){
+        const d2=(e.x-x)**2+(e.y-y)**2;
+        if(d2<=radius*radius) results.push({...e,d2});
+      }
+    }
+    return results;
+  }
+  polys.forEach((p,pi)=>p.points.forEach((pt,vi)=>gridInsert(pt.x,pt.y,pi,vi)));
+
+  // Union-find for vertex clusters
   const vkey=(pi,vi)=>pi*100000+vi;
   const parent=new Map();
   function find(k){
@@ -884,14 +969,12 @@ function healEdges(gap){
     p.points.forEach((pt,vi)=>{
       const near=gridQuery(pt.x,pt.y,gap);
       for(const n of near){
-        if(n.pi===pi)continue; // same polygon
+        if(n.pi===pi)continue;
         union(vkey(pi,vi),vkey(n.pi,n.vi));
       }
     });
   });
-
-  // compute average position for each cluster and apply
-  const clusters=new Map(); // root → [{pi,vi}]
+  const clusters=new Map();
   polys.forEach((p,pi)=>{
     p.points.forEach((_,vi)=>{
       const root=find(vkey(pi,vi));
@@ -901,29 +984,23 @@ function healEdges(gap){
   });
   for(const [_,members] of clusters){
     if(members.length<2)continue;
-    // average position
     let sx=0,sy=0;
     for(const m of members){sx+=polys[m.pi].points[m.vi].x;sy+=polys[m.pi].points[m.vi].y;}
     const ax=sx/members.length,ay=sy/members.length;
-    for(const m of members){
-      polys[m.pi].points[m.vi]={x:ax,y:ay};
-    }
+    for(const m of members) polys[m.pi].points[m.vi]={x:ax,y:ay};
   }
 
-  // ── Pass 2: vertex-to-edge — insert + snap ─────────────────────────────
-  // For each vertex V of poly A, if V is close to an edge of poly B (but wasn't
-  // already snapped in pass 1), insert a new vertex on B's edge at the projection
-  // point, then snap both to the midpoint.
-  const inserted=[]; // collect insertions to apply after iteration
+  // ── Pass 3: vertex-to-edge insertion ───────────────────────────────────
+  // If a vertex is close to another polygon's edge mid-span (not near an
+  // existing vertex), insert a matching vertex so both sides of the shared
+  // boundary have the same topology.
+  const inserted=[];
   polys.forEach((pA,pi)=>{
-    const ptsA=pA.points;
-    ptsA.forEach((v,vi)=>{
-      // check if this vertex was already merged in pass 1
+    pA.points.forEach((v,vi)=>{
       const myRoot=find(vkey(pi,vi));
       const myCluster=clusters.get(myRoot);
       if(myCluster&&myCluster.length>=2)return; // already shared
 
-      // check nearby polygons' edges
       let bestDist=gap2,bestPj=-1,bestEj=-1,bestProj=null;
       polys.forEach((pB,pj)=>{
         if(pj===pi)return;
@@ -931,92 +1008,31 @@ function healEdges(gap){
         for(let ej=0;ej<nB;ej++){
           const b1=ptsB[ej],b2=ptsB[(ej+1)%nB];
           const pr=projectPtSeg(v.x,v.y,b1.x,b1.y,b2.x,b2.y);
-          // skip if projection is at endpoint (that's a vertex-vertex case)
           if(pr.t<0.02||pr.t>0.98)continue;
           if(pr.d2<bestDist){bestDist=pr.d2;bestPj=pj;bestEj=ej;bestProj=pr;}
         }
       });
       if(bestPj>=0&&bestProj){
-        const mx=(v.x+bestProj.x)/2, my=(v.y+bestProj.y)/2;
+        // Move both to midpoint between vertex and its projection
+        const mx=(v.x+bestProj.x)/2,my=(v.y+bestProj.y)/2;
         inserted.push({pi,vi,pj:bestPj,ej:bestEj,t:bestProj.t,mx,my});
       }
     });
   });
-
-  // sort insertions by (pj, ej, t descending) so splicing doesn't shift indices
   inserted.sort((a,b)=>a.pj!==b.pj?a.pj-b.pj:a.ej!==b.ej?a.ej-b.ej:b.t-a.t);
-  // deduplicate — only one insertion per edge position (within gap distance)
   const dedupInserted=[];
   for(const ins of inserted){
     const dup=dedupInserted.find(d=>d.pj===ins.pj&&d.ej===ins.ej&&Math.abs(d.t-ins.t)<0.05);
     if(!dup)dedupInserted.push(ins);
   }
-  // apply insertions
   for(const ins of dedupInserted){
-    // insert vertex on poly B's edge
     polys[ins.pj].points.splice(ins.ej+1,0,{x:ins.mx,y:ins.my});
-    // move poly A's vertex to midpoint
     polys[ins.pi].points[ins.vi]={x:ins.mx,y:ins.my};
-    // adjust subsequent insertion indices for same polygon
     for(const other of dedupInserted){
       if(other===ins)continue;
       if(other.pj===ins.pj&&other.ej>ins.ej)other.ej++;
     }
   }
-
-  // ── Pass 3: edge-to-edge alignment ─────────────────────────────────────
-  // After passes 1+2, most shared boundaries already share vertices.
-  // This pass catches remaining close parallel edges and averages them.
-  const cos20=Math.cos(20*Math.PI/180);
-  polys.forEach((pA,pi)=>{
-    const ptsA=pA.points,nA=ptsA.length;
-    for(let vi=0;vi<nA;vi++){
-      const a1=ptsA[vi],a2=ptsA[(vi+1)%nA];
-      const adx=a2.x-a1.x,ady=a2.y-a1.y,alen=Math.hypot(adx,ady);
-      if(alen<2)continue;
-      const anx=adx/alen,any=ady/alen;
-      const amx=(a1.x+a2.x)/2,amy=(a1.y+a2.y)/2;
-
-      // find nearest edge on a different polygon
-      let bestDist=gap,bestPj=-1,bestVj=-1;
-      polys.forEach((pB,pj)=>{
-        if(pj<=pi)return; // avoid double-processing
-        const ptsB=pB.points,nB=ptsB.length;
-        for(let vj=0;vj<nB;vj++){
-          const b1=ptsB[vj],b2=ptsB[(vj+1)%nB];
-          const bdx=b2.x-b1.x,bdy=b2.y-b1.y,blen=Math.hypot(bdx,bdy);
-          if(blen<2)continue;
-          const bnx=bdx/blen,bny=bdy/blen;
-          // must be roughly parallel
-          if(Math.abs(anx*bnx+any*bny)<cos20)continue;
-          // midpoint distance
-          const bmx=(b1.x+b2.x)/2,bmy=(b1.y+b2.y)/2;
-          const d=Math.hypot(amx-bmx,amy-bmy);
-          if(d<bestDist){bestDist=d;bestPj=pj;bestVj=vj;}
-        }
-      });
-      if(bestPj<0)continue;
-      const ptsB=polys[bestPj].points,nB=ptsB.length;
-      const b1=ptsB[bestVj],b2=ptsB[(bestVj+1)%nB];
-      // snap each endpoint pair to their midpoint
-      const m1x=(a1.x+b2.x)/2,m1y=(a1.y+b2.y)/2; // a1↔closest b endpoint
-      const m2x=(a2.x+b1.x)/2,m2y=(a2.y+b1.y)/2;
-      // figure out which pairing is closer (same or reverse direction)
-      const d_same=Math.hypot(a1.x-b1.x,a1.y-b1.y)+Math.hypot(a2.x-b2.x,a2.y-b2.y);
-      const d_rev=Math.hypot(a1.x-b2.x,a1.y-b2.y)+Math.hypot(a2.x-b1.x,a2.y-b1.y);
-      if(d_same<=d_rev){
-        // a1↔b1, a2↔b2
-        const mx1=(a1.x+b1.x)/2,my1=(a1.y+b1.y)/2;
-        const mx2=(a2.x+b2.x)/2,my2=(a2.y+b2.y)/2;
-        if(Math.hypot(a1.x-b1.x,a1.y-b1.y)<=gap){ptsA[vi]={x:mx1,y:my1};ptsB[bestVj]={x:mx1,y:my1};}
-        if(Math.hypot(a2.x-b2.x,a2.y-b2.y)<=gap){ptsA[(vi+1)%nA]={x:mx2,y:my2};ptsB[(bestVj+1)%nB]={x:mx2,y:my2};}
-      } else {
-        // a1↔b2, a2↔b1 (edges run opposite directions)
-        if(Math.hypot(a1.x-b2.x,a1.y-b2.y)<=gap){ptsA[vi]={x:m1x,y:m1y};ptsB[(bestVj+1)%nB]={x:m1x,y:m1y};}
-        if(Math.hypot(a2.x-b1.x,a2.y-b1.y)<=gap){ptsA[(vi+1)%nA]={x:m2x,y:m2y};ptsB[bestVj]={x:m2x,y:m2y};}
-      }
-    }
-  });
 }
 
 // ── RDP SIMPLIFY ──────────────────────────────────
