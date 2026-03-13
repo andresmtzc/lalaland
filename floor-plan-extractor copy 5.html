@@ -251,10 +251,10 @@ footer{grid-column:1/-1;background:var(--panel);border-top:1px solid var(--borde
       <input class="full-slider" type="range" id="aspect-ratio" min="1" max="30" value="8" step="0.5">
       <div class="hint">Removes sliver-like shapes. Lower = stricter. 4–8 works well for lots.</div>
       <div class="setting-row" style="margin-top:6px">
-        <label for="stitch-gap">Heal edges <span id="stitch-gap-val" style="color:var(--accent)">0px</span></label>
+        <label for="stitch-gap">Stitch gap <span id="stitch-gap-val" style="color:var(--accent)">0px</span></label>
       </div>
       <input class="full-slider" type="range" id="stitch-gap" min="0" max="50" value="0" step="1">
-      <div class="hint">Finds parallel edges within this distance and merges them to a shared midline, closing gaps without overlaps.</div>
+      <div class="hint">Snaps nearby edges of adjacent lots to their shared midpoint, closing gaps.</div>
     </div>
 
     <!-- 05 VIEW -->
@@ -707,7 +707,7 @@ async function extract(){
 
   prog.style.transform='scaleX(0.88)';await sl(10);
   const stitchGap=parseInt($('stitch-gap').value)||0;
-  if(stitchGap>0)healEdges(stitchGap);
+  if(stitchGap>0)stitchEdges(stitchGap);
   // if tool lines exist, replay them onto the fresh polygons
   if(T.lines.length){
     saveBase();
@@ -791,90 +791,44 @@ $('aspect-ratio').addEventListener('input',e=>{
 });
 
 // ── STITCH EDGES ──────────────────────────────────
-function healEdges(gap){
+function stitchEdges(gap){
   if(!gap||gap<=0)return;
   const polys=S.polygons;
-  const cos15=Math.cos(15*Math.PI/180); // parallel threshold ~15°
-
-  // helper: project point P onto segment AB, return t in [0,1] and closest point
-  function projectPtSeg(px,py,ax,ay,bx,by){
-    const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
-    if(len2===0)return{t:0,x:ax,y:ay};
-    const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/len2));
-    return{t,x:ax+t*dx,y:ay+t*dy};
-  }
-
-  // for each edge in poly A, check all edges in nearby polys
-  // if two edges are close + parallel, snap both to their midline
-  const healed=new Set(); // 'pi-vi' keys already moved
-
-  polys.forEach((pA,pi)=>{
-    const ptA=pA.points,nA=ptA.length;
-    for(let vi=0;vi<nA;vi++){
-      const a1=ptA[vi],a2=ptA[(vi+1)%nA];
-      const adx=a2.x-a1.x,ady=a2.y-a1.y;
-      const alen=Math.hypot(adx,ady);
-      if(alen<1)continue;
-      const anx=adx/alen,any=ady/alen; // unit tangent of edge A
-
-      polys.forEach((pB,pj)=>{
-        if(pj===pi)return;
-        const ptB=pB.points,nB=ptB.length;
-        for(let vj=0;vj<nB;vj++){
-          const b1=ptB[vj],b2=ptB[(vj+1)%nB];
-          const bdx=b2.x-b1.x,bdy=b2.y-b1.y;
-          const blen=Math.hypot(bdx,bdy);
-          if(blen<1)continue;
-          const bnx=bdx/blen,bny=bdy/blen;
-
-          // must be roughly parallel (dot of unit tangents ≥ cos15 or ≤ -cos15)
-          const dot=anx*bnx+any*bny;
-          if(Math.abs(dot)<cos15)continue;
-
-          // measure perpendicular distance between the two edges
-          // project midpoint of B onto line of A
-          const bmx=(b1.x+b2.x)/2,bmy=(b1.y+b2.y)/2;
-          // perpendicular distance from bmid to line through a1 along anx,any
-          const perp=Math.abs((bmx-a1.x)*(-any)+(bmy-a1.y)*anx);
-          if(perp>gap)continue;
-
-          // check they actually overlap along the shared axis
-          // project b1,b2 onto edge A's axis
-          const ta1=0,ta2=alen;
-          const tb1=(b1.x-a1.x)*anx+(b1.y-a1.y)*any;
-          const tb2=(b2.x-a1.x)*anx+(b2.y-a1.y)*any;
-          const oStart=Math.max(ta1,Math.min(tb1,tb2));
-          const oEnd=Math.min(ta2,Math.max(tb1,tb2));
-          if(oEnd-oStart<1)continue; // no meaningful overlap
-
-          // they're parallel, close, and overlapping — snap endpoints to midline
-          // for each endpoint of A, find closest point on B and move to midpoint
-          [0,1].forEach(side=>{
-            const kA=`${pi}-${(vi+side)%nA}`;
-            if(healed.has(kA))return;
-            const ap=ptA[(vi+side)%nA];
-            const {x:bpx,y:bpy}=projectPtSeg(ap.x,ap.y,b1.x,b1.y,b2.x,b2.y);
-            const dist=Math.hypot(ap.x-bpx,ap.y-bpy);
-            if(dist>gap)return;
-            const mx=(ap.x+bpx)/2,my=(ap.y+bpy)/2;
-            ptA[(vi+side)%nA]={x:mx,y:my};
-            healed.add(kA);
-          });
-          [0,1].forEach(side=>{
-            const kB=`${pj}-${(vj+side)%nB}`;
-            if(healed.has(kB))return;
-            const bp=ptB[(vj+side)%nB];
-            const {x:apx,y:apy}=projectPtSeg(bp.x,bp.y,a1.x,a1.y,a2.x,a2.y);
-            const dist=Math.hypot(bp.x-apx,bp.y-apy);
-            if(dist>gap)return;
-            const mx=(bp.x+apx)/2,my=(bp.y+apy)/2;
-            ptB[(vj+side)%nB]={x:mx,y:my};
-            healed.add(kB);
-          });
-        }
+  const cell=Math.max(1,gap);
+  const grid=new Map();
+  const gkey=(x,y)=>`${Math.floor(x/cell)},${Math.floor(y/cell)}`;
+  polys.forEach((p,pi)=>p.points.forEach((pt,vi)=>{
+    const k=gkey(pt.x,pt.y);if(!grid.has(k))grid.set(k,[]);grid.get(k).push({pi,vi,x:pt.x,y:pt.y});
+  }));
+  const gap2=gap*gap;
+  const done=new Set();
+  polys.forEach((p,pi)=>p.points.forEach((pt,vi)=>{
+    const id=`${pi}-${vi}`;if(done.has(id))return;
+    // skip near-collinear vertices — only snap actual corners
+    const n=p.points.length;
+    const prev=p.points[(vi-1+n)%n],next=p.points[(vi+1)%n];
+    const ax=pt.x-prev.x,ay=pt.y-prev.y;
+    const bx=next.x-pt.x,by=next.y-pt.y;
+    const cross=Math.abs(ax*by-ay*bx);
+    const lenA=Math.hypot(ax,ay),lenB=Math.hypot(bx,by);
+    // if nearly collinear (cross/len < 0.15), skip — not a real corner
+    if(lenA>0&&lenB>0&&cross/(lenA*lenB)<0.15)return;
+    const gx=Math.floor(pt.x/cell),gy=Math.floor(pt.y/cell);
+    let best2=gap2,bestU=null;
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+      const nb=grid.get(`${gx+dx},${gy+dy}`);if(!nb)continue;
+      nb.forEach(u=>{
+        if(u.pi===pi)return;
+        const d2=(pt.x-u.x)**2+(pt.y-u.y)**2;
+        if(d2<best2){best2=d2;bestU=u;}
       });
     }
-  });
+    if(!bestU)return;
+    const mx=(pt.x+bestU.x)/2,my=(pt.y+bestU.y)/2;
+    polys[pi].points[vi]={x:mx,y:my};
+    polys[bestU.pi].points[bestU.vi]={x:mx,y:my};
+    done.add(id);done.add(`${bestU.pi}-${bestU.vi}`);
+  }));
 }
 
 // ── RDP SIMPLIFY ──────────────────────────────────
