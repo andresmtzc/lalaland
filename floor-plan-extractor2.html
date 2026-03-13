@@ -1,0 +1,1743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lot Extractor</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');
+:root {
+  --bg:#111210;--panel:#181917;--surface:#1f211e;--border:#2c2e2b;
+  --accent:#c8f04a;--adim:rgba(200,240,74,0.11);
+  --text:#e6e3db;--muted:#6b6e67;--danger:#f07070;--warn:#f0a84a;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;
+  height:100vh;display:grid;grid-template-columns:310px 1fr;grid-template-rows:52px 1fr 36px;overflow:hidden;}
+
+header{grid-column:1/-1;background:var(--panel);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 20px;gap:14px;}
+.logo{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;color:var(--accent);}
+.logo em{color:var(--muted);font-style:normal;}
+.badge{font-size:9px;letter-spacing:.14em;text-transform:uppercase;border:1px solid var(--border);color:var(--muted);padding:2px 7px;border-radius:2px;}
+.hstatus{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:10px;color:var(--muted);}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--muted);transition:background .3s;}
+.dot.on{background:var(--accent);}
+
+aside{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.sb-scroll{flex:1;overflow-y:auto;padding-bottom:12px;}
+.sb-scroll::-webkit-scrollbar{width:3px;}
+.sb-scroll::-webkit-scrollbar-thumb{background:var(--border);}
+
+.sec{padding:14px 14px 0;margin-bottom:14px;}
+.sec-title{font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;
+  display:flex;align-items:center;gap:8px;}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.sec-title.warn-title{color:var(--warn);}
+
+input[type=file]{display:none;}
+.upload-lbl{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  border:1px dashed var(--border);border-radius:4px;padding:18px 12px;cursor:pointer;transition:all .18s;text-align:center;}
+.upload-lbl:hover,.upload-lbl.drag{border-color:var(--accent);background:var(--adim);}
+.upload-lbl svg{opacity:.3;}
+.upload-lbl span{font-size:10px;color:var(--muted);}
+.upload-lbl strong{color:var(--text);font-weight:500;font-size:11px;}
+
+/* color entry - shared between lot + border lists */
+.palette{display:flex;flex-direction:column;gap:5px;margin-bottom:7px;}
+.centry{display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border);
+  border-radius:4px;padding:6px 7px;transition:border-color .15s;}
+.centry:hover{border-color:var(--muted);}
+.centry.border-entry{border-left:2px solid var(--warn);}
+.swatch{width:24px;height:24px;border-radius:3px;flex-shrink:0;border:1px solid rgba(255,255,255,.1);
+  cursor:pointer;position:relative;overflow:hidden;}
+.swatch input[type=color]{position:absolute;inset:-4px;width:calc(100% + 8px);height:calc(100% + 8px);opacity:0;cursor:pointer;}
+.einfo{flex:1;min-width:0;}
+.ehex{font-size:11px;font-weight:500;}
+.etol{display:flex;align-items:center;gap:5px;margin-top:3px;}
+.etol-lbl{font-size:9px;color:var(--muted);white-space:nowrap;}
+.tslider{flex:1;height:2px;-webkit-appearance:none;background:var(--border);border-radius:1px;cursor:pointer;outline:none;}
+.tslider::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:var(--accent);cursor:pointer;}
+.tslider.warn-slider::-webkit-slider-thumb{background:var(--warn);}
+.eremove{width:20px;height:20px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;
+  border-radius:3px;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0;}
+.eremove:hover{color:var(--danger);background:rgba(240,112,112,.1);}
+.sec-title.ignore-title{color:var(--danger);}
+.centry.ignore-entry{border-left:2px solid var(--danger);}
+.tslider.ignore-slider::-webkit-slider-thumb{background:var(--danger);}
+.pick-btn.ignore{color:var(--danger);border-color:rgba(240,112,112,.3);}
+.pick-btn.ignore:hover,.pick-btn.ignore.active{border-color:var(--danger);color:var(--danger);background:rgba(240,112,112,.1);}
+#mag.ignore-mag{border-color:var(--danger);}
+
+.pick-btn{display:flex;align-items:center;gap:7px;width:100%;padding:7px 10px;
+  background:var(--surface);border:1px solid var(--border);border-radius:4px;
+  color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;}
+.pick-btn:hover{border-color:var(--accent);color:var(--accent);}
+.pick-btn.active{border-color:var(--accent);color:var(--accent);background:var(--adim);}
+.pick-btn.warn:hover{border-color:var(--warn);color:var(--warn);}
+.pick-btn.warn.active{border-color:var(--warn);color:var(--warn);background:rgba(240,168,74,.1);}
+.add-btn{width:100%;padding:6px;background:none;border:1px dashed var(--border);border-radius:4px;
+  color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;margin-top:5px;}
+.add-btn:hover{border-color:var(--accent);color:var(--accent);}
+.add-btn.warn:hover{border-color:var(--warn);color:var(--warn);}
+
+.setting-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;font-size:10px;color:var(--muted);}
+.setting-row input[type=checkbox]{accent-color:var(--accent);cursor:pointer;}
+.setting-row input[type=number]{width:52px;padding:3px 6px;background:var(--surface);border:1px solid var(--border);
+  border-radius:3px;color:var(--text);font-family:'DM Mono',monospace;font-size:10px;text-align:right;outline:none;}
+.setting-row input[type=number]:focus{border-color:var(--accent);}
+
+.hint{font-size:9px;color:var(--muted);line-height:1.7;padding:8px 9px;background:var(--bg);
+  border:1px solid var(--border);border-radius:3px;margin-bottom:8px;}
+.hint b{color:var(--text);font-weight:500;}
+
+.stats-row{display:flex;gap:7px;padding:10px 14px 0;}
+.stat{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:7px 9px;}
+.stat-n{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:var(--accent);}
+.stat-l{font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:1px;}
+
+.sb-footer{padding:11px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:5px;}
+.run-btn{width:100%;padding:11px;background:var(--accent);color:#0e0f0e;border:none;border-radius:4px;
+  font-family:'Syne',sans-serif;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  cursor:pointer;transition:all .18s;}
+.run-btn:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);}
+.run-btn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+.reset-btn{width:100%;padding:6px;background:none;border:1px solid var(--border);border-radius:4px;
+  color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;}
+.reset-btn:hover{color:var(--danger);border-color:var(--danger);}
+
+main{position:relative;overflow:hidden;background:#0a0b09;display:flex;align-items:center;justify-content:center;}
+.empty{text-align:center;color:var(--muted);pointer-events:none;}
+.empty-icon{font-size:40px;opacity:.2;margin-bottom:12px;}
+.empty p{font-size:11px;line-height:2;}
+#cw{position:relative;display:none;}
+#ic{display:block;}
+#pc{position:absolute;top:0;left:0;pointer-events:none;}
+#hc{position:absolute;top:0;left:0;opacity:0;pointer-events:all;cursor:default;}
+
+#mag{position:fixed;display:none;width:90px;height:90px;border-radius:50%;
+  border:1.5px solid var(--accent);overflow:hidden;pointer-events:none;z-index:999;
+  box-shadow:0 4px 24px rgba(0,0,0,.7);}
+#mag.warn-mag{border-color:var(--warn);}
+#mc{position:absolute;top:0;left:0;}
+#mr{position:absolute;inset:0;pointer-events:none;}
+#mr::before{content:'';position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(200,240,74,.6);transform:translateX(-50%);}
+#mr::after{content:'';position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(200,240,74,.6);transform:translateY(-50%);}
+#mag.warn-mag #mr::before,#mag.warn-mag #mr::after{background:rgba(240,168,74,.7);}
+#ml{position:absolute;bottom:0;left:0;right:0;height:20px;display:flex;align-items:center;justify-content:center;
+  font-size:8px;font-family:'DM Mono',monospace;letter-spacing:.1em;background:rgba(0,0,0,.75);border-top:1px solid rgba(255,255,255,.1);}
+
+.tool-btn{flex:1;padding:7px 6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;
+  color:var(--muted);font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:.04em;}
+.tool-btn:hover{border-color:var(--accent);color:var(--accent);}
+.tool-btn.active{border-color:var(--accent);color:var(--accent);background:var(--adim);}
+.tool-btn.split-active{border-color:var(--warn);color:var(--warn);background:rgba(240,168,74,.1);}
+.full-slider{width:100%;height:2px;-webkit-appearance:none;background:var(--border);border-radius:1px;cursor:pointer;outline:none;display:block;margin-bottom:8px;}
+.full-slider::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--accent);cursor:pointer;}
+/* drawn line cards */
+.lcard{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:7px 8px;
+  margin-bottom:5px;cursor:pointer;transition:border-color .12s;}
+.lcard:hover{border-color:var(--muted);}
+.lcard.sel{border-color:var(--accent);}
+.lcard.sel.split-card{border-color:var(--warn);}
+.lcard-hdr{display:flex;align-items:center;gap:6px;font-size:10px;}
+.lcard-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.lcard-lbl{flex:1;color:var(--text);}
+.lcard-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;
+  border-radius:2px;transition:color .12s;line-height:1;}
+.lcard-del:hover{color:var(--danger);}
+.lcard-tol{margin-top:7px;}
+.lcard-tol label{font-size:9px;color:var(--muted);display:flex;justify-content:space-between;margin-bottom:3px;}
+.lcard-tol .tv{color:var(--accent);font-family:'DM Mono',monospace;}
+.view-tabs{display:flex;gap:3px;background:var(--bg);padding:3px;border-radius:4px;border:1px solid var(--border);}
+.vtab{flex:1;text-align:center;padding:5px;font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+  cursor:pointer;border-radius:3px;transition:all .15s;color:var(--muted);}
+.vtab:hover{color:var(--text);}
+.vtab.active{background:var(--surface);color:var(--text);}
+
+#mask-canvas{position:absolute;top:0;left:0;pointer-events:none;display:none;}
+#tt{position:fixed;background:var(--panel);border:1px solid var(--border);border-radius:4px;
+  padding:8px 11px;font-size:10px;line-height:1.8;pointer-events:none;z-index:200;display:none;
+  min-width:130px;box-shadow:0 4px 16px rgba(0,0,0,.5);}
+#tt .tdot{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:middle;}
+
+#prog{position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);
+  transform-origin:left;transform:scaleX(0);transition:transform .25s;z-index:10;}
+
+footer{grid-column:1/-1;background:var(--panel);border-top:1px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:16px;font-size:10px;color:var(--muted);}
+#fc{flex:1;}
+.dl-btn{padding:5px 12px;background:none;border:1px solid var(--border);border-radius:3px;color:var(--muted);
+  font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:.05em;}
+.dl-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+.dl-btn:disabled{opacity:.3;cursor:not-allowed;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">La<em>·</em>La <em>/</em> Lot Extractor</div>
+  <div class="badge">alpha</div>
+  <div class="hstatus"><div class="dot" id="dot"></div><span id="hstat">no image</span></div>
+</header>
+
+<aside>
+  <div class="sb-scroll">
+
+    <!-- 01 IMAGE -->
+    <div class="sec">
+      <div class="sec-title">01 · Image</div>
+      <input type="file" id="fi" accept="image/*">
+      <label for="fi" class="upload-lbl" id="ul">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        <strong>Drop or click to load map</strong>
+        <span>PNG · JPG · WEBP · paste</span>
+      </label>
+    </div>
+
+    <!-- 02 LOT COLORS -->
+    <div class="sec">
+      <div class="sec-title">02 · Lot Fill Colors <span style="color:var(--text);margin-left:4px" id="lc-count">(0)</span></div>
+      <div class="palette" id="lot-list"></div>
+      <button class="pick-btn" id="pick-lot">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+        Pick lot color from image
+      </button>
+      <button class="add-btn" id="add-lot">+ Add lot color manually</button>
+    </div>
+
+    <!-- 03 BORDER COLORS -->
+    <div class="sec">
+      <div class="sec-title warn-title">03 · Border / Separator <span style="color:var(--text);margin-left:4px" id="bc-count">(0)</span></div>
+      <div class="hint"><b>Why?</b> Adjacent lots share a border line. Without knowing the border color, flood fill bleeds across lots.</div>
+      <div class="palette" id="border-list"></div>
+      <button class="pick-btn warn" id="pick-border">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+        Pick border color from image
+      </button>
+      <button class="add-btn warn" id="add-border">+ Add border color manually</button>
+    </div>
+
+    <!-- 03b IGNORE / HOLE FILL -->
+    <div class="sec">
+      <div class="sec-title ignore-title">03b · Ignore / Hole Fill <span style="color:var(--text);margin-left:4px" id="ic-count">(0)</span></div>
+      <div class="hint"><b>Why?</b> Markers or circles inside lots that interrupt fill. Matched pixels + outline are erased before extraction.</div>
+      <div class="palette" id="ignore-list"></div>
+      <button class="pick-btn ignore" id="pick-ignore">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+        Pick ignore color from image
+      </button>
+      <button class="add-btn ignore" id="add-ignore">+ Add ignore color manually</button>
+      <div class="setting-row" style="margin-top:8px">
+        <label for="ignore-expand">Outline expand <span id="ignore-expand-val" style="color:var(--danger)">6px</span></label>
+      </div>
+      <input class="full-slider" type="range" id="ignore-expand" min="0" max="20" value="6" step="1">
+      <div class="hint">Expands ignored area to absorb the black outline ring around the marker.</div>
+    </div>
+
+    <!-- 04 SETTINGS -->
+    <div class="sec">
+      <div class="sec-title">04 · Settings</div>
+      <div class="setting-row"><label for="min-area">Min lot area (px²)</label><input type="number" id="min-area" value="200" min="10"></div>
+      <div class="setting-row"><label for="show-labels">Show lot numbers</label><input type="checkbox" id="show-labels" checked></div>
+      <div class="setting-row">
+        <label for="simplify-tol">Simplify <span id="simplify-tol-val" style="color:var(--accent)">2px</span></label>
+      </div>
+      <input class="full-slider" type="range" id="simplify-tol" min="0" max="20" value="2" step="0.5">
+      <div class="hint">Higher = fewer, longer segments. Better for snap tool.</div>
+      <div class="setting-row" style="margin-top:6px">
+        <label for="aspect-ratio">Max aspect ratio <span id="aspect-ratio-val" style="color:var(--accent)">8:1</span></label>
+      </div>
+      <input class="full-slider" type="range" id="aspect-ratio" min="1" max="30" value="8" step="0.5">
+      <div class="hint">Removes sliver-like shapes. Lower = stricter. 4–8 works well for lots.</div>
+      <div class="setting-row" style="margin-top:6px">
+        <label for="stitch-gap">Heal edges <span id="stitch-gap-val" style="color:var(--accent)">0px</span></label>
+      </div>
+      <input class="full-slider" type="range" id="stitch-gap" min="0" max="50" value="0" step="1">
+      <div class="hint">Finds parallel edges within this distance and merges them to a shared midline, closing gaps without overlaps.</div>
+    </div>
+
+    <!-- 05 VIEW -->
+    <div class="sec">
+      <div class="sec-title">05 · View</div>
+      <div class="view-tabs" id="view-tabs">
+        <div class="vtab active" data-v="normal">Original</div>
+        <div class="vtab" data-v="polygons">Polygons</div>
+        <div class="vtab" data-v="mask">Mask</div>
+      </div>
+      <div class="hint" style="margin-top:8px">Scroll to zoom · Right-drag to pan · Dbl-click to reset</div>
+    </div>
+
+    <!-- 06 TOOLS -->
+    <div class="sec">
+      <div class="sec-title">06 · Edit Tools</div>
+      <div style="display:flex;gap:5px;margin-bottom:10px;">
+        <button class="tool-btn" id="btn-snap" title="Draw a snap line">🧲 Snap</button>
+        <button class="tool-btn" id="btn-split" title="Draw a split line">✂ Split</button>
+      </div>
+      <div id="tool-hint" class="hint" style="display:none;margin-bottom:8px;"></div>
+      <!-- drawn lines list -->
+      <div id="lines-list"></div>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats-row">
+      <div class="stat"><div class="stat-n" id="s-lots">—</div><div class="stat-l">Lots</div></div>
+      <div class="stat"><div class="stat-n" id="s-fill">—</div><div class="stat-l">Fill px</div></div>
+      <div class="stat"><div class="stat-n" id="s-ms">—</div><div class="stat-l">ms</div></div>
+    </div>
+
+  </div>
+  <div class="sb-footer">
+    <button class="run-btn" id="run-btn" disabled>⬡ Extract Polygons</button>
+    <button class="reset-btn" id="reset-btn">Clear</button>
+  </div>
+</aside>
+
+<main id="main">
+  <div id="prog"></div>
+  <div class="empty" id="empty">
+    <div class="empty-icon">⬡</div>
+    <p>Load a map · pick lot colors · pick border color<br>Extract polygons.</p>
+  </div>
+  <div id="cw">
+    <canvas id="ic"></canvas>
+    <canvas id="pc"></canvas>
+    <canvas id="mask-canvas"></canvas>
+    <canvas id="hc"></canvas>
+  </div>
+</main>
+
+<footer>
+  <span id="fc">—</span>
+  <span id="fi2">—</span>
+  <button class="dl-btn" id="dl-svg" disabled>↓ SVG</button>
+  <button class="dl-btn" id="dl-json" disabled>↓ GeoJSON</button>
+  <button class="dl-btn" id="dl-png" disabled>↓ PNG</button>
+</footer>
+
+<div id="mag"><canvas id="mc" width="90" height="90"></canvas><div id="mr"></div><div id="ml"></div></div>
+
+<script>
+const S={img:null,imgW:0,imgH:0,scale:1,lotColors:[],borderColors:[],ignoreColors:[],polygons:[],hoveredId:null,picking:null,srcPx:null,
+  viewMode:'normal',
+  zoom:1,panX:0,panY:0,
+  clsCache:null
+};
+const PCOLS=['#4fc3f7','#81c784','#ffb74d','#f06292','#ce93d8','#80cbc4','#fff176','#ff8a65','#aed581','#4dd0e1','#ef9a9a','#b39ddb','#ffe082','#c5e1a5','#f48fb1','#80deea','#ffcc80','#bcaaa4','#90a4ae','#a5d6a7'];
+let pci=0;
+const npc=()=>PCOLS[(pci++)%PCOLS.length];
+const h2r=h=>({r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)});
+const r2h=(r,g,b)=>'#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+const cd=(r1,g1,b1,r2,g2,b2)=>Math.sqrt((r1-r2)**2+(g1-g2)**2+(b1-b2)**2);
+const nf=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1000?(n/1000).toFixed(1)+'k':''+n;
+const sl=ms=>new Promise(r=>setTimeout(r,ms));
+const al=(h,a)=>{const{r,g,b}=h2r(h);return `rgba(${r},${g},${b},${a})`;};
+const $=id=>document.getElementById(id);
+const setStat=(msg,on=false)=>{$('hstat').textContent=msg;$('dot').className='dot'+(on?' on':'');};
+
+// canvas refs
+const ic=$('ic'),pc=$('pc'),hc=$('hc'),mkc=$('mask-canvas'),mag=$('mag'),mc=$('mc'),ml=$('ml'),tt=$('tt'),prog=$('prog');
+const ictx=ic.getContext('2d'),pctx=pc.getContext('2d'),hctx=hc.getContext('2d'),mktx=mkc.getContext('2d'),mctx=mc.getContext('2d');
+const cw=$('cw');
+
+// ── PALETTE UI (shared for lot + border) ──────────────────
+function addColor(type,hex='#5a9fd4'){
+  const arr=type==='lot'?S.lotColors:type==='border'?S.borderColors:S.ignoreColors;
+  arr.push({hex,...h2r(hex),tol:type==='lot'?40:type==='border'?25:30});
+  renderPalette(type);
+  checkRunnable();
+  scheduleExtract();
+}
+
+function renderPalette(type){
+  const arr=type==='lot'?S.lotColors:type==='border'?S.borderColors:S.ignoreColors;
+  const listId=type==='lot'?'lot-list':type==='border'?'border-list':'ignore-list';
+  const countId=type==='lot'?'lc-count':type==='border'?'bc-count':'ic-count';
+  const isBorder=type==='border';
+  const isIgnore=type==='ignore';
+  const list=$(listId);
+  list.innerHTML='';
+  $(countId).textContent=`(${arr.length})`;
+  arr.forEach((c,i)=>{
+    const div=document.createElement('div');
+    div.className='centry'+(isBorder?' border-entry':isIgnore?' ignore-entry':'');
+    div.innerHTML=`
+      <div class="swatch" style="background:${c.hex}"><input type="color" value="${c.hex}" data-i="${i}" data-t="${type}"></div>
+      <div class="einfo">
+        <div class="ehex">${c.hex}</div>
+        <div class="etol">
+          <span class="etol-lbl">tol <b class="tv">${c.tol}</b></span>
+          <input class="tslider${isBorder?' warn-slider':isIgnore?' ignore-slider':''}" type="range" min="0" max="120" value="${c.tol}" data-i="${i}" data-t="${type}">
+        </div>
+      </div>
+      <button class="eremove" data-i="${i}" data-t="${type}">×</button>`;
+    const getArr=t=>t==='lot'?S.lotColors:t==='border'?S.borderColors:S.ignoreColors;
+    div.querySelector('input[type=color]').addEventListener('input',e=>{
+      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=getArr(t);
+      a[idx].hex=e.target.value;Object.assign(a[idx],h2r(e.target.value));renderPalette(t);
+      scheduleExtract();
+    });
+    div.querySelector('.tslider').addEventListener('input',e=>{
+      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=getArr(t);
+      a[idx].tol=+e.target.value;div.querySelector('.tv').textContent=e.target.value;
+      scheduleExtract();
+    });
+    div.querySelector('.eremove').addEventListener('click',e=>{
+      const idx=+e.target.dataset.i,t=e.target.dataset.t,a=getArr(t);
+      a.splice(idx,1);renderPalette(t);checkRunnable();
+      scheduleExtract();
+    });
+    list.appendChild(div);
+  });
+}
+
+$('add-lot').addEventListener('click',()=>addColor('lot'));
+$('add-border').addEventListener('click',()=>addColor('border'));
+
+function checkRunnable(){
+  $('run-btn').disabled=!(S.img&&S.lotColors.length>0&&S.borderColors.length>0);
+}
+
+// ── IMAGE LOAD ───────────────────────────────────
+function loadImage(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  const url=URL.createObjectURL(file);
+  const img=new Image();
+  img.onload=()=>{
+    S.img=img;S.imgW=img.width;S.imgH=img.height;
+    setupCanvas();URL.revokeObjectURL(url);
+    setStat(`${img.width}×${img.height}`,true);
+    $('fi2').textContent=`${file.name} · ${img.width}×${img.height}`;
+    $('empty').style.display='none';$('cw').style.display='block';
+    S.polygons=[];clearPolys();checkRunnable();
+  };
+  img.src=url;
+}
+
+function setupCanvas(){
+  const m=$('main'),mw=m.clientWidth-40,mh=m.clientHeight-40;
+  const sc=Math.min(mw/S.imgW,mh/S.imgH,2);S.scale=sc;
+  S.zoom=1;S.panX=0;S.panY=0;
+  const w=Math.round(S.imgW*sc),h=Math.round(S.imgH*sc);
+  [ic,pc,hc,mkc].forEach(c=>{c.width=w;c.height=h;});
+  applyTransform();
+  ictx.drawImage(S.img,0,0,w,h);
+  const off=document.createElement('canvas');
+  off.width=S.imgW;off.height=S.imgH;
+  off.getContext('2d').drawImage(S.img,0,0);
+  S.srcPx=off.getContext('2d').getImageData(0,0,S.imgW,S.imgH).data;
+}
+
+function applyTransform(){
+  cw.style.transform=`translate(${S.panX}px,${S.panY}px) scale(${S.zoom})`;
+  cw.style.transformOrigin='center center';
+}
+
+const fi=$('fi'),ul=$('ul');
+fi.addEventListener('change',e=>{if(e.target.files[0])loadImage(e.target.files[0]);e.target.value='';});
+ul.addEventListener('dragover',e=>{e.preventDefault();ul.classList.add('drag');});
+ul.addEventListener('dragleave',()=>ul.classList.remove('drag'));
+ul.addEventListener('drop',e=>{e.preventDefault();ul.classList.remove('drag');loadImage(e.dataTransfer.files[0]);});
+document.addEventListener('paste',e=>{const f=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'));if(f)loadImage(f.getAsFile());});
+
+// ── ZOOM & PAN ────────────────────────────────────
+const mainEl=$('main');
+
+mainEl.addEventListener('wheel',e=>{
+  if(!S.img)return;
+  e.preventDefault();
+  const factor=e.deltaY<0?1.12:1/1.12;
+  const newZoom=Math.min(Math.max(S.zoom*factor,0.5),12);
+  // zoom toward mouse position
+  const rect=mainEl.getBoundingClientRect();
+  const mx=e.clientX-rect.left-rect.width/2;
+  const my=e.clientY-rect.top-rect.height/2;
+  S.panX=mx+(S.panX-mx)*(newZoom/S.zoom);
+  S.panY=my+(S.panY-my)*(newZoom/S.zoom);
+  S.zoom=newZoom;
+  applyTransform();
+  updateZoomLabel();
+},{passive:false});
+
+// Right-click drag to pan
+let dragging=false,dragSX=0,dragSY=0,dragPX=0,dragPY=0;
+mainEl.addEventListener('mousedown',e=>{
+  if(e.button!==2||!S.img)return;
+  e.preventDefault();
+  dragging=true;dragSX=e.clientX;dragSY=e.clientY;dragPX=S.panX;dragPY=S.panY;
+  mainEl.style.cursor='grabbing';
+});
+window.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  S.panX=dragPX+(e.clientX-dragSX);
+  S.panY=dragPY+(e.clientY-dragSY);
+  applyTransform();
+});
+window.addEventListener('mouseup',e=>{
+  if(e.button!==2)return;
+  dragging=false;mainEl.style.cursor='';
+});
+mainEl.addEventListener('contextmenu',e=>e.preventDefault());
+
+// Double-click to reset
+mainEl.addEventListener('dblclick',e=>{
+  if(!S.img||S.picking)return;
+  S.zoom=1;S.panX=0;S.panY=0;applyTransform();updateZoomLabel();
+});
+
+function updateZoomLabel(){
+  $('fc').textContent=S.img?`${Math.round(S.zoom*100)}% zoom`:'—';
+}
+
+// ── VIEW MODE ─────────────────────────────────────
+document.getElementById('view-tabs').addEventListener('click',e=>{
+  const vtab=e.target.closest('.vtab');if(!vtab)return;
+  document.querySelectorAll('.vtab').forEach(t=>t.classList.remove('active'));
+  vtab.classList.add('active');
+  S.viewMode=vtab.dataset.v;
+  applyViewMode();
+});
+
+function applyViewMode(){
+  if(!S.img)return;
+  if(S.viewMode==='normal'){
+    ictx.clearRect(0,0,ic.width,ic.height);
+    ictx.drawImage(S.img,0,0,ic.width,ic.height);
+    pc.style.display='block';mkc.style.display='none';
+  } else if(S.viewMode==='polygons'){
+    ictx.clearRect(0,0,ic.width,ic.height);
+    ictx.fillStyle='#0a0b09';ictx.fillRect(0,0,ic.width,ic.height);
+    pc.style.display='block';mkc.style.display='none';
+  } else if(S.viewMode==='mask'){
+    pc.style.display='none';mkc.style.display='block';
+    drawMask();
+  }
+}
+
+function drawMask(){
+  if(!S.clsCache)return;
+  const W=S.imgW,H=S.imgH,cls=S.clsCache;
+  const imgd=new ImageData(W,H);const d=imgd.data;
+  for(let i=0;i<W*H;i++){
+    const v=cls[i]===1?255:cls[i]===2?80:0;
+    d[i*4]=v;d[i*4+1]=cls[i]===2?50:v;d[i*4+2]=cls[i]===2?50:v;d[i*4+3]=255;
+  }
+  const tmp=document.createElement('canvas');tmp.width=W;tmp.height=H;
+  tmp.getContext('2d').putImageData(imgd,0,0);
+  mktx.clearRect(0,0,mkc.width,mkc.height);
+  mktx.drawImage(tmp,0,0,mkc.width,mkc.height);
+}
+function togglePick(type){
+  const active=S.picking===type;
+  S.picking=active?null:type;
+  $('pick-lot').classList.toggle('active',S.picking==='lot');
+  $('pick-border').classList.toggle('active',S.picking==='border');
+  $('pick-ignore').classList.toggle('active',S.picking==='ignore');
+  hc.style.cursor=S.picking?'crosshair':'default';
+  mag.className=S.picking==='border'?'warn-mag':S.picking==='ignore'?'ignore-mag':'';
+  if(!S.picking)mag.style.display='none';
+}
+$('pick-lot').addEventListener('click',()=>{if(S.img)togglePick('lot');});
+$('pick-border').addEventListener('click',()=>{if(S.img)togglePick('border');});
+$('pick-ignore').addEventListener('click',()=>{if(S.img)togglePick('ignore');});
+$('add-ignore').addEventListener('click',()=>addColor('ignore'));
+$('ignore-expand').addEventListener('input',e=>{
+  $('ignore-expand-val').textContent=e.target.value+'px';
+  scheduleExtract();
+});
+$('stitch-gap').addEventListener('input',e=>{
+  $('stitch-gap-val').textContent=e.target.value+'px';
+  scheduleExtract();
+});
+
+// mousemove, mousedown, mouseup are handled in the SNAP & SPLIT TOOLS block below
+// which also handles eyedropper and polygon hover routing
+hc.addEventListener('mouseleave',()=>{
+  mag.style.display='none';$('fc').textContent='—';
+  if(S.hoveredId!==null){S.hoveredId=null;drawPolys();tt.style.display='none';}
+});
+
+function coords(e){
+  // hc.getBoundingClientRect() already accounts for CSS zoom+pan transform,
+  // so clientX/Y relative to the (transformed) canvas rect IS the correct
+  // canvas-space position — but we must then divide by the CSS zoom to get
+  // true canvas pixels, because the canvas internal size is pre-zoom.
+  const r=hc.getBoundingClientRect();
+  // position inside the zoomed canvas element (CSS pixels)
+  const ex=e.clientX-r.left, ey=e.clientY-r.top;
+  // canvas internal coords = divide by zoom (rect is already zoomed)
+  const cx=ex/S.zoom, cy=ey/S.zoom;
+  return{cx,cy,sx:Math.round(cx/S.scale),sy:Math.round(cy/S.scale)};
+}
+
+function showMag(mx,my,cx,cy){
+  const zoom=5,r=45,sz=Math.round(r*2/zoom);
+  mctx.clearRect(0,0,90,90);mctx.save();mctx.imageSmoothingEnabled=false;
+  mctx.drawImage(ic,Math.round(cx-r/zoom),Math.round(cy-r/zoom),sz,sz,0,0,90,90);mctx.restore();
+  const px=ictx.getImageData(Math.round(cx),Math.round(cy),1,1).data;
+  const hex=r2h(px[0],px[1],px[2]);
+  ml.style.background=hex;ml.style.color=(px[0]*.299+px[1]*.587+px[2]*.114)>128?'#000':'#fff';ml.textContent=hex;
+  mag.style.display='block';
+  let lx=mx+26,ly=my-115;
+  if(lx+90>window.innerWidth)lx=mx-116;if(ly<0)ly=my+26;
+  mag.style.left=lx+'px';mag.style.top=ly+'px';
+}
+
+// ── HOVER ────────────────────────────────────────
+function checkHover(cx,cy,mx,my){
+  const px=hctx.getImageData(Math.round(cx),Math.round(cy),1,1).data;
+  if(px[3]===0){
+    if(S.hoveredId!==null){S.hoveredId=null;drawPolys();tt.style.display='none';}
+    hc.style.cursor='default';return;
+  }
+  const id=(px[0]-1)+px[1]*255;
+  if(id<0||id>=S.polygons.length)return;
+  hc.style.cursor='pointer';
+  if(S.hoveredId===id){moveTT(mx,my);return;}
+  S.hoveredId=id;drawPolys();showTT(mx,my,id);
+}
+function showTT(mx,my,id){
+  const p=S.polygons[id];
+  tt.innerHTML=`<span class="tdot" style="background:${p.dc}"></span><strong>Lot ${p.id+1}</strong><br>Area: ${nf(Math.round(p.area))} px²<br>Center: ${p.cx}, ${p.cy}`;
+  moveTT(mx,my);
+}
+function moveTT(mx,my){
+  tt.style.display='block';
+  const w=tt.offsetWidth||140, h=tt.offsetHeight||80;
+  const x=mx+14+w>window.innerWidth ? mx-w-14 : mx+14;
+  const y=my-10+h>window.innerHeight ? my-h-10 : my-10;
+  tt.style.left=Math.max(4,x)+'px';
+  tt.style.top=Math.max(4,y)+'px';
+}
+
+// ── EXTRACTION ───────────────────────────────────
+$('run-btn').addEventListener('click',extract);
+
+async function extract(){
+  if(!S.img||!S.lotColors.length||!S.borderColors.length)return;
+  const btn=$('run-btn');btn.disabled=true;btn.textContent='Working…';
+  setStat('extracting…');prog.style.transform='scaleX(0.08)';await sl(16);
+  try{
+  const t0=performance.now();
+  const W=S.imgW,H=S.imgH,src=S.srcPx;
+  const minArea=+$('min-area').value||200;
+
+  // 1. Classify pixels: 1=lot fill, 2=border/barrier, 3=ignored, 0=unknown
+  const cls=new Uint8Array(W*H);
+  let filled=0;
+  const expand=parseInt($('ignore-expand').value)||0;
+  if(S.ignoreColors.length){
+    for(let i=0;i<W*H;i++){
+      const r=src[i*4],g=src[i*4+1],b=src[i*4+2];
+      for(const ci of S.ignoreColors){if(cd(r,g,b,ci.r,ci.g,ci.b)<=ci.tol){cls[i]=3;break;}}
+    }
+    if(expand>0){
+      const tmp=new Uint8Array(W*H);
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+        if(cls[y*W+x]!==3)continue;
+        for(let dy=Math.max(0,y-expand);dy<=Math.min(H-1,y+expand);dy++)
+          for(let dx=Math.max(0,x-expand);dx<=Math.min(W-1,x+expand);dx++)
+            tmp[dy*W+dx]=3;
+      }
+      for(let i=0;i<W*H;i++) if(tmp[i]===3) cls[i]=3;
+    }
+  }
+  for(let i=0;i<W*H;i++){
+    if(cls[i]===3)continue;
+    const r=src[i*4],g=src[i*4+1],b=src[i*4+2];
+    let isBorder=false;
+    for(const ci of S.borderColors){if(cd(r,g,b,ci.r,ci.g,ci.b)<=ci.tol){isBorder=true;break;}}
+    if(isBorder){cls[i]=2;continue;}
+    for(const ci of S.lotColors){if(cd(r,g,b,ci.r,ci.g,ci.b)<=ci.tol){cls[i]=1;filled++;break;}}
+  }
+  // ── Morphological close on border mask ──────────────────────────────────
+  // Dilate border pixels by 1px, then erode back. This plugs 1-2px gaps from
+  // anti-aliasing / JPEG artifacts that would otherwise let flood fill leak.
+  // Also: any unclassified pixel (0) surrounded by 3+ border neighbors → border.
+  {
+    const tmp=new Uint8Array(W*H);
+    // dilate: any pixel adjacent (8-connected) to a border pixel becomes border
+    for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
+      const i=y*W+x;
+      if(cls[i]===2){tmp[i]=2;continue;}
+      if(cls[i]===1)continue; // don't promote known lot fill
+      // count border neighbors (8-connected)
+      let bn=0;
+      if(cls[i-1]===2)bn++;if(cls[i+1]===2)bn++;
+      if(cls[i-W]===2)bn++;if(cls[i+W]===2)bn++;
+      if(cls[i-W-1]===2)bn++;if(cls[i-W+1]===2)bn++;
+      if(cls[i+W-1]===2)bn++;if(cls[i+W+1]===2)bn++;
+      if(bn>=3)tmp[i]=2; // unclassified pixel near borders → border
+    }
+    // apply dilated borders back (only upgrade 0→2, never overwrite lot fill)
+    for(let i=0;i<W*H;i++) if(tmp[i]===2&&cls[i]===0) cls[i]=2;
+  }
+
+  // treat ignored pixels as lot fill so BFS flows through them (no holes)
+  for(let i=0;i<W*H;i++) if(cls[i]===3) cls[i]=1;
+  prog.style.transform='scaleX(0.4)';await sl(10);
+  S.clsCache=cls;
+
+  // ── 2. Connected-component BFS (8-connected) ─────────────────────────────
+  const labels=new Int32Array(W*H).fill(-1);
+  const sizes=[];
+  for(let s=0;s<W*H;s++){
+    if(cls[s]!==1||labels[s]>=0)continue;
+    const lbl=sizes.length;sizes.push(0);
+    const q=[s];let qi=0;
+    while(qi<q.length){
+      const idx=q[qi++];
+      if(labels[idx]>=0)continue;
+      labels[idx]=lbl;sizes[lbl]++;
+      const x=idx%W,y=Math.floor(idx/W);
+      // 4-connected (cardinal)
+      if(x>0&&cls[idx-1]===1&&labels[idx-1]<0)q.push(idx-1);
+      if(x<W-1&&cls[idx+1]===1&&labels[idx+1]<0)q.push(idx+1);
+      if(y>0&&cls[idx-W]===1&&labels[idx-W]<0)q.push(idx-W);
+      if(y<H-1&&cls[idx+W]===1&&labels[idx+W]<0)q.push(idx+W);
+      // 8-connected (diagonal) — catches lots connected through diagonal pixels
+      if(x>0&&y>0&&cls[idx-W-1]===1&&labels[idx-W-1]<0)q.push(idx-W-1);
+      if(x<W-1&&y>0&&cls[idx-W+1]===1&&labels[idx-W+1]<0)q.push(idx-W+1);
+      if(x>0&&y<H-1&&cls[idx+W-1]===1&&labels[idx+W-1]<0)q.push(idx+W-1);
+      if(x<W-1&&y<H-1&&cls[idx+W+1]===1&&labels[idx+W+1]<0)q.push(idx+W+1);
+    }
+  }
+  prog.style.transform='scaleX(0.65)';await sl(10);
+
+  // 3. Collect bounding boxes + pixel coords per label
+  const boxes=Array.from({length:sizes.length},()=>({x0:W,y0:H,x1:0,y1:0,xs:[],ys:[]}));
+  for(let i=0;i<W*H;i++){
+    const l=labels[i];if(l<0)continue;
+    const x=i%W,y=Math.floor(i/W),b=boxes[l];
+    if(x<b.x0)b.x0=x;if(x>b.x1)b.x1=x;
+    if(y<b.y0)b.y0=y;if(y>b.y1)b.y1=y;
+    b.xs.push(x);b.ys.push(y);
+  }
+
+  // 4. Build polygons
+  pci=0;S.polygons=[];
+  const simpTol=parseFloat($('simplify-tol').value)||0;
+  for(let l=0;l<sizes.length;l++){
+    if(sizes[l]<minArea)continue;
+    const b=boxes[l];
+    let contour=traceContour(cls,labels,l,W,H,b);
+    if(contour.length<3)continue;
+    if(simpTol>0)contour=rdpSimplify(contour,simpTol);
+    if(contour.length<3)continue;
+    // Aspect ratio filter — reject slivers using oriented bounding box
+    const maxAspect=parseFloat($('aspect-ratio').value)||8;
+    if(maxAspect<30){
+      const ar=obbAspectRatio(contour);
+      if(ar>maxAspect)continue;
+    }
+    const cxv=Math.round(b.xs.reduce((a,v)=>a+v,0)/b.xs.length);
+    const cyv=Math.round(b.ys.reduce((a,v)=>a+v,0)/b.ys.length);
+    S.polygons.push({id:S.polygons.length,points:contour,area:sizes[l],cx:cxv,cy:cyv,dc:npc()});
+  }
+
+  prog.style.transform='scaleX(0.88)';await sl(10);
+  const stitchGap=parseInt($('stitch-gap').value)||0;
+  if(stitchGap>0)healEdges(stitchGap);
+  // if tool lines exist, replay them onto the fresh polygons
+  if(T.lines.length){
+    saveBase();
+    reapplyTools();
+  } else {
+    drawPolys();buildHit();applyViewMode();
+  }
+
+  const t1=performance.now();
+  $('s-lots').textContent=S.polygons.length;
+  $('s-fill').textContent=nf(filled);
+  $('s-ms').textContent=Math.round(t1-t0);
+  prog.style.transform='scaleX(1)';await sl(400);prog.style.transform='scaleX(0)';
+  setStat(`${S.polygons.length} lots found`,true);
+  ['dl-svg','dl-json','dl-png'].forEach(id=>$(id).disabled=false);
+  }catch(err){
+    console.error('Extract error:',err);
+    setStat('error: '+err.message,false);
+    prog.style.transform='scaleX(0)';
+  }finally{
+    btn.disabled=false;btn.textContent='⬡ Extract Polygons';
+  }
+}
+
+// ── ORIENTED BOUNDING BOX ASPECT RATIO ────────────────────────────────────
+// Returns long/short side ratio of the tightest rotated rectangle around pts.
+// Uses rotating calipers over convex hull edges as candidate axes.
+function obbAspectRatio(pts){
+  if(pts.length<2)return 1;
+  // convex hull (gift wrap)
+  const hull=convexHull(pts);
+  if(hull.length<2)return 1;
+  let minArea=Infinity,bestAR=1;
+  for(let i=0;i<hull.length;i++){
+    const a=hull[i],b=hull[(i+1)%hull.length];
+    const ex=b.x-a.x,ey=b.y-a.y,len=Math.hypot(ex,ey);
+    if(len<1e-6)continue;
+    const ux=ex/len,uy=ey/len,vx=-uy,vy=ux;
+    let minU=Infinity,maxU=-Infinity,minV=Infinity,maxV=-Infinity;
+    hull.forEach(p=>{
+      const u=p.x*ux+p.y*uy,v=p.x*vx+p.y*vy;
+      if(u<minU)minU=u;if(u>maxU)maxU=u;
+      if(v<minV)minV=v;if(v>maxV)maxV=v;
+    });
+    const w=maxU-minU,h=maxV-minV,area=w*h;
+    if(area<minArea){
+      minArea=area;
+      bestAR=h>0?Math.max(w/h,h/w):999;
+    }
+  }
+  return bestAR;
+}
+function convexHull(pts){
+  const p=[...pts].sort((a,b)=>a.x-b.x||a.y-b.y);
+  const cross=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+  const lower=[],upper=[];
+  for(const pt of p){
+    while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],pt)<=0)lower.pop();
+    lower.push(pt);
+  }
+  for(let i=p.length-1;i>=0;i--){
+    const pt=p[i];
+    while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],pt)<=0)upper.pop();
+    upper.push(pt);
+  }
+  upper.pop();lower.pop();
+  return lower.concat(upper);
+}
+
+// ── auto-extract on settings change (debounced) ───────────────────────────
+let _autoExtractTimer=null;
+function scheduleExtract(){
+  if(!S.img||!S.lotColors.length||!S.borderColors.length)return;
+  clearTimeout(_autoExtractTimer);
+  _autoExtractTimer=setTimeout(()=>extract(),400);
+}
+$('aspect-ratio').addEventListener('input',e=>{
+  const v=parseFloat(e.target.value);
+  $('aspect-ratio-val').textContent=v>=30?'off':v.toFixed(1)+':1';
+  scheduleExtract();
+});
+
+// ── HEAL EDGES — nearest-neighbor shared-edge snapping ─────────────────
+// Goal: lots A, B, C side-by-side share exact edges (A|B|C not A B C).
+// Strategy:
+//   Pass 1 — Vertex-to-vertex: snap nearby vertices across polygons to same point
+//   Pass 2 — Vertex-to-edge: if a vertex is near another polygon's edge but not
+//            near any vertex, insert a matching vertex on that edge and snap both
+//   Pass 3 — Shared-edge alignment: for edge pairs that are close + roughly parallel,
+//            average them to a shared midline so adjacent lots touch perfectly.
+// Uses a spatial grid for O(n) neighbor lookups instead of O(n²).
+function healEdges(gap){
+  if(!gap||gap<=0)return;
+  const polys=S.polygons;
+  const gap2=gap*gap; // squared distance threshold
+
+  // ── spatial grid for fast neighbor lookup ───────────────────────────────
+  const cellSize=Math.max(gap*2,8);
+  const grid=new Map();
+  function gkey(x,y){return((x/cellSize|0)+50000)*100000+((y/cellSize|0)+50000);}
+  function gridInsert(x,y,pi,vi){
+    const k=gkey(x,y);
+    if(!grid.has(k))grid.set(k,[]);
+    grid.get(k).push({x,y,pi,vi});
+  }
+  function gridQuery(x,y,radius){
+    const results=[];
+    const r=Math.ceil(radius/cellSize);
+    const cx=x/cellSize|0, cy=y/cellSize|0;
+    for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+      const k=((cx+dx)+50000)*100000+((cy+dy)+50000);
+      const cell=grid.get(k);
+      if(cell) for(const e of cell){
+        const d2=(e.x-x)**2+(e.y-y)**2;
+        if(d2<=radius*radius) results.push({...e,d2});
+      }
+    }
+    return results;
+  }
+
+  // populate grid with all vertices
+  polys.forEach((p,pi)=>{
+    p.points.forEach((pt,vi)=>gridInsert(pt.x,pt.y,pi,vi));
+  });
+
+  // helper
+  function projectPtSeg(px,py,ax,ay,bx,by){
+    const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
+    if(len2===0)return{t:0,x:ax,y:ay,d2:(px-ax)**2+(py-ay)**2};
+    const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/len2));
+    const rx=ax+t*dx,ry=ay+t*dy;
+    return{t,x:rx,y:ry,d2:(px-rx)**2+(py-ry)**2};
+  }
+
+  // ── Pass 1: vertex-to-vertex — merge nearby vertices across polygons ────
+  // Build union-find so clusters of nearby vertices all converge to one point
+  const vkey=(pi,vi)=>pi*100000+vi;
+  const parent=new Map();
+  function find(k){
+    if(!parent.has(k))parent.set(k,k);
+    while(parent.get(k)!==k){parent.set(k,parent.get(parent.get(k)));k=parent.get(k);}
+    return k;
+  }
+  function union(a,b){const ra=find(a),rb=find(b);if(ra!==rb)parent.set(ra,rb);}
+
+  polys.forEach((p,pi)=>{
+    p.points.forEach((pt,vi)=>{
+      const near=gridQuery(pt.x,pt.y,gap);
+      for(const n of near){
+        if(n.pi===pi)continue; // same polygon
+        union(vkey(pi,vi),vkey(n.pi,n.vi));
+      }
+    });
+  });
+
+  // compute average position for each cluster and apply
+  const clusters=new Map(); // root → [{pi,vi}]
+  polys.forEach((p,pi)=>{
+    p.points.forEach((_,vi)=>{
+      const root=find(vkey(pi,vi));
+      if(!clusters.has(root))clusters.set(root,[]);
+      clusters.get(root).push({pi,vi});
+    });
+  });
+  for(const [_,members] of clusters){
+    if(members.length<2)continue;
+    // average position
+    let sx=0,sy=0;
+    for(const m of members){sx+=polys[m.pi].points[m.vi].x;sy+=polys[m.pi].points[m.vi].y;}
+    const ax=sx/members.length,ay=sy/members.length;
+    for(const m of members){
+      polys[m.pi].points[m.vi]={x:ax,y:ay};
+    }
+  }
+
+  // ── Pass 2: vertex-to-edge — insert + snap ─────────────────────────────
+  // For each vertex V of poly A, if V is close to an edge of poly B (but wasn't
+  // already snapped in pass 1), insert a new vertex on B's edge at the projection
+  // point, then snap both to the midpoint.
+  const inserted=[]; // collect insertions to apply after iteration
+  polys.forEach((pA,pi)=>{
+    const ptsA=pA.points;
+    ptsA.forEach((v,vi)=>{
+      // check if this vertex was already merged in pass 1
+      const myRoot=find(vkey(pi,vi));
+      const myCluster=clusters.get(myRoot);
+      if(myCluster&&myCluster.length>=2)return; // already shared
+
+      // check nearby polygons' edges
+      let bestDist=gap2,bestPj=-1,bestEj=-1,bestProj=null;
+      polys.forEach((pB,pj)=>{
+        if(pj===pi)return;
+        const ptsB=pB.points,nB=ptsB.length;
+        for(let ej=0;ej<nB;ej++){
+          const b1=ptsB[ej],b2=ptsB[(ej+1)%nB];
+          const pr=projectPtSeg(v.x,v.y,b1.x,b1.y,b2.x,b2.y);
+          // skip if projection is at endpoint (that's a vertex-vertex case)
+          if(pr.t<0.02||pr.t>0.98)continue;
+          if(pr.d2<bestDist){bestDist=pr.d2;bestPj=pj;bestEj=ej;bestProj=pr;}
+        }
+      });
+      if(bestPj>=0&&bestProj){
+        const mx=(v.x+bestProj.x)/2, my=(v.y+bestProj.y)/2;
+        inserted.push({pi,vi,pj:bestPj,ej:bestEj,t:bestProj.t,mx,my});
+      }
+    });
+  });
+
+  // sort insertions by (pj, ej, t descending) so splicing doesn't shift indices
+  inserted.sort((a,b)=>a.pj!==b.pj?a.pj-b.pj:a.ej!==b.ej?a.ej-b.ej:b.t-a.t);
+  // deduplicate — only one insertion per edge position (within gap distance)
+  const dedupInserted=[];
+  for(const ins of inserted){
+    const dup=dedupInserted.find(d=>d.pj===ins.pj&&d.ej===ins.ej&&Math.abs(d.t-ins.t)<0.05);
+    if(!dup)dedupInserted.push(ins);
+  }
+  // apply insertions
+  for(const ins of dedupInserted){
+    // insert vertex on poly B's edge
+    polys[ins.pj].points.splice(ins.ej+1,0,{x:ins.mx,y:ins.my});
+    // move poly A's vertex to midpoint
+    polys[ins.pi].points[ins.vi]={x:ins.mx,y:ins.my};
+    // adjust subsequent insertion indices for same polygon
+    for(const other of dedupInserted){
+      if(other===ins)continue;
+      if(other.pj===ins.pj&&other.ej>ins.ej)other.ej++;
+    }
+  }
+
+  // ── Pass 3: edge-to-edge alignment ─────────────────────────────────────
+  // After passes 1+2, most shared boundaries already share vertices.
+  // This pass catches remaining close parallel edges and averages them.
+  const cos20=Math.cos(20*Math.PI/180);
+  polys.forEach((pA,pi)=>{
+    const ptsA=pA.points,nA=ptsA.length;
+    for(let vi=0;vi<nA;vi++){
+      const a1=ptsA[vi],a2=ptsA[(vi+1)%nA];
+      const adx=a2.x-a1.x,ady=a2.y-a1.y,alen=Math.hypot(adx,ady);
+      if(alen<2)continue;
+      const anx=adx/alen,any=ady/alen;
+      const amx=(a1.x+a2.x)/2,amy=(a1.y+a2.y)/2;
+
+      // find nearest edge on a different polygon
+      let bestDist=gap,bestPj=-1,bestVj=-1;
+      polys.forEach((pB,pj)=>{
+        if(pj<=pi)return; // avoid double-processing
+        const ptsB=pB.points,nB=ptsB.length;
+        for(let vj=0;vj<nB;vj++){
+          const b1=ptsB[vj],b2=ptsB[(vj+1)%nB];
+          const bdx=b2.x-b1.x,bdy=b2.y-b1.y,blen=Math.hypot(bdx,bdy);
+          if(blen<2)continue;
+          const bnx=bdx/blen,bny=bdy/blen;
+          // must be roughly parallel
+          if(Math.abs(anx*bnx+any*bny)<cos20)continue;
+          // midpoint distance
+          const bmx=(b1.x+b2.x)/2,bmy=(b1.y+b2.y)/2;
+          const d=Math.hypot(amx-bmx,amy-bmy);
+          if(d<bestDist){bestDist=d;bestPj=pj;bestVj=vj;}
+        }
+      });
+      if(bestPj<0)continue;
+      const ptsB=polys[bestPj].points,nB=ptsB.length;
+      const b1=ptsB[bestVj],b2=ptsB[(bestVj+1)%nB];
+      // snap each endpoint pair to their midpoint
+      const m1x=(a1.x+b2.x)/2,m1y=(a1.y+b2.y)/2; // a1↔closest b endpoint
+      const m2x=(a2.x+b1.x)/2,m2y=(a2.y+b1.y)/2;
+      // figure out which pairing is closer (same or reverse direction)
+      const d_same=Math.hypot(a1.x-b1.x,a1.y-b1.y)+Math.hypot(a2.x-b2.x,a2.y-b2.y);
+      const d_rev=Math.hypot(a1.x-b2.x,a1.y-b2.y)+Math.hypot(a2.x-b1.x,a2.y-b1.y);
+      if(d_same<=d_rev){
+        // a1↔b1, a2↔b2
+        const mx1=(a1.x+b1.x)/2,my1=(a1.y+b1.y)/2;
+        const mx2=(a2.x+b2.x)/2,my2=(a2.y+b2.y)/2;
+        if(Math.hypot(a1.x-b1.x,a1.y-b1.y)<=gap){ptsA[vi]={x:mx1,y:my1};ptsB[bestVj]={x:mx1,y:my1};}
+        if(Math.hypot(a2.x-b2.x,a2.y-b2.y)<=gap){ptsA[(vi+1)%nA]={x:mx2,y:my2};ptsB[(bestVj+1)%nB]={x:mx2,y:my2};}
+      } else {
+        // a1↔b2, a2↔b1 (edges run opposite directions)
+        if(Math.hypot(a1.x-b2.x,a1.y-b2.y)<=gap){ptsA[vi]={x:m1x,y:m1y};ptsB[(bestVj+1)%nB]={x:m1x,y:m1y};}
+        if(Math.hypot(a2.x-b1.x,a2.y-b1.y)<=gap){ptsA[(vi+1)%nA]={x:m2x,y:m2y};ptsB[bestVj]={x:m2x,y:m2y};}
+      }
+    }
+  });
+}
+
+// ── RDP SIMPLIFY ──────────────────────────────────
+function rdpSimplify(pts,eps){
+  if(pts.length<=2)return pts;
+  // find point furthest from line pts[0]→pts[last]
+  const x1=pts[0].x,y1=pts[0].y,x2=pts[pts.length-1].x,y2=pts[pts.length-1].y;
+  const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
+  let maxD=0,maxI=0;
+  for(let i=1;i<pts.length-1;i++){
+    const d=len===0?Math.hypot(pts[i].x-x1,pts[i].y-y1)
+      :Math.abs(dy*pts[i].x-dx*pts[i].y+x2*y1-y2*x1)/len;
+    if(d>maxD){maxD=d;maxI=i;}
+  }
+  if(maxD>eps){
+    const l=rdpSimplify(pts.slice(0,maxI+1),eps);
+    const r=rdpSimplify(pts.slice(maxI),eps);
+    return l.slice(0,-1).concat(r);
+  }
+  return[pts[0],pts[pts.length-1]];
+}
+
+// wire simplify slider display (re-extract on change)
+$('simplify-tol').addEventListener('input',e=>{
+  $('simplify-tol-val').textContent=parseFloat(e.target.value).toFixed(1)+'px';
+  scheduleExtract();
+});
+$('min-area').addEventListener('input',scheduleExtract);
+
+// ── CONTOUR TRACE (Marching Squares) ──────────────────────────────────
+// Produces sub-pixel boundary by walking the 0/1 boundary between cells.
+// Returns ordered {x,y} points forming a closed contour at half-pixel positions.
+function traceContour(cls,labels,lbl,W,H,b){
+  // Build a padded binary grid: 1 = inside this component, 0 = outside.
+  // Pad by 1 on all sides so marching squares can walk the full perimeter.
+  const bw=b.x1-b.x0+3, bh=b.y1-b.y0+3; // +2 padding +1 for grid
+  const ox=b.x0-1, oy=b.y0-1; // offset
+  const bin=new Uint8Array(bw*bh);
+  for(let y=b.y0;y<=b.y1;y++)
+    for(let x=b.x0;x<=b.x1;x++)
+      if(cls[y*W+x]===1&&labels[y*W+x]===lbl) bin[(y-oy)*bw+(x-ox)]=1;
+
+  // Find start: first cell where top-left=0, top-right or bottom-left=1
+  let sx=-1,sy=-1;
+  outer:
+  for(let y=0;y<bh-1;y++)
+    for(let x=0;x<bw-1;x++){
+      const tl=bin[y*bw+x],tr=bin[y*bw+x+1],bl=bin[(y+1)*bw+x],br=bin[(y+1)*bw+x+1];
+      const cfg=(tl<<3)|(tr<<2)|(br<<1)|bl;
+      if(cfg>0&&cfg<15){sx=x;sy=y;break outer;}
+    }
+  if(sx<0)return[];
+
+  // Marching squares walk
+  const border=[];
+  const visited=new Set();
+  let cx=sx,cy=sy;
+  const maxSteps=(bw+bh)*6+1000;
+  let steps=0;
+
+  // direction: 0=right,1=down,2=left,3=up
+  let prevDir=0;
+
+  do{
+    const k=cy*bw+cx;
+    if(visited.has(k)&&border.length>2)break;
+    visited.add(k);
+
+    const tl=bin[cy*bw+cx],tr=bin[cy*bw+cx+1],bl=bin[(cy+1)*bw+cx],br=bin[(cy+1)*bw+cx+1];
+    const cfg=(tl<<3)|(tr<<2)|(br<<1)|bl;
+
+    // Emit a point at the midpoint of the boundary crossing
+    // The cell (cx,cy) in padded coords → real image coords = (cx+ox, cy+oy)
+    // Marching squares edge midpoints:
+    let px,py;
+    switch(cfg){
+      case 1:case 14: px=cx-0.5;py=cy+0.5;break;      // left edge mid
+      case 2:case 13: px=cx+0.5;py=cy+1;break;         // bottom edge mid
+      case 3:case 12: px=cx-0.5;py=cy+1;break;          // bottom-left
+      case 4:case 11: px=cx+1;py=cy+0.5;break;          // right edge mid
+      case 6:case 9:  px=cx+0.5;py=cy+0.5;break;        // center
+      case 7:case 8:  px=cx-0.5;py=cy;break;             // top-left area
+      case 5:         px=cx+0.5;py=cy+0.5;break;         // saddle
+      case 10:        px=cx+0.5;py=cy+0.5;break;         // saddle
+      default:        px=cx+0.5;py=cy+0.5;
+    }
+    border.push({x:px+ox+0.5, y:py+oy+0.5});
+
+    // Determine next direction
+    let dir;
+    switch(cfg){
+      case 1:  dir=3;break; // up
+      case 2:  dir=0;break; // right
+      case 3:  dir=3;break; // up
+      case 4:  dir=0;break; // right
+      case 5:  dir=(prevDir===3)?0:(prevDir===1)?2:prevDir;break; // saddle: keep direction
+      case 6:  dir=1;break; // down→right? no, right
+      case 7:  dir=3;break; // up
+      case 8:  dir=2;break; // left
+      case 9:  dir=2;break; // left
+      case 10: dir=(prevDir===0)?1:(prevDir===2)?3:prevDir;break; // saddle
+      case 11: dir=2;break; // left
+      case 12: dir=1;break; // down
+      case 13: dir=1;break; // down
+      case 14: dir=0;break; // right
+      default: dir=prevDir;
+    }
+    prevDir=dir;
+
+    // Move in direction
+    switch(dir){
+      case 0:cx++;break;case 1:cy++;break;case 2:cx--;break;case 3:cy--;break;
+    }
+    steps++;
+    // bounds safety
+    if(cx<0||cy<0||cx>=bw-1||cy>=bh-1)break;
+  }while(steps<maxSteps);
+
+  // No arbitrary 300-point cap — let RDP simplification handle vertex reduction
+  return border;
+}
+
+// ── DRAW ──────────────────────────────────────────
+function drawPolys(){
+  const sc=S.scale,showL=$('show-labels').checked;
+  if(S.viewMode!=='mask'){
+    ictx.clearRect(0,0,ic.width,ic.height);
+    if(S.img){
+      if(S.viewMode==='normal')ictx.drawImage(S.img,0,0,ic.width,ic.height);
+      else{ictx.fillStyle='#0a0b09';ictx.fillRect(0,0,ic.width,ic.height);}
+    }
+  }
+  pctx.clearRect(0,0,pc.width,pc.height);
+  S.polygons.forEach(p=>{
+    if(p.points.length<2)return;
+    const hov=S.hoveredId===p.id,col=p.dc;
+    pctx.beginPath();
+    pctx.moveTo(p.points[0].x*sc,p.points[0].y*sc);
+    for(let i=1;i<p.points.length;i++)pctx.lineTo(p.points[i].x*sc,p.points[i].y*sc);
+    pctx.closePath();
+    pctx.fillStyle=al(col,hov?.6:.28);pctx.fill();
+    pctx.strokeStyle=hov?'#ffffff':col;pctx.lineWidth=hov?2:1;pctx.stroke();
+    if(showL){
+      const lx=p.cx*sc,ly=p.cy*sc,lbl=String(p.id+1);
+      pctx.textAlign='center';pctx.textBaseline='middle';
+      pctx.font=`${hov?'bold ':''} ${hov?12:9}px 'DM Mono',monospace`;
+      pctx.fillStyle='rgba(0,0,0,.55)';pctx.fillText(lbl,lx+1,ly+1);
+      pctx.fillStyle=hov?'#fff':col;pctx.fillText(lbl,lx,ly);
+    }
+  });
+  // draw tool guide lines on top
+  if(typeof T!=='undefined'&&(T.lines.length||T.preview))drawToolLines();
+}
+
+function buildHit(){
+  const sc=S.scale;hctx.clearRect(0,0,hc.width,hc.height);
+  S.polygons.forEach(p=>{
+    if(p.points.length<2)return;
+    const id1=p.id+1,r=(id1-1)%255+1,g=Math.floor((id1-1)/255);
+    hctx.beginPath();
+    hctx.moveTo(p.points[0].x*sc,p.points[0].y*sc);
+    for(let i=1;i<p.points.length;i++)hctx.lineTo(p.points[i].x*sc,p.points[i].y*sc);
+    hctx.closePath();hctx.fillStyle=`rgb(${r},${g},0)`;hctx.fill();
+  });
+}
+
+function clearPolys(){
+  pctx.clearRect(0,0,pc.width,pc.height);hctx.clearRect(0,0,hc.width,hc.height);
+  ['dl-svg','dl-json','dl-png'].forEach(id=>$(id).disabled=true);
+  ['s-lots','s-fill','s-ms'].forEach(id=>$(id).textContent='—');
+}
+
+$('reset-btn').addEventListener('click',()=>{
+  S.polygons=[];S.hoveredId=null;clearPolys();tt.style.display='none';
+  setStat(S.img?`${S.imgW}×${S.imgH}`:'no image',!!S.img);
+  if(S.img)drawPolys();
+});
+['show-labels'].forEach(id=>$(id).addEventListener('change',()=>{if(S.polygons.length)drawPolys();}));
+
+// ── SNAP & SPLIT TOOLS ───────────────────────────────────────────────────
+const T = {
+  mode: null,       // 'snap' | 'split' | null
+  start: null,      // drawing start in image coords
+  preview: null,    // {x1,y1,x2,y2} live while drawing
+  lines: [],        // [{type,x1,y1,x2,y2,tol?}]
+  sel: -1,          // selected line index
+  drag: null,       // {li, ep:'p1'|'p2'} endpoint drag state
+  base: [],         // polygon snapshot before any tools
+};
+const EP_HIT = 10; // hit radius in canvas px
+
+// ── geometry ──────────────────────────────────────────────────────────────
+function projectToSeg(px,py,x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1,len2=dx*dx+dy*dy;
+  if(len2===0)return{x:x1,y:y1};
+  const t=Math.max(0,Math.min(1,((px-x1)*dx+(py-y1)*dy)/len2));
+  return{x:x1+t*dx,y:y1+t*dy};
+}
+function segIntersect(ax,ay,bx,by,cx,cy,dx2,dy2){
+  const dxAB=bx-ax,dyAB=by-ay,dxCD=dx2-cx,dyCD=dy2-cy;
+  const denom=dxAB*dyCD-dyAB*dxCD;
+  if(Math.abs(denom)<1e-10)return null;
+  const t=((cx-ax)*dyCD-(cy-ay)*dxCD)/denom;
+  const u=((cx-ax)*dyAB-(cy-ay)*dxAB)/denom;
+  if(t>=0&&t<=1&&u>=0&&u<=1)return{x:ax+t*dxAB,y:ay+t*dyAB};
+  return null;
+}
+function distToSegImg(px,py,x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1,len2=dx*dx+dy*dy;
+  if(len2===0)return Math.hypot(px-x1,py-y1);
+  const t=Math.max(0,Math.min(1,((px-x1)*dx+(py-y1)*dy)/len2));
+  return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
+}
+// ── quadratic bezier helpers ──────────────────────────────────────────────
+// Point on quadratic bezier at parameter t
+function qbez(t,x1,y1,cx,cy,x2,y2){
+  const mt=1-t;
+  return{x:mt*mt*x1+2*mt*t*cx+t*t*x2, y:mt*mt*y1+2*mt*t*cy+t*t*y2};
+}
+// Tangent direction at t (for snap ray casting)
+function qbezTan(t,x1,y1,cx,cy,x2,y2){
+  const mt=1-t;
+  return{dx:2*mt*(cx-x1)+2*t*(x2-cx), dy:2*mt*(cy-y1)+2*t*(y2-cy)};
+}
+// Closest point on quadratic bezier to (px,py) — returns {x,y,t,dist}
+function closestOnQBez(px,py,x1,y1,cx,cy,x2,y2,steps=40){
+  let bestT=0,bestD=Infinity;
+  for(let i=0;i<=steps;i++){
+    const t=i/steps,p=qbez(t,x1,y1,cx,cy,x2,y2);
+    const d=Math.hypot(px-p.x,py-p.y);
+    if(d<bestD){bestD=d;bestT=t;}
+  }
+  // refine with bisection
+  let lo=Math.max(0,bestT-1/steps),hi=Math.min(1,bestT+1/steps);
+  for(let i=0;i<16;i++){
+    const m1=(2*lo+hi)/3,m2=(lo+2*hi)/3;
+    const d1=Math.hypot(px-qbez(m1,x1,y1,cx,cy,x2,y2).x,py-qbez(m1,x1,y1,cx,cy,x2,y2).y);
+    const d2=Math.hypot(px-qbez(m2,x1,y1,cx,cy,x2,y2).x,py-qbez(m2,x1,y1,cx,cy,x2,y2).y);
+    if(d1<d2)hi=m2;else lo=m1;
+  }
+  bestT=(lo+hi)/2;
+  const p=qbez(bestT,x1,y1,cx,cy,x2,y2);
+  return{x:p.x,y:p.y,t:bestT,dist:Math.hypot(px-p.x,py-p.y)};
+}
+// Distance from point to bezier curve
+function distToBezImg(px,py,L){
+  if(!L.bent)return distToSegImg(px,py,L.x1,L.y1,L.x2,L.y2);
+  return closestOnQBez(px,py,L.x1,L.y1,L.cx,L.cy,L.x2,L.y2).dist;
+}
+
+// ── base snapshot + replay ────────────────────────────────────────────────
+function saveBase(){
+  T.base=S.polygons.map(p=>({...p,points:p.points.map(pt=>({...pt}))}));
+}
+function reapplyTools(){
+  S.polygons=T.base.map(p=>({...p,points:p.points.map(pt=>({...pt}))}));
+  T.lines.forEach(L=>{
+    if(L.type==='split') applySplit(L);
+    else if(L.type==='snap') applySnap(L,L.tol);
+  });
+  cleanAllPolygons();
+  $('s-lots').textContent=S.polygons.length;
+  drawPolys();drawToolLines();buildHit();
+}
+function applySnap(L,tol){
+  // Cast ray from each vertex along its edge direction; find where it hits the snap curve.
+  // For bezier lines: sample curve tangents and find closest intersection.
+  S.polygons.forEach(p=>{
+    const pts=p.points,n=pts.length;
+    pts.forEach((pt,i)=>{
+      const prev=pts[(i-1+n)%n],next=pts[(i+1)%n];
+      const dirs=[
+        {dx:pt.x-prev.x,dy:pt.y-prev.y},
+        {dx:next.x-pt.x,dy:next.y-pt.y}
+      ];
+      let best=null,bestDist=tol;
+
+      if(!L.bent){
+        // straight line: ray-segment intersection
+        const ldx=L.x2-L.x1,ldy=L.y2-L.y1,llen2=ldx*ldx+ldy*ldy;
+        if(llen2===0)return;
+        dirs.forEach(dir=>{
+          const len=Math.hypot(dir.dx,dir.dy);if(len<0.5)return;
+          const ndx=dir.dx/len,ndy=dir.dy/len;
+          const denom=ndx*ldy-ndy*ldx;if(Math.abs(denom)<1e-10)return;
+          const t=((L.x1-pt.x)*ldy-(L.y1-pt.y)*ldx)/denom;
+          if(Math.abs(t)>bestDist)return;
+          const ix=pt.x+ndx*t,iy=pt.y+ndy*t;
+          const u=((ix-L.x1)*ldx+(iy-L.y1)*ldy)/llen2;
+          if(u<-0.1||u>1.1)return;
+          if(Math.abs(t)<bestDist){bestDist=Math.abs(t);best={x:Math.round(ix),y:Math.round(iy)};}
+        });
+      } else {
+        // bezier: for each edge direction, find closest point on curve within tol
+        // then project perpendicular-ish by finding where ray meets curve segments
+        const SEGS=60;
+        dirs.forEach(dir=>{
+          const len=Math.hypot(dir.dx,dir.dy);if(len<0.5)return;
+          const ndx=dir.dx/len,ndy=dir.dy/len;
+          // step along curve, intersect each chord with ray
+          let prev2=qbez(0,L.x1,L.y1,L.cx,L.cy,L.x2,L.y2);
+          for(let s=1;s<=SEGS;s++){
+            const cur=qbez(s/SEGS,L.x1,L.y1,L.cx,L.cy,L.x2,L.y2);
+            const h=segIntersect(pt.x,pt.y,pt.x+ndx*tol*2,pt.y+ndy*tol*2,prev2.x,prev2.y,cur.x,cur.y);
+            if(h){
+              const d=Math.hypot(pt.x-h.x,pt.y-h.y);
+              if(d<bestDist){bestDist=d;best={x:Math.round(h.x),y:Math.round(h.y)};}
+            }
+            prev2=cur;
+          }
+        });
+        // fallback: if no ray intersection, snap to closest point on curve if within tol
+        if(!best){
+          const cl=closestOnQBez(pt.x,pt.y,L.x1,L.y1,L.cx,L.cy,L.x2,L.y2);
+          if(cl.dist<=tol){best={x:Math.round(cl.x),y:Math.round(cl.y)};}
+        }
+      }
+      if(best)p.points[i]=best;
+    });
+  });
+}
+// ── polygon cleanup — removes dupes, zero-length edges, tiny slivers ──────
+function cleanPolygon(pts,minEdge=0.5){
+  if(!pts||pts.length<3)return pts;
+  // 1. remove consecutive duplicate points
+  let out=pts.filter((p,i)=>{
+    const prev=pts[(i-1+pts.length)%pts.length];
+    return Math.hypot(p.x-prev.x,p.y-prev.y)>minEdge;
+  });
+  if(out.length<3)return pts; // don't destroy if over-aggressive
+  return out;
+}
+function cleanAllPolygons(){
+  S.polygons=S.polygons.map(p=>({...p,points:cleanPolygon(p.points)}))
+    .filter(p=>p.points.length>=3);
+}
+function applySplit(L){
+  const next=[];
+  S.polygons.forEach(p=>{
+    const pts=p.points,hits=[];
+    for(let i=0;i<pts.length;i++){
+      const a=pts[i],b=pts[(i+1)%pts.length];
+      const h=segIntersect(L.x1,L.y1,L.x2,L.y2,a.x,a.y,b.x,b.y);
+      if(h)hits.push({edgeIdx:i,pt:h});
+    }
+    if(hits.length<2){next.push(p);return;}
+    hits.sort((a,b)=>a.edgeIdx-b.edgeIdx);
+    const h0=hits[0],h1=hits[hits.length-1];
+    const poly1=[h0.pt],poly2=[h1.pt];
+    for(let i=(h0.edgeIdx+1)%pts.length;i!=(h1.edgeIdx+1)%pts.length;i=(i+1)%pts.length){
+      poly1.push(pts[i]);if(poly1.length>pts.length+2)break;
+    }
+    poly1.push(h1.pt);
+    for(let i=(h1.edgeIdx+1)%pts.length;i!=(h0.edgeIdx+1)%pts.length;i=(i+1)%pts.length){
+      poly2.push(pts[i]);if(poly2.length>pts.length+2)break;
+    }
+    poly2.push(h0.pt);
+    const mk=points=>({...p,points,area:p.area/2,
+      cx:Math.round(points.reduce((s,v)=>s+v.x,0)/points.length),
+      cy:Math.round(points.reduce((s,v)=>s+v.y,0)/points.length)});
+    if(poly1.length>=3)next.push(mk(poly1));
+    if(poly2.length>=3)next.push(mk(poly2));
+  });
+  S.polygons=next.map((p,i)=>({...p,id:i}));
+}
+
+// ── render persisted guide lines on pctx ─────────────────────────────────
+function drawSnapLine(pctx,L,isSel,col,selCol,sc){
+  const c2=L.bent?{x:L.cx,y:L.cy}:{x:(L.x1+L.x2)/2,y:(L.y1+L.y2)/2};
+  pctx.beginPath();
+  pctx.moveTo(L.x1*sc,L.y1*sc);
+  if(L.bent) pctx.quadraticCurveTo(L.cx*sc,L.cy*sc,L.x2*sc,L.y2*sc);
+  else pctx.lineTo(L.x2*sc,L.y2*sc);
+  pctx.stroke();
+}
+function drawToolLines(){
+  if(!T.lines.length&&!T.preview)return;
+  const sc=S.scale;
+  pctx.save();
+  T.lines.forEach((L,li)=>{
+    const isSel=li===T.sel,isSnap=L.type==='snap';
+    const col=isSnap?'rgba(200,240,74,.7)':'rgba(240,168,74,.7)';
+    const selCol=isSnap?'#c8f04a':'#f0a84a';
+    pctx.save();
+    if(isSel){pctx.shadowColor=selCol;pctx.shadowBlur=12;}
+    pctx.strokeStyle=isSel?selCol:col;
+    pctx.lineWidth=isSel?2:1.5;
+    pctx.setLineDash([6,4]);
+    // draw the line/curve
+    pctx.beginPath();
+    pctx.moveTo(L.x1*sc,L.y1*sc);
+    if(isSnap&&L.bent) pctx.quadraticCurveTo(L.cx*sc,L.cy*sc,L.x2*sc,L.y2*sc);
+    else pctx.lineTo(L.x2*sc,L.y2*sc);
+    pctx.stroke();
+    pctx.setLineDash([]);pctx.shadowBlur=0;
+    // endpoint dots
+    const dotR=isSel?6:4;
+    [[L.x1,L.y1],[L.x2,L.y2]].forEach(([x,y])=>{
+      pctx.fillStyle=isSel?selCol:col;
+      pctx.beginPath();pctx.arc(x*sc,y*sc,dotR,0,Math.PI*2);pctx.fill();
+      if(isSel){
+        pctx.strokeStyle=selCol;pctx.lineWidth=1.5;
+        pctx.beginPath();pctx.arc(x*sc,y*sc,dotR+5,0,Math.PI*2);pctx.stroke();
+      }
+    });
+    // control point handle for bent snap lines
+    if(isSnap&&isSel){
+      const cpx=L.bent?L.cx:(L.x1+L.x2)/2;
+      const cpy=L.bent?L.cy:(L.y1+L.y2)/2;
+      // dashed lines from endpoints to CP
+      pctx.strokeStyle='rgba(200,240,74,.25)';pctx.lineWidth=1;pctx.setLineDash([3,3]);
+      pctx.beginPath();pctx.moveTo(L.x1*sc,L.y1*sc);pctx.lineTo(cpx*sc,cpy*sc);
+      pctx.lineTo(L.x2*sc,L.y2*sc);pctx.stroke();
+      pctx.setLineDash([]);
+      // CP diamond
+      pctx.save();
+      pctx.translate(cpx*sc,cpy*sc);pctx.rotate(Math.PI/4);
+      const ds=L.bent?7:5;
+      pctx.fillStyle=L.bent?selCol:'rgba(200,240,74,.4)';
+      pctx.strokeStyle=selCol;pctx.lineWidth=1.5;
+      pctx.beginPath();pctx.rect(-ds/2,-ds/2,ds,ds);
+      pctx.fill();pctx.stroke();
+      pctx.restore();
+      if(!L.bent){
+        // label hint
+        pctx.font="10px 'DM Mono',monospace";pctx.fillStyle='rgba(200,240,74,.5)';
+        pctx.textAlign='center';pctx.textBaseline='bottom';
+        pctx.fillText('drag to bend',cpx*sc,cpy*sc-10);
+      }
+    }
+    pctx.restore();
+  });
+  // live drawing preview
+  if(T.preview){
+    const L=T.preview,isSnap=T.mode==='snap';
+    const col=isSnap?'rgba(200,240,74,.9)':'rgba(240,168,74,.9)';
+    pctx.strokeStyle=col;pctx.lineWidth=2;pctx.setLineDash([8,4]);
+    pctx.shadowColor=col;pctx.shadowBlur=8;
+    pctx.beginPath();pctx.moveTo(L.x1*sc,L.y1*sc);pctx.lineTo(L.x2*sc,L.y2*sc);pctx.stroke();
+    pctx.setLineDash([]);pctx.shadowBlur=0;
+    if(isSnap){
+      const tol=20;let n=0;
+      const ldx=L.x2-L.x1,ldy=L.y2-L.y1,llen2=ldx*ldx+ldy*ldy;
+      if(llen2>0) S.polygons.forEach(p=>{
+        const pts=p.points,np=pts.length;
+        pts.forEach((pt,i)=>{
+          const prev=pts[(i-1+np)%np],next=pts[(i+1)%np];
+          const dirs=[{dx:pt.x-prev.x,dy:pt.y-prev.y},{dx:next.x-pt.x,dy:next.y-pt.y}];
+          let best=null,bestDist=tol;
+          dirs.forEach(dir=>{
+            const len=Math.hypot(dir.dx,dir.dy);if(len<0.5)return;
+            const ndx=dir.dx/len,ndy=dir.dy/len;
+            const denom=ndx*ldy-ndy*ldx;if(Math.abs(denom)<1e-10)return;
+            const t=((L.x1-pt.x)*ldy-(L.y1-pt.y)*ldx)/denom;
+            if(Math.abs(t)>bestDist)return;
+            const ix=pt.x+ndx*t,iy=pt.y+ndy*t;
+            const u=((ix-L.x1)*ldx+(iy-L.y1)*ldy)/llen2;
+            if(u<-0.1||u>1.1)return;
+            if(Math.abs(t)<bestDist){bestDist=Math.abs(t);best={x:ix,y:iy};}
+          });
+          if(!best)return;
+          n++;
+          pctx.strokeStyle='rgba(200,240,74,.4)';pctx.lineWidth=1;
+          pctx.beginPath();pctx.moveTo(pt.x*sc,pt.y*sc);pctx.lineTo(best.x*sc,best.y*sc);pctx.stroke();
+          pctx.fillStyle='#f0a84a';pctx.beginPath();pctx.arc(pt.x*sc,pt.y*sc,4,0,Math.PI*2);pctx.fill();
+          pctx.fillStyle='#fff';pctx.beginPath();pctx.arc(best.x*sc,best.y*sc,3,0,Math.PI*2);pctx.fill();
+        });
+      });
+      if(n){
+        const mx=(L.x1+L.x2)/2*sc,my=(L.y1+L.y2)/2*sc;
+        pctx.font="bold 11px 'DM Mono',monospace";pctx.textAlign='center';pctx.textBaseline='middle';
+        const lbl=n+' vertices',tw=pctx.measureText(lbl).width;
+        pctx.fillStyle='rgba(17,18,16,.9)';pctx.fillRect(mx-tw/2-8,my-11,tw+16,22);
+        pctx.fillStyle='#c8f04a';pctx.fillText(lbl,mx,my);
+      }
+    }
+    pctx.fillStyle=col;
+    [[L.x1,L.y1],[L.x2,L.y2]].forEach(([x,y])=>{
+      pctx.beginPath();pctx.arc(x*sc,y*sc,4,0,Math.PI*2);pctx.fill();
+    });
+  }
+  pctx.restore();
+}
+// ── sidebar line card list ────────────────────────────────────────────────
+function renderLinesList(){
+  const el=$('lines-list');
+  el.innerHTML='';
+  if(!T.lines.length)return;
+  T.lines.forEach((L,li)=>{
+    const isSnap=L.type==='snap',isSel=li===T.sel;
+    const card=document.createElement('div');
+    card.className='lcard'+(isSnap?'':' split-card')+(isSel?' sel':'');
+    card.innerHTML=
+      '<div class="lcard-hdr">'
+      +'<div class="lcard-dot" style="background:'+(isSnap?'var(--accent)':'var(--warn)')+'"></div>'
+      +'<span class="lcard-lbl">'+(isSnap?'🧲':'✂')+' Line '+(li+1)+' &middot; '+(isSnap?'snap':'split')+'</span>'
+      +'<button class="lcard-del" data-li="'+li+'" title="Delete line (Del)">&#x00D7;</button>'
+      +'</div>'
+      +(isSnap
+        ?'<div class="lcard-tol">'
+         +'<label>Tolerance <span class="tv">'+L.tol+'px</span></label>'
+         +'<input class="full-slider" type="range" min="1" max="200" value="'+L.tol+'" data-li="'+li+'">'
+         +'</div>'
+        :'');
+    card.addEventListener('click',e=>{
+      if(e.target.classList.contains('lcard-del')||e.target.tagName==='INPUT')return;
+      T.sel=isSel?-1:li;
+      renderLinesList();drawPolys();
+    });
+    if(isSnap){
+      const sl=card.querySelector('input');
+      const tv=card.querySelector('.tv');
+      sl.addEventListener('input',()=>{L.tol=+sl.value;tv.textContent=L.tol+'px';reapplyTools();});
+    }
+    card.querySelector('.lcard-del').addEventListener('click',e=>{
+      e.stopPropagation();
+      T.lines.splice(li,1);
+      if(T.sel>=T.lines.length)T.sel=-1;
+      reapplyTools();renderLinesList();
+    });
+    el.appendChild(card);
+  });
+}
+
+// ── mode toggle ───────────────────────────────────────────────────────────
+function setToolMode(mode){
+  T.mode=T.mode===mode?null:mode;
+  T.start=null;T.preview=null;
+  $('btn-snap').classList.toggle('active',T.mode==='snap');
+  $('btn-snap').classList.remove('split-active');
+  $('btn-split').classList.remove('active');
+  $('btn-split').classList.toggle('split-active',T.mode==='split');
+  hc.style.cursor=T.mode?'crosshair':'default';
+  const hint=$('tool-hint');
+  if(T.mode==='snap'){
+    hint.style.display='block';hint.style.color='var(--accent)';
+    hint.textContent='Draw a snap line — vertices within tolerance pull onto it. Esc to cancel.';
+  } else if(T.mode==='split'){
+    hint.style.display='block';hint.style.color='var(--warn)';
+    hint.textContent='Draw a line across a lot to cut it. Esc to cancel.';
+  } else {
+    hint.style.display='none';
+  }
+}
+$('btn-snap').addEventListener('click',()=>{
+  if(!S.polygons.length)return;
+  if(!T.base.length)saveBase();
+  setToolMode('snap');
+});
+$('btn-split').addEventListener('click',()=>{
+  if(!S.polygons.length)return;
+  if(!T.base.length)saveBase();
+  setToolMode('split');
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&T.mode){setToolMode(null);drawPolys();}
+  if((e.key==='Delete'||e.key==='Backspace')&&T.sel>=0&&!T.mode&&!S.picking){
+    T.lines.splice(T.sel,1);T.sel=-1;
+    reapplyTools();renderLinesList();
+  }
+});
+
+// ── hit testing ───────────────────────────────────────────────────────────
+function hitEndpoint(ix,iy){
+  if(T.sel<0)return null;
+  const L=T.lines[T.sel],thresh=EP_HIT/S.scale;
+  if(Math.hypot(ix-L.x1,iy-L.y1)<=thresh)return'p1';
+  if(Math.hypot(ix-L.x2,iy-L.y2)<=thresh)return'p2';
+  // control point (snap lines only, always shown when selected)
+  if(L.type==='snap'){
+    const cpx=L.bent?L.cx:(L.x1+L.x2)/2;
+    const cpy=L.bent?L.cy:(L.y1+L.y2)/2;
+    if(Math.hypot(ix-cpx,iy-cpy)<=thresh*1.5)return'cp';
+  }
+  return null;
+}
+function hitLine(ix,iy){
+  const thresh=EP_HIT/S.scale;
+  for(let li=T.lines.length-1;li>=0;li--){
+    const L=T.lines[li];
+    if(distToBezImg(ix,iy,L)<=thresh)return li;
+  }
+  return -1;
+}
+
+// ── canvas mouse interaction ──────────────────────────────────────────────
+hc.addEventListener('mousedown',e=>{
+  const{cx,cy}=coords(e);
+  const ix=cx/S.scale,iy=cy/S.scale;
+  // draw mode
+  if(T.mode&&!S.picking){
+    e.preventDefault();e.stopPropagation();
+    T.start={x:ix,y:iy};T.preview={x1:ix,y1:iy,x2:ix,y2:iy};
+    return;
+  }
+  // endpoint drag
+  const ep=hitEndpoint(ix,iy);
+  if(ep){
+    e.preventDefault();e.stopPropagation();
+    T.drag={li:T.sel,ep};hc.style.cursor='grabbing';return;
+  }
+  // select line
+  if(!S.picking){
+    const li=hitLine(ix,iy);
+    if(li>=0){
+      T.sel=T.sel===li?-1:li;e.stopPropagation();
+      renderLinesList();drawPolys();return;
+    }
+    if(T.sel>=0){T.sel=-1;renderLinesList();drawPolys();}
+  }
+});
+
+hc.addEventListener('mousemove',e=>{
+  const{cx,cy,sx,sy}=coords(e);
+  const ix=cx/S.scale,iy=cy/S.scale;
+  $('fc').textContent='x:'+sx+' y:'+sy;
+  // dragging endpoint or control point
+  if(T.drag){
+    const L=T.lines[T.drag.li];
+    if(T.drag.ep==='p1'){L.x1=ix;L.y1=iy;}
+    else if(T.drag.ep==='p2'){L.x2=ix;L.y2=iy;}
+    else if(T.drag.ep==='cp'){
+      L.cx=ix;L.cy=iy;
+      // mark as bent only if moved meaningfully from midpoint
+      const mx=(L.x1+L.x2)/2,my=(L.y1+L.y2)/2;
+      L.bent=Math.hypot(ix-mx,iy-my)>3;
+    }
+    reapplyTools();renderLinesList();return;
+  }
+  // live draw preview
+  if(T.mode&&T.start){
+    T.preview={x1:T.start.x,y1:T.start.y,x2:ix,y2:iy};
+    drawPolys();return;
+  }
+  // cursor hints
+  if(T.sel>=0&&hitEndpoint(ix,iy)){hc.style.cursor='grab';return;}
+  if(!T.mode&&hitLine(ix,iy)>=0){hc.style.cursor='pointer';return;}
+  // eyedropper
+  if(S.picking){showMag(e.clientX,e.clientY,cx,cy);return;}
+  // polygon hover
+  if(!T.mode&&S.polygons.length)checkHover(cx,cy,e.clientX,e.clientY);
+  if(!T.mode&&!S.picking)hc.style.cursor='default';
+});
+
+hc.addEventListener('mouseup',e=>{
+  if(T.drag){
+    T.drag=null;hc.style.cursor=T.mode?'crosshair':'default';return;
+  }
+  // eyedropper pick on click (mousedown+mouseup without drag)
+  if(S.picking&&!T.mode){
+    const{cx,cy}=coords(e);
+    const px=ictx.getImageData(Math.round(cx),Math.round(cy),1,1).data;
+    addColor(S.picking,r2h(px[0],px[1],px[2]));
+    togglePick(null);
+    return;
+  }
+  if(!T.mode||!T.start||!T.preview)return;
+  const P=T.preview;
+  if(Math.hypot(P.x2-P.x1,P.y2-P.y1)<5){T.start=null;T.preview=null;return;}
+  const L={type:T.mode,x1:P.x1,y1:P.y1,x2:P.x2,y2:P.y2};
+  if(T.mode==='snap'){
+    L.tol=20;
+    L.cx=(P.x1+P.x2)/2;L.cy=(P.y1+P.y2)/2;L.bent=false;
+  }
+  T.lines.push(L);T.sel=T.lines.length-1;
+  T.start=null;T.preview=null;
+  reapplyTools();renderLinesList();
+});
+
+// ── reset on new extraction ───────────────────────────────────────────────
+function resetTools(){
+  T.lines=[];T.base=[];T.sel=-1;T.mode=null;T.start=null;T.preview=null;T.drag=null;
+  if($('btn-snap'))$('btn-snap').className='tool-btn';
+  if($('btn-split'))$('btn-split').className='tool-btn';
+  if($('tool-hint'))$('tool-hint').style.display='none';
+  if($('lines-list'))$('lines-list').innerHTML='';
+  hc.style.cursor='default';
+}
+
+// ── SNAP & SPLIT TOOLS end ───────────────────────────────────────────────
+
+// ── DOWNLOADS ─────────────────────────────────────
+$('dl-png').addEventListener('click',()=>{
+  const out=document.createElement('canvas');out.width=pc.width;out.height=pc.height;
+  const ox=out.getContext('2d');ox.drawImage(ic,0,0);ox.drawImage(pc,0,0);
+  const a=document.createElement('a');a.href=out.toDataURL('image/png');a.download='lots.png';a.click();
+});
+$('dl-svg').addEventListener('click',()=>{
+  cleanAllPolygons();
+  // export at original image resolution (not canvas display scale)
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${S.imgW}" height="${S.imgH}" viewBox="0 0 ${S.imgW} ${S.imgH}">\n`;
+  S.polygons.forEach(p=>{
+    const cl=cleanPolygon(p.points);
+    if(cl.length<3)return;
+    const pts=cl.map(pt=>`${pt.x.toFixed(2)},${pt.y.toFixed(2)}`).join(' ');
+    svg+=`  <polygon id="lot-${p.id+1}" points="${pts}" fill="${al(p.dc,.3)}" stroke="${p.dc}" stroke-width="1"/>\n`;
+  });
+  svg+='</svg>';
+  const a=document.createElement('a');a.href='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);a.download='lots.svg';a.click();
+});
+$('dl-json').addEventListener('click',()=>{
+  cleanAllPolygons();
+  const fc={type:'FeatureCollection',features:S.polygons.map(p=>{
+    const cl=cleanPolygon(p.points);
+    if(cl.length<3)return null;
+    // close ring
+    const ring=cl.map(pt=>[pt.x,pt.y]);
+    ring.push(ring[0]);
+    return{type:'Feature',
+      properties:{id:p.id+1,area_px:Math.round(p.area),color:p.dc},
+      geometry:{type:'Polygon',coordinates:[ring]}};
+  }).filter(Boolean)};
+  const a=document.createElement('a');a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(fc,null,2));a.download='lots.geojson';a.click();
+});
+
+window.addEventListener('resize',()=>{if(S.img){setupCanvas();if(S.polygons.length){drawPolys();buildHit();}applyViewMode();}});
+</script>
+<div id="tt"></div>
+</body>
+</html>
