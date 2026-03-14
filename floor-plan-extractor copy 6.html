@@ -271,14 +271,9 @@ footer{grid-column:1/-1;background:var(--panel);border-top:1px solid var(--borde
     <!-- 06 TOOLS -->
     <div class="sec">
       <div class="sec-title">06 · Edit Tools</div>
-      <div style="display:flex;gap:5px;margin-bottom:5px;">
+      <div style="display:flex;gap:5px;margin-bottom:10px;">
         <button class="tool-btn" id="btn-snap" title="Draw a snap line">🧲 Snap</button>
         <button class="tool-btn" id="btn-split" title="Draw a split line">✂ Split</button>
-        <button class="tool-btn" id="btn-vtx" title="Select lot, drag vertices">✦ Vertex</button>
-      </div>
-      <div style="display:flex;gap:5px;margin-bottom:10px;">
-        <button class="tool-btn" id="btn-merge" title="Merge selected lots">⬡ Merge</button>
-        <button class="tool-btn" id="btn-hull" title="Convex hull all lots">◇ Hull All</button>
       </div>
       <div id="tool-hint" class="hint" style="display:none;margin-bottom:8px;"></div>
       <!-- drawn lines list -->
@@ -795,88 +790,91 @@ $('aspect-ratio').addEventListener('input',e=>{
   scheduleExtract();
 });
 
-// ── HEAL EDGES (iterative edge-pair snap) ─────────────────────
+// ── STITCH EDGES ──────────────────────────────────
 function healEdges(gap){
   if(!gap||gap<=0)return;
-  const ang=15, olap=0.25;
-  let current=S.polygons;
-  let totalSnapped=0, iter=0;
-  while(iter<20){
-    const pairs=findHealPairs(current,gap,ang,olap);
-    if(!pairs.length)break;
-    snapHealPairs(current,pairs);
-    totalSnapped+=pairs.length;
-    iter++;
+  const polys=S.polygons;
+  const cos15=Math.cos(15*Math.PI/180); // parallel threshold ~15°
+
+  // helper: project point P onto segment AB, return t in [0,1] and closest point
+  function projectPtSeg(px,py,ax,ay,bx,by){
+    const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
+    if(len2===0)return{t:0,x:ax,y:ay};
+    const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/len2));
+    return{t,x:ax+t*dx,y:ay+t*dy};
   }
-}
-function findHealPairs(polys,maxDist,angleTol,minOverlap){
-  const allEdges=[];
-  polys.forEach(p=>{
-    const pts=p.points;
-    for(let i=0;i<pts.length;i++){
-      const a=pts[i],b=pts[(i+1)%pts.length];
-      const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy);
-      if(len<0.01)continue;
-      allEdges.push({pi:p.id,idx:i,a,b,dx,dy,len,angle:Math.atan2(dy,dx),
-        mx:(a.x+b.x)/2,my:(a.y+b.y)/2});
+
+  // for each edge in poly A, check all edges in nearby polys
+  // if two edges are close + parallel, snap both to their midline
+  const healed=new Set(); // 'pi-vi' keys already moved
+
+  polys.forEach((pA,pi)=>{
+    const ptA=pA.points,nA=ptA.length;
+    for(let vi=0;vi<nA;vi++){
+      const a1=ptA[vi],a2=ptA[(vi+1)%nA];
+      const adx=a2.x-a1.x,ady=a2.y-a1.y;
+      const alen=Math.hypot(adx,ady);
+      if(alen<1)continue;
+      const anx=adx/alen,any=ady/alen; // unit tangent of edge A
+
+      polys.forEach((pB,pj)=>{
+        if(pj===pi)return;
+        const ptB=pB.points,nB=ptB.length;
+        for(let vj=0;vj<nB;vj++){
+          const b1=ptB[vj],b2=ptB[(vj+1)%nB];
+          const bdx=b2.x-b1.x,bdy=b2.y-b1.y;
+          const blen=Math.hypot(bdx,bdy);
+          if(blen<1)continue;
+          const bnx=bdx/blen,bny=bdy/blen;
+
+          // must be roughly parallel (dot of unit tangents ≥ cos15 or ≤ -cos15)
+          const dot=anx*bnx+any*bny;
+          if(Math.abs(dot)<cos15)continue;
+
+          // measure perpendicular distance between the two edges
+          // project midpoint of B onto line of A
+          const bmx=(b1.x+b2.x)/2,bmy=(b1.y+b2.y)/2;
+          // perpendicular distance from bmid to line through a1 along anx,any
+          const perp=Math.abs((bmx-a1.x)*(-any)+(bmy-a1.y)*anx);
+          if(perp>gap)continue;
+
+          // check they actually overlap along the shared axis
+          // project b1,b2 onto edge A's axis
+          const ta1=0,ta2=alen;
+          const tb1=(b1.x-a1.x)*anx+(b1.y-a1.y)*any;
+          const tb2=(b2.x-a1.x)*anx+(b2.y-a1.y)*any;
+          const oStart=Math.max(ta1,Math.min(tb1,tb2));
+          const oEnd=Math.min(ta2,Math.max(tb1,tb2));
+          if(oEnd-oStart<1)continue; // no meaningful overlap
+
+          // they're parallel, close, and overlapping — snap endpoints to midline
+          // for each endpoint of A, find closest point on B and move to midpoint
+          [0,1].forEach(side=>{
+            const kA=`${pi}-${(vi+side)%nA}`;
+            if(healed.has(kA))return;
+            const ap=ptA[(vi+side)%nA];
+            const {x:bpx,y:bpy}=projectPtSeg(ap.x,ap.y,b1.x,b1.y,b2.x,b2.y);
+            const dist=Math.hypot(ap.x-bpx,ap.y-bpy);
+            if(dist>gap)return;
+            const mx=(ap.x+bpx)/2,my=(ap.y+bpy)/2;
+            ptA[(vi+side)%nA]={x:mx,y:my};
+            healed.add(kA);
+          });
+          [0,1].forEach(side=>{
+            const kB=`${pj}-${(vj+side)%nB}`;
+            if(healed.has(kB))return;
+            const bp=ptB[(vj+side)%nB];
+            const {x:apx,y:apy}=projectPtSeg(bp.x,bp.y,a1.x,a1.y,a2.x,a2.y);
+            const dist=Math.hypot(bp.x-apx,bp.y-apy);
+            if(dist>gap)return;
+            const mx=(bp.x+apx)/2,my=(bp.y+apy)/2;
+            ptB[(vj+side)%nB]={x:mx,y:my};
+            healed.add(kB);
+          });
+        }
+      });
     }
   });
-  const cell=Math.max(maxDist*3,10),grid=new Map();
-  for(const e of allEdges){
-    const k=`${Math.floor(e.mx/cell)},${Math.floor(e.my/cell)}`;
-    if(!grid.has(k))grid.set(k,[]);grid.get(k).push(e);
-  }
-  const aRad=angleTol*Math.PI/180,pairs=[],used=new Set();
-  function aDiff(a1,a2){let d=Math.abs(a1-a2)%Math.PI;if(d>Math.PI/2)d=Math.PI-d;return d;}
-  function proj(px,py,ax,ay,dx,dy,len){return((px-ax)*dx+(py-ay)*dy)/(len*len);}
-  for(const e1 of allEdges){
-    const cx=Math.floor(e1.mx/cell),cy=Math.floor(e1.my/cell);
-    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
-      const c=grid.get(`${cx+dx},${cy+dy}`);if(!c)continue;
-      for(const e2 of c){
-        if(e2.pi===e1.pi||e2.pi<=e1.pi)continue;
-        const pk=`${e1.pi}:${e1.idx}-${e2.pi}:${e2.idx}`;
-        if(used.has(pk))continue;
-        if(aDiff(e1.angle,e2.angle)>aRad)continue;
-        const t=proj(e2.mx,e2.my,e1.a.x,e1.a.y,e1.dx,e1.dy,e1.len);
-        const dist=Math.hypot(e2.mx-(e1.a.x+t*e1.dx),e2.my-(e1.a.y+t*e1.dy));
-        if(dist>maxDist)continue;
-        const t2a=proj(e2.a.x,e2.a.y,e1.a.x,e1.a.y,e1.dx,e1.dy,e1.len);
-        const t2b=proj(e2.b.x,e2.b.y,e1.a.x,e1.a.y,e1.dx,e1.dy,e1.len);
-        const oS=Math.max(0,Math.min(t2a,t2b)),oE=Math.min(1,Math.max(t2a,t2b));
-        if(oE<=oS)continue;
-        if((oE-oS)*e1.len/Math.min(e1.len,e2.len)<minOverlap)continue;
-        used.add(pk);pairs.push({e1,e2});
-      }
-    }
-  }
-  return pairs;
-}
-function snapHealPairs(polys,pairs){
-  const moves=new Map();
-  for(const{e1,e2}of pairs){
-    const midX=(e1.mx+e2.mx)/2,midY=(e1.my+e2.my)/2;
-    let a1=e1.angle,a2=e2.angle;
-    if(Math.abs(a1-a2)>Math.PI/2)a2+=Math.PI;
-    const ma=(a1+a2)/2,mnx=-Math.sin(ma),mny=Math.cos(ma);
-    for(const e of[e1,e2]){
-      const p=polys.find(p=>p.id===e.pi);if(!p)continue;
-      const n=p.points.length;
-      for(const vi of[e.idx,(e.idx+1)%n]){
-        const pt=p.points[vi];
-        const d=(pt.x-midX)*mnx+(pt.y-midY)*mny;
-        const k=`${e.pi}:${vi}`;
-        if(!moves.has(k))moves.set(k,[]);
-        moves.get(k).push({x:pt.x-d*mnx,y:pt.y-d*mny});
-      }
-    }
-  }
-  for(const[k,pos]of moves){
-    const[pid,vi]=k.split(':').map(Number);
-    const p=polys.find(p=>p.id===pid);if(!p)continue;
-    p.points[vi]={x:pos.reduce((s,p)=>s+p.x,0)/pos.length,
-                  y:pos.reduce((s,p)=>s+p.y,0)/pos.length};
-  }
 }
 
 // ── RDP SIMPLIFY ──────────────────────────────────
@@ -948,25 +946,23 @@ function drawPolys(){
   pctx.clearRect(0,0,pc.width,pc.height);
   S.polygons.forEach(p=>{
     if(p.points.length<2)return;
-    const hov=S.hoveredId===p.id,sel=typeof V!=='undefined'&&V.selected.has(p.id),col=p.dc;
+    const hov=S.hoveredId===p.id,col=p.dc;
     pctx.beginPath();
     pctx.moveTo(p.points[0].x*sc,p.points[0].y*sc);
     for(let i=1;i<p.points.length;i++)pctx.lineTo(p.points[i].x*sc,p.points[i].y*sc);
     pctx.closePath();
-    pctx.fillStyle=al(col,sel?.45:hov?.6:.28);pctx.fill();
-    pctx.strokeStyle=sel?'#f0a84a':hov?'#ffffff':col;pctx.lineWidth=sel?2.5:hov?2:1;pctx.stroke();
+    pctx.fillStyle=al(col,hov?.6:.28);pctx.fill();
+    pctx.strokeStyle=hov?'#ffffff':col;pctx.lineWidth=hov?2:1;pctx.stroke();
     if(showL){
       const lx=p.cx*sc,ly=p.cy*sc,lbl=String(p.id+1);
       pctx.textAlign='center';pctx.textBaseline='middle';
-      pctx.font=`${hov||sel?'bold ':''} ${hov||sel?12:9}px 'DM Mono',monospace`;
+      pctx.font=`${hov?'bold ':''} ${hov?12:9}px 'DM Mono',monospace`;
       pctx.fillStyle='rgba(0,0,0,.55)';pctx.fillText(lbl,lx+1,ly+1);
-      pctx.fillStyle=sel?'#f0a84a':hov?'#fff':col;pctx.fillText(lbl,lx,ly);
+      pctx.fillStyle=hov?'#fff':col;pctx.fillText(lbl,lx,ly);
     }
   });
   // draw tool guide lines on top
   if(typeof T!=='undefined'&&(T.lines.length||T.preview))drawToolLines();
-  // draw vertex handles if in vertex edit mode
-  if(typeof V!=='undefined'&&V.active)drawVertexHandles();
 }
 
 function buildHit(){
@@ -1343,8 +1339,6 @@ function renderLinesList(){
 function setToolMode(mode){
   T.mode=T.mode===mode?null:mode;
   T.start=null;T.preview=null;
-  // Deactivate vertex mode when switching to snap/split
-  if(T.mode){V.active=false;V.selected.clear();$('btn-vtx').classList.remove('active');}
   $('btn-snap').classList.toggle('active',T.mode==='snap');
   $('btn-snap').classList.remove('split-active');
   $('btn-split').classList.remove('active');
@@ -1371,46 +1365,11 @@ $('btn-split').addEventListener('click',()=>{
   if(!T.base.length)saveBase();
   setToolMode('split');
 });
-$('btn-vtx').addEventListener('click',()=>{
-  if(!S.polygons.length)return;
-  V.active=!V.active;
-  if(V.active){setToolMode(null);V.selected.clear();}
-  $('btn-vtx').classList.toggle('active',V.active);
-  const hint=$('tool-hint');
-  if(V.active){
-    hint.style.display='block';hint.style.color='var(--warn)';
-    hint.textContent='Click a lot to select it, then drag vertices. Shift+click for multi-select. Esc to deselect.';
-  } else {
-    hint.style.display='none';V.selected.clear();
-  }
-  drawPolys();if(V.active)drawVertexHandles();
-});
-$('btn-merge').addEventListener('click',()=>{
-  if(!S.polygons.length||V.selected.size<2)return;
-  doMerge();
-});
-$('btn-hull').addEventListener('click',()=>{
-  if(!S.polygons.length)return;
-  doHullAll();
-});
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){
-    if(V.active){V.selected.clear();drawPolys();drawVertexHandles();return;}
-    if(V.selected.size){V.selected.clear();drawPolys();return;}
-    if(T.mode){setToolMode(null);drawPolys();}
-  }
-  if(e.key==='z'&&(e.metaKey||e.ctrlKey)&&!e.shiftKey){
-    e.preventDefault();doUndo();
-  }
+  if(e.key==='Escape'&&T.mode){setToolMode(null);drawPolys();}
   if((e.key==='Delete'||e.key==='Backspace')&&T.sel>=0&&!T.mode&&!S.picking){
     T.lines.splice(T.sel,1);T.sel=-1;
     reapplyTools();renderLinesList();
-  }
-  if(e.key==='m'&&(e.metaKey||e.ctrlKey)&&V.selected.size>=2){
-    e.preventDefault();doMerge();
-  }
-  if(e.key==='h'&&(e.metaKey||e.ctrlKey)){
-    e.preventDefault();doHullAll();
   }
 });
 
@@ -1437,232 +1396,10 @@ function hitLine(ix,iy){
   return -1;
 }
 
-// ── VERTEX EDIT MODE ─────────────────────────────────────────────────────
-const V = {
-  active: false,
-  selected: new Set(),    // polygon ids
-  dragPoly: -1,
-  dragVert: -1,
-  dragOrig: null,
-  hovPoly: -1,
-  hovVert: -1,
-};
-
-// ── UNDO STACK ───────────────────────────────────────────────────────────
-const undoStack = [];
-const MAX_UNDO = 30;
-function pushUndo(){
-  undoStack.push(S.polygons.map(p=>({...p,points:p.points.map(pt=>({x:pt.x,y:pt.y}))})));
-  if(undoStack.length>MAX_UNDO)undoStack.shift();
-}
-function doUndo(){
-  if(!undoStack.length)return;
-  S.polygons=undoStack.pop();
-  V.selected.clear();
-  $('s-lots').textContent=S.polygons.length;
-  drawPolys();buildHit();
-}
-
-function findNearestVertex(sx,sy,excludePolyId){
-  // sx,sy in image coords
-  let best=null,bestD=Infinity;
-  for(const p of S.polygons){
-    if(p.id===excludePolyId)continue;
-    for(const pt of p.points){
-      const d=Math.hypot(pt.x-sx,pt.y-sy);
-      if(d<bestD){bestD=d;best={x:pt.x,y:pt.y};}
-    }
-  }
-  return best;
-}
-
-function hitVertexHandle(ix,iy){
-  const thresh=8/S.scale/S.zoom;
-  for(const p of S.polygons){
-    if(!V.selected.has(p.id))continue;
-    for(let vi=0;vi<p.points.length;vi++){
-      if(Math.hypot(p.points[vi].x-ix,p.points[vi].y-iy)<thresh)
-        return{polyId:p.id,vertIdx:vi};
-    }
-  }
-  return null;
-}
-
-function hitPolyAtCoords(cx,cy){
-  const px=hctx.getImageData(Math.round(cx),Math.round(cy),1,1).data;
-  if(px[3]===0)return -1;
-  const id=(px[0]-1)+px[1]*255;
-  return(id>=0&&id<S.polygons.length)?id:-1;
-}
-
-// Convex hull all
-function doHullAll(){
-  if(!S.polygons.length)return;
-  pushUndo();
-  function centroid(pts){let sx=0,sy=0;for(const p of pts){sx+=p.x;sy+=p.y;}return{x:sx/pts.length,y:sy/pts.length};}
-  for(const p of S.polygons){
-    const c=centroid(p.points);
-    const hull=convexHull(p.points);
-    hull.sort((a,b)=>Math.atan2(a.y-c.y,a.x-c.x)-Math.atan2(b.y-c.y,b.x-c.x));
-    p.points=hull;
-  }
-  drawPolys();buildHit();
-}
-
-// Polygon merge
-function doMerge(){
-  if(V.selected.size<2)return;
-  pushUndo();
-  const tol=parseFloat($('stitch-gap').value)||5;
-  const selPolys=S.polygons.filter(p=>V.selected.has(p.id));
-  // 1. Weld vertices
-  const allPts=[];
-  for(const p of selPolys)for(const pt of p.points)allPts.push({x:pt.x,y:pt.y});
-  const canonPts=[],canonId=[],tol2=tol*tol;
-  for(let i=0;i<allPts.length;i++){
-    let found=-1;
-    for(let c=0;c<canonPts.length;c++){
-      const dx=allPts[i].x-canonPts[c].x,dy=allPts[i].y-canonPts[c].y;
-      if(dx*dx+dy*dy<tol2){found=c;break;}
-    }
-    if(found>=0)canonId.push(found);
-    else{canonId.push(canonPts.length);canonPts.push({x:allPts[i].x,y:allPts[i].y});}
-  }
-  // 2. Build edges with edge splitting
-  function ptOnSeg(px,py,ax,ay,bx,by){
-    const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
-    if(len2<0.0001)return-1;
-    const t=((px-ax)*dx+(py-ay)*dy)/len2;
-    if(t<=0.01||t>=0.99)return-1;
-    const cx2=ax+t*dx,cy2=ay+t*dy;
-    return(px-cx2)*(px-cx2)+(py-cy2)*(py-cy2)<tol2?t:-1;
-  }
-  const polyIds=[];let idx=0;
-  for(const p of selPolys){
-    const ids=[];for(let i=0;i<p.points.length;i++)ids.push(canonId[idx++]);
-    polyIds.push(ids);
-  }
-  const splitIds=[];
-  for(let pi=0;pi<selPolys.length;pi++){
-    const ids=polyIds[pi],newIds=[];
-    for(let i=0;i<ids.length;i++){
-      const aId=ids[i],bId=ids[(i+1)%ids.length];
-      newIds.push(aId);
-      if(aId===bId)continue;
-      const ax=canonPts[aId].x,ay=canonPts[aId].y,bx=canonPts[bId].x,by=canonPts[bId].y;
-      const inserts=[];
-      for(let c=0;c<canonPts.length;c++){
-        if(c===aId||c===bId)continue;
-        const t=ptOnSeg(canonPts[c].x,canonPts[c].y,ax,ay,bx,by);
-        if(t>0)inserts.push({id:c,t});
-      }
-      inserts.sort((a,b)=>a.t-b.t);
-      for(const ins of inserts)newIds.push(ins.id);
-    }
-    splitIds.push(newIds);
-  }
-  // 3. Directed edges, cancel shared
-  const dirEdges=[],unord=new Map();
-  for(const ids of splitIds){
-    for(let i=0;i<ids.length;i++){
-      const a=ids[i],b=ids[(i+1)%ids.length];
-      if(a===b)continue;
-      dirEdges.push({from:a,to:b});
-      const uk=Math.min(a,b)+'-'+Math.max(a,b);
-      unord.set(uk,(unord.get(uk)||0)+1);
-    }
-  }
-  const adj=new Map();
-  for(const{from,to}of dirEdges){
-    const uk=Math.min(from,to)+'-'+Math.max(from,to);
-    if(unord.get(uk)>=2)continue;
-    if(!adj.has(from))adj.set(from,[]);
-    adj.get(from).push(to);
-  }
-  if(adj.size===0)return;
-  // 4. Walk contour
-  const startId=adj.keys().next().value;
-  const contour=[canonPts[startId]];
-  const usedE=new Set();
-  let cur=startId,safety=0;
-  while(safety++<10000){
-    const nexts=adj.get(cur);if(!nexts)break;
-    let next=-1;
-    for(const n of nexts){const ek=`${cur}->${n}`;if(!usedE.has(ek)){usedE.add(ek);next=n;break;}}
-    if(next<0||next===startId)break;
-    contour.push(canonPts[next]);cur=next;
-  }
-  if(contour.length<3)return;
-  // Replace
-  const firstSel=selPolys[0];
-  const newId=Math.max(...S.polygons.map(p=>p.id))+1;
-  const cx2=Math.round(contour.reduce((s,v)=>s+v.x,0)/contour.length);
-  const cy2=Math.round(contour.reduce((s,v)=>s+v.y,0)/contour.length);
-  S.polygons=S.polygons.filter(p=>!V.selected.has(p.id));
-  S.polygons.push({id:newId,points:contour,area:firstSel.area,cx:cx2,cy:cy2,dc:firstSel.dc});
-  // Re-index
-  S.polygons.forEach((p,i)=>p.id=i);
-  V.selected.clear();
-  V.selected.add(S.polygons.length-1);
-  $('s-lots').textContent=S.polygons.length;
-  drawPolys();buildHit();
-}
-
-// Draw vertex handles on selected polys
-function drawVertexHandles(){
-  if(!V.active||!V.selected.size)return;
-  const sc=S.scale,r=4/S.zoom;
-  for(const p of S.polygons){
-    if(!V.selected.has(p.id))continue;
-    // Highlight selected poly
-    pctx.beginPath();
-    pctx.moveTo(p.points[0].x*sc,p.points[0].y*sc);
-    for(let i=1;i<p.points.length;i++)pctx.lineTo(p.points[i].x*sc,p.points[i].y*sc);
-    pctx.closePath();
-    pctx.strokeStyle='#f0a84a';pctx.lineWidth=2.5;pctx.stroke();
-    // Vertex handles
-    for(let vi=0;vi<p.points.length;vi++){
-      const pt=p.points[vi];
-      const isHov=(V.hovPoly===p.id&&V.hovVert===vi);
-      pctx.beginPath();
-      pctx.arc(pt.x*sc,pt.y*sc,isHov?r*1.5:r,0,Math.PI*2);
-      pctx.fillStyle=isHov?'#fff':'#f0a84a';
-      pctx.strokeStyle='#000';pctx.lineWidth=0.5;
-      pctx.fill();pctx.stroke();
-    }
-  }
-}
-
 // ── canvas mouse interaction ──────────────────────────────────────────────
 hc.addEventListener('mousedown',e=>{
   const{cx,cy}=coords(e);
   const ix=cx/S.scale,iy=cy/S.scale;
-
-  // VERTEX EDIT MODE
-  if(V.active&&!S.picking){
-    e.preventDefault();e.stopPropagation();
-    // Try vertex hit
-    const vHit=hitVertexHandle(ix,iy);
-    if(vHit){
-      pushUndo();
-      V.dragPoly=vHit.polyId;V.dragVert=vHit.vertIdx;
-      const p=S.polygons.find(p=>p.id===vHit.polyId);
-      V.dragOrig={x:p.points[vHit.vertIdx].x,y:p.points[vHit.vertIdx].y};
-      V.dragStart={ix,iy};
-      hc.style.cursor='grabbing';
-      return;
-    }
-    // Click on a poly to select/deselect
-    const pid=hitPolyAtCoords(cx,cy);
-    if(pid>=0){
-      if(e.shiftKey||e.ctrlKey||e.metaKey){
-        if(V.selected.has(pid))V.selected.delete(pid);else V.selected.add(pid);
-      }else{V.selected.clear();V.selected.add(pid);}
-    }else{V.selected.clear();}
-    drawPolys();drawVertexHandles();
-    return;
-  }
-
   // draw mode
   if(T.mode&&!S.picking){
     e.preventDefault();e.stopPropagation();
@@ -1684,48 +1421,12 @@ hc.addEventListener('mousedown',e=>{
     }
     if(T.sel>=0){T.sel=-1;renderLinesList();drawPolys();}
   }
-  // Shift+click to select polys for merge (even outside vertex mode)
-  if(!S.picking&&!T.mode&&(e.shiftKey||e.ctrlKey||e.metaKey)&&S.polygons.length){
-    const pid=hitPolyAtCoords(cx,cy);
-    if(pid>=0){
-      if(V.selected.has(pid))V.selected.delete(pid);else V.selected.add(pid);
-      drawPolys();
-      return;
-    }
-  }
 });
 
 hc.addEventListener('mousemove',e=>{
   const{cx,cy,sx,sy}=coords(e);
   const ix=cx/S.scale,iy=cy/S.scale;
   $('fc').textContent='x:'+sx+' y:'+sy;
-
-  // VERTEX DRAG
-  if(V.active&&V.dragPoly>=0){
-    const p=S.polygons.find(p=>p.id===V.dragPoly);
-    if(p){
-      const newX=V.dragOrig.x+(ix-V.dragStart.ix);
-      const newY=V.dragOrig.y+(iy-V.dragStart.iy);
-      const snap=findNearestVertex(newX,newY,V.dragPoly);
-      if(snap){p.points[V.dragVert]={x:snap.x,y:snap.y};}
-      else{p.points[V.dragVert]={x:newX,y:newY};}
-      drawPolys();drawVertexHandles();
-    }
-    return;
-  }
-  // VERTEX HOVER
-  if(V.active&&!V.dragOrig){
-    const vHit=hitVertexHandle(ix,iy);
-    const newHV=vHit?vHit.vertIdx:-1;
-    const newHP=vHit?vHit.polyId:-1;
-    if(newHV!==V.hovVert||newHP!==V.hovPoly){
-      V.hovVert=newHV;V.hovPoly=newHP;
-      drawPolys();drawVertexHandles();
-    }
-    hc.style.cursor=vHit?'pointer':'default';
-    return;
-  }
-
   // dragging endpoint or control point
   if(T.drag){
     const L=T.lines[T.drag.li];
@@ -1733,6 +1434,7 @@ hc.addEventListener('mousemove',e=>{
     else if(T.drag.ep==='p2'){L.x2=ix;L.y2=iy;}
     else if(T.drag.ep==='cp'){
       L.cx=ix;L.cy=iy;
+      // mark as bent only if moved meaningfully from midpoint
       const mx=(L.x1+L.x2)/2,my=(L.y1+L.y2)/2;
       L.bent=Math.hypot(ix-mx,iy-my)>3;
     }
@@ -1749,19 +1451,11 @@ hc.addEventListener('mousemove',e=>{
   // eyedropper
   if(S.picking){showMag(e.clientX,e.clientY,cx,cy);return;}
   // polygon hover
-  if(!T.mode&&!V.active&&S.polygons.length)checkHover(cx,cy,e.clientX,e.clientY);
-  if(!T.mode&&!V.active&&!S.picking)hc.style.cursor='default';
+  if(!T.mode&&S.polygons.length)checkHover(cx,cy,e.clientX,e.clientY);
+  if(!T.mode&&!S.picking)hc.style.cursor='default';
 });
 
 hc.addEventListener('mouseup',e=>{
-  // VERTEX DRAG END
-  if(V.active&&V.dragPoly>=0){
-    V.dragPoly=-1;V.dragVert=-1;V.dragOrig=null;
-    hc.style.cursor='default';
-    buildHit();
-    return;
-  }
-
   if(T.drag){
     T.drag=null;hc.style.cursor=T.mode?'crosshair':'default';return;
   }
@@ -1789,10 +1483,8 @@ hc.addEventListener('mouseup',e=>{
 // ── reset on new extraction ───────────────────────────────────────────────
 function resetTools(){
   T.lines=[];T.base=[];T.sel=-1;T.mode=null;T.start=null;T.preview=null;T.drag=null;
-  V.active=false;V.selected.clear();V.dragPoly=-1;V.dragVert=-1;V.dragOrig=null;V.hovPoly=-1;V.hovVert=-1;
   if($('btn-snap'))$('btn-snap').className='tool-btn';
   if($('btn-split'))$('btn-split').className='tool-btn';
-  if($('btn-vtx'))$('btn-vtx').className='tool-btn';
   if($('tool-hint'))$('tool-hint').style.display='none';
   if($('lines-list'))$('lines-list').innerHTML='';
   hc.style.cursor='default';
