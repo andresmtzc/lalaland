@@ -135,6 +135,18 @@ const CLIENT_CONFIGS = {
           [-96.041515, 19.04258]
         ]
       },
+            {
+        url: 'https://la-la.land/inverta/almaterraearth.png',
+        layerId: 'drone-satellite-layer-3',
+        sourceId: 'drone-satellite-3',
+        message: "Cargamos la imágen aérea más actual — (enero 2026)",
+        bounds: [
+[-100.074938, 25.322438],
+[-100.056073, 25.322438],
+[-100.056073, 25.305385],
+[-100.074938, 25.305385]
+        ]
+      },
       {
         url: 'https://la-la.land/inverta/invertaearth2.png',
         layerId: 'drone-satellite-layer-2',
