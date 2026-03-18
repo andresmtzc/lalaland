@@ -513,7 +513,7 @@ const CLIENT_CONFIGS = {
       ctaColor: '#ff8400', // DEPRECATED: Use colors.primary instead
 
       // Number of free property detail views before login prompt (0 = always require login)
-      freeViews: 8
+      freeViews: 20
     }
 
   }
