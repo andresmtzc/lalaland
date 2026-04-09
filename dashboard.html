@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>El Bosque · Dashboard</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --cream: #F7EDE0;
+      --green: #8FC9B9;
+      --black: #1a1008;
+      --tan:   #a08060;
+      --white: #ffffff;
+      --muted: rgba(26,16,8,0.45);
+    }
+
+    body {
+      background: var(--cream);
+      font-family: 'Poppins', sans-serif;
+      color: var(--black);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      border-bottom: 2px solid var(--black);
+      padding-bottom: 12px;
+    }
+    .header-left { display: flex; align-items: baseline; gap: 10px; }
+    .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+    .header-sub { font-size: 12px; color: var(--muted); font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
+    #refresh-btn {
+      background: var(--black); color: var(--cream);
+      border: none; font-family: 'Poppins', sans-serif;
+      font-size: 11px; font-weight: 600; letter-spacing: 1px;
+      padding: 7px 14px; cursor: pointer;
+    }
+    #refresh-btn:hover { background: var(--green); color: var(--black); }
+    #last-updated { font-size: 11px; color: var(--muted); margin-top: 4px; text-align: right; }
+
+    /* ── STAT CARDS ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--white);
+      border: 2px solid var(--black);
+      box-shadow: 4px 5px 0 var(--tan);
+      padding: 14px 16px;
+    }
+    .stat-label {
+      font-size: 10px; font-weight: 600;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 36px; font-weight: 700;
+      line-height: 1; letter-spacing: -1px;
+    }
+    .stat-card.highlight { background: var(--green); }
+    .stat-card.highlight .stat-label { color: rgba(26,16,8,0.6); }
+
+    /* ── SECTION WRAPPER ── */
+    .section {
+      background: var(--white);
+      border: 2px solid var(--black);
+      box-shadow: 4px 5px 0 var(--tan);
+      margin-bottom: 20px;
+    }
+    .section-title {
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase;
+      padding: 10px 14px;
+      border-bottom: 2px solid var(--black);
+      background: var(--cream);
+    }
+    .section-body { padding: 14px; }
+
+    /* ── FUNNEL ── */
+    .funnel-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(26,16,8,0.08);
+    }
+    .funnel-row:last-child { border-bottom: none; }
+    .funnel-step { width: 180px; font-size: 12px; font-weight: 500; flex-shrink: 0; }
+    .funnel-bar-wrap { flex: 1; height: 14px; background: var(--cream); border: 1px solid rgba(26,16,8,0.15); }
+    .funnel-bar { height: 100%; background: var(--green); transition: width 0.6s ease; }
+    .funnel-bar.top { background: var(--black); }
+    .funnel-count { width: 30px; text-align: right; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    .funnel-pct { width: 42px; text-align: right; font-size: 11px; color: var(--muted); font-weight: 500; flex-shrink: 0; }
+
+    /* ── TWO COL ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    /* ── TIMELINE ── */
+    .timeline-item {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(26,16,8,0.08);
+      font-size: 12px;
+    }
+    .timeline-item:last-child { border-bottom: none; }
+    .tl-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green); border: 1.5px solid var(--black);
+      flex-shrink: 0; margin-top: 3px;
+    }
+    .tl-dot.hot { background: var(--black); }
+    .tl-event { font-weight: 600; }
+    .tl-meta { color: var(--muted); font-size: 11px; }
+    .tl-time { color: var(--muted); font-size: 10px; white-space: nowrap; }
+
+    /* ── HOT LEADS ── */
+    .hot-lead {
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(26,16,8,0.08);
+      font-size: 12px;
+    }
+    .hot-lead:last-child { border-bottom: none; }
+    .hot-lead-top { display: flex; justify-content: space-between; align-items: center; }
+    .hot-lead-id { font-size: 10px; color: var(--muted); font-family: monospace; }
+    .badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+    .badge {
+      font-size: 9px; font-weight: 600; letter-spacing: 0.5px;
+      padding: 2px 6px; border: 1.5px solid var(--black);
+      text-transform: uppercase;
+    }
+    .badge.green { background: var(--green); }
+    .badge.dark  { background: var(--black); color: var(--cream); }
+
+    /* ── ACTIVITY TABLE ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th {
+      text-align: left; font-size: 9px; font-weight: 700;
+      letter-spacing: 1px; text-transform: uppercase;
+      color: var(--muted); padding: 6px 8px;
+      border-bottom: 1.5px solid var(--black);
+      white-space: nowrap;
+    }
+    td {
+      padding: 7px 8px;
+      border-bottom: 1px solid rgba(26,16,8,0.08);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--cream); }
+    .check { color: var(--green); font-size: 14px; }
+    .dash  { color: rgba(26,16,8,0.2); }
+    .num { font-weight: 700; }
+    td.time { color: var(--muted); font-size: 10px; }
+
+    /* ── EMPTY / LOADING ── */
+    .empty { color: var(--muted); font-size: 12px; padding: 20px 0; text-align: center; }
+    .loading { color: var(--muted); font-size: 12px; font-style: italic; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <div class="header-left">
+        <h1>El Bosque</h1>
+        <span class="header-sub">Dashboard</span>
+      </div>
+      <div id="last-updated"></div>
+    </div>
+    <button id="refresh-btn" onclick="loadAll()">↺ Actualizar</button>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-card highlight">
+      <div class="stat-label">Total leads</div>
+      <div class="stat-value" id="s-leads">—</div>
+    </div>
+    <div class="stat-card highlight">
+      <div class="stat-label">Hot leads</div>
+      <div class="stat-value" id="s-hot">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">WhatsApp taps</div>
+      <div class="stat-value" id="s-wa">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Videos reproducidos</div>
+      <div class="stat-value" id="s-vid">—</div>
+    </div>
+  </div>
+
+  <!-- FUNNEL -->
+  <div class="section">
+    <div class="section-title">Embudo</div>
+    <div class="section-body" id="funnel-body"><span class="loading">Cargando…</span></div>
+  </div>
+
+  <!-- HOT LEADS + TIMELINE -->
+  <div class="two-col">
+    <div class="section">
+      <div class="section-title">🔥 Hot leads</div>
+      <div class="section-body" id="hot-body"><span class="loading">Cargando…</span></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Timeline reciente</div>
+      <div class="section-body" id="timeline-body"><span class="loading">Cargando…</span></div>
+    </div>
+  </div>
+
+  <!-- LEAD ACTIVITY TABLE -->
+  <div class="section">
+    <div class="section-title">Actividad por lead</div>
+    <div class="section-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Lead ID</th>
+              <th>Primer contacto</th>
+              <th>Último contacto</th>
+              <th>Eventos</th>
+              <th>Renders</th>
+              <th>360°</th>
+              <th>Video</th>
+              <th>Ubicación</th>
+              <th>WhatsApp</th>
+            </tr>
+          </thead>
+          <tbody id="activity-body">
+            <tr><td colspan="9" class="empty">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const SUPABASE_URL      = 'https://wxvjetgeiuzjuyzfhutv.supabase.co';
+  const SUPABASE_KEY      = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4dmpldGdlaXV6anV5emZodXR2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg4MDA1MSwiZXhwIjoyMDg5NDU2MDUxfQ.Y2juatE3aTSarNdD_cmi2QKK3BLgWrzOqH6EMjaP2qI';
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  function timeAgo(ts) {
+    const diff = Date.now() - new Date(ts).getTime();
+    const m = Math.floor(diff / 60000);
+    const h = Math.floor(m / 60);
+    const d = Math.floor(h / 24);
+    if (d > 0)  return `hace ${d}d`;
+    if (h > 0)  return `hace ${h}h`;
+    if (m > 0)  return `hace ${m}m`;
+    return 'ahora';
+  }
+
+  function fmtDate(ts) {
+    return new Date(ts).toLocaleString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function shortId(id) {
+    return id ? id.slice(0, 8) + '…' : '—';
+  }
+
+  const EVENT_LABELS = {
+    page_load:       'Cargó página',
+    renders_open:    'Abrió renders',
+    render_view:     'Vio render',
+    render_lightbox: 'Zoom render',
+    view_360_open:   'Abrió 360°',
+    video_play:      'Jugó video',
+    ubicacion_open:  'Abrió ubicación',
+    ubicacion_tap:   'Cómo llegar',
+    mas_open:        'Vio más opciones',
+    cta_tap:         'Tocó WhatsApp ✓',
+    back_tap:        'Volvió atrás',
+    panel_back:      'Volvió atrás',
+  };
+
+  async function loadAll() {
+    document.getElementById('refresh-btn').textContent = '…';
+
+    const [
+      { data: funnel },
+      { data: hot },
+      { data: timeline },
+      { data: activity },
+      { data: leads },
+    ] = await Promise.all([
+      sb.from('v_funnel').select('*'),
+      sb.from('v_hot_leads').select('*'),
+      sb.from('v_timeline').select('*').limit(40),
+      sb.from('v_lead_activity').select('*'),
+      sb.from('leads').select('id'),
+    ]);
+
+    // ── STATS ──
+    const totalLeads = leads?.length ?? 0;
+    const hotCount   = hot?.length ?? 0;
+    const waTaps     = activity?.reduce((a, r) => a + (r.whatsapp_taps || 0), 0) ?? 0;
+    const vidCount   = activity?.filter(r => r.watched_reel).length ?? 0;
+
+    document.getElementById('s-leads').textContent = totalLeads;
+    document.getElementById('s-hot').textContent   = hotCount;
+    document.getElementById('s-wa').textContent    = waTaps;
+    document.getElementById('s-vid').textContent   = vidCount;
+
+    // ── FUNNEL ──
+    const funnelOrder = ['page_load','opened_renders','watched_reel','opened_360','checked_location','tapped_como_llegar','tapped_whatsapp'];
+    const funnelLabels = {
+      page_load:          'Cargó página',
+      opened_renders:     'Abrió renders',
+      watched_reel:       'Jugó video',
+      opened_360:         'Abrió 360°',
+      checked_location:   'Vio ubicación',
+      tapped_como_llegar: 'Cómo llegar',
+      tapped_whatsapp:    'Tocó WhatsApp',
+    };
+    const maxLeads = funnel?.[0]?.leads ?? 1;
+    const funnelMap = Object.fromEntries((funnel || []).map(r => [r.step, r]));
+    const funnelHtml = funnelOrder.map((step, i) => {
+      const row = funnelMap[step] || { leads: 0, pct: 0 };
+      const w = Math.round((row.leads / maxLeads) * 100);
+      return `
+        <div class="funnel-row">
+          <div class="funnel-step">${funnelLabels[step]}</div>
+          <div class="funnel-bar-wrap"><div class="funnel-bar ${i === 0 ? 'top' : ''}" style="width:${w}%"></div></div>
+          <div class="funnel-count">${row.leads}</div>
+          <div class="funnel-pct">${row.pct ?? 0}%</div>
+        </div>`;
+    }).join('');
+    document.getElementById('funnel-body').innerHTML = funnelHtml || '<span class="empty">Sin datos</span>';
+
+    // ── HOT LEADS ──
+    if (!hot || hot.length === 0) {
+      document.getElementById('hot-body').innerHTML = '<span class="empty">Sin hot leads aún</span>';
+    } else {
+      document.getElementById('hot-body').innerHTML = hot.map(l => {
+        const badges = [];
+        if (l.tapped_whatsapp)    badges.push(`<span class="badge dark">WhatsApp</span>`);
+        if (l.watched_reel)       badges.push(`<span class="badge green">Video</span>`);
+        if (l.opened_360)         badges.push(`<span class="badge green">360°</span>`);
+        if (l.opened_renders)     badges.push(`<span class="badge green">Renders</span>`);
+        if (l.checked_location)   badges.push(`<span class="badge green">Ubicación</span>`);
+        return `
+          <div class="hot-lead">
+            <div class="hot-lead-top">
+              <span class="hot-lead-id">${shortId(l.lead_id)}</span>
+              <span style="font-size:10px;color:var(--muted)">${timeAgo(l.last_seen)}</span>
+            </div>
+            <div class="badges">${badges.join('')}</div>
+          </div>`;
+      }).join('');
+    }
+
+    // ── TIMELINE ──
+    if (!timeline || timeline.length === 0) {
+      document.getElementById('timeline-body').innerHTML = '<span class="empty">Sin eventos aún</span>';
+    } else {
+      document.getElementById('timeline-body').innerHTML = timeline.slice(0, 25).map(e => {
+        const isHot = e.event === 'cta_tap';
+        const meta = e.metadata && Object.keys(e.metadata).length
+          ? ' · ' + JSON.stringify(e.metadata).replace(/[{}"]/g, '').replace(/:/g, ' ')
+          : '';
+        return `
+          <div class="timeline-item">
+            <div class="tl-dot ${isHot ? 'hot' : ''}"></div>
+            <div style="flex:1">
+              <div class="tl-event">${EVENT_LABELS[e.event] || e.event}<span class="tl-meta">${meta}</span></div>
+              <div class="tl-meta">${shortId(e.lead_id)}</div>
+            </div>
+            <div class="tl-time">${timeAgo(e.timestamp)}</div>
+          </div>`;
+      }).join('');
+    }
+
+    // ── ACTIVITY TABLE ──
+    if (!activity || activity.length === 0) {
+      document.getElementById('activity-body').innerHTML = '<tr><td colspan="9" class="empty">Sin leads aún</td></tr>';
+    } else {
+      const ck = v => v ? '<span class="check">✓</span>' : '<span class="dash">—</span>';
+      document.getElementById('activity-body').innerHTML = activity.map(r => `
+        <tr>
+          <td style="font-family:monospace;font-size:10px">${shortId(r.lead_id)}</td>
+          <td class="time">${fmtDate(r.first_seen)}</td>
+          <td class="time">${fmtDate(r.last_seen)}</td>
+          <td><span class="num">${r.total_events}</span></td>
+          <td>${ck(r.opened_renders)}</td>
+          <td>${ck(r.opened_360)}</td>
+          <td>${ck(r.watched_reel)}</td>
+          <td>${ck(r.checked_location)}</td>
+          <td>${r.tapped_whatsapp ? '<span class="badge dark" style="font-size:9px">SÍ</span>' : '<span class="dash">—</span>'}</td>
+        </tr>`).join('');
+    }
+
+    document.getElementById('refresh-btn').textContent = '↺ Actualizar';
+    document.getElementById('last-updated').textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX');
+  }
+
+  loadAll();
+</script>
+</body>
+</html>

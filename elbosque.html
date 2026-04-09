@@ -19,8 +19,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap" />
 
   <!-- Pannellum -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css" />
-  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -756,7 +755,9 @@ const LOT = {
     { src: 'assets/render2.png', caption: 'Vista desde tu sala'       },
   ],
   reel:      'assets/aqua_small.mp4',
-  drone360:  'assets/360.jpg',
+  drone360:      'assets/360.jpg',
+  drone360Yaw:   0,    // 0-360 — adjust to face the facade on load
+  drone360Pitch: 0,    // negative = look down, positive = look up
   dronePhoto:'assets/drone.png',
 };
 
@@ -978,22 +979,83 @@ function closeVideo() {
 }
 
 /* ──────────────────────────────────────────────
-   360° PANNELLUM
+   360° THREE.JS
 ─────────────────────────────────────────────── */
 function initViewer() {
   if (viewer) return;
-  const src = LOT.drone360;
-  const placeholder = src.includes('[');
-  viewer = pannellum.viewer('pannellum-viewer', {
-    type:               'equirectangular',
-    panorama:           placeholder ? '' : src,
-    autoLoad:           !placeholder,
-    autoRotate:         -2,
-    compass:            false,
-    showFullscreenCtrl: false,
-    showZoomCtrl:       false,
-    strings: { loadButtonLabel: placeholder ? '[assets/360.jpg no cargada]' : 'Click para cargar' },
+
+  const container = document.getElementById('pannellum-viewer');
+  const W = container.clientWidth  || 360;
+  const H = container.clientHeight || 270;
+
+  // Scene + camera
+  const scene    = new THREE.Scene();
+  const camera   = new THREE.PerspectiveCamera(80, W / H, 0.1, 1000);
+
+  // Renderer
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(W, H);
+  container.appendChild(renderer.domElement);
+
+  // Equirectangular sphere (inverted so we see inside)
+  const geo = new THREE.SphereGeometry(500, 64, 32);
+  geo.scale(-1, 1, 1);
+  const tex = new THREE.TextureLoader().load(LOT.drone360);
+  const mat = new THREE.MeshBasicMaterial({ map: tex });
+  scene.add(new THREE.Mesh(geo, mat));
+
+  // Starting direction — adjust LOT.drone360Yaw to point at the facade
+  let lon = LOT.drone360Yaw ?? 0;   // horizontal: 0-360
+  let lat = LOT.drone360Pitch ?? 0; // vertical:   -85 to 85
+
+  let isDragging = false, startX = 0, startY = 0, startLon = 0, startLat = 0;
+
+  function onDown(x, y) { isDragging = true; startX = x; startY = y; startLon = lon; startLat = lat; }
+  function onMove(x, y) {
+    if (!isDragging) return;
+    lon = startLon - (x - startX) * 0.25;
+    lat = Math.max(-85, Math.min(85, startLat + (y - startY) * 0.25));
+  }
+  function onUp() { isDragging = false; }
+
+  renderer.domElement.addEventListener('mousedown',  e => onDown(e.clientX, e.clientY));
+  window.addEventListener('mousemove',  e => onMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup',    onUp);
+  renderer.domElement.addEventListener('touchstart', e => { onDown(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
+  renderer.domElement.addEventListener('touchmove',  e => { onMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
+  renderer.domElement.addEventListener('touchend',   onUp);
+
+  // Debug overlay
+  const dbg = document.createElement('div');
+  dbg.style.cssText = 'display:none;position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.75);color:#8FC9B9;font-family:monospace;font-size:12px;padding:6px 10px;border-radius:4px;pointer-events:none;z-index:10;line-height:1.6';
+  container.appendChild(dbg);
+
+  let debugOn = false;
+  window.addEventListener('keydown', e => {
+    if (e.key === 'd' || e.key === 'D') {
+      debugOn = !debugOn;
+      dbg.style.display = debugOn ? 'block' : 'none';
+    }
   });
+
+  let animId;
+  function animate() {
+    animId = requestAnimationFrame(animate);
+    if (!isDragging) lon -= 0.04;
+    const phi   = THREE.MathUtils.degToRad(90 - lat);
+    const theta = THREE.MathUtils.degToRad(lon);
+    camera.lookAt(
+      Math.sin(phi) * Math.cos(theta),
+      Math.cos(phi),
+      Math.sin(phi) * Math.sin(theta)
+    );
+    renderer.render(scene, camera);
+    if (debugOn) dbg.textContent = `yaw:   ${(((lon % 360) + 360) % 360).toFixed(1)}°\npitch: ${lat.toFixed(1)}°`;
+  }
+  animate();
+
+  viewer = { destroy() { cancelAnimationFrame(animId); renderer.dispose(); container.removeChild(renderer.domElement); } };
 }
 
 /* ──────────────────────────────────────────────
