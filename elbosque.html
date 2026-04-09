@@ -497,7 +497,19 @@
       font-size: 13px; font-style: italic;
       color: #a08060; text-decoration: none; line-height: 1.5;
     }
-    .cta-link:hover { text-decoration: underline; }
+    .cta-link:hover { text-decoration: none; }
+    .cta-whats-btn {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: var(--red); color: var(--white);
+      border: 1.5px solid var(--black); border-radius: 3px;
+      padding: 5px 10px 4px 8px;
+      box-shadow: 3px 3px 0 var(--shadow);
+      font-style: normal; font-size: 12px; font-weight: 700; letter-spacing: 0.2px;
+      transition: opacity 0.15s; vertical-align: middle;
+    }
+    .cta-link:hover  .cta-whats-btn { opacity: 0.88; }
+    .cta-link:active .cta-whats-btn { box-shadow: 1px 1px 0 var(--shadow); transform: translate(1px,1px); }
+    .cta-wa-icon { width: 18px; height: 18px; flex-shrink: 0; }
 
     /* ── VIDEO OVERLAY ── */
     .video-overlay {
@@ -713,7 +725,7 @@
       <div style="position:relative;z-index:1;text-align:right;font-size:8px;font-style:italic;color:rgba(26,16,8,0.28);letter-spacing:0.2px;pointer-events:none;">Precios sujetos a cambio sin previo aviso</div>
     <hr class="cta-divider" />
     <a class="cta-link" id="main-cta" href="#" onclick="trackCta(currentPanel)">
-      ¿no quieres que te lo ganen? <span style="color:var(--red-muted)">mándame un whats →</span>
+      ¿no quieres que te lo ganen? <span style="color:var(--red-muted)">mándame un</span> <span class="cta-whats-btn"><img src="whatrans.png" class="cta-wa-icon" alt="" />whats →</span>
     </a>
   </div>
 
@@ -1173,16 +1185,15 @@ function initViewer() {
     raycaster.setFromCamera(getNDC(cx, cy), camera);
 
     if (isPlacing) {
-      const hits = raycaster.intersectObject(panoramaMesh);
-      if (hits.length) {
-        const p = hits[0].point;
-        // Reverse the geo.scale(-1,1,1): flip x to recover original direction
-        const placedLat = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, p.y / 500))));
-        const placedLon = (((THREE.MathUtils.radToDeg(Math.atan2(p.z / 500, -p.x / 500)) % 360) + 360) % 360);
-        dbgPlaced.textContent = `lon: ${placedLon.toFixed(1)}°  lat: ${placedLat.toFixed(1)}°`;
-        console.log(`[360 Hotspot] lon: ${placedLon.toFixed(1)}, lat: ${placedLat.toFixed(1)}`);
-        createHotspot(placedLon, placedLat, 'Nuevo hotspot');
-      }
+      // Unproject click directly to a world-space ray direction.
+      // Avoids raycasting against the X-flipped panorama mesh (which mirrors the hit point).
+      const ndc = getNDC(cx, cy);
+      const dir = new THREE.Vector3(ndc.x, ndc.y, 0.5).unproject(camera).normalize();
+      const placedLat = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, dir.y))));
+      const placedLon = (((THREE.MathUtils.radToDeg(Math.atan2(dir.z, dir.x)) % 360) + 360) % 360);
+      dbgPlaced.textContent = `lon: ${placedLon.toFixed(1)}°  lat: ${placedLat.toFixed(1)}°`;
+      console.log(`[360 Hotspot] lon: ${placedLon.toFixed(1)}, lat: ${placedLat.toFixed(1)}`);
+      createHotspot(placedLon, placedLat, 'Nuevo hotspot');
       isPlacing = false;
       renderer.domElement.style.cursor = '';
       placeBtn.textContent = 'Place Hotspot';
