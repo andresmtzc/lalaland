@@ -756,7 +756,7 @@ const LOT = {
   ],
   reel:      'assets/aqua_small.mp4',
   drone360:      'assets/360.jpg',
-  drone360Yaw:   0,    // 0-360 — adjust to face the facade on load
+  drone360Yaw:   78.6, // 0-360 — adjust to face the facade on load
   drone360Pitch: 0,    // negative = look down, positive = look up
   dronePhoto:'assets/drone.png',
 };
@@ -1002,6 +1002,7 @@ function initViewer() {
   const geo = new THREE.SphereGeometry(500, 64, 32);
   geo.scale(-1, 1, 1);
   const tex = new THREE.TextureLoader().load(LOT.drone360);
+  tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.MeshBasicMaterial({ map: tex });
   scene.add(new THREE.Mesh(geo, mat));
 
@@ -1022,9 +1023,31 @@ function initViewer() {
   renderer.domElement.addEventListener('mousedown',  e => onDown(e.clientX, e.clientY));
   window.addEventListener('mousemove',  e => onMove(e.clientX, e.clientY));
   window.addEventListener('mouseup',    onUp);
-  renderer.domElement.addEventListener('touchstart', e => { onDown(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
-  renderer.domElement.addEventListener('touchmove',  e => { onMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
-  renderer.domElement.addEventListener('touchend',   onUp);
+  // Touch drag + pinch zoom
+  let lastPinchDist = null;
+  renderer.domElement.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) onDown(e.touches[0].clientX, e.touches[0].clientY);
+    if (e.touches.length === 2) lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    e.preventDefault();
+  }, { passive: false });
+  renderer.domElement.addEventListener('touchmove', e => {
+    if (e.touches.length === 1) { onMove(e.touches[0].clientX, e.touches[0].clientY); }
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      if (lastPinchDist) camera.fov = Math.max(30, Math.min(100, camera.fov - (dist - lastPinchDist) * 0.1));
+      camera.updateProjectionMatrix();
+      lastPinchDist = dist;
+    }
+    e.preventDefault();
+  }, { passive: false });
+  renderer.domElement.addEventListener('touchend', e => { onUp(); lastPinchDist = null; });
+
+  // Scroll wheel zoom
+  renderer.domElement.addEventListener('wheel', e => {
+    camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.05));
+    camera.updateProjectionMatrix();
+    e.preventDefault();
+  }, { passive: false });
 
   // Debug overlay
   const dbg = document.createElement('div');
@@ -1042,7 +1065,7 @@ function initViewer() {
   let animId;
   function animate() {
     animId = requestAnimationFrame(animate);
-    if (!isDragging) lon -= 0.04;
+    if (!isDragging) lon -= 0.01;
     const phi   = THREE.MathUtils.degToRad(90 - lat);
     const theta = THREE.MathUtils.degToRad(lon);
     camera.lookAt(
