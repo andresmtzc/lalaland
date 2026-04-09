@@ -350,6 +350,8 @@
       position: absolute;
       left: 50%; top: 45%;
       transform: translate(-50%, -100%);
+      transition: opacity 0.5s ease;
+      z-index: 2;
       display: flex; flex-direction: column; align-items: center; gap: 3px;
       pointer-events: none;
     }
@@ -370,6 +372,31 @@
     .pin-debug-mode #ubicacion-pin:active { cursor: grabbing; }
     .pin-debug-mode .pin-dot { box-shadow: 0 0 0 4px rgba(76,73,69,0.5); }
 
+    /* ── UBICACIÓN PATH SVG ── */
+    .ubicacion-path-svg {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      pointer-events: none; overflow: visible; z-index: 1;
+    }
+    /* debug panel */
+    #ubicacion-dbg {
+      display: none; position: absolute; top: 8px; right: 8px; z-index: 30;
+      background: rgba(0,0,0,0.82); color: #8FC9B9;
+      font-family: monospace; font-size: 11px;
+      padding: 8px 10px; border-radius: 6px; min-width: 158px; line-height: 1.8;
+    }
+    #path-tool-btn {
+      display: block; width: 100%; border: none; border-radius: 4px;
+      padding: 4px 8px; font-family: monospace; font-size: 11px;
+      font-weight: 700; cursor: pointer;
+      background: #8FC9B9; color: #1a1008;
+    }
+    #path-output {
+      display: none; margin-top: 6px; font-size: 9px; color: #8FC9B9;
+      white-space: pre-wrap; word-break: break-all; cursor: pointer;
+      border: 1px solid rgba(143,201,185,0.3); border-radius: 3px; padding: 4px;
+    }
+    #path-output:hover { color: #fff; }
+
     .panel-maps-btn {
       display: flex; align-items: center; justify-content: center; gap: 8px;
       width: 100%; margin-top: 8px;
@@ -379,6 +406,7 @@
       border: none; border-radius: 3px;
       text-decoration: none;
       box-shadow: 3px 3px 0 var(--shadow);
+      text-shadow: 0 1px 2px rgba(0,0,0,0.25);
       transition: opacity 0.15s;
     }
     .panel-maps-btn:hover { opacity: 0.88; }
@@ -455,6 +483,7 @@
       text-align: center; font-size: 7px;
       letter-spacing: 1.5px; text-transform: uppercase;
       padding: 3px 4px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.25);
     }
     .mini-card-top-line { height: 3px; background: var(--mc-color, var(--red)); }
     .mc-prox { position: relative; overflow: hidden; }
@@ -636,9 +665,15 @@
       </div>
       <div class="panel-ubicacion-img" id="ubicacion-img-wrap">
         <img src="assets/ubicacion.png" alt="Ubicación del lote" />
+        <svg class="ubicacion-path-svg" id="ubicacion-path-svg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
         <div class="ubicacion-pin" id="ubicacion-pin">
           <div class="pin-dot"></div>
           <span class="pin-label" id="pin-label">Lote 71-76</span>
+        </div>
+        <div id="ubicacion-dbg">
+          <button id="path-tool-btn">Path Tool</button>
+          <div id="path-tool-status" style="font-size:10px;color:#fff;min-height:14px;"></div>
+          <pre id="path-output" title="click to copy"></pre>
         </div>
       </div>
       <a class="panel-maps-btn" id="maps-btn" href="https://www.google.com/maps/dir/?api=1&destination=25.438192,-100.177846" target="_blank" rel="noopener"
@@ -795,6 +830,33 @@ const LOT = {
   dronePhoto:'assets/drone.png',
   hotspots: [
     { lon: 73.5, lat: -6.9, label: 'Tu fachada' },
+  ],
+  path: [
+    [24.1, 88.2],
+    [26.3, 86.8],
+    [28.5, 86.3],
+    [30.9, 86],
+    [33.6, 84.3],
+    [36.3, 82.4],
+    [38.8, 80.4],
+    [41.7, 78.2],
+    [43.9, 76.7],
+    [46.9, 75],
+    [50.8, 73],
+    [55, 71.6],
+    [58.6, 69.6],
+    [61.8, 67.6],
+    [66.5, 65.7],
+    [70.9, 64.5],
+    [74.1, 63],
+    [77.3, 60.3],
+    [80.5, 57.4],
+    [80, 54.7],
+    [78.2, 49.8],
+    [76.5, 44.6],
+    [75.1, 40.2],
+    [73.8, 35.5],
+    [73.1, 32.8],
   ],
 };
 
@@ -955,7 +1017,7 @@ function showPanel(name) {
     if (btnEl) btnEl.classList.add('active-panel');
 
     if (name === '360')      { initViewer(); trackEvent('view_360_open'); }
-    if (name === 'ubicacion') { trackEvent('ubicacion_open'); }
+    if (name === 'ubicacion') { trackEvent('ubicacion_open'); animateUbicacionPath(); }
     if (name === 'renders')  { selectRender(currentRender, false); trackEvent('renders_open'); }
     if (name === 'mas')      { trackEvent('mas_open'); }
     if (name === 'main' && currentPanel !== 'main') { trackEvent('panel_back', { from: currentPanel }); }
@@ -1300,22 +1362,42 @@ function initViewer() {
 /* ──────────────────────────────────────────────
    CTA
 ─────────────────────────────────────────────── */
-/* ── PIN DEBUG (press D) ── */
+/* ── PIN + PATH DEBUG (press D on ubicación) ── */
 let pinDebugActive = false;
+let pathToolActive = false;
+let pathVertices   = [];
+let ptrDownPos     = null; // for tap-vs-drag detection
+
 document.addEventListener('keydown', e => {
   if (e.key === 'd' || e.key === 'D') togglePinDebug();
 });
+
 function togglePinDebug() {
   pinDebugActive = !pinDebugActive;
-  const wrap = document.getElementById('ubicacion-img-wrap');
-  const pin  = document.getElementById('ubicacion-pin');
+  const wrap   = document.getElementById('ubicacion-img-wrap');
+  const pin    = document.getElementById('ubicacion-pin');
   const coords = document.getElementById('pin-coords');
+  const dbg    = document.getElementById('ubicacion-dbg');
+
   wrap.classList.toggle('pin-debug-mode', pinDebugActive);
   coords.style.display = pinDebugActive ? 'block' : 'none';
-  if (!pinDebugActive) { coords.textContent = ''; return; }
+  dbg.style.display    = pinDebugActive ? 'block' : 'none';
 
+  if (!pinDebugActive) {
+    coords.textContent = '';
+    pathToolActive = false;
+    pathVertices   = [];
+    document.getElementById('path-tool-btn').textContent    = 'Path Tool';
+    document.getElementById('path-tool-btn').style.background = '#8FC9B9';
+    document.getElementById('path-tool-status').textContent = '';
+    document.getElementById('path-output').style.display    = 'none';
+    return;
+  }
+
+  // ── Pin drag ──
   pin.addEventListener('pointerdown', startDrag);
   function startDrag(e) {
+    if (pathToolActive) return; // path tool takes over clicks
     e.preventDefault();
     pin.setPointerCapture(e.pointerId);
     pin.addEventListener('pointermove', onDrag);
@@ -1329,6 +1411,138 @@ function togglePinDebug() {
     pin.style.top  = y + '%';
     coords.textContent = `pinX: '${x}%'  pinY: '${y}%'`;
   }
+}
+
+// ── Path tool button ──
+document.getElementById('path-tool-btn').addEventListener('click', e => { e.stopPropagation();
+  pathToolActive = !pathToolActive;
+  const btn    = document.getElementById('path-tool-btn');
+  const status = document.getElementById('path-tool-status');
+  const output = document.getElementById('path-output');
+  if (pathToolActive) {
+    pathVertices = [];
+    btn.textContent      = 'Stop';
+    btn.style.background = '#EB656B';
+    status.textContent   = 'click → vertex · right-click → done';
+    output.style.display = 'none';
+    redrawDebugPath();
+  } else {
+    btn.textContent      = 'Path Tool';
+    btn.style.background = '#8FC9B9';
+    status.textContent   = '';
+  }
+});
+
+// ── Vertex capture ──
+const _ubicWrap = document.getElementById('ubicacion-img-wrap');
+
+_ubicWrap.addEventListener('pointerdown', e => {
+  ptrDownPos = { x: e.clientX, y: e.clientY };
+});
+
+_ubicWrap.addEventListener('click', e => {
+  if (!pathToolActive) return;
+  if (ptrDownPos && Math.hypot(e.clientX - ptrDownPos.x, e.clientY - ptrDownPos.y) > 6) return;
+  const rect = _ubicWrap.getBoundingClientRect();
+  const x = parseFloat(((e.clientX - rect.left) / rect.width  * 100).toFixed(1));
+  const y = parseFloat(((e.clientY - rect.top)  / rect.height * 100).toFixed(1));
+  pathVertices.push([x, y]);
+  redrawDebugPath();
+  document.getElementById('path-tool-status').textContent = `${pathVertices.length} pts · right-click → done`;
+});
+
+_ubicWrap.addEventListener('contextmenu', e => {
+  if (!pathToolActive) return;
+  e.preventDefault();
+  pathToolActive = false;
+  const btn    = document.getElementById('path-tool-btn');
+  const status = document.getElementById('path-tool-status');
+  const output = document.getElementById('path-output');
+  btn.textContent      = 'Path Tool';
+  btn.style.background = '#8FC9B9';
+  status.textContent   = `${pathVertices.length} pts — click below to copy`;
+  const arr = pathVertices.map(p => `  [${p[0]}, ${p[1]}]`).join(',\n');
+  output.textContent   = `path: [\n${arr}\n]`;
+  output.style.display = 'block';
+  output.onclick = () => {
+    navigator.clipboard.writeText(output.textContent).then(() => {
+      status.textContent = 'copied ✓';
+      setTimeout(() => { status.textContent = ''; }, 1500);
+    });
+  };
+});
+
+function redrawDebugPath() {
+  const svg = document.getElementById('ubicacion-path-svg');
+  svg.querySelectorAll('.dbg').forEach(el => el.remove());
+  const ns = 'http://www.w3.org/2000/svg';
+  pathVertices.forEach((p, i) => {
+    if (i > 0) {
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', pathVertices[i-1][0]); line.setAttribute('y1', pathVertices[i-1][1]);
+      line.setAttribute('x2', p[0]);                 line.setAttribute('y2', p[1]);
+      line.setAttribute('stroke', '#EB656B'); line.setAttribute('stroke-width', '0.6');
+      line.classList.add('dbg'); svg.appendChild(line);
+    }
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', p[0]); dot.setAttribute('cy', p[1]); dot.setAttribute('r', '1');
+    dot.setAttribute('fill', i === 0 ? '#F4BD42' : '#EB656B');
+    dot.classList.add('dbg'); svg.appendChild(dot);
+  });
+}
+
+/* ── PATH ANIMATION ── */
+function animateUbicacionPath() {
+  if (!LOT.path || LOT.path.length < 2) return;
+  const svg = document.getElementById('ubicacion-path-svg');
+  const pin = document.getElementById('ubicacion-pin');
+  const ns  = 'http://www.w3.org/2000/svg';
+
+  // Hide pin until path finishes
+  pin.style.opacity = '0';
+
+  svg.querySelectorAll('.prod').forEach(el => el.remove());
+
+  // Glow filter
+  const defs = document.createElementNS(ns, 'defs');
+  defs.innerHTML = `<filter id="path-glow" x="-50%" y="-50%" width="200%" height="200%">
+    <feGaussianBlur stdDeviation="0.6" result="blur"/>
+    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>`;
+  defs.classList.add('prod'); svg.insertBefore(defs, svg.firstChild);
+
+  // Route line
+  const pts  = LOT.path.map(p => `${p[0]},${p[1]}`).join(' ');
+  const line = document.createElementNS(ns, 'polyline');
+  line.setAttribute('points', pts);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', '#8FC9B9');
+  line.setAttribute('stroke-width', '0.9');
+  line.setAttribute('stroke-linecap', 'round');
+  line.setAttribute('stroke-linejoin', 'round');
+  line.setAttribute('filter', 'url(#path-glow)');
+  line.classList.add('prod'); svg.appendChild(line);
+
+
+  // Measure + kick off
+  const len = line.getTotalLength();
+  line.style.strokeDasharray  = len;
+  line.style.strokeDashoffset = len;
+  line.getBoundingClientRect(); // force reflow
+
+  const DURATION = 2200;
+  const start    = performance.now();
+
+  function easeInOut(t) { return t < 0.5 ? 2*t*t : -1 + (4 - 2*t)*t; }
+
+  function frame(now) {
+    const t    = Math.min((now - start) / DURATION, 1);
+    const ease = easeInOut(t);
+    line.style.strokeDashoffset = len * (1 - ease);
+    if (t < 1) { requestAnimationFrame(frame); }
+    else { pin.style.opacity = '1'; }
+  }
+  requestAnimationFrame(frame);
 }
 
 function trackCta(panel) {
