@@ -209,7 +209,14 @@
       border-bottom: 1.5px solid var(--black);
       overflow: hidden;
     }
-    .card-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .card-photo img { width: 100%; height: 100%; object-fit: cover; display: block; transform-origin: center center; }
+    @keyframes mc-zoom-out {
+      from { transform: scale(1.1); }
+      to   { transform: scale(1); }
+    }
+    .card-photo img.mc-zooming {
+      animation: mc-zoom-out 2.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    }
 
     .photo-placeholder {
       width: 100%; height: 100%;
@@ -1916,89 +1923,108 @@ function mcShowOutput() {
 
 /* ── MAIN CARD ANIMATION ── */
 let mcPolygonDrawn = false;
+let mcZoomed = false;
 
 function animateMainCard() {
   if (!LOT.lotPolygon && !LOT.lotLabels) return;
-  const svg    = document.getElementById('main-card-svg');
-  const labels = document.getElementById('main-card-labels');
-  const ns     = 'http://www.w3.org/2000/svg';
+  const img = document.querySelector('#panel-main .card-photo img');
 
-  // Pills always re-animate; polygon draws once and stays
-  labels.innerHTML = '';
-
-  const hasPolygon = LOT.lotPolygon && LOT.lotPolygon.length >= 3;
-
-  if (hasPolygon && mcPolygonDrawn) {
-    // Polygon already on screen — just re-spawn pills
-    spawnLabels();
-    return;
-  }
-
-  svg.querySelectorAll('.prod').forEach(el => el.remove());
-
-  if (hasPolygon) {
-    const defs = document.createElementNS(ns, 'defs');
-    defs.innerHTML = `<filter id="mc-glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="0.5" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>`;
-    defs.classList.add('prod'); svg.insertBefore(defs, svg.firstChild);
-
-    // Fill — fades in after stroke finishes
-    const fill = document.createElementNS(ns, 'polygon');
-    fill.setAttribute('points', LOT.lotPolygon.map(p => p.join(',')).join(' '));
-    fill.setAttribute('fill', 'rgba(143,201,185,0.1)');
-    fill.setAttribute('stroke', 'none');
-    fill.style.opacity = '0';
-    fill.style.transition = 'opacity 0.5s ease';
-    fill.classList.add('prod'); svg.appendChild(fill);
-
-    // Stroke draw-on (close the loop by appending first vertex)
-    const closedPts = [...LOT.lotPolygon, LOT.lotPolygon[0]];
-    const stroke = document.createElementNS(ns, 'polyline');
-    stroke.setAttribute('points', closedPts.map(p => p.join(',')).join(' '));
-    stroke.setAttribute('fill', 'none');
-    stroke.setAttribute('stroke', '#8FC9B9');
-    stroke.setAttribute('stroke-width', '2.2');
-    stroke.setAttribute('stroke-linecap', 'butt');
-    stroke.setAttribute('stroke-linejoin', 'miter');
-    stroke.setAttribute('filter', 'url(#mc-glow)');
-    stroke.classList.add('prod'); svg.appendChild(stroke);
-
-    const len = stroke.getTotalLength();
-    stroke.style.strokeDasharray  = len;
-    stroke.style.strokeDashoffset = len;
-    stroke.getBoundingClientRect();
-
-    const POLY_DUR = 1500;
-    const polyStart = performance.now();
-    const ease = t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
-
-    (function polyFrame(now) {
-      const t = Math.min((now - polyStart) / POLY_DUR, 1);
-      stroke.style.strokeDashoffset = len * (1 - ease(t));
-      if (t < 1) { requestAnimationFrame(polyFrame); }
-      else { fill.style.opacity = '1'; mcPolygonDrawn = true; spawnLabels(); }
-    })(performance.now());
-
+  if (img && !img.complete) {
+    img.addEventListener('load', run, { once: true });
   } else {
-    spawnLabels();
+    run();
   }
 
-  function spawnLabels() {
-    (LOT.lotLabels || []).filter(l => l.x != null && l.y != null).forEach((lbl, i) => {
-      const pill = document.createElement('div');
-      pill.className = 'lot-label-pill';
-      pill.style.left = lbl.x + '%';
-      pill.style.top  = lbl.y + '%';
-      pill.textContent = lbl.text;
-      labels.appendChild(pill);
-      // double-rAF ensures scale(0) is painted before transition fires
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        setTimeout(() => pill.classList.add('visible'), i * 130);
-      }));
-    });
-  }
+  function run() {
+    // zoom-out — first load only
+    if (img && !mcZoomed) {
+      mcZoomed = true;
+      img.classList.add('mc-zooming');
+      setTimeout(() => img.classList.remove('mc-zooming'), 2800);
+    }
+
+
+    const svg    = document.getElementById('main-card-svg');
+    const labels = document.getElementById('main-card-labels');
+    const ns     = 'http://www.w3.org/2000/svg';
+
+    // Pills always re-animate; polygon draws once and stays
+    labels.innerHTML = '';
+
+    const hasPolygon = LOT.lotPolygon && LOT.lotPolygon.length >= 3;
+
+    if (hasPolygon && mcPolygonDrawn) {
+      // Polygon already on screen — just re-spawn pills
+      spawnLabels();
+      return;
+    }
+
+    svg.querySelectorAll('.prod').forEach(el => el.remove());
+
+    if (hasPolygon) {
+      const defs = document.createElementNS(ns, 'defs');
+      defs.innerHTML = `<filter id="mc-glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="0.5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>`;
+      defs.classList.add('prod'); svg.insertBefore(defs, svg.firstChild);
+
+      const fill = document.createElementNS(ns, 'polygon');
+      fill.setAttribute('points', LOT.lotPolygon.map(p => p.join(',')).join(' '));
+      fill.setAttribute('fill', 'rgba(143,201,185,0.1)');
+      fill.setAttribute('stroke', 'none');
+      fill.style.opacity = '0';
+      fill.style.transition = 'opacity 0.5s ease';
+      fill.classList.add('prod'); svg.appendChild(fill);
+
+      const closedPts = [...LOT.lotPolygon, LOT.lotPolygon[0]];
+      const stroke = document.createElementNS(ns, 'polyline');
+      stroke.setAttribute('points', closedPts.map(p => p.join(',')).join(' '));
+      stroke.setAttribute('fill', 'none');
+      stroke.setAttribute('stroke', '#8FC9B9');
+      stroke.setAttribute('stroke-width', '2.2');
+      stroke.setAttribute('stroke-linecap', 'butt');
+      stroke.setAttribute('stroke-linejoin', 'miter');
+      stroke.setAttribute('filter', 'url(#mc-glow)');
+      stroke.classList.add('prod'); svg.appendChild(stroke);
+
+      const len = stroke.getTotalLength();
+      stroke.style.strokeDasharray  = len;
+      stroke.style.strokeDashoffset = len;
+      stroke.getBoundingClientRect();
+
+      // wait for clouds on first load, brief pause otherwise
+      setTimeout(() => {
+        const POLY_DUR = 1500;
+
+        const polyStart = performance.now();
+        const ease = t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+        (function polyFrame(now) {
+          const t = Math.min((now - polyStart) / POLY_DUR, 1);
+          stroke.style.strokeDashoffset = len * (1 - ease(t));
+          if (t < 1) { requestAnimationFrame(polyFrame); }
+          else { fill.style.opacity = '1'; mcPolygonDrawn = true; spawnLabels(); }
+        })(performance.now());
+      }, 350);
+
+    } else {
+      spawnLabels();
+    }
+
+    function spawnLabels() {
+      (LOT.lotLabels || []).filter(l => l.x != null && l.y != null).forEach((lbl, i) => {
+        const pill = document.createElement('div');
+        pill.className = 'lot-label-pill';
+        pill.style.left = lbl.x + '%';
+        pill.style.top  = lbl.y + '%';
+        pill.textContent = lbl.text;
+        labels.appendChild(pill);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          setTimeout(() => pill.classList.add('visible'), i * 130);
+        }));
+      });
+    }
+  } // end run()
 }
 
 function trackCta(panel) {
