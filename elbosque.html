@@ -777,6 +777,9 @@ const LOT = {
   drone360Yaw:   78.6, // 0-360 — adjust to face the facade on load
   drone360Pitch: 0,    // negative = look down, positive = look up
   dronePhoto:'assets/drone.png',
+  hotspots: [
+    { lon: 78.6, lat: 0, label: 'Tu fachada' },
+  ],
 };
 
 /* ──────────────────────────────────────────────
@@ -1015,85 +1018,223 @@ function initViewer() {
   const W = container.clientWidth  || 360;
   const H = container.clientHeight || 270;
 
-  // Scene + camera
-  const scene    = new THREE.Scene();
-  const camera   = new THREE.PerspectiveCamera(80, W / H, 0.1, 1000);
+  const scene  = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(80, W / H, 0.1, 1000);
 
-  // Renderer
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(W, H);
   renderer.domElement.style.cssText = 'width:100%;height:100%;display:block;position:absolute;inset:0;';
   container.appendChild(renderer.domElement);
 
-  // Equirectangular sphere (inverted so we see inside)
+  // Panorama sphere (inverted so we see inside)
   const geo = new THREE.SphereGeometry(500, 64, 32);
   geo.scale(-1, 1, 1);
   const tex = new THREE.TextureLoader().load(LOT.drone360);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.MeshBasicMaterial({ map: tex });
-  scene.add(new THREE.Mesh(geo, mat));
+  const panoramaMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }));
+  scene.add(panoramaMesh);
 
-  // Starting direction — adjust LOT.drone360Yaw to point at the facade
-  let lon = LOT.drone360Yaw ?? 0;   // horizontal: 0-360
-  let lat = LOT.drone360Pitch ?? 0; // vertical:   -85 to 85
+  // ── HOTSPOTS ──────────────────────────────────────────────────────
+  const PING_COLOR = new THREE.Color(0x8FC9B9);
+  const hotspotGroups = [];
 
+  function lonLatToXYZ(lon, lat, r) {
+    const phi   = THREE.MathUtils.degToRad(90 - lat);
+    const theta = THREE.MathUtils.degToRad(lon);
+    return new THREE.Vector3(
+      Math.sin(phi) * Math.cos(theta) * r,
+      Math.cos(phi) * r,
+      Math.sin(phi) * Math.sin(theta) * r
+    );
+  }
+
+  function createHotspot(hLon, hLat, label) {
+    const g = new THREE.Group();
+    g.position.copy(lonLatToXYZ(hLon, hLat, 100));
+    g.userData = { hLon, hLat, label };
+
+    // Core dot
+    g.add(new THREE.Mesh(
+      new THREE.SphereGeometry(1.2, 16, 16),
+      new THREE.MeshBasicMaterial({ color: PING_COLOR })
+    ));
+
+    // Rings (expand + fade like a sonar ping)
+    const mkRingMat = () => new THREE.MeshBasicMaterial({
+      color: PING_COLOR, transparent: true, opacity: 0.7,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    const ringGeo = new THREE.RingGeometry(1.5, 2.2, 32);
+    const r1mat = mkRingMat(), r2mat = mkRingMat();
+    g.add(new THREE.Mesh(ringGeo, r1mat)); // [1]
+    g.add(new THREE.Mesh(ringGeo, r2mat)); // [2]
+    g.userData.r1mat = r1mat;
+    g.userData.r2mat = r2mat;
+
+    scene.add(g);
+    hotspotGroups.push(g);
+    return g;
+  }
+
+  (LOT.hotspots || []).forEach(h => createHotspot(h.lon, h.lat, h.label));
+
+  // ── LABEL ─────────────────────────────────────────────────────────
+  const labelEl = document.createElement('div');
+  labelEl.style.cssText = [
+    'display:none', 'position:absolute', 'pointer-events:none', 'z-index:20',
+    'background:rgba(20,10,5,0.85)', 'color:#8FC9B9',
+    'font-family:Poppins,sans-serif', 'font-size:13px', 'font-weight:600',
+    'padding:6px 14px', 'border-radius:20px', 'border:1.5px solid #8FC9B9',
+    'white-space:nowrap', 'transform:translate(-50%,-160%)',
+    'backdrop-filter:blur(4px)', 'letter-spacing:0.3px',
+  ].join(';');
+  container.appendChild(labelEl);
+
+  let activeHotspot = null, labelTimeout = null;
+
+  function activateLabel(group) {
+    activeHotspot = group;
+    labelEl.textContent = group.userData.label;
+    labelEl.style.display = 'block';
+    clearTimeout(labelTimeout);
+    labelTimeout = setTimeout(() => { labelEl.style.display = 'none'; activeHotspot = null; }, 3000);
+  }
+
+  // ── CAMERA / DRAG STATE ───────────────────────────────────────────
+  let lon = LOT.drone360Yaw ?? 0;
+  let lat = LOT.drone360Pitch ?? 0;
   let isDragging = false, startX = 0, startY = 0, startLon = 0, startLat = 0;
+  let ptrDownX = 0, ptrDownY = 0;
 
-  function onDown(x, y) { isDragging = true; startX = x; startY = y; startLon = lon; startLat = lat; }
+  function onDown(x, y) {
+    isDragging = true;
+    startX = x; startY = y; startLon = lon; startLat = lat;
+    ptrDownX = x; ptrDownY = y;
+  }
   function onMove(x, y) {
     if (!isDragging) return;
     lon = startLon - (x - startX) * 0.25;
     lat = Math.max(-85, Math.min(85, startLat + (y - startY) * 0.25));
   }
-  function onUp() { isDragging = false; }
+  function onUp(x, y) {
+    isDragging = false;
+    if (Math.hypot(x - ptrDownX, y - ptrDownY) < 6) handleClick(x, y);
+  }
 
-  renderer.domElement.addEventListener('mousedown',  e => onDown(e.clientX, e.clientY));
-  window.addEventListener('mousemove',  e => onMove(e.clientX, e.clientY));
-  window.addEventListener('mouseup',    onUp);
-  // Touch drag + pinch zoom
+  renderer.domElement.addEventListener('mousedown', e => onDown(e.clientX, e.clientY));
+  window.addEventListener('mousemove', e => { if (isDragging) onMove(e.clientX, e.clientY); });
+  window.addEventListener('mouseup',   e => onUp(e.clientX, e.clientY));
+
   let lastPinchDist = null;
   renderer.domElement.addEventListener('touchstart', e => {
     if (e.touches.length === 1) onDown(e.touches[0].clientX, e.touches[0].clientY);
-    if (e.touches.length === 2) lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (e.touches.length === 2) lastPinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
     e.preventDefault();
   }, { passive: false });
   renderer.domElement.addEventListener('touchmove', e => {
-    if (e.touches.length === 1) { onMove(e.touches[0].clientX, e.touches[0].clientY); }
+    if (e.touches.length === 1) onMove(e.touches[0].clientX, e.touches[0].clientY);
     if (e.touches.length === 2) {
-      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
       if (lastPinchDist) camera.fov = Math.max(30, Math.min(100, camera.fov - (dist - lastPinchDist) * 0.1));
       camera.updateProjectionMatrix();
       lastPinchDist = dist;
     }
     e.preventDefault();
   }, { passive: false });
-  renderer.domElement.addEventListener('touchend', e => { onUp(); lastPinchDist = null; });
-
-  // Scroll wheel zoom
+  renderer.domElement.addEventListener('touchend', e => {
+    if (e.changedTouches.length === 1) onUp(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    lastPinchDist = null;
+  });
   renderer.domElement.addEventListener('wheel', e => {
     camera.fov = Math.max(30, Math.min(100, camera.fov + e.deltaY * 0.05));
     camera.updateProjectionMatrix();
     e.preventDefault();
   }, { passive: false });
 
-  // Debug overlay
+  // ── RAYCASTER ─────────────────────────────────────────────────────
+  const raycaster = new THREE.Raycaster();
+
+  function getNDC(cx, cy) {
+    const r = renderer.domElement.getBoundingClientRect();
+    return new THREE.Vector2(
+      ((cx - r.left) / r.width)  *  2 - 1,
+      ((cy - r.top)  / r.height) * -2 + 1
+    );
+  }
+
+  function handleClick(cx, cy) {
+    raycaster.setFromCamera(getNDC(cx, cy), camera);
+
+    if (isPlacing) {
+      const hits = raycaster.intersectObject(panoramaMesh);
+      if (hits.length) {
+        const p = hits[0].point;
+        // Reverse the geo.scale(-1,1,1): flip x to recover original direction
+        const placedLat = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, p.y / 500))));
+        const placedLon = (((THREE.MathUtils.radToDeg(Math.atan2(p.z / 500, -p.x / 500)) % 360) + 360) % 360);
+        dbgPlaced.textContent = `lon: ${placedLon.toFixed(1)}°  lat: ${placedLat.toFixed(1)}°`;
+        console.log(`[360 Hotspot] lon: ${placedLon.toFixed(1)}, lat: ${placedLat.toFixed(1)}`);
+        createHotspot(placedLon, placedLat, 'Nuevo hotspot');
+      }
+      isPlacing = false;
+      renderer.domElement.style.cursor = '';
+      placeBtn.textContent = 'Place Hotspot';
+      return;
+    }
+
+    // Hit-test hotspot core dots
+    const dotHits = raycaster.intersectObjects(hotspotGroups.map(g => g.children[0]));
+    if (dotHits.length) activateLabel(dotHits[0].object.parent);
+  }
+
+  // ── DEBUG OVERLAY ─────────────────────────────────────────────────
   const dbg = document.createElement('div');
-  dbg.style.cssText = 'display:none;position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.75);color:#8FC9B9;font-family:monospace;font-size:12px;padding:6px 10px;border-radius:4px;pointer-events:none;z-index:10;line-height:1.6';
+  dbg.style.cssText = 'display:none;position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.82);color:#8FC9B9;font-family:monospace;font-size:12px;padding:8px 12px;border-radius:6px;z-index:10;line-height:1.8;min-width:200px;';
   container.appendChild(dbg);
 
-  let debugOn = false;
+  const dbgCoords = document.createElement('div');
+  dbg.appendChild(dbgCoords);
+
+  const dbgPlaced = document.createElement('div');
+  dbgPlaced.style.cssText = 'font-size:11px;color:#fff;min-height:16px;';
+  dbg.appendChild(dbgPlaced);
+
+  const placeBtn = document.createElement('button');
+  placeBtn.textContent = 'Place Hotspot';
+  placeBtn.style.cssText = 'margin-top:6px;display:block;width:100%;background:#8FC9B9;color:#1a1008;border:none;border-radius:4px;padding:5px 8px;font-family:monospace;font-size:12px;font-weight:700;cursor:pointer;';
+  placeBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    isPlacing = !isPlacing;
+    renderer.domElement.style.cursor = isPlacing ? 'crosshair' : '';
+    placeBtn.textContent = isPlacing ? 'click to place ↵' : 'Place Hotspot';
+    if (isPlacing) dbgPlaced.textContent = 'click anywhere in the scene';
+    else dbgPlaced.textContent = '';
+  });
+  dbg.appendChild(placeBtn);
+
+  let debugOn = false, isPlacing = false;
+
   window.addEventListener('keydown', e => {
     if (e.key === 'd' || e.key === 'D') {
       debugOn = !debugOn;
       dbg.style.display = debugOn ? 'block' : 'none';
+      if (!debugOn) { isPlacing = false; renderer.domElement.style.cursor = ''; placeBtn.textContent = 'Place Hotspot'; }
     }
   });
 
+  // ── ANIMATE ───────────────────────────────────────────────────────
   let animId;
   function animate() {
     animId = requestAnimationFrame(animate);
     if (!isDragging) lon -= 0.01;
+
     const phi   = THREE.MathUtils.degToRad(90 - lat);
     const theta = THREE.MathUtils.degToRad(lon);
     camera.lookAt(
@@ -1101,12 +1242,44 @@ function initViewer() {
       Math.cos(phi),
       Math.sin(phi) * Math.sin(theta)
     );
+
+    // Hotspot ping animation
+    const t = Date.now() * 0.001;
+    hotspotGroups.forEach(g => {
+      // Billboard: copy camera orientation so rings always face viewer
+      g.quaternion.copy(camera.quaternion);
+
+      // Core pulse
+      g.children[0].scale.setScalar(1 + 0.2 * Math.sin(t * 3));
+
+      // Two rings expanding outward with offset phases
+      const p1 = (t * 0.65) % 1;
+      const p2 = (t * 0.65 + 0.5) % 1;
+      g.children[1].scale.setScalar(1 + p1 * 3.5);
+      g.children[2].scale.setScalar(1 + p2 * 3.5);
+      g.userData.r1mat.opacity = (1 - p1) * 0.7;
+      g.userData.r2mat.opacity = (1 - p2) * 0.7;
+    });
+
+    // Label follows its hotspot each frame
+    if (activeHotspot) {
+      const pos = activeHotspot.position.clone().project(camera);
+      if (pos.z < 1) {
+        labelEl.style.left = ((pos.x + 1) / 2 * container.clientWidth)  + 'px';
+        labelEl.style.top  = ((-pos.y + 1) / 2 * container.clientHeight) + 'px';
+      } else {
+        labelEl.style.display = 'none';
+        activeHotspot = null;
+      }
+    }
+
     renderer.render(scene, camera);
-    if (debugOn) dbg.textContent = `yaw:   ${(((lon % 360) + 360) % 360).toFixed(1)}°\npitch: ${lat.toFixed(1)}°`;
+
+    if (debugOn) dbgCoords.textContent = `yaw: ${(((lon % 360) + 360) % 360).toFixed(1)}°   pitch: ${lat.toFixed(1)}°`;
   }
   animate();
 
-  viewer = { destroy() { cancelAnimationFrame(animId); renderer.dispose(); container.removeChild(renderer.domElement); } };
+  viewer = { destroy() { cancelAnimationFrame(animId); renderer.dispose(); container.removeChild(renderer.domElement); viewer = null; } };
 }
 
 /* ──────────────────────────────────────────────
