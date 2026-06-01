@@ -27,6 +27,42 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- ===== LEAD AUTH CHECK (runs first) ===== -->
+  <script>
+    (function() {
+      const CURRENT_CLIENT = 'cpi';
+
+      // Cookie helpers
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+      }
+
+      function setCookie(name, value, days) {
+        const expires = new Date(Date.now() + days * 864e5).toUTCString();
+        document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+      }
+
+      // Check if URL has ?token= query parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('token');
+
+      // Check for session cookie
+      const sessionToken = getCookie('lead_session_' + CURRENT_CLIENT);
+
+      // Track auth state for view counter gating
+      window.__leadAuthenticated = !!(urlToken || sessionToken);
+
+      // Store token for later validation (after Supabase loads)
+      window.__leadAuthToken = urlToken;
+      window.__leadSessionToken = sessionToken;
+      window.__leadClient = CURRENT_CLIENT;
+    })();
+  </script>
+
   <title></title>
   <link rel="icon" href="favicon.ico" type="image/x-icon">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700" rel="stylesheet">
@@ -55,12 +91,12 @@
 const CURRENT_CLIENT = 'cpi';
 const CONFIG = getClientConfig(CURRENT_CLIENT);
 window.CONFIG = CONFIG;
-const IS_DEMO = new URLSearchParams(location.search).has('demo');
+const IS_DEMO = new URLSearchParams(location.search).has('demo') || (new URLSearchParams(location.search).get('token') || '').startsWith('DEMO');
 
-// Override defaultCommunity when loaded as demo (token starts with DEMO, or ?demo param)
+// Override defaultCommunity when loaded as demo (token starts with DEMO)
 (function() {
   const _t = new URLSearchParams(location.search).get('token');
-  if (((_t && _t.startsWith('DEMO')) || IS_DEMO) && CONFIG && CONFIG.demoCommunity) {
+  if (_t && _t.startsWith('DEMO') && CONFIG && CONFIG.demoCommunity) {
     CONFIG.defaultCommunity = CONFIG.demoCommunity;
   }
 })();
@@ -88,13 +124,6 @@ if (!CONFIG) {
 // ===== PERFORMANCE: Client Access Cache =====
 // Cache validation results per session to avoid repeated DB queries
 window.clientAccessCache = window.clientAccessCache || {};
-// Communities this editor is allowed to edit (null = unrestricted)
-window.ALLOWED_COMMUNITIES = window.ALLOWED_COMMUNITIES ?? null;
-
-function canEditCommunity(fracc) {
-  if (!window.ALLOWED_COMMUNITIES) return true;
-  return window.ALLOWED_COMMUNITIES.includes(fracc);
-}
 </script>
 
   <script>
@@ -105,39 +134,8 @@ function canEditCommunity(fracc) {
       document.body.classList.add('fonts-loaded'); // Fallback if fonts fail
     });
   </script>
-
-
-<style>
-  #registro-modal-overlay,
-  #leads-modal-overlay {
-    z-index: 10001;
-  }
-  #leads-modal-container {
-    opacity: 0;
-    transition: opacity 0.4s ease, transform 0.4s ease;
-    transform: translateY(-30px);
-  }
-  #leads-modal-container.show {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  @media (min-width: 768px) {
-    #leads-modal-container {
-      position: fixed;
-      top: 50%;
-      left: calc(5% + 400px);
-      width: 800px;
-      height: 90%;
-      max-height: 1000px;
-      transform: translate(-50%, -55%);
-    }
-    #leads-modal-container.show {
-      transform: translate(-50%, -50%);
-    }
-  }
-</style>
 </head>
- 
+
 <body>
 
 
@@ -177,61 +175,21 @@ function canEditCommunity(fracc) {
   })();
 </script>
 
-<!-- Login button in top right -->
-<button id="globe-login-btn" class="globe-login-button" title="Login">
-  Login
-</button>
-
-<!-- Leads button - above dashboard button, only visible when authenticated -->
-<button id="leads-btn" class="dashboard-button" title="Leads">
-  <!-- Person icon (default - leads closed) -->
-  <svg id="leads-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-white)"/>
-  </svg>
-  <!-- Person icon filled (leads open) -->
-  <svg id="leads-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Usuarios</span>
-</button>
-
-<!-- Dashboard button - bottom left above mapbox logo, only visible when authenticated -->
-<button id="dashboard-btn" class="dashboard-button" title="Dashboard">
-  <!-- Bar graph icon (default - dashboard closed) -->
-  <svg id="eye-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M4 20h4V10H4v10zm6 0h4V4h-4v16zm6 0h4v-8h-4v8z" fill="var(--color-white)"/>
-  </svg>
-  <!-- Bar graph icon filled (dashboard open) -->
-  <svg id="eye-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M4 20h4V10H4v10zm6 0h4V4h-4v16zm6 0h4v-8h-4v8z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Dashboard</span>
-</button>
-
-<!-- Registro button - above leads button, only visible when authenticated -->
-<button id="registro-btn" class="dashboard-button" title="Registro">
-  <svg id="registro-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-white)"/>
-  </svg>
-  <svg id="registro-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
-    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-primary)"/>
-  </svg>
-  <span>Registro</span>
-</button>
-
-<!-- Leads modal overlay with iframe -->
-<div id="leads-modal-overlay" style="display:none;">
-  <div id="leads-modal-backdrop"></div>
-  <div id="leads-modal-container">
-    <iframe id="leads-iframe" src="about:blank" frameborder="0"></iframe>
-  </div>
+<!-- Lead greeting in top right -->
+<div id="lead-greeting" class="lead-greeting" style="display:none">
+  Hola, <span id="lead-name"></span>
 </div>
 
-<!-- Registro modal overlay with iframe -->
-<div id="registro-modal-overlay" style="display:none;">
-  <div id="registro-modal-backdrop"></div>
-  <div id="registro-modal-container">
-    <iframe id="registro-iframe" src="about:blank" frameborder="0"></iframe>
+<!-- Name Modal (shown when lead has no name) -->
+<div id="nameModal" class="name-modal">
+  <div class="name-modal-content">
+    <h2>¡Bienvenido!</h2>
+    <p>¿Cómo te llamas?</p>
+    <form id="nameForm">
+      <input type="text" id="leadNameInput" placeholder="Nombre" required>
+      <input type="text" id="leadLastNameInput" placeholder="Apellido" required>
+      <button type="submit">EMPEZAR</button>
+    </form>
   </div>
 </div>
 
@@ -372,341 +330,6 @@ function canEditCommunity(fracc) {
 
 <div class="lot-details" id="lotDetails"></div>
 
-<!-- Cotizador Panel (hidden by default, shown when modal expands) -->
-<div id="cotizadorPanel" style="display:none; padding:16px; overflow-y:auto;">
-  <style>
-    #cotizadorPanel .cot-card {
-      background: white;
-      border-radius: 10px;
-      padding: 16px;
-      margin-bottom: 14px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
-    #cotizadorPanel .cot-card-title {
-      font-size: 15px;
-      font-weight: 700;
-      color: #8f5e38;
-      margin-bottom: 12px;
-      padding-bottom: 6px;
-      border-bottom: 2px solid #e4e3df;
-    }
-    #cotizadorPanel .cot-row {
-      display: flex;
-      align-items: center;
-      margin-bottom: 10px;
-      gap: 8px;
-    }
-    #cotizadorPanel .cot-row label {
-      flex: 0 0 130px;
-      font-size: 13px;
-      color: #5d5d5d;
-      text-align: right;
-    }
-    #cotizadorPanel .cot-row input,
-    #cotizadorPanel .cot-row select {
-      flex: 1;
-      padding: 6px 10px;
-      border: 2px solid #e4e3df;
-      border-radius: 8px;
-      font-size: 14px;
-      font-family: inherit;
-      background: #faf9f7;
-    }
-    #cotizadorPanel .cot-row input:read-only {
-      background: #f0efec;
-      color: #888;
-    }
-    #cotizadorPanel .cot-row input:focus,
-    #cotizadorPanel .cot-row select:focus {
-      outline: none;
-      border-color: #8f5e38;
-    }
-    #cotizadorPanel .cot-pct {
-      display: flex;
-      align-items: center;
-      flex: 1;
-      gap: 6px;
-    }
-    #cotizadorPanel .cot-pct input {
-      width: 70px;
-      flex: 0 0 70px;
-      text-align: center;
-    }
-    #cotizadorPanel .cot-unit {
-      font-size: 13px;
-      color: #999;
-      flex: 0 0 auto;
-    }
-    #cotizadorPanel .cot-amount {
-      font-size: 13px;
-      color: #333;
-      flex: 1;
-      text-align: right;
-    }
-    #cotizadorPanel .cot-error {
-      display: none;
-      color: #d32f2f;
-      font-size: 13px;
-      padding: 6px 0;
-    }
-    #cotizadorPanel .cot-balancer-select {
-      padding: 4px 8px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 12px;
-      font-family: inherit;
-      background: white;
-    }
-    #cotizadorPanel .cot-generate-btn {
-      width: 100%;
-      padding: 14px;
-      background: #8f5e38;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: 700;
-      font-family: inherit;
-      cursor: pointer;
-      margin-top: 4px;
-    }
-    #cotizadorPanel .cot-generate-btn:hover {
-      background: #7a4f2e;
-    }
-    #cotizadorPanel .cot-toggle-btn {
-      flex: 0 0 auto;
-      padding: 2px 8px;
-      font-size: 11px;
-      font-weight: 700;
-      font-family: inherit;
-      border: 2px solid #8f5e38;
-      border-radius: 5px;
-      background: transparent;
-      color: #8f5e38;
-      cursor: pointer;
-      line-height: 1.4;
-      transition: background .2s, color .2s;
-    }
-    #cotizadorPanel .cot-toggle-btn.active {
-      background: #8f5e38;
-      color: white;
-    }
-    #cotizadorPanel .cot-toggle-btn:disabled {
-      opacity: 0.3;
-      cursor: default;
-    }
-    #cotizadorPanel .cot-date-row {
-      display: flex;
-      flex: 1;
-      gap: 6px;
-    }
-    #cotizadorPanel .cot-date-row select {
-      flex: 1;
-      padding: 6px 8px;
-      border: 2px solid #e4e3df;
-      border-radius: 8px;
-      font-size: 13px;
-      font-family: inherit;
-      background: #faf9f7;
-    }
-    #cotizadorPanel .cot-date-row select:focus {
-      outline: none;
-      border-color: #8f5e38;
-    }
-    @media (max-width: 767px) {
-      #cotizadorPanel .cot-row label {
-        flex: 0 0 100px;
-        font-size: 12px;
-      }
-      #cotizadorPanel .cot-pct input {
-        width: 58px;
-        flex: 0 0 58px;
-      }
-    }
-  </style>
-
-  <!-- Lot Info -->
-  <div class="cot-card">
-    <div class="cot-card-title">Información del Lote</div>
-    <div class="cot-row">
-      <label>Lote</label>
-      <input type="text" id="cotLotNumber" readonly>
-    </div>
-    <div class="cot-row">
-      <label>Categoría</label>
-      <input type="text" id="cotLotCategory" readonly>
-    </div>
-    <div class="cot-row">
-      <label>Superficie</label>
-      <input type="text" id="cotLotSize" readonly>
-    </div>
-    <div class="cot-row">
-      <label>Precio / m²</label>
-      <input type="text" id="cotPriceM2" readonly>
-    </div>
-    <div class="cot-row">
-      <label>Valor Total</label>
-      <input type="text" id="cotTotalPrice" readonly>
-    </div>
-    <div class="cot-row">
-      <label>Descuento</label>
-      <div class="cot-pct">
-        <input type="number" id="cotDescuentoPct" value="0" min="0" max="100" step="0.5">
-        <span class="cot-unit" id="cotDescuentoUnit">%</span>
-        <button type="button" class="cot-toggle-btn" data-field="cotDescuentoPct">%/$</button>
-        <span class="cot-amount" id="cotDescuentoAmountDisplay">$0.00</span>
-      </div>
-    </div>
-    <div class="cot-row">
-      <label>Precio Final</label>
-      <input type="text" id="cotPrecioFinal" readonly>
-    </div>
-  </div>
-
-  <!-- Client -->
-  <div class="cot-card">
-    <div class="cot-card-title">Datos del Cliente</div>
-    <div class="cot-row">
-      <label>Nombre</label>
-      <input type="text" id="cotClientName" value="Estimada Familia">
-    </div>
-  </div>
-
-  <!-- Fechas de Pago -->
-  <div class="cot-card">
-    <div class="cot-card-title">Fechas de Pago</div>
-    <div class="cot-row">
-      <label>Separación</label>
-      <div class="cot-date-row">
-        <select id="cotFechaSeparacionMonth"></select>
-        <select id="cotFechaSeparacionYear"></select>
-      </div>
-    </div>
-    <div class="cot-row">
-      <label>Enganche</label>
-      <div class="cot-date-row">
-        <select id="cotFechaEngancheMonth"></select>
-        <select id="cotFechaEngancheYear"></select>
-      </div>
-    </div>
-    <div class="cot-row">
-      <label>Mensualidades</label>
-      <div class="cot-date-row">
-        <select id="cotFechaMensualidadesMonth"></select>
-        <select id="cotFechaMensualidadesYear"></select>
-      </div>
-    </div>
-    <div class="cot-row">
-      <label>Anualidades</label>
-      <div class="cot-date-row">
-        <select id="cotFechaAnualidadesMonth"></select>
-        <select id="cotFechaAnualidadesYear"></select>
-      </div>
-    </div>
-    <div class="cot-row">
-      <label>Escrituración</label>
-      <div class="cot-date-row">
-        <select id="cotFechaEscrituracionMonth"></select>
-        <select id="cotFechaEscrituracionYear"></select>
-      </div>
-    </div>
-  </div>
-
-  <!-- Payment -->
-  <div class="cot-card">
-    <div class="cot-card-title" style="display:flex; justify-content:space-between; align-items:center;">
-      Esquema de Pago
-      <div style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:400; color:#5d5d5d;">
-        Ajustar:
-        <select id="cotBalancerField" class="cot-balancer-select">
-          <option value="cotSeparacionPct">Separación</option>
-          <option value="cotEnganchePct">Enganche</option>
-          <option value="cotMensualidadesPct">Mensualidades</option>
-          <option value="cotAnualidadesPct">Anualidades</option>
-          <option value="cotEscrituracionPct" selected>Escrituración</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="cot-row">
-      <label>Separación</label>
-      <div class="cot-pct">
-        <input type="number" id="cotSeparacionPct" value="0" min="0" max="100" step="0.5">
-        <span class="cot-unit" id="cotSeparacionUnit">%</span>
-        <button type="button" class="cot-toggle-btn" data-field="cotSeparacionPct">%/$</button>
-        <span class="cot-amount" id="cotSeparacionDisplay">$0.00</span>
-      </div>
-    </div>
-
-    <div class="cot-row">
-      <label>Enganche</label>
-      <div class="cot-pct">
-        <input type="number" id="cotEnganchePct" value="20" min="0" max="100" step="0.5">
-        <span class="cot-unit" id="cotEngancheUnit">%</span>
-        <button type="button" class="cot-toggle-btn" data-field="cotEnganchePct">%/$</button>
-        <span class="cot-amount" id="cotEngancheDisplay">$0.00</span>
-      </div>
-    </div>
-    <div class="cot-row">
-      <label>Núm. Enganches</label>
-      <input type="number" id="cotNumEnganche" value="1" min="1" max="24" style="width:70px; flex:0 0 70px;">
-      <span class="cot-unit">→</span>
-      <span class="cot-amount" id="cotEnganchePerPayDisplay" style="font-weight:700; color:#8f5e38;">$0.00/pago</span>
-    </div>
-
-    <div class="cot-row">
-      <label>Mensualidades</label>
-      <div class="cot-pct">
-        <input type="number" id="cotMensualidadesPct" value="30" min="0" max="100" step="0.5">
-        <span class="cot-unit" id="cotMensualidadesUnit">%</span>
-        <button type="button" class="cot-toggle-btn" data-field="cotMensualidadesPct">%/$</button>
-        <span class="cot-amount" id="cotMensualidadesTotalDisplay">$0.00</span>
-      </div>
-    </div>
-    <div class="cot-row">
-      <label>Núm. Mensualidades</label>
-      <input type="number" id="cotNumMensualidades" value="24" min="1" max="120" style="width:70px; flex:0 0 70px;">
-      <span class="cot-unit">→</span>
-      <span class="cot-amount" id="cotMensualidadMesDisplay" style="font-weight:700; color:#8f5e38;">$0.00/mes</span>
-    </div>
-
-    <div class="cot-row">
-      <label>Anualidades</label>
-      <div class="cot-pct">
-        <input type="number" id="cotAnualidadesPct" value="0" min="0" max="100" step="0.5">
-        <span class="cot-unit" id="cotAnualidadesUnit">%</span>
-        <button type="button" class="cot-toggle-btn" data-field="cotAnualidadesPct">%/$</button>
-        <span class="cot-amount" id="cotAnualidadesTotalDisplay">$0.00</span>
-      </div>
-    </div>
-    <div class="cot-row">
-      <label>Núm. Anualidades</label>
-      <input type="number" id="cotNumAnualidades" value="2" min="1" max="10" style="width:70px; flex:0 0 70px;">
-      <span class="cot-unit">→</span>
-      <span class="cot-amount" id="cotAnualidadDisplay" style="font-weight:700; color:#8f5e38;">$0.00/pago</span>
-    </div>
-
-    <div class="cot-row">
-      <label>Escrituración</label>
-      <div class="cot-pct">
-        <input type="number" id="cotEscrituracionPct" value="50" min="0" max="100" step="0.5">
-        <span class="cot-unit" id="cotEscrituracionUnit">%</span>
-        <button type="button" class="cot-toggle-btn" data-field="cotEscrituracionPct">%/$</button>
-        <span class="cot-amount" id="cotEscrituracionDisplay">$0.00</span>
-      </div>
-    </div>
-
-    <div class="cot-error" id="cotErrorMsg"></div>
-
-    <div class="cot-row" style="margin-top:16px; padding-top:12px; border-top:2px solid #e4e3df;">
-      <label style="font-weight:700; font-size:15px; color:#8f5e38;">Total</label>
-      <input type="text" id="cotTotalDisplay" readonly style="font-size:16px; font-weight:700;">
-    </div>
-  </div>
-
-  <button class="cot-generate-btn" id="cotGenerateBtn">Generar PDF</button>
-</div>
-
 <!-- Calendly must be a sibling, not inside lotDetails -->
 <div id="calendlyEmbed" class="calendly-embed-container">
 
@@ -805,7 +428,45 @@ function canEditCommunity(fracc) {
 </button> -->
 
 
-<!-- Old Search Button removed - replaced by new search button component at bottom of file --> 
+<!-- Old Search Button removed - replaced by new search button component at bottom of file -->
+
+<!-- Leads button - only visible when user is agent, positioned above registro -->
+<button id="leads-btn" class="dashboard-button" title="Usuarios" style="bottom: 52px; display: none;">
+  <svg id="leads-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-white)"/>
+  </svg>
+  <svg id="leads-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--color-primary)"/>
+  </svg>
+  <span>Leads</span>
+</button>
+
+<!-- Leads modal overlay with iframe (agent mode) -->
+<div id="leads-modal-overlay" style="display:none;">
+  <div id="leads-modal-backdrop"></div>
+  <div id="leads-modal-container">
+    <iframe id="leads-iframe" src="about:blank" frameborder="0"></iframe>
+  </div>
+</div>
+
+<!-- Registro button - only visible when user is agent, positioned at bottom left -->
+<button id="registro-btn" class="dashboard-button" title="Registro" style="bottom: 28px;">
+  <svg id="registro-closed-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-white)"/>
+  </svg>
+  <svg id="registro-open-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="var(--color-primary)"/>
+  </svg>
+  <span>Registro</span>
+</button>
+
+<!-- Registro modal overlay with iframe -->
+<div id="registro-modal-overlay" style="display:none;">
+  <div id="registro-modal-backdrop"></div>
+  <div id="registro-modal-container">
+    <iframe id="registro-iframe" src="about:blank" frameborder="0"></iframe>
+  </div>
+</div>
 
   <!-- GPS button - bottom right above lalaland logo -->
 <button id="gpsButton" class="gps-button" title="Enable GPS">
@@ -1129,7 +790,7 @@ function initThreeJSViewer() {
     powerPreference: 'high-performance'
   });
   
- const dpr = Math.min(window.devicePixelRatio, 2);
+const dpr = Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height, false);
   
@@ -2578,10 +2239,8 @@ ctaobserver.observe(ctaToaster, {
       if (updatedIndex !== -1) {
         const lot = lotData[updatedIndex];
         const raw = payload.new?.availability ?? lot.availability ?? 'Available';
-        const prevState = (lot.availability ?? '').toLowerCase();
-        const wasAvailable = !['sold', 'blocked'].includes(prevState);
-        const nowSold = raw.toLowerCase() === 'sold';
-        const nowBlocked = raw.toLowerCase() === 'blocked';
+        const wasAvailable = !['sold', 'blocked'].includes((lot.availability ?? '').toLowerCase());
+        const nowSold = ['sold', 'blocked'].includes(raw.toLowerCase());
 
         lot.availability = raw;
         lot.featured = raw.toLowerCase() === 'featured';
@@ -2615,14 +2274,23 @@ ctaobserver.observe(ctaToaster, {
           source.setData(updatedGeojson);
         }
 
-        // If lot just became sold, add X mark (not for blocked — blocked gets fill)
+        // If lot just became sold, add X mark
         if (wasAvailable && nowSold && typeof addSoldXs === 'function') {
           addSoldXs(map, [lot], 300);
-        }
 
-        // If lot just became blocked, refresh the blocked fill layer
-        if (nowBlocked && map.getLayer('lots-final-blocked-fill')) {
-          map.setPaintProperty('lots-final-blocked-fill', 'fill-opacity', CONFIG.lotStyles.blocked.fill.opacity);
+          // Auto-remove sold lots from lead's saved lots
+          if (window.currentLead && window.leadSavedLots?.has(lot.name)) {
+            window.leadSavedLots.delete(lot.name);
+            // Remove from database
+            window.supabaseClient?.from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lot.name)
+              .eq('client', CURRENT_CLIENT)
+              .then(() => console.log('🗑️ Auto-removed sold lot from favorites:', lot.name));
+            // Refresh map layer
+            if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          }
         }
       }
 
@@ -2686,7 +2354,369 @@ ctaobserver.observe(ctaToaster, {
   });
 </script>
 
+<!-- ===== LEAD TOKEN AUTH VALIDATION ===== -->
+<script>
+(async function validateLeadAuth() {
+  const CURRENT_CLIENT = window.__leadClient || 'cpi';
 
+  // Cookie helpers
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+  }
+
+  function setCookie(name, value, days) {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+  }
+
+  // Wait for Supabase
+  await window.supabaseReady;
+
+  const urlToken = window.__leadAuthToken;
+  const sessionToken = window.__leadSessionToken;
+
+  // If we have a URL token, validate and claim it
+  if (urlToken) {
+    try {
+      // Look up the token
+      const { data: tokenData, error: tokenError } = await window.supabaseClient
+        .from('lead_tokens')
+        .select('id, lead_id, claimed, leads(id, phone, name, last_name, is_agent, is_demo)')
+        .eq('token', urlToken)
+        .single();
+
+      if (tokenError || !tokenData) {
+        // Invalid token
+        console.error('Invalid token:', urlToken);
+        window.__leadAuthenticated = false;
+        return;
+      }
+
+      const isDemo = tokenData.leads?.is_demo === true;
+
+      if (!isDemo) {
+        if (tokenData.claimed) {
+          if (sessionToken === urlToken) {
+            // Same device re-clicking their link — already authenticated, just continue
+          } else {
+            // Token claimed by a different device
+            console.error('Token already claimed:', urlToken);
+            window.__leadAuthenticated = false;
+            return;
+          }
+        }
+
+        // Claim the token
+        await window.supabaseClient
+          .from('lead_tokens')
+          .update({ claimed: true, claimed_at: new Date().toISOString() })
+          .eq('id', tokenData.id);
+
+        // Update lead's last_seen_at
+        await window.supabaseClient
+          .from('leads')
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq('id', tokenData.lead_id);
+
+        // Save session cookie (365 days)
+        setCookie('lead_session_' + CURRENT_CLIENT, urlToken, 365);
+      }
+
+      // Store lead info globally
+      window.currentLead = {
+        id: tokenData.lead_id,
+        phone: tokenData.leads?.phone,
+        name: tokenData.leads?.name,
+        lastName: tokenData.leads?.last_name,
+        token: urlToken,
+        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT),
+        isDemo
+      };
+
+      // Set global agent flag
+      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+      // Show registro and leads buttons for agents
+      const _regBtn1 = document.getElementById('registro-btn');
+      if (_regBtn1) _regBtn1.style.display = window.isAgent ? 'flex' : 'none';
+      const _leadsBtn1 = document.getElementById('leads-btn');
+      if (_leadsBtn1) _leadsBtn1.style.display = window.isAgent ? 'flex' : 'none';
+
+      console.log('✅ Lead authenticated via token:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '', isDemo ? '(DEMO)' : '');
+
+      // Demo: clear saved lots so each session starts fresh
+      if (isDemo) {
+        await window.supabaseClient
+          .from('lead_saved_lots')
+          .delete()
+          .eq('lead_id', tokenData.lead_id);
+      }
+
+      // Start session tracking
+      await startLeadSession();
+
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
+      }
+
+      // Clean URL (remove /m/token, keep just /client/)
+      const cleanUrl = window.location.origin + '/' + CURRENT_CLIENT + '/index.html';
+      window.history.replaceState({}, '', cleanUrl);
+
+    } catch (err) {
+      console.error('Token validation error:', err);
+      window.__leadAuthenticated = false;
+      return;
+    }
+  }
+  // If we have a session cookie, validate it
+  else if (sessionToken) {
+    try {
+      const { data: tokenData, error: tokenError } = await window.supabaseClient
+        .from('lead_tokens')
+        .select('id, lead_id, leads(id, phone, name, last_name, is_agent)')
+        .eq('token', sessionToken)
+        .single();
+
+      if (tokenError || !tokenData) {
+        // Session token no longer valid
+        console.error('Session token invalid');
+        document.cookie = 'lead_session_' + CURRENT_CLIENT + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+        window.location.reload();
+        return;
+      }
+
+      // Update lead's last_seen_at
+      await window.supabaseClient
+        .from('leads')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', tokenData.lead_id);
+
+      // Store lead info globally
+      window.currentLead = {
+        id: tokenData.lead_id,
+        phone: tokenData.leads?.phone,
+        name: tokenData.leads?.name,
+        lastName: tokenData.leads?.last_name,
+        token: sessionToken,
+        isAgent: (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT)
+      };
+
+      // Set global agent flag
+      window.isAgent = (tokenData.leads?.is_agent || []).includes(CURRENT_CLIENT);
+      // Show registro and leads buttons for agents
+      const _regBtn2 = document.getElementById('registro-btn');
+      if (_regBtn2) _regBtn2.style.display = window.isAgent ? 'flex' : 'none';
+      const _leadsBtn2 = document.getElementById('leads-btn');
+      if (_leadsBtn2) _leadsBtn2.style.display = window.isAgent ? 'flex' : 'none';
+
+      console.log('✅ Lead authenticated via session:', window.currentLead.phone, window.isAgent ? '(AGENT)' : '');
+
+      // Start session tracking
+      await startLeadSession();
+
+      // Update lead greeting and show name modal if needed
+      updateLeadGreeting();
+      if (!window.currentLead.name) {
+        showNameModal();
+      }
+
+    } catch (err) {
+      console.error('Session validation error:', err);
+      document.cookie = 'lead_session_' + CURRENT_CLIENT + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'; window.__leadAuthenticated = false;
+      return;
+    }
+  }
+
+  // ===== SESSION TRACKING =====
+  window.currentSessionId = null;
+  window.sessionStartTime = null;
+
+  async function startLeadSession() {
+    if (!window.currentLead || !window.supabaseClient) return;
+
+    try {
+      window.sessionStartTime = new Date();
+
+      const { data, error } = await window.supabaseClient
+        .from('lead_sessions')
+        .insert({
+          lead_id: window.currentLead.id,
+          client_id: CURRENT_CLIENT,
+          started_at: window.sessionStartTime.toISOString(),
+          page_url: window.location.href,
+          user_agent: navigator.userAgent
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Failed to create session:', error);
+        return;
+      }
+
+      window.currentSessionId = data.id;
+      console.log('📊 Session started:', window.currentSessionId);
+
+      // Set up session end tracking
+      setupSessionEndTracking();
+    } catch (err) {
+      console.error('Session tracking error:', err);
+    }
+  }
+
+  async function endLeadSession() {
+    if (!window.currentSessionId || !window.sessionStartTime || !window.supabaseClient) return;
+
+    try {
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      await window.supabaseClient
+        .from('lead_sessions')
+        .update({
+          ended_at: endTime.toISOString(),
+          duration_seconds: durationSeconds
+        })
+        .eq('id', window.currentSessionId);
+
+      console.log(`📊 Session ended: ${durationSeconds}s`);
+    } catch (err) {
+      console.error('Failed to end session:', err);
+    }
+  }
+
+  function setupSessionEndTracking() {
+    // Track when user leaves the page
+    window.addEventListener('beforeunload', () => {
+      if (!window.currentSessionId) return;
+
+      // Use sendBeacon for reliable delivery during page unload
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - window.sessionStartTime) / 1000);
+
+      // We can't use async/await in beforeunload, so use sendBeacon
+      // But Supabase doesn't support sendBeacon directly, so we do best effort with fetch keepalive
+      if (window.supabaseClient) {
+        window.supabaseClient
+          .from('lead_sessions')
+          .update({
+            ended_at: endTime.toISOString(),
+            duration_seconds: durationSeconds
+          })
+          .eq('id', window.currentSessionId)
+          .then(() => console.log('📊 Session ended on unload'))
+          .catch(err => console.error('Failed to end session on unload:', err));
+      }
+    });
+
+    // Also track visibility changes (tab switches, minimizing)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // User switched away - update session
+        endLeadSession();
+      }
+    });
+  }
+
+  // Helper function to update lead greeting
+  function updateLeadGreeting() {
+    const greetingEl = document.getElementById('lead-greeting');
+    const leadNameEl = document.getElementById('lead-name');
+    if (leadNameEl && window.currentLead) {
+      const fullName = `${window.currentLead.name || ''} ${window.currentLead.lastName || ''}`.trim();
+      leadNameEl.textContent = fullName || 'Usuario';
+      if (greetingEl) greetingEl.style.display = '';
+    }
+  }
+
+  // Show name modal
+  function showNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.add('show');
+    }
+  }
+
+  // Hide name modal
+  function hideNameModal() {
+    const modal = document.getElementById('nameModal');
+    if (modal) {
+      modal.classList.remove('show');
+    }
+  }
+
+  // Handle name form submission
+  const nameForm = document.getElementById('nameForm');
+  if (nameForm) {
+    nameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nameInput = document.getElementById('leadNameInput');
+      const lastNameInput = document.getElementById('leadLastNameInput');
+      const submitBtn = nameForm.querySelector('button');
+
+      const name = nameInput.value.trim();
+      const lastName = lastNameInput.value.trim();
+
+      if (!name || !lastName) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Guardando...';
+
+      try {
+        // Update lead in Supabase
+        await window.supabaseClient
+          .from('leads')
+          .update({ name, last_name: lastName })
+          .eq('id', window.currentLead.id);
+
+        // Update local state
+        window.currentLead.name = name;
+        window.currentLead.lastName = lastName;
+
+        // Update greeting
+        updateLeadGreeting();
+
+        // Hide modal
+        hideNameModal();
+
+      } catch (err) {
+        console.error('Error saving name:', err);
+        alert('Error al guardar. Intenta de nuevo.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continuar';
+      }
+    });
+  }
+
+  // Load saved lots for this lead
+  if (window.currentLead) {
+    try {
+      const { data: savedLots } = await window.supabaseClient
+        .from('lead_saved_lots')
+        .select('lot_name')
+        .eq('lead_id', window.currentLead.id)
+        .eq('client', CURRENT_CLIENT);
+
+      window.leadSavedLots = new Set(savedLots?.map(s => s.lot_name) || []);
+      console.log('✅ Loaded', window.leadSavedLots.size, 'saved lots for lead');
+
+      // Add saved lots layer to map if map is already loaded
+      if (window.map && typeof addSavedLotsLayer === 'function') {
+        addSavedLotsLayer(window.map);
+      }
+    } catch (err) {
+      console.error('Error loading saved lots:', err);
+      window.leadSavedLots = new Set();
+    }
+  }
+})();
+</script>
 
 
 <script>
@@ -2742,7 +2772,6 @@ ctaobserver.observe(ctaToaster, {
   }
 
   function updateButtons(loggedIn) {
-    if (IS_DEMO) loggedIn = true;
     if (btnLogin)  btnLogin.style.display  = loggedIn ? 'none' : 'flex';
 
     // Update globe button visual state
@@ -2763,18 +2792,6 @@ ctaobserver.observe(ctaToaster, {
     const dashboardBtn = $('#dashboard-btn');
     if (dashboardBtn) {
       dashboardBtn.style.display = loggedIn ? 'flex' : 'none';
-    }
-
-    // Update leads button visibility
-    const leadsBtn = $('#leads-btn');
-    if (leadsBtn) {
-      leadsBtn.style.display = loggedIn ? 'flex' : 'none';
-    }
-
-    // Update registro button visibility
-    const registroBtn = $('#registro-btn');
-    if (registroBtn) {
-      registroBtn.style.display = loggedIn ? 'flex' : 'none';
     }
 
     // Update global auth state and re-render list to show/hide action buttons
@@ -2810,7 +2827,6 @@ ctaobserver.observe(ctaToaster, {
   confirmLogoutBtn && confirmLogoutBtn.addEventListener('click', async () => {
     try {
       window.clientAccessCache = {}; // PERFORMANCE: Clear cache on sign out
-      window.ALLOWED_COMMUNITIES = null;
       await window.supabaseClient?.auth.signOut();
       updateButtons(false);
       hideLogoutModal();
@@ -2915,218 +2931,6 @@ ctaobserver.observe(ctaToaster, {
     }
   });
 
-  // Leads button - toggle leads modal with iframe
-  window.isLeadsOpen = false;
-  const leadsBtn = $('#leads-btn');
-  const leadsOverlay = $('#leads-modal-overlay');
-  const leadsContainer = $('#leads-modal-container');
-  const leadsBackdrop = $('#leads-modal-backdrop');
-  const leadsCloseBtn = $('#leads-modal-close');
-  const leadsIframe = $('#leads-iframe');
-
-  // Elements to hide when leads/registro modal is open on mobile (save display state)
-  const leadsHideTargets = [
-    $('.lala-wrapper'),
-    $('#leads-btn'),
-    $('#dashboard-btn'),
-    $('#registro-btn'),
-    $('#gpsButton'),
-    $('.logoinv-wrapper')
-  ].filter(Boolean);
-  const leadsHideSavedDisplay = new Map();
-  let leadsModalPanned = false;
-
-  function openLeadsModal() {
-    // Close registro modal if open
-    if (window.isRegistroOpen) closeRegistroModal();
-    // Close lotModal first if open
-    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
-    if (typeof closeModal === 'function') {
-      try { closeModal(); } catch(e) {}
-    }
-
-    leadsModalPanned = false;
-    if (map && window.innerWidth >= 768 && !lotModalWasOpen) {
-      map.panBy([-240, 0], { duration: 400 });
-      leadsModalPanned = true;
-    }
-
-    window.isLeadsOpen = true;
-    leadsIframe.src = IS_DEMO ? 'lead-dashboard-demo.html' : 'lead-dashboard.html';
-    leadsOverlay.style.display = 'block';
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        leadsContainer.classList.add('show');
-      });
-    });
-    // Toggle icons
-    const openIcon = $('#leads-open-icon');
-    const closedIcon = $('#leads-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'inline-block';
-      closedIcon.style.display = 'none';
-    }
-    leadsBtn.classList.add('active');
-    // Save display state then hide (mobile only)
-    if (window.innerWidth < 768) {
-      leadsHideTargets.forEach(el => {
-        leadsHideSavedDisplay.set(el, el.style.display);
-        el.style.display = 'none';
-      });
-    }
-  }
-
-  function closeLeadsModal() {
-    if (map && window.innerWidth >= 768 && leadsModalPanned) {
-      map.panBy([240, 0], { duration: 400 });
-      leadsModalPanned = false;
-    }
-
-    leadsContainer.classList.remove('show');
-    window.isLeadsOpen = false;
-    setTimeout(() => {
-      leadsOverlay.style.display = 'none';
-      leadsIframe.src = 'about:blank';
-    }, 400);
-    // Toggle icons
-    const openIcon = $('#leads-open-icon');
-    const closedIcon = $('#leads-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'none';
-      closedIcon.style.display = 'inline-block';
-    }
-    leadsBtn.classList.remove('active');
-    // Restore saved display state (mobile only)
-    if (window.innerWidth < 768) {
-      leadsHideTargets.forEach(el => {
-        el.style.display = leadsHideSavedDisplay.get(el) || '';
-      });
-    }
-  }
-
-  leadsBtn && leadsBtn.addEventListener('click', () => {
-    if (window.isLeadsOpen) {
-      closeLeadsModal();
-    } else {
-      openLeadsModal();
-    }
-  });
-
-  // Close leads modal on backdrop click
-  leadsBackdrop && leadsBackdrop.addEventListener('click', () => {
-    closeLeadsModal();
-  });
-
-  // Close leads modal on X button click
-  leadsCloseBtn && leadsCloseBtn.addEventListener('click', () => {
-    closeLeadsModal();
-  });
-
-  // Close leads modal on Escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && window.isLeadsOpen) {
-      closeLeadsModal();
-    }
-  });
-
-  // Close leads modal via postMessage from iframe
-  window.addEventListener('message', (e) => {
-    if (e.data === 'closeLeads' && window.isLeadsOpen) {
-      closeLeadsModal();
-    }
-  });
-
-  // Registro button - toggle registro modal with iframe
-  window.isRegistroOpen = false;
-  const registroBtn = $('#registro-btn');
-  const registroOverlay = $('#registro-modal-overlay');
-  const registroBackdrop = $('#registro-modal-backdrop');
-  const registroContainer = $('#registro-modal-container');
-  const registroIframe = $('#registro-iframe');
-
-  const registroHideSavedDisplay = new Map();
-  let registroModalPanned = false;
-
-  function openRegistroModal() {
-    // Close leads modal if open
-    if (window.isLeadsOpen) closeLeadsModal();
-    // Close lotModal first if open
-    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
-    if (typeof closeModal === 'function') {
-      try { closeModal(); } catch(e) {}
-    }
-
-    registroModalPanned = false;
-    if (map && window.innerWidth >= 768 && !lotModalWasOpen) {
-      map.panBy([-240, 0], { duration: 400 });
-      registroModalPanned = true;
-    }
-
-    window.isRegistroOpen = true;
-    registroIframe.src = IS_DEMO ? 'registro-manual.html?demo' : 'registro-manual.html';
-    registroOverlay.style.display = 'block';
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        registroContainer.classList.add('show');
-      });
-    });
-    // Toggle icons
-    const openIcon = $('#registro-open-icon');
-    const closedIcon = $('#registro-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'inline-block';
-      closedIcon.style.display = 'none';
-    }
-    registroBtn.classList.add('active');
-  }
-
-  function closeRegistroModal() {
-    if (map && window.innerWidth >= 768 && registroModalPanned) {
-      map.panBy([240, 0], { duration: 400 });
-      registroModalPanned = false;
-    }
-
-    registroContainer.classList.remove('show');
-    window.isRegistroOpen = false;
-    registroOverlay.style.display = 'none';
-    registroIframe.src = 'about:blank';
-    // Toggle icons
-    const openIcon = $('#registro-open-icon');
-    const closedIcon = $('#registro-closed-icon');
-    if (openIcon && closedIcon) {
-      openIcon.style.display = 'none';
-      closedIcon.style.display = 'inline-block';
-    }
-    registroBtn.classList.remove('active');
-  }
-
-  registroBtn && registroBtn.addEventListener('click', () => {
-    if (window.isRegistroOpen) {
-      closeRegistroModal();
-    } else {
-      openRegistroModal();
-    }
-  });
-
-  // Close registro modal on backdrop click
-  registroBackdrop && registroBackdrop.addEventListener('click', () => {
-    closeRegistroModal();
-  });
-
-  // Close registro modal on Escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && window.isRegistroOpen) {
-      closeRegistroModal();
-    }
-  });
-
-  // Close registro modal via postMessage from iframe
-  window.addEventListener('message', (e) => {
-    if (e.data === 'closeRegistro' && window.isRegistroOpen) {
-      closeRegistroModal();
-    }
-  });
-
   // Global dashboard button - toggle between global and previous community
   const globalDashboardBtn = $('#globalDashboardButton');
   window.previousDashboardCommunity = null; // Store previous community
@@ -3223,7 +3027,7 @@ ctaobserver.observe(ctaToaster, {
       // Check if the authenticated user has access to the CURRENT_CLIENT
       const { data, error } = await window.supabaseClient
         .from('editors')
-        .select('id, allowed_communities')
+        .select('id')
         .eq('user_id', session.user.id)
         .eq('client_id', CURRENT_CLIENT)
         .maybeSingle();
@@ -3253,8 +3057,6 @@ ctaobserver.observe(ctaToaster, {
         return false;
       }
 
-      // Store community restrictions for this editor (null = unrestricted)
-      window.ALLOWED_COMMUNITIES = data.allowed_communities ?? null;
       // PERFORMANCE: Cache positive result
       window.clientAccessCache[cacheKey] = true;
       return true;
@@ -3546,9 +3348,6 @@ ctaobserver.observe(ctaToaster, {
 
 // Update fetchDashboardData with pagination
 async function fetchDashboardData(fracc) {
-  if (IS_DEMO) {
-    return { availableLots: 38, totalLots: 124, projectedIncome: 45720000, soldLast30Days: 7, percentageChange: 16.7 };
-  }
   await window.supabaseReady;
 
   console.log('🔄 Fetching dashboard data for', fracc);
@@ -3699,9 +3498,6 @@ async function fetchDashboardData(fracc) {
 
 // Update fetchGlobalDashboardData with pagination
 async function fetchGlobalDashboardData() {
-  if (IS_DEMO) {
-    return { availableLots: 142, totalLots: 380, projectedIncome: 178500000, soldLast30Days: 23, percentageChange: 9.5 };
-  }
   await window.supabaseReady;
 
   console.log('🔄 Fetching GLOBAL dashboard data');
@@ -3713,12 +3509,11 @@ async function fetchGlobalDashboardData() {
   let hasMore = true;
 
   while (hasMore) {
-    let globalLotsQuery = window.supabaseClient
+    const { data: batch, error: lotsError } = await window.supabaseClient
       .from('lots')
       .select('*')
-      .eq('client_id', CURRENT_CLIENT);
-    if (window.ALLOWED_COMMUNITIES) globalLotsQuery = globalLotsQuery.in('fraccionamiento', window.ALLOWED_COMMUNITIES);
-    const { data: batch, error: lotsError } = await globalLotsQuery.range(start, start + BATCH_SIZE - 1);
+      .eq('client_id', CURRENT_CLIENT)
+      .range(start, start + BATCH_SIZE - 1);
 
     if (lotsError) {
       console.error('❌ ERROR fetching lots for GLOBAL dashboard:', lotsError);
@@ -3764,14 +3559,13 @@ async function fetchGlobalDashboardData() {
   let hasMoreAudit = true;
 
   while (hasMoreAudit) {
-    let globalAuditQuery = window.supabaseClient
+    const auditQueryPromise = window.supabaseClient
       .from('lot_updates_audit')
       .select('*')
       .eq('client_id', CURRENT_CLIENT)
       .gte('updated_at', sixtyDaysAgo.toISOString())
-      .order('updated_at', { ascending: false });
-    if (window.ALLOWED_COMMUNITIES) globalAuditQuery = globalAuditQuery.in('fraccionamiento', window.ALLOWED_COMMUNITIES);
-    const auditQueryPromise = globalAuditQuery.range(auditStart, auditStart + BATCH_SIZE - 1);
+      .order('updated_at', { ascending: false })
+      .range(auditStart, auditStart + BATCH_SIZE - 1);
 
     const auditTimeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Audit query timeout')), 10000)
@@ -3969,7 +3763,7 @@ let isDetailOpen = false;
 let lastOpenedBaseIndex = null;
 
 // Global authentication state
-window.isUserAuthenticated = IS_DEMO;
+window.isUserAuthenticated = false;
 
 // Function to show road labels and hide built-in Mapbox labels
 function toggleRoadLabels() {
@@ -4026,9 +3820,10 @@ const _urlCommData = _urlComm && CONFIG.communities[_urlComm];
 const initialCenter = _urlCommData ? _urlCommData.center : CONFIG.mapbox.initialView.center;
 const _baseZoom = _urlCommData ? _urlCommData.zoom : CONFIG.mapbox.initialView.zoom;
 const _desktopOffset = window.innerWidth >= 768 ? (_urlCommData?.desktopZoomOffset ?? CONFIG.mapbox.initialView.desktopZoomOffset ?? 0) : 0;
-const initialZoom = _baseZoom + _desktopOffset;
 const _base            = _baseZoom + _desktopOffset + CONFIG.mapbox.labels.baseRevealOffset;
 const _manzanaReveal   = _base + CONFIG.mapbox.labels.manzana.revealOffset;
+// When loading directly into a community, clamp to the reveal threshold so labels are not pre-revealed
+const initialZoom = _baseZoom + _desktopOffset;
 const _lotReveal       = _base + CONFIG.mapbox.labels.lot.revealOffset;
 const _marblesReveal   = _base + CONFIG.mapbox.labels.marbles.revealOffset;
 const _adjLotStops     = applyRevealOffset(CONFIG.mapbox.labels.lot.sizeStops,     _lotReveal);
@@ -4185,6 +3980,11 @@ fetch(mapboxTokenUrl)
           await loadManzanaLabels(map);
           addFeaturedLotsLayer(map, () => {
     // This callback runs AFTER featured lots have completed initial pulse
+
+    // Add saved lots layer for leads
+    if (window.currentLead && window.leadSavedLots) {
+      addSavedLotsLayer(map);
+    }
     
     // ===== MOVE ALL MAP INTERACTIONS HERE =====
 
@@ -5466,32 +5266,18 @@ function animateLots(map, cb) {
         "line-opacity": 0,
         "line-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["==", ["get", "availability"], "Sold"]
+      filter: ["any", ["==", ["get", "availability"], "Sold"], ["==", ["get", "availability"], "Blocked"]]
     });
-
-    map.addLayer({
-      id: `lot-group-${i}-blocked`,
-      type: "line",
-      source: `lot-group-${i}`,
-      paint: {
-        "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
-        "line-width": 1,
-        "line-opacity": 0,
-        "line-opacity-transition": { duration: fadeDuration },
-      },
-      filter: ["==", ["get", "availability"], "Blocked"]
-    });
-
+    
     setTimeout(() => {
-      // Fade in all layers for this group
+      // Fade in BOTH layers for this group
       map.setPaintProperty(`lot-group-${i}-available`, "line-opacity", 1);
       map.setPaintProperty(`lot-group-${i}-sold`, "line-opacity", 0.24); // ⬅️ 0.24 for group layer
-      map.setPaintProperty(`lot-group-${i}-blocked`, "line-opacity", 0.24);
-
-      // Draw Xs for sold lots in this group (NOT blocked — blocked get fill instead)
+      
+      // Draw Xs for sold/blocked lots in this group
       const soldInGroup = g
         .map(idx => lotData[idx])
-        .filter(lot => (lot.availability ?? '').toLowerCase() === 'sold');
+        .filter(lot => ['sold', 'blocked'].includes((lot.availability ?? '').toLowerCase()));
       
       if (soldInGroup.length > 0) {
         addSoldXs(map, soldInGroup, fadeDurationXs);
@@ -5561,22 +5347,7 @@ function animateLots(map, cb) {
       "line-opacity": 0,
       "line-opacity-transition": { duration: fadeDuration },
     },
-    filter: ["==", ["get", "availability"], "Sold"] // Show only sold lots
-  });
-
-  // Blocked outline layer (admin only — primary color, zoom-interpolated like available)
-  map.addLayer({
-    id: "lots-final-blocked-outline",
-    type: "line",
-    source: "lots-final",
-    layout: { visibility: "visible" },
-    paint: {
-      "line-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.featured.outline.color),
-      "line-width": lotStyleWidth(CONFIG.lotStyles.featured.outline.width),
-      "line-opacity": 0,
-      "line-opacity-transition": { duration: fadeDuration },
-    },
-    filter: ["==", ["get", "availability"], "Blocked"]
+    filter: ["any", ["==", ["get", "availability"], "Sold"], ["==", ["get", "availability"], "Blocked"]] // Show only sold lots
   });
 
   // Optional fill layer for available lots (only added when fill.color is set)
@@ -5591,7 +5362,7 @@ function animateLots(map, cb) {
         "fill-opacity": 0,
         "fill-opacity-transition": { duration: fadeDuration },
       },
-      filter: ["all", ["!=", ["get", "availability"], "Sold"], ["!=", ["get", "availability"], "Blocked"]]
+      filter: ["!=", ["get", "availability"], "Sold"]
     });
   }
 
@@ -5610,20 +5381,6 @@ function animateLots(map, cb) {
       filter: ["==", ["get", "availability"], "Sold"]
     });
   }
-
-  // Fill layer for blocked lots (admin only — primary color fill)
-  map.addLayer({
-    id: "lots-final-blocked-fill",
-    type: "fill",
-    source: "lots-final",
-    layout: { visibility: "visible" },
-    paint: {
-      "fill-color": resolveLotStyleColor(CONFIG, CONFIG.lotStyles.blocked.fill.color),
-      "fill-opacity": 0,
-      "fill-opacity-transition": { duration: fadeDuration },
-    },
-    filter: ["==", ["get", "availability"], "Blocked"]
-  });
 
   map.addLayer({ //HAD TO ADD THIS FOR CLICKABLE LOTS
     id: "lots-final-click",
@@ -5674,11 +5431,9 @@ function animateLots(map, cb) {
   setTimeout(() => {
     // Fade in final lots - sold lots get 0.25 to make total 0.49 during transition
     map.setPaintProperty("lots-final-available", "line-opacity", CONFIG.lotStyles.available.outline.opacity);
-    map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51); // ⬅️ partial for final layer during transition
+    map.setPaintProperty("lots-final-sold", "line-opacity", CONFIG.lotStyles.sold.outline.opacity * 0.51);
     if (map.getLayer("lots-final-available-fill")) map.setPaintProperty("lots-final-available-fill", "fill-opacity", CONFIG.lotStyles.available.fill.opacity);
     if (map.getLayer("lots-final-sold-fill")) map.setPaintProperty("lots-final-sold-fill", "fill-opacity", CONFIG.lotStyles.sold.fill.opacity);
-    if (map.getLayer("lots-final-blocked-outline")) map.setPaintProperty("lots-final-blocked-outline", "line-opacity", CONFIG.lotStyles.featured.outline.opacity * 0.51);
-    if (map.getLayer("lots-final-blocked-fill")) map.setPaintProperty("lots-final-blocked-fill", "fill-opacity", CONFIG.lotStyles.blocked.fill.opacity);
     // Labels now fade based on zoom level (see text-opacity interpolate expression)
 
     setTimeout(() => {
@@ -5686,28 +5441,23 @@ function animateLots(map, cb) {
       groupArr.forEach((_, i) => {
         const availableId = `lot-group-${i}-available`;
         const soldId = `lot-group-${i}-sold`;
-        const blockedId = `lot-group-${i}-blocked`;
-
+        
         if (map.getLayer(availableId)) map.setPaintProperty(availableId, "line-opacity", 0);
         if (map.getLayer(soldId)) map.setPaintProperty(soldId, "line-opacity", 0);
-        if (map.getLayer(blockedId)) map.setPaintProperty(blockedId, "line-opacity", 0);
       });
 
       // AFTER group layers fade out, update final sold layer to full 0.49
       setTimeout(() => {
         map.setPaintProperty("lots-final-sold", "line-opacity", 0.49); // ⬅️ UPDATE TO FULL 0.49
-        if (map.getLayer("lots-final-blocked-outline")) map.setPaintProperty("lots-final-blocked-outline", "line-opacity", CONFIG.lotStyles.featured.outline.opacity);
-
+         
         // Remove all lot groups
         groupArr.forEach((_, i) => {
           const availableId = `lot-group-${i}-available`;
           const soldId = `lot-group-${i}-sold`;
-          const blockedId = `lot-group-${i}-blocked`;
           const sourceId = `lot-group-${i}`;
-
+          
           if (map.getLayer(availableId)) map.removeLayer(availableId);
           if (map.getLayer(soldId)) map.removeLayer(soldId);
-          if (map.getLayer(blockedId)) map.removeLayer(blockedId);
           if (map.getSource(sourceId)) map.removeSource(sourceId);
         });
         if (cb) cb();
@@ -6097,7 +5847,141 @@ function startPolygonPulse(map, onComplete) {
 
   requestAnimationFrame(frame);
 }
-</script> 
+
+// ===== SAVED LOTS LAYER (for leads) =====
+function savedPolygonFeature(lot) {
+  const coords = [...lot.coords];
+  if (
+    coords.length < 3 ||
+    coords[0][0] !== coords[coords.length - 1][0] ||
+    coords[0][1] !== coords[coords.length - 1][1]
+  ) {
+    coords.push(coords[0]); // Ensure closed polygon
+  }
+
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coords]
+    },
+    properties: {
+      name: lot.name,
+      phase: Math.random() * Math.PI * 2,
+      opacity: 0.5
+    }
+  };
+}
+
+function addSavedLotsLayer(map) {
+  if (!window.currentLead || !window.leadSavedLots || window.leadSavedLots.size === 0) {
+    return;
+  }
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  if (savedLots.length === 0) return;
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  if (map.getSource('saved-lots')) {
+    map.getSource('saved-lots').setData({
+      type: 'FeatureCollection',
+      features
+    });
+    return;
+  }
+
+  map.addSource('saved-lots', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features
+    }
+  });
+
+  // Primary fill with pulsating opacity
+  map.addLayer({
+    id: 'saved-lots-layer',
+    type: 'fill',
+    source: 'saved-lots',
+    paint: {
+      'fill-color': CONFIG.colors.primary,
+      'fill-opacity': ['get', 'opacity']
+    }
+  }, 'lots-final-available');
+
+  // Primary color outline
+  map.addLayer({
+    id: 'saved-lots-outline',
+    type: 'line',
+    source: 'saved-lots',
+    paint: {
+      'line-color': CONFIG.colors.primary,
+      'line-width': 2,
+      'line-opacity': 1
+    }
+  }, 'lots-final-click');
+
+  // Start animation
+  startSavedLotsPulse(map);
+}
+
+function refreshSavedLotsLayer() {
+  if (!window.map) return;
+
+  const savedLots = lotData.filter(lot =>
+    window.leadSavedLots?.has(lot.name) &&
+    (lot.availability ?? '').toString().toLowerCase() !== 'sold'
+  );
+
+  const features = savedLots.map(savedPolygonFeature);
+
+  const source = window.map.getSource('saved-lots');
+  if (source) {
+    source.setData({
+      type: 'FeatureCollection',
+      features
+    });
+  } else if (savedLots.length > 0) {
+    addSavedLotsLayer(window.map);
+  }
+}
+
+function startSavedLotsPulse(map) {
+  let t = 0;
+
+  function frame() {
+    t += 0.05;
+
+    const source = map.getSource('saved-lots');
+    if (!source || !source._data) return;
+
+    const updated = {
+      ...source._data,
+      features: source._data.features.map(f => {
+        const phase = f.properties?.phase ?? 0;
+        const opacity = 0.3 + Math.sin(t + phase) * 0.2;
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            opacity
+          }
+        };
+      })
+    };
+
+    source.setData(updated);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+}
+</script>
 
 
 
@@ -6760,13 +6644,14 @@ document.getElementById('authControls').classList.add('hide-in-detail');
   const buttonsRow = document.createElement('div');
   buttonsRow.className = 'cta-buttons-row';
   buttonsRow.style.position = 'relative';
-  // Show COTIZAR when authenticated, CÓMO LLEGAR when not
+  // Show COTIZAR when authenticated OR agent, CÓMO LLEGAR otherwise
   const isAuthenticated = window.isUserAuthenticated === true;
+  const isAgent = window.isAgent === true;
   const apartarEnabled = getCommunityByFracc(CURRENT_CLIENT, lot.fraccionamiento)?.apartarEnabled === true;
   buttonsRow.innerHTML = `
     <button class="cta-button first" id="separarBtn" translate="no"${!apartarEnabled ? ' disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>APARTAR</button>
-    ${isAuthenticated
-      ? `<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZACIÓN*</button>`
+    ${(isAuthenticated || isAgent)
+      ? `<button class="cta-button first" id="descargarPdfBtn" translate="no">COTIZAR</button>`
       : `<button class="cta-button first" id="visitarBtn" translate="no">CÓMO LLEGAR</button>`
     }
     <button class="cta-button second" id="chatearBtn" translate="no">CHATEAR</button>
@@ -6803,14 +6688,28 @@ document.getElementById('authControls').classList.add('hide-in-detail');
         console.error('Payment view not available or lot data missing');
       }
     } else if (e.target.id === 'descargarPdfBtn') {
-      // Expand modal into cotizador mode
+      // Generate and download multi-page PDF using template
       e.stopPropagation();
-      openCotizadorInModal(lot);
-    } else if (e.target.id === '__disabled_old_cotizar__') {
-      // OLD PDF generation code (disabled - replaced by cotizador page)
-      e.stopPropagation();
+
+      // Prompt user for dynamic text (for page 3)
       const dynamicText = prompt('Ingrese el texto para el PDF:', 'Estimada Familia');
-      if (!dynamicText) return;
+      if (!dynamicText) return; // User cancelled
+
+      // Track agent quote if this is an agent
+      if (window.isAgent && window.currentLead?.phone) {
+        window.supabaseClient
+          .from('agent_quotes')
+          .insert({
+            agent_phone: window.currentLead.phone,
+            client_id: CURRENT_CLIENT,
+            lot_name: lot?.name || null,
+            lead_name: dynamicText
+          })
+          .then(({ error }) => {
+            if (error) console.error('Error tracking agent quote:', error);
+            else console.log('✅ Agent quote tracked:', dynamicText);
+          });
+      }
 
       // Create progress overlay
       const progressOverlay = document.createElement('div');
@@ -7145,9 +7044,15 @@ document.getElementById('authControls').classList.add('hide-in-detail');
         // Step 3: Generate PDF pages sequentially (required by jsPDF)
         progressText.textContent = 'Generando PDF...';
 
+        const _now = new Date();
+        const _dateStr = `${_now.getFullYear()}_${String(_now.getMonth()+1).padStart(2,'0')}_${String(_now.getDate()).padStart(2,'0')}`;
+        const _community = (lot.fraccionamiento || CONFIG.defaultCommunity || '').toUpperCase();
+        const _rawName = dynamicText.replace(/^(estimad[ao]\s+)?(familia|sr\.?|sra\.?|lic\.?|ing\.?|dr\.?|dra\.?)\s+/i, '').trim();
+        const _pdfFilename = `${_community}-${_dateStr}-${_rawName.replace(/\s+/g, '_')}-${lotValues['lot.number']}.pdf`;
+
         const worker = html2pdf().set({
           margin: 0,
-          filename: 'CPI-documento.pdf',
+          filename: _pdfFilename,
           image: { type: 'jpeg', quality: 1 },
           html2canvas: { scale: 1, useCORS: true },
           jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
@@ -7260,19 +7165,6 @@ backButton.addEventListener('click', () => {
   const minusIcon = document.querySelector('.plus-button .minus-icon');
   const calendly = document.getElementById('calendlyEmbed');
 
-  // Handle cotizador back navigation
-  const cotPanel = document.getElementById('cotizadorPanel');
-  if (cotPanel && cotPanel.style.display !== 'none') {
-    cotPanel.style.display = 'none';
-    document.getElementById('lotDetails').style.display = 'block';
-    const mInfo = document.getElementById('modalInfo');
-    if (mInfo) mInfo.style.display = '';
-    modal.classList.remove('expanded');
-    if (plusIcon) plusIcon.style.display = 'block';
-    if (minusIcon) minusIcon.style.display = 'none';
-    return;
-  }
-
   // 🟢 FIX: Handle 360 viewer back navigation FIRST
   if (modal.classList.contains('viewer-mode')) {
     close360ViewerInModal();
@@ -7302,6 +7194,12 @@ backButton.addEventListener('click', () => {
     modal.classList.remove('expanded');
     plusIcon.style.display = 'block';
     minusIcon.style.display = 'none';
+  }
+
+  // Count going back as a view so users can't browse all lots by staying inside the modal
+  if (!window.__leadAuthenticated) {
+    const _vcKey = 'vc_' + (window.CURRENT_CLIENT || '');
+    localStorage.setItem(_vcKey, parseInt(localStorage.getItem(_vcKey) || '0') + 1);
   }
 
   // === Return to LIST mode UI ===
@@ -7429,7 +7327,9 @@ const calculatedPriceFormatted = calculatedPrice.toString().replace(/\B(?=(\d{3}
 // Format price per m2 from Supabase
 const pricePerM2Formatted = isSold ? '' : (lot.priceM2 ? `$${lot.priceM2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '');
 
+    const isSaved = window.currentLead && window.leadSavedLots?.has(lot.name);
     if (isFeatured) row.classList.add('info-row--featured');
+    if (isSaved && !isSold) row.classList.add('info-row--saved');
 
 row.innerHTML = `
   <div class="lot-left">
@@ -7440,7 +7340,7 @@ row.innerHTML = `
       <div class="lot-middle ${isSold ? 'lot-middle--sold' : ''}">
         ${
           isSold
-            ? `<div style="font-size:48px; font-weight:700; color:${CONFIG.colors.primary};">${isBlocked ? 'BLOQUEADO' : 'VENDIDO'}</div>`
+            ? `<div style="font-size:48px; font-weight:700; color:${CONFIG.colors.primary};">VENDIDO</div>`
             : `${lot.size}<span class="sup">M2</span>`
         }
       </div>
@@ -7460,17 +7360,10 @@ row.innerHTML = `
       </div>
 
       <div class="row-actions">
-        ${window.isUserAuthenticated && canEditCommunity(lot.fraccionamiento) ? `
-          ${!isSold ? `
-          <button class="row-action-btn edit-btn" title="Edit Price" data-lot-name="${lot.name}">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M3 17.25V21H6.75L17.81 9.94L14.06 6.19L3 17.25ZM20.71 7.04C21.1 6.65 21.1 6.02 20.71 5.63L18.37 3.29C17.98 2.9 17.35 2.9 16.96 3.29L15.13 5.12L18.88 8.87L20.71 7.04Z" fill="currentColor"/>
-            </svg>
-          </button>
-          ` : ''}
-          <button class="row-action-btn cycle-btn" title="Cycle Availability" data-lot-name="${lot.name}">
-            <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2">
-              <path d="M23 4L23 10 17 10M1 20L1 14 7 14M3.51 9a9 9 0 0114.85-3.36L23 10M20.49 15a9 9 0 01-14.85 3.36L1 14"/>
+        ${(window.currentLead && !isSold) ? `
+          <button class="row-action-btn heart-btn ${window.leadSavedLots?.has(lot.name) ? 'saved' : ''}" title="Guardar" data-lot-name="${lot.name}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="${window.leadSavedLots?.has(lot.name) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
             </svg>
           </button>
         ` : ''}
@@ -7497,6 +7390,22 @@ row.innerHTML = `
       const label = document.createElement('div');
       label.classList.add('featured-label');
       label.textContent = 'RECOMENDADO';
+      row.appendChild(label);
+    }
+
+    // Add saved lot styling (similar to featured but with heart)
+    if (isSaved && !isSold && !isFeatured) {
+      const left = document.createElement('div');
+      left.classList.add('border-left', 'border-left--saved');
+      row.appendChild(left);
+
+      const top = document.createElement('div');
+      top.classList.add('border-top', 'border-top--saved');
+      row.appendChild(top);
+
+      const label = document.createElement('div');
+      label.classList.add('saved-label');
+      label.innerHTML = 'FAVORITO';
       row.appendChild(label);
     }
 
@@ -7615,6 +7524,61 @@ function setupRowActionButtons() {
         if (typeof window.cycleSelectedLotAvailability === 'function') {
           window.cycleSelectedLotAvailability();
         }
+        return;
+      }
+
+      // Handle heart button clicks (save lot for leads)
+      const heartBtn = e.target.closest('.row-action-btn.heart-btn');
+      if (heartBtn) {
+        e.stopPropagation();
+        heartBtn.closest('.info-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const lotName = heartBtn.dataset.lotName;
+
+        if (!window.currentLead || !window.supabaseClient) {
+          console.error('Lead not authenticated');
+          return;
+        }
+
+        const isSaved = window.leadSavedLots?.has(lotName);
+
+        try {
+          if (isSaved) {
+            // Remove from saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .delete()
+              .eq('lead_id', window.currentLead.id)
+              .eq('lot_name', lotName)
+              .eq('client', CURRENT_CLIENT);
+
+            window.leadSavedLots.delete(lotName);
+            heartBtn.classList.remove('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'none');
+            showToaster('Removed from favorites');
+          } else {
+            // Add to saved
+            await window.supabaseClient
+              .from('lead_saved_lots')
+              .insert({
+                lead_id: window.currentLead.id,
+                lot_name: lotName,
+                client: CURRENT_CLIENT
+              });
+
+            window.leadSavedLots.add(lotName);
+            heartBtn.classList.add('saved');
+            heartBtn.querySelector('svg').setAttribute('fill', 'currentColor');
+            showToaster('Saved to favorites');
+          }
+
+          // Refresh map layer and list
+          if (typeof refreshSavedLotsLayer === 'function') refreshSavedLotsLayer();
+          if (typeof render === 'function') render();
+        } catch (err) {
+          console.error('Error saving lot:', err);
+          showToaster('Error saving');
+        }
+        return;
       }
     });
   }
@@ -7628,14 +7592,12 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
   }
 
   // Authentication check - trigger login if not authenticated
-  if (!IS_DEMO) {
-    const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
-    const isLoggedIn = !!(session && session.user);
-    if (!isLoggedIn) {
-      showToaster('Please login to edit prices');
-      document.getElementById('globe-login-btn')?.click();
-      return;
-    }
+  const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
+  const isLoggedIn = !!(session && session.user);
+  if (!isLoggedIn) {
+    showToaster('Please login to edit prices');
+    document.getElementById('globe-login-btn')?.click();
+    return;
   }
 
   // Strip commas and parse values
@@ -7673,24 +7635,9 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
 
   console.log(`Updating ${affectedLots.length} lots from ${oldValue} to ${newValue}`);
 
-  if (IS_DEMO) {
-    lotData.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); lot.price_m2 = newValue; } });
-    baseLots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
-    lots.forEach(lot => { if (cleanNumber(lot.priceM2) === oldValue) { lot.priceM2 = newValue.toString(); } });
-    showToaster(`✓ Updated ${affectedLots.length} lot${affectedLots.length > 1 ? 's' : ''} (demo)`);
-    render(); highlightCenter(); updateScrollbar();
-    return;
-  }
-
   try {
-    // Filter to communities this editor is allowed to edit
-    const editableLots = affectedLots.filter(l => canEditCommunity(l.fraccionamiento));
-    const skipped = affectedLots.length - editableLots.length;
-    if (skipped > 0) showToaster(`⚠️ ${skipped} lote${skipped > 1 ? 's' : ''} omitido${skipped > 1 ? 's' : ''} (comunidad restringida).`);
-    if (editableLots.length === 0) return;
-
     // Update all matching lots in Supabase using bulk .in() operation
-    const lotNames = editableLots.map(l => l.name);
+    const lotNames = affectedLots.map(l => l.name);
     console.log('Lot names to update:', lotNames);
     console.log('Update query:', { price_m2: newValue, lot_names: lotNames, client_id: CURRENT_CLIENT });
 
@@ -7879,6 +7826,18 @@ function highlightCenter(isClamping = false) {
           void row.offsetWidth;
           row.classList.add('animate-featured');
           animatedFeaturedLots.add(featureIndex);
+        } else {
+          row.classList.add('animate-featured');
+        }
+      }
+
+      // Animate saved lots (same as featured)
+      if (row.classList.contains('info-row--saved')) {
+        const savedIndex = row.dataset.index;
+        if (!animatedFeaturedLots.has('saved-' + savedIndex)) {
+          void row.offsetWidth;
+          row.classList.add('animate-featured');
+          animatedFeaturedLots.add('saved-' + savedIndex);
         } else {
           row.classList.add('animate-featured');
         }
@@ -8177,623 +8136,6 @@ modalInfo.addEventListener('wheel', (e) => {
   });
 });
 
-// ===== COTIZADOR ESPECIAL (in-modal) =====
-
-const COT_PCT_FIELDS = ['cotSeparacionPct', 'cotEnganchePct', 'cotMensualidadesPct', 'cotAnualidadesPct', 'cotEscrituracionPct'];
-
-let cotCurrentLot = null;
-
-function cotFormatCurrency(num) {
-  return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function cotFormatNumber(num) {
-  return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function cotFormatPct(num) {
-  const s = num.toFixed(1);
-  return (s.endsWith('.0') ? Math.round(num).toString() : s) + '%';
-}
-
-const COT_MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-
-const COT_FECHA_FIELDS = [
-  { month: 'cotFechaSeparacionMonth', year: 'cotFechaSeparacionYear', key: 'lot.fechaSeparacion' },
-  { month: 'cotFechaEngancheMonth', year: 'cotFechaEngancheYear', key: 'lot.fechaEnganche' },
-  { month: 'cotFechaMensualidadesMonth', year: 'cotFechaMensualidadesYear', key: 'lot.fechaMensualidades' },
-  { month: 'cotFechaAnualidadesMonth', year: 'cotFechaAnualidadesYear', key: 'lot.fechaAnualidades' },
-  { month: 'cotFechaEscrituracionMonth', year: 'cotFechaEscrituracionYear', key: 'lot.fechaEscrituracion' }
-];
-
-// Populate date dropdowns with months and years
-(function initDateDropdowns() {
-  const now = new Date();
-  const curMonth = now.getMonth(); // 0-based
-  const curYear = now.getFullYear();
-  COT_FECHA_FIELDS.forEach(f => {
-    const monthSel = document.getElementById(f.month);
-    const yearSel = document.getElementById(f.year);
-    COT_MONTHS.forEach((m, i) => {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m;
-      if (i === curMonth) opt.selected = true;
-      monthSel.appendChild(opt);
-    });
-    for (let y = curYear; y <= curYear + 10; y++) {
-      const opt = document.createElement('option');
-      opt.value = y;
-      opt.textContent = y;
-      if (y === curYear) opt.selected = true;
-      yearSel.appendChild(opt);
-    }
-  });
-})();
-
-// Toggle switch: convert between % and $ display
-function cotIsToggleDollar(fieldId) {
-  const btn = document.querySelector(`.cot-toggle-btn[data-field="${fieldId}"]`);
-  return btn && btn.classList.contains('active');
-}
-
-function cotOnToggleSwitch(fieldId) {
-  const btn = document.querySelector(`.cot-toggle-btn[data-field="${fieldId}"]`);
-  const input = document.getElementById(fieldId);
-  const unitId = fieldId.replace('Pct', 'Unit');
-  const unitEl = document.getElementById(unitId);
-  if (!btn || !input || !unitEl) return;
-
-  // Toggle active state
-  const wasDollar = btn.classList.contains('active');
-  btn.classList.toggle('active');
-  const nowDollar = !wasDollar;
-
-  // Compute base price for conversion
-  const size = parseFloat(String((cotCurrentLot||{}).size || (cotCurrentLot||{}).rSize || '0').replace(/[^0-9.]/g, '')) || 0;
-  const pm2 = parseFloat(String((cotCurrentLot||{}).priceM2 || (cotCurrentLot||{}).price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
-  const totalPrice = size * pm2;
-
-  const basePrice = (fieldId === 'cotDescuentoPct') ? totalPrice : (function() {
-    const descPct = cotReadPct('cotDescuentoPct', totalPrice, 0);
-    return totalPrice - (totalPrice * descPct / 100);
-  })();
-
-  if (nowDollar) {
-    const pct = parseFloat(input.value) || 0;
-    input.value = (basePrice * pct / 100).toFixed(2);
-    input.step = '100'; input.min = '0'; input.max = '';
-    unitEl.textContent = '$';
-  } else {
-    const dollar = parseFloat(input.value) || 0;
-    input.value = basePrice > 0 ? (dollar / basePrice * 100).toFixed(1) : '0';
-    input.step = '0.5'; input.min = '0'; input.max = '100';
-    unitEl.textContent = '%';
-  }
-  cotRecalculate();
-}
-
-// Read a pct field value, converting from $ if toggle is active
-function cotReadPct(fieldId, totalPrice, precioFinal) {
-  const val = parseFloat(document.getElementById(fieldId).value) || 0;
-  if (cotIsToggleDollar(fieldId)) {
-    if (fieldId === 'cotDescuentoPct') {
-      return totalPrice > 0 ? (val / totalPrice * 100) : 0;
-    } else {
-      return precioFinal > 0 ? (val / precioFinal * 100) : 0;
-    }
-  }
-  return val;
-}
-
-function cotGetBalancer() {
-  return document.getElementById('cotBalancerField').value;
-}
-
-function cotOnBalancerChange() {
-  const balancer = cotGetBalancer();
-  COT_PCT_FIELDS.forEach(id => {
-    const isBalancer = (id === balancer);
-    document.getElementById(id).readOnly = isBalancer;
-    const btn = document.querySelector(`.cot-toggle-btn[data-field="${id}"]`);
-    if (btn) {
-      btn.disabled = isBalancer;
-      if (isBalancer && btn.classList.contains('active')) {
-        // Force balancer back to % mode
-        btn.classList.remove('active');
-        const unitId = id.replace('Pct', 'Unit');
-        const unitEl = document.getElementById(unitId);
-        if (unitEl) unitEl.textContent = '%';
-        // Convert value back to %
-        const input = document.getElementById(id);
-        const size = parseFloat(String((cotCurrentLot||{}).size || (cotCurrentLot||{}).rSize || '0').replace(/[^0-9.]/g, '')) || 0;
-        const pm2 = parseFloat(String((cotCurrentLot||{}).priceM2 || (cotCurrentLot||{}).price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
-        const totalPrice = size * pm2;
-        const descPct = cotReadPct('cotDescuentoPct', totalPrice, 0);
-        const precioFinal = totalPrice - (totalPrice * descPct / 100);
-        const dollar = parseFloat(input.value) || 0;
-        input.value = precioFinal > 0 ? (dollar / precioFinal * 100).toFixed(1) : '0';
-        input.step = '0.5'; input.min = '0'; input.max = '100';
-      }
-    }
-  });
-  cotRecalculate();
-}
-
-function cotRecalculate() {
-  if (!cotCurrentLot) return;
-
-  const size = parseFloat(String(cotCurrentLot.size || cotCurrentLot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
-  const pm2 = parseFloat(String(cotCurrentLot.priceM2 || cotCurrentLot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
-  const totalPrice = size * pm2;
-
-  // Read descuento (may be in $ mode)
-  const descuentoPct = cotReadPct('cotDescuentoPct', totalPrice, 0);
-  const descuentoAmount = totalPrice * (descuentoPct / 100);
-  const precioFinal = totalPrice - descuentoAmount;
-
-  // Read non-balancer fields once, keep full precision in a map
-  const balancer = cotGetBalancer();
-  const pctMap = {};
-  COT_PCT_FIELDS.forEach(id => {
-    if (id !== balancer) pctMap[id] = cotReadPct(id, totalPrice, precioFinal);
-  });
-  const otherSum = Object.values(pctMap).reduce((s, v) => s + v, 0);
-  const balancerValue = 100 - otherSum;
-  pctMap[balancer] = balancerValue;
-  // Display rounded value in the balancer input (display only)
-  document.getElementById(balancer).value = Math.round(balancerValue * 10) / 10;
-
-  // Use pctMap directly — never re-read from DOM — so math is exact
-  const separacionPct = pctMap['cotSeparacionPct'];
-  const enganchePct = pctMap['cotEnganchePct'];
-  const mensualidadesPct = pctMap['cotMensualidadesPct'];
-  const anualidadesPct = pctMap['cotAnualidadesPct'];
-  const escrituracionPct = pctMap['cotEscrituracionPct'];
-
-  const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
-  const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
-  const numAnualidades = parseInt(document.getElementById('cotNumAnualidades').value) || 1;
-
-  const separacion = precioFinal * (separacionPct / 100);
-  const engancheAmount = precioFinal * (enganchePct / 100);
-  const enganche = numEnganche > 0 ? engancheAmount / numEnganche : 0;
-  const mensualidadesTotal = precioFinal * (mensualidadesPct / 100);
-  const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
-  const anualidadesTotal = precioFinal * (anualidadesPct / 100);
-  const anualidad = numAnualidades > 0 ? anualidadesTotal / numAnualidades : 0;
-  const escrituracion = precioFinal * (escrituracionPct / 100);
-
-  document.getElementById('cotTotalPrice').value = cotFormatCurrency(totalPrice);
-  // Descuento: show opposite value ($ mode → show %, % mode → show $)
-  document.getElementById('cotDescuentoAmountDisplay').textContent =
-    cotIsToggleDollar('cotDescuentoPct') ? cotFormatPct(descuentoPct) : cotFormatCurrency(descuentoAmount);
-  document.getElementById('cotPrecioFinal').value = cotFormatCurrency(precioFinal);
-
-  // Payment fields: show opposite value on right side
-  document.getElementById('cotSeparacionDisplay').textContent =
-    cotIsToggleDollar('cotSeparacionPct') ? cotFormatPct(separacionPct) : cotFormatCurrency(separacion);
-  document.getElementById('cotEngancheDisplay').textContent =
-    cotIsToggleDollar('cotEnganchePct') ? cotFormatPct(enganchePct) : cotFormatCurrency(engancheAmount);
-  document.getElementById('cotEnganchePerPayDisplay').textContent = cotFormatCurrency(enganche) + '/pago';
-  document.getElementById('cotMensualidadesTotalDisplay').textContent =
-    cotIsToggleDollar('cotMensualidadesPct') ? cotFormatPct(mensualidadesPct) : cotFormatCurrency(mensualidadesTotal);
-  document.getElementById('cotMensualidadMesDisplay').textContent = cotFormatCurrency(mensualidadMes) + '/mes';
-  document.getElementById('cotAnualidadesTotalDisplay').textContent =
-    cotIsToggleDollar('cotAnualidadesPct') ? cotFormatPct(anualidadesPct) : cotFormatCurrency(anualidadesTotal);
-  document.getElementById('cotAnualidadDisplay').textContent = cotFormatCurrency(anualidad) + '/pago';
-  document.getElementById('cotEscrituracionDisplay').textContent =
-    cotIsToggleDollar('cotEscrituracionPct') ? cotFormatPct(escrituracionPct) : cotFormatCurrency(escrituracion);
-  document.getElementById('cotTotalDisplay').value = cotFormatCurrency(precioFinal);
-
-  const errorMsg = document.getElementById('cotErrorMsg');
-  if (balancerValue < 0) {
-    errorMsg.textContent = 'Error: Los porcentajes exceden 100%';
-    errorMsg.style.display = 'block';
-  } else {
-    errorMsg.style.display = 'none';
-  }
-}
-
-function cotBuildLotValues() {
-  if (!cotCurrentLot) return null;
-
-  const size = parseFloat(String(cotCurrentLot.size || cotCurrentLot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
-  const pm2 = parseFloat(String(cotCurrentLot.priceM2 || cotCurrentLot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
-  const totalPrice = size * pm2;
-  const lotNum = cotCurrentLot.number || '';
-
-  const allLotsData = lotData || window.baseLotsAll || baseLots || [];
-  const uniquePrices = [...new Set(allLotsData.map(l =>
-    parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
-  ))].filter(p => p > 0).sort((a, b) => b - a);
-  const categories = ['AAA+', 'AAA', 'AA', 'A'];
-  const priceIndex = uniquePrices.findIndex(p => Math.abs(p - pm2) < 0.01);
-  const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
-
-  const descuentoPct = cotReadPct('cotDescuentoPct', totalPrice, 0);
-  const descuentoAmount = totalPrice * (descuentoPct / 100);
-  const precioFinal = totalPrice - descuentoAmount;
-
-  // Use same pctMap approach as cotRecalculate — full precision, no DOM round-trip
-  const balancerId = cotGetBalancer();
-  const pctMap = {};
-  COT_PCT_FIELDS.forEach(id => {
-    if (id !== balancerId) pctMap[id] = cotReadPct(id, totalPrice, precioFinal);
-  });
-  const otherSum = Object.values(pctMap).reduce((s, v) => s + v, 0);
-  pctMap[balancerId] = 100 - otherSum;
-
-  const separacionPct = pctMap['cotSeparacionPct'];
-  const enganchePct = pctMap['cotEnganchePct'];
-  const mensualidadesPct = pctMap['cotMensualidadesPct'];
-  const anualidadesPct = pctMap['cotAnualidadesPct'];
-  const escrituracionPct = pctMap['cotEscrituracionPct'];
-
-  const numEnganche = parseInt(document.getElementById('cotNumEnganche').value) || 1;
-  const numMensualidades = parseInt(document.getElementById('cotNumMensualidades').value) || 1;
-  const numAnualidades = parseInt(document.getElementById('cotNumAnualidades').value) || 1;
-
-  const separacion = precioFinal * (separacionPct / 100);
-  const engancheAmount = precioFinal * (enganchePct / 100);
-  const enganche = numEnganche > 0 ? engancheAmount / numEnganche : 0;
-  const mensualidadesTotal = precioFinal * (mensualidadesPct / 100);
-  const mensualidadMes = numMensualidades > 0 ? mensualidadesTotal / numMensualidades : 0;
-  const anualidadesTotal = precioFinal * (anualidadesPct / 100);
-  const anualidad = numAnualidades > 0 ? anualidadesTotal / numAnualidades : 0;
-  const escrituracion = precioFinal * (escrituracionPct / 100);
-
-  const clientName = document.getElementById('cotClientName').value || 'Estimada Familia';
-
-  // Build fecha values from dropdowns
-  const fechaValues = {};
-  COT_FECHA_FIELDS.forEach(f => {
-    const m = document.getElementById(f.month).value;
-    const y = document.getElementById(f.year).value;
-    fechaValues[f.key] = m + ' ' + y;
-  });
-
-  return {
-    'dynamicText': clientName,
-    'lot.number': lotNum,
-    'lot.category': category,
-    'lot.size': cotFormatNumber(size) + ' m²',
-    'lot.pricePerM2': cotFormatCurrency(pm2),
-    'lot.totalPrice': cotFormatCurrency(totalPrice),
-    'lot.descuentoPct': cotFormatPct(descuentoPct),
-    'lot.descuentoAmount': cotFormatCurrency(descuentoAmount),
-    'lot.precioFinal': cotFormatCurrency(precioFinal),
-    'lot.clientName': clientName,
-    'lot.separacionPct': cotFormatPct(separacionPct),
-    'lot.separacion': cotFormatCurrency(separacion),
-    'lot.enganchePct': cotFormatPct(enganchePct),
-    'lot.engancheAmount': cotFormatCurrency(engancheAmount),
-    'lot.numEnganche': numEnganche.toString(),
-    'lot.enganche': cotFormatCurrency(enganche),
-    'lot.mensualidadesPct': cotFormatPct(mensualidadesPct),
-    'lot.mensualidadesTotal': cotFormatCurrency(mensualidadesTotal),
-    'lot.numMensualidades': numMensualidades.toString(),
-    'lot.mensualidadMes': cotFormatCurrency(mensualidadMes),
-    'lot.anualidadesPct': cotFormatPct(anualidadesPct),
-    'lot.anualidad': cotFormatCurrency(anualidad),
-    'lot.numAnualidades': numAnualidades.toString(),
-    'lot.anualidadesTotal': cotFormatCurrency(anualidadesTotal),
-    'lot.escrituracionPct': cotFormatPct(escrituracionPct),
-    'lot.escrituracion': cotFormatCurrency(escrituracion),
-    ...fechaValues
-  };
-}
-
-function cotReplacePlaceholders(text, values) {
-  if (!text) return '';
-  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-    return values[key.trim()] !== undefined ? values[key.trim()] : match;
-  });
-}
-
-function cotCreatePage(pageNum, template, lotValues) {
-  const pdfPage = document.createElement('div');
-  pdfPage.style.cssText = `
-    width: 1224px; height: 1584px; position: relative;
-    background-image: url("https://la-la.land/cpi/pdf/page.${pageNum}.png");
-    background-size: cover; background-repeat: no-repeat; background-position: top left;
-  `;
-  const pageIndex = parseInt(pageNum, 10);
-  const pageData = template?.pages?.[pageIndex];
-  if (!pageData) return pdfPage;
-
-  if (pageData.textBoxes) {
-    pageData.textBoxes.forEach(tb => {
-      const el = document.createElement('div');
-      el.textContent = cotReplacePlaceholders(tb.content, lotValues);
-      el.style.cssText = `
-        position: absolute; left: ${tb.x}px; top: ${tb.y}px;
-        ${tb.width ? `width: ${tb.width}px;` : ''} ${tb.height ? `height: ${tb.height}px;` : ''}
-        font-size: ${tb.fontSize || 24}px; font-family: "${tb.fontFamily || 'Arial'}", sans-serif;
-        color: ${tb.color || '#000000'}; font-weight: ${tb.bold ? '700' : '400'};
-        font-style: ${tb.italic ? 'italic' : 'normal'}; text-decoration: ${tb.underline ? 'underline' : 'none'};
-        text-align: ${tb.textAlign || 'left'}; white-space: pre-wrap;
-      `;
-      pdfPage.appendChild(el);
-    });
-  }
-
-  if (pageData.tables) {
-    pageData.tables.forEach(tableData => {
-      const colWidths = tableData.colWidths || Array(tableData.cols).fill(100);
-      const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(30);
-      const totalWidth = colWidths.reduce((s, w) => s + w, 0);
-      const rowConditions = tableData.rowConditions || [];
-      const skippedRows = new Set();
-      for (let r = 0; r < tableData.rows; r++) {
-        const cond = rowConditions[r];
-        if (cond && cond.startsWith('nonzero:') && (lotValues[cond.slice(8)] || '') === '0%') skippedRows.add(r);
-      }
-      let yOffset = 0;
-      skippedRows.forEach(r => { yOffset += (rowHeights[r] || 30) / 2; });
-      const container = document.createElement('div');
-      container.style.cssText = `position: absolute; left: ${tableData.x}px; top: ${tableData.y + yOffset}px;`;
-      const table = document.createElement('table');
-      table.style.cssText = `border-collapse: collapse; table-layout: fixed; width: ${totalWidth}px;`;
-      for (let r = 0; r < tableData.rows; r++) {
-        if (skippedRows.has(r)) continue;
-        const tr = document.createElement('tr');
-        tr.style.height = rowHeights[r] + 'px';
-        for (let c = 0; c < tableData.cols; c++) {
-          const cell = tableData.cells?.[r]?.[c];
-          if (!cell || cell.hidden) continue;
-          const td = document.createElement('td');
-          td.textContent = cotReplacePlaceholders(cell.content || '', lotValues);
-          const bw = cell.borderWidth || 1, bs = cell.borderStyle || 'solid';
-          const bc = cell.borderColor || '#000000', bp = cell.borderPosition || 'all';
-          let borderCss = '';
-          if (bp === 'bottom') borderCss = `border: none; border-bottom: ${bw}px ${bs} ${bc};`;
-          else if (bp === 'top') borderCss = `border: none; border-top: ${bw}px ${bs} ${bc};`;
-          else if (bp === 'none') borderCss = 'border: none;';
-          else borderCss = `border: ${bw}px ${bs} ${bc};`;
-          td.style.cssText = `
-            width: ${colWidths[c]}px; height: ${rowHeights[r]}px; box-sizing: border-box; overflow: hidden;
-            background-color: ${cell.bgColor || '#ffffff'}; color: ${cell.textColor || '#000000'};
-            font-family: "${cell.fontFamily || 'Arial'}", sans-serif; font-size: ${cell.fontSize || 14}px;
-            font-weight: ${cell.bold ? '700' : '400'}; font-style: ${cell.italic ? 'italic' : 'normal'};
-            text-decoration: ${cell.underline ? 'underline' : 'none'}; ${borderCss}
-            padding: 0; text-align: ${cell.textAlign || 'left'}; vertical-align: middle;
-            line-height: ${rowHeights[r]}px; white-space: nowrap; text-overflow: clip;
-          `;
-          if (cell.colSpan > 1) td.colSpan = cell.colSpan;
-          if (cell.rowSpan > 1) td.rowSpan = cell.rowSpan;
-          tr.appendChild(td);
-        }
-        table.appendChild(tr);
-      }
-      container.appendChild(table);
-      pdfPage.appendChild(container);
-    });
-  }
-
-  if (pageData.images) {
-    pageData.images.forEach(imgData => {
-      let imageUrl = '';
-      if (imgData.type === '{{lot.landscape}}') imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_landscape.jpg`;
-      else if (imgData.type === '{{lot.map}}') imageUrl = `/cpi/pdf/lotcpi1-${lotValues['lot.number']}_map.jpg`;
-      else if (imgData.type === 'static' && imgData.url) imageUrl = imgData.url;
-      const el = document.createElement('div');
-      el.style.cssText = `
-        position: absolute; left: ${imgData.x}px; top: ${imgData.y}px;
-        width: ${imgData.width}px; height: ${imgData.height}px;
-        background-image: url("${imageUrl}");
-        background-size: cover; background-position: center; background-repeat: no-repeat;
-      `;
-      pdfPage.appendChild(el);
-    });
-  }
-
-  return pdfPage;
-}
-
-async function cotGeneratePDF() {
-  const lotValues = cotBuildLotValues();
-  if (!lotValues) { alert('Error: datos de lote no disponibles.'); return; }
-
-  const balancer = cotGetBalancer();
-  const balancerValue = parseFloat(document.getElementById(balancer).value) || 0;
-  if (balancerValue < 0) { alert('Los porcentajes exceden 100%. Ajuste los valores.'); return; }
-
-  const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.7); display: flex; flex-direction: column;
-    align-items: center; justify-content: center; z-index: 999999;
-  `;
-  overlay.innerHTML = `
-    <div style="background:white; padding:32px 48px; border-radius:12px; text-align:center; font-family:Arial,sans-serif;">
-      <div style="font-size:18px; font-weight:600; margin-bottom:16px;">Generando PDF...</div>
-      <div id="cot-progress-text" style="font-size:14px; color:#666; margin-bottom:12px;">Cargando plantilla...</div>
-      <div style="width:200px; height:8px; background:#eee; border-radius:4px; overflow:hidden;">
-        <div id="cot-progress-bar" style="width:0%; height:100%; background:#8f5e38; transition:width 0.3s;"></div>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  const progressText = document.getElementById('cot-progress-text');
-  const progressBar = document.getElementById('cot-progress-bar');
-
-  try {
-    const response = await fetch('/cpi/pdf/pdf-template-especial.json');
-    const template = await response.json();
-    progressBar.style.width = '5%';
-
-    progressText.textContent = 'Cargando imágenes...';
-    const imagePromises = [];
-    for (let i = 1; i <= 8; i++) {
-      const pageNum = String(i).padStart(3, '0');
-      imagePromises.push(new Promise(resolve => {
-        const img = new Image(); img.crossOrigin = 'anonymous';
-        img.onload = resolve; img.onerror = resolve;
-        img.src = `https://la-la.land/cpi/pdf/page.${pageNum}.png`;
-      }));
-    }
-    const lotNum = lotValues['lot.number'];
-    if (lotNum) {
-      ['landscape', 'map'].forEach(type => {
-        imagePromises.push(new Promise(resolve => {
-          const img = new Image(); img.crossOrigin = 'anonymous';
-          img.onload = resolve; img.onerror = resolve;
-          img.src = `/cpi/pdf/lotcpi1-${lotNum}_${type}.jpg`;
-        }));
-      });
-    }
-    Object.values(template.pages || {}).forEach(pageData => {
-      (pageData.images || []).forEach(imgData => {
-        if (imgData.type === 'static' && imgData.url) {
-          imagePromises.push(new Promise(resolve => {
-            const img = new Image(); img.crossOrigin = 'anonymous';
-            img.onload = resolve; img.onerror = resolve; img.src = imgData.url;
-          }));
-        }
-      });
-    });
-    await Promise.all(imagePromises);
-    progressBar.style.width = '40%';
-
-    const pdfContainer = document.createElement('div');
-    pdfContainer.style.cssText = 'position: fixed; left: -9999px; top: 0; z-index: -1;';
-    document.body.appendChild(pdfContainer);
-
-    progressText.textContent = 'Generando PDF...';
-    const _communityName = getCommunityByFracc(CURRENT_CLIENT, cotCurrentLot?.fraccionamiento)?.displayName
-      || cotCurrentLot?.fraccionamiento
-      || CONFIG.defaultCommunity
-      || 'Cotizacion';
-    const _rawName = (lotValues['dynamicText'] || '').replace(/^(estimad[ao]\s+)?(familia|sr\.?|sra\.?|lic\.?|ing\.?|dr\.?|dra\.?)\s+/i, '').trim();
-    const _familyName = _rawName || 'Cliente';
-    const _safeFamilyName = _familyName.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '').replace(/\s+/g, ' ').trim();
-    const _pdfFilename = `${_communityName} - Familia ${_safeFamilyName}.pdf`;
-    const worker = html2pdf().set({
-      margin: 0,
-      filename: _pdfFilename,
-      image: { type: 'jpeg', quality: 1 },
-      html2canvas: { scale: 1, useCORS: true, scrollX: 0, scrollY: 0 },
-      jsPDF: { unit: 'px', format: [1224, 1584], orientation: 'portrait' }
-    });
-
-    for (let i = 1; i <= 8; i++) {
-      progressText.textContent = `Renderizando página ${i} de 8`;
-      progressBar.style.width = `${40 + (i / 8) * 55}%`;
-      const pageNum = String(i).padStart(3, '0');
-      const page = cotCreatePage(pageNum, template, lotValues);
-      pdfContainer.innerHTML = '';
-      pdfContainer.appendChild(page);
-      if (i === 1) {
-        await worker.from(page).toContainer().toCanvas().toPdf();
-      } else {
-        await worker.get('pdf').then(pdf => { pdf.addPage([1224, 1584], 'portrait'); });
-        await worker.from(page).toContainer().toCanvas().toPdf();
-      }
-    }
-
-    progressText.textContent = 'Descargando...';
-    progressBar.style.width = '100%';
-    await worker.save();
-    document.body.removeChild(pdfContainer);
-  } catch (err) {
-    console.error('PDF generation error:', err);
-    alert('Error generando PDF: ' + err.message);
-  } finally {
-    document.body.removeChild(overlay);
-  }
-
-  // After PDF, collapse back to detail view
-  const modal = document.getElementById('lotModal');
-  document.getElementById('cotizadorPanel').style.display = 'none';
-  document.getElementById('lotDetails').style.display = 'block';
-  modal.classList.remove('expanded');
-}
-
-function openCotizadorInModal(lot) {
-  cotCurrentLot = lot;
-  const modal = document.getElementById('lotModal');
-
-  const size = parseFloat(String(lot.size || lot.rSize || '0').replace(/[^0-9.]/g, '')) || 0;
-  const pm2 = parseFloat(String(lot.priceM2 || lot.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0;
-
-  const allLotsData = lotData || window.baseLotsAll || baseLots || [];
-  const uniquePrices = [...new Set(allLotsData.map(l =>
-    parseFloat(String(l.priceM2 || l.price_m2 || '0').replace(/[^0-9.]/g, '')) || 0
-  ))].filter(p => p > 0).sort((a, b) => b - a);
-  const categories = ['AAA+', 'AAA', 'AA', 'A'];
-  const priceIndex = uniquePrices.findIndex(p => Math.abs(p - pm2) < 0.01);
-  const category = priceIndex >= 0 && priceIndex < categories.length ? categories[priceIndex] : 'A';
-
-  document.getElementById('cotLotNumber').value = lot.number || '';
-  document.getElementById('cotLotCategory').value = category;
-  document.getElementById('cotLotSize').value = cotFormatNumber(size) + ' m²';
-  document.getElementById('cotPriceM2').value = cotFormatCurrency(pm2);
-
-  // Reset form defaults
-  document.getElementById('cotDescuentoPct').value = '0';
-  document.getElementById('cotClientName').value = 'Estimada Familia';
-  document.getElementById('cotSeparacionPct').value = '0';
-  document.getElementById('cotEnganchePct').value = '20';
-  document.getElementById('cotNumEnganche').value = '1';
-  document.getElementById('cotMensualidadesPct').value = '30';
-  document.getElementById('cotNumMensualidades').value = '24';
-  document.getElementById('cotAnualidadesPct').value = '0';
-  document.getElementById('cotNumAnualidades').value = '2';
-  document.getElementById('cotEscrituracionPct').value = '50';
-  document.getElementById('cotBalancerField').value = 'cotEscrituracionPct';
-
-  // Reset all toggle buttons to % mode
-  document.querySelectorAll('#cotizadorPanel .cot-toggle-btn[data-field]').forEach(btn => {
-    btn.classList.remove('active');
-  });
-  ['cotDescuentoUnit','cotSeparacionUnit','cotEngancheUnit','cotMensualidadesUnit','cotAnualidadesUnit','cotEscrituracionUnit'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = '%';
-  });
-  // Reset step/min/max on pct inputs
-  ['cotDescuentoPct', ...COT_PCT_FIELDS].forEach(id => {
-    const inp = document.getElementById(id);
-    inp.step = '0.5'; inp.min = '0'; inp.max = '100';
-  });
-
-  // Reset date dropdowns to current month/year
-  const now = new Date();
-  const curMonthName = COT_MONTHS[now.getMonth()];
-  const curYear = now.getFullYear().toString();
-  COT_FECHA_FIELDS.forEach(f => {
-    document.getElementById(f.month).value = curMonthName;
-    document.getElementById(f.year).value = curYear;
-  });
-
-  cotOnBalancerChange();
-
-  // Swap content — hide both lotDetails and modalInfo so scroll doesn't bleed
-  document.getElementById('lotDetails').style.display = 'none';
-  const modalInfoEl = document.getElementById('modalInfo');
-  if (modalInfoEl) modalInfoEl.style.display = 'none';
-  document.getElementById('cotizadorPanel').style.display = 'block';
-  modal.classList.add('expanded');
-
-  cotRecalculate();
-}
-
-// Wire up cotizador event listeners
-document.getElementById('cotBalancerField').addEventListener('change', cotOnBalancerChange);
-document.getElementById('cotDescuentoPct').addEventListener('input', cotRecalculate);
-document.getElementById('cotNumEnganche').addEventListener('input', cotRecalculate);
-document.getElementById('cotNumMensualidades').addEventListener('input', cotRecalculate);
-document.getElementById('cotNumAnualidades').addEventListener('input', cotRecalculate);
-COT_PCT_FIELDS.forEach(id => {
-  document.getElementById(id).addEventListener('input', cotRecalculate);
-});
-document.getElementById('cotGenerateBtn').addEventListener('click', cotGeneratePDF);
-
-// Wire up toggle buttons (% ↔ $)
-document.querySelectorAll('#cotizadorPanel .cot-toggle-btn[data-field]').forEach(btn => {
-  btn.addEventListener('click', () => cotOnToggleSwitch(btn.dataset.field));
-});
 
 
 
@@ -8814,16 +8156,12 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     const customScrollbar = document.getElementById('customScrollbar');
     const loadingSpinner = document.getElementById('loadingSpinner');
     
-    // Always hide cotizador panel on fresh open
-    const cotPanelOpen = document.getElementById('cotizadorPanel');
-    if (cotPanelOpen) cotPanelOpen.style.display = 'none';
-
     if (lotDetails) {
       lotDetails.classList.remove('active');
       lotDetails.style.display = 'block';
       lotDetails.innerHTML = '';
     }
-
+    
     if (modalInfo) {
       modalInfo.style.display = '';
       modalInfo.style.opacity = '1';
@@ -8907,7 +8245,6 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
         if (Array.isArray(window.baseLotsAll) && window.baseLotsAll.length) {
           // Filter baseLots by fraccionamiento
           baseLots = window.baseLotsAll.filter(l => (l.fraccionamiento || '').toString().trim() === fracc);
-          currentFraccionamiento = fracc; // Keep in sync so getSelectedLot() path 2 fraccionamiento check doesn't fail
           updateLotsArray();
           // Only re-render when requested
           if (shouldRender) {
@@ -8931,7 +8268,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
     const scrollToIndex = baseLots.findIndex(l => l.name === lot.name);
     if (scrollToIndex !== -1) {
       scrollToBaseIndex(scrollToIndex, true);
-      
+
       // Update map highlight
       const mapIndex = lotData.findIndex(l => l.name === lot.name);
       if (mapIndex !== -1 && map) {
@@ -8964,7 +8301,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
   // Prevent button animations on initial modal open
   if (wasHidden) {
     modal.classList.add('initial-load');
-    if (!skipPan && !window.isLeadsOpen) {
+    if (!skipPan) {
       adjustMapForModal();
     } else {
       console.log('⏭️ Skipping map pan (already positioned from dashboard)');
@@ -9096,7 +8433,7 @@ function openModal(lot = null, baseIndex = 0, skipPan = false) {
       const scrollToIndex = baseLots.findIndex(l => l.name === lot.name);
       if (scrollToIndex !== -1) {
         scrollToBaseIndex(scrollToIndex, true);
-        
+
         // Update map highlight
         const mapIndex = lotData.findIndex(l => l.name === lot.name);
         if (mapIndex !== -1 && map) {
@@ -9157,11 +8494,6 @@ function closeModal() {
   const bottomPlus = document.querySelector('.bottom-plus-button');
   
   // --- 1) Kill special modes / embeds
-  // Always hide cotizador panel and restore detail view
-  const cotPanelClose = document.getElementById('cotizadorPanel');
-  if (cotPanelClose) cotPanelClose.style.display = 'none';
-  if (lotDetails) lotDetails.style.display = 'block';
-  if (modalInfo) { modalInfo.style.display = ''; modalInfo.style.opacity = '1'; }
   modal.classList.remove('info-mode', 'pin-mode', 'expanded', 'lot-mode');
   hideCalendlyEmbed();
   window.isDetailOpen = false;
@@ -9710,10 +9042,6 @@ function hideCalendlyEmbed() {
     await window.supabaseReady;
 
     // Get authenticated user for RLS policy
-    if (IS_DEMO) {
-      toast('Pins are read-only in demo mode');
-      return;
-    }
     const { data: { user } } = await window.supabaseClient.auth.getUser();
     if (!user) {
       console.error('User not authenticated');
@@ -10358,36 +9686,22 @@ const nextState = cur => {
       const baseIdx = baseLots.findIndex(b => b.name === mapLot.name);
       return { lotName: mapLot.name, number: n, baseIndex: baseIdx };
     }
-    // list-centered path — only use if the centered row belongs to the current fracc
+    // list-centered path
     const centered = document.querySelector('.info-row.center');
-    if (centered) {
-      const baseIndex = parseInt(centered.dataset.baseIndex, 10);
-      if (!isNaN(baseIndex) && baseIndex >= 0) {
-        const base = baseLots[baseIndex];
-        if (base && base.fraccionamiento === currentFraccionamiento) {
-          // 🔥 FIX: Search for lot matching BOTH number AND fraccionamiento
-          const mapIdx = lotData.findIndex(l =>
-            extractLotNumber(l.name) === base.number &&
-            l.fraccionamiento === base.fraccionamiento
-          );
-          if (mapIdx !== -1) {
-            return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
-          }
-        }
-      }
-    }
-    // 🔥 FIX: Fallback — select first available lot in currentFraccionamiento
-    // Handles the case where the user navigated to a new fracc via nav dots
-    // and the centered row belongs to a different community.
-    const firstAvailable = lotData.find(l =>
-      l.fraccionamiento === currentFraccionamiento &&
-      normalize(l.availability || 'available') !== 'sold'
+    if (!centered) return null;
+    const baseIndex = parseInt(centered.dataset.baseIndex, 10);
+    if (isNaN(baseIndex) || baseIndex < 0) return null;
+    const base = baseLots[baseIndex];
+    if (!base) return null;
+
+    // 🔥 FIX: Search for lot matching BOTH number AND fraccionamiento
+    // This prevents selecting the wrong lot when duplicate numbers exist (e.g., lot 17-05 in both marsella and sierraalta)
+    const mapIdx = lotData.findIndex(l =>
+      extractLotNumber(l.name) === base.number &&
+      l.fraccionamiento === base.fraccionamiento
     );
-    if (firstAvailable) {
-      const baseIdx = baseLots.findIndex(b => b.name === firstAvailable.name);
-      return { lotName: firstAvailable.name, number: extractLotNumber(firstAvailable.name), baseIndex: baseIdx };
-    }
-    return null;
+    if (mapIdx === -1) return null;
+    return { lotName: lotData[mapIdx].name, number: base.number, baseIndex };
   } 
 
   // Visual re-apply: map hover + list active row + button color
@@ -10425,9 +9739,8 @@ const nextState = cur => {
     const lot = lotData[mapIndex];
     const state = normalize(lot?.availability || 'available');
     btn.classList.remove('sold','featured','blocked');
-    if (state === 'sold') btn.classList.add('sold');
+    if (state === 'sold' || state === 'blocked') btn.classList.add('sold');
     if (state === 'featured') btn.classList.add('featured');
-    if (state === 'blocked') btn.classList.add('blocked');
   }
 
   // Keep button color synced when UI changes
@@ -10436,11 +9749,6 @@ const nextState = cur => {
     const name = sel?.lotName ?? selectedLotName;
     if (!name) { btn.classList.remove('sold','featured','blocked'); return; }
     setSelectedLotByName(name, { scroll:false });
-    const _selLot = lotData.find(l => l.name === name);
-    const _canEdit = canEditCommunity(_selLot?.fraccionamiento);
-    btn.style.display = _canEdit ? '' : 'none';
-    const _editBtn = document.getElementById('editBtn');
-    if (_editBtn) _editBtn.style.display = _canEdit ? '' : 'none';
   }
 
   // --- local data updates (optimistic) ---
@@ -10506,7 +9814,6 @@ function refreshFeaturedLayer() {
 
   // --- auth guard ---
   async function ensureLoggedIn() {
-    if (IS_DEMO) return true;
     const session = (await window.supabaseClient?.auth.getSession())?.data?.session;
     return !!(session && session.user);
   }
@@ -10531,9 +9838,8 @@ function refreshFeaturedLayer() {
     applyAvailabilityLocal(sel.lotName, next);
     // button feedback
     btn.classList.remove('sold','featured','blocked');
-    if (next === 'sold') btn.classList.add('sold');
+    if (next === 'sold' || next === 'blocked') btn.classList.add('sold');
     if (next === 'featured') btn.classList.add('featured');
-    if (next === 'blocked') btn.classList.add('blocked');
 
     // Show immediate feedback
     const LABELS = { available:'disponible', sold:'vendido', featured:'destacado', blocked:'bloqueado' };
@@ -10545,7 +9851,6 @@ function refreshFeaturedLayer() {
 
     // Save to database in background (don't await - fire and forget with error handling)
     (async () => {
-      if (IS_DEMO) return;
       try {
         // Mark this lot to skip next realtime re-render
         if (!window.skipNextRealtimeRender) window.skipNextRealtimeRender = new Set();
@@ -10557,11 +9862,6 @@ function refreshFeaturedLayer() {
 
         // Get fraccionamiento from lot data BEFORE the update
         const lotFracc = lotData[i]?.fraccionamiento || null;
-
-        if (!canEditCommunity(lotFracc)) {
-          showToaster('No tienes permiso para editar esta comunidad.');
-          return;
-        }
 
         const { error } = await window.supabaseClient
           .from('lots')
@@ -10599,9 +9899,8 @@ try {
         // revert
         applyAvailabilityLocal(sel.lotName, current);
         btn.classList.remove('sold','featured','blocked');
-        if (current === 'sold') btn.classList.add('sold');
+        if (current === 'sold' || current === 'blocked') btn.classList.add('sold');
         if (current === 'featured') btn.classList.add('featured');
-        if (current === 'blocked') btn.classList.add('blocked');
 
         refreshVisuals();
         setSelectedLotByName(selectedLotName, { scroll:false });
@@ -10677,9 +9976,8 @@ try {
           // Just update button color without touching hover state
           const state = normalize(mapData?.availability || 'available');
           btn.classList.remove('sold','featured','blocked');
-          if (state === 'sold') btn.classList.add('sold');
+          if (state === 'sold' || state === 'blocked') btn.classList.add('sold');
           if (state === 'featured') btn.classList.add('featured');
-          if (state === 'blocked') btn.classList.add('blocked');
         }
       } catch {}
       return res;
@@ -11124,67 +10422,47 @@ try {
 
 
 <script>
-// TEMPORARY FOR YC DEMO: All buttons visible regardless of auth status
-// Function to check authentication status and toggle buttons visibility hide buttons
+// Toggle admin-only buttons based on Supabase session (isAuthenticated)
 function toggleAuthButtons(isAuthenticated) {
+  if (IS_DEMO) isAuthenticated = false;
   const cycleAvailabilityBtn = document.getElementById('cycleAvailabilityBtn');
-  const addPinBtn = document.getElementById('addPinBtn');
-  const gpsButton = document.getElementById('gpsButton');
-  const driveBtn = document.getElementById('driveBtn');
-  const compareBtn = document.getElementById('compareBtn'); // Added compareBtn
-  const editBtn = document.getElementById('editBtn'); // Added editBtn
+  const editBtn = document.getElementById('editBtn');
+  const poiButton = document.getElementById('poiButton');
 
-  console.log('Toggle buttons - Authenticated:', isAuthenticated);
-  
-  // COMMENTED OUT FOR YC DEMO - Show all buttons always
-  // if (cycleAvailabilityBtn) {
-  //   cycleAvailabilityBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (addPinBtn) {
-  //   addPinBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (gpsButton) {
-  //   gpsButton.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (driveBtn) {
-  //   driveBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (compareBtn) { // Added compareBtn condition
-  //   compareBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
-  // if (editBtn) { // Added editBtn condition
-  //   editBtn.classList.toggle('hide-button', !isAuthenticated);
-  // }
+  if (cycleAvailabilityBtn) {
+    cycleAvailabilityBtn.classList.add('hide-button');
+  }
+  if (editBtn) {
+    editBtn.classList.toggle('hide-button', !isAuthenticated);
+  }
+  if (poiButton) {
+    poiButton.style.display = isAuthenticated ? '' : 'none';
+  }
 }
 
-// COMMENTED OUT FOR YC DEMO - Don't hide buttons on page load
-// Hide buttons immediately on page load
+// Hide admin buttons immediately on page load
 document.addEventListener('DOMContentLoaded', function() {
-  console.log('DOM loaded - showing all buttons for YC demo');
-  // toggleAuthButtons(false); // COMMENTED OUT FOR YC DEMO
-  
-  // Check auth status once Supabase is likely ready
+  toggleAuthButtons(false);
+
+  // Refine once Supabase is ready
   const checkAuth = setInterval(function() {
     if (window.supabaseClient && typeof window.supabaseClient.auth.getSession === 'function') {
       clearInterval(checkAuth);
       window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
         const isAuthenticated = !!(session && session.user);
-        console.log('Initial auth check - Authenticated:', isAuthenticated);
-        // toggleAuthButtons(isAuthenticated); // COMMENTED OUT FOR YC DEMO
+        toggleAuthButtons(isAuthenticated);
       });
     }
   }, 100);
 });
-  
-// COMMENTED OUT FOR YC DEMO - Don't toggle buttons on auth change
-// Listen for auth changes once Supabase is ready
+
+// Keep in sync with auth state changes
 const setupAuthListener = setInterval(function() {
   if (window.supabaseClient && typeof window.supabaseClient.auth.onAuthStateChange === 'function') {
     clearInterval(setupAuthListener);
     window.supabaseClient.auth.onAuthStateChange((_event, session) => {
       const isAuthenticated = !!(session && session.user);
-      console.log('Auth state changed - Authenticated:', isAuthenticated);
-      // toggleAuthButtons(isAuthenticated); // COMMENTED OUT FOR YC DEMO
+      toggleAuthButtons(isAuthenticated);
     });
   }
 }, 100);
@@ -11804,7 +11082,7 @@ function getCurrentFraccZoom() {
                       // 🟢 HIDE THE PLUS BUTTON
                       const plusButton = document.querySelector('.plus-button');
                       if (plusButton) plusButton.style.display = 'none';
-                      
+
                       // 🟢 SHOW DETAIL VIEW (this will handle dimensions internally)
                       showDetailViewForLot(baseIndex + cloneCount);
                       
@@ -12090,7 +11368,7 @@ setTimeout(() => {
                   if (baseIndex !== -1) {
                     const plusButton = document.querySelector('.plus-button');
                     if (plusButton) plusButton.style.display = 'none';
-                    
+
                     const lotMapIndex = lotData.findIndex(l => l.name === lot.name);
                     if (lotMapIndex !== -1) {
                       currentLotIndex = lotMapIndex;
@@ -12469,19 +11747,23 @@ document.getElementById('compareBtn').addEventListener('click', function() {
     }
 });
 
-// Edit button — trigger inline price edit on the currently centered list row
+// Edit button event listener
 document.getElementById('editBtn').addEventListener('click', function() {
-    const centered = document.querySelector('.info-row.center');
-    if (!centered) {
-        showToaster('Selecciona un lote primero.');
-        return;
-    }
-    const rowEditBtn = centered.querySelector('.row-action-btn.edit-btn');
-    if (rowEditBtn) {
-        rowEditBtn.click();
-    } else {
-        showToaster('No hay precio editable para este lote.');
-    }
+    window.editMode = !window.editMode;
+    
+    if (window.editMode) {
+        // Enter edit mode
+        this.style.boxShadow = `0 0 0 3px ${CONFIG.colors.primaryFull}`;
+        this.style.backgroundColor = CONFIG.colors.primary;
+        showToaster('✏️ Edit mode ON - Edit prices in detail view');
+        console.log('Edit mode ON');
+} else {
+    // Exit edit mode
+    this.style.boxShadow = '';
+    this.style.backgroundColor = CONFIG.colors.cream;
+    showToaster('Edit mode OFF');
+    console.log('Edit mode OFF');
+}
 });
 
 // Compare mode click handler (renamed from handleEditClick)
@@ -13164,6 +12446,248 @@ async function markLotAsSold(lot) {
 window.showPaymentViewInModal = showPaymentViewInModal;
 </script>
 
+<!-- ===== REGISTRO MODAL (agent-only) ===== -->
+<script>
+(function() {
+  const $ = (sel) => document.querySelector(sel);
+  window.isRegistroOpen = false;
+  const registroBtn = $('#registro-btn');
+  const registroOverlay = $('#registro-modal-overlay');
+  const registroContainer = $('#registro-modal-container');
+  const registroBackdrop = $('#registro-modal-backdrop');
+  const registroIframe = $('#registro-iframe');
+
+  let registroModalPanned = false;
+
+  function openRegistroModal() {
+    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
+    if (typeof closeModal === 'function') {
+      try { closeModal(); } catch(e) {}
+    }
+
+    registroModalPanned = false;
+    if (map && !lotModalWasOpen) {
+      const isMobile = window.innerWidth < 768;
+      const offset = isMobile ? [0, -Math.round(window.innerHeight * 0.23)] : [-240, 0];
+      map.panBy(offset, { duration: 400 });
+      registroModalPanned = true;
+    }
+
+    window.isRegistroOpen = true;
+    registroIframe.src = IS_DEMO ? 'registro-manual.html?demo' : 'registro-manual.html';
+    registroOverlay.style.display = 'block';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        registroContainer.classList.add('show');
+      });
+    });
+    const openIcon = $('#registro-open-icon');
+    const closedIcon = $('#registro-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'inline-block';
+      closedIcon.style.display = 'none';
+    }
+    registroBtn.classList.add('active');
+  }
+
+  function closeRegistroModal() {
+    if (map && registroModalPanned) {
+      const isMobile = window.innerWidth < 768;
+      const offset = isMobile ? [0, Math.round(window.innerHeight * 0.23)] : [240, 0];
+      map.panBy(offset, { duration: 400 });
+      registroModalPanned = false;
+    }
+
+    window.isRegistroOpen = false;
+    registroContainer.classList.remove('show');
+    setTimeout(() => {
+      registroOverlay.style.display = 'none';
+      registroIframe.src = 'about:blank';
+    }, 400);
+    const openIcon = $('#registro-open-icon');
+    const closedIcon = $('#registro-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'none';
+      closedIcon.style.display = 'inline-block';
+    }
+    registroBtn.classList.remove('active');
+  }
+
+  registroBtn && registroBtn.addEventListener('click', () => {
+    if (window.isRegistroOpen) {
+      closeRegistroModal();
+    } else {
+      openRegistroModal();
+    }
+  });
+
+  registroBackdrop && registroBackdrop.addEventListener('click', () => {
+    closeRegistroModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.isRegistroOpen) {
+      closeRegistroModal();
+    }
+  });
+
+  window.addEventListener('message', (e) => {
+    if (e.data === 'closeRegistro' && window.isRegistroOpen) {
+      closeRegistroModal();
+    }
+  });
+})();
+</script>
+
+<!-- ===== LEADS MODAL (agent-only) ===== -->
+<script>
+(function() {
+  const $ = (sel) => document.querySelector(sel);
+  window.isLeadsOpen = false;
+  const leadsBtn = $('#leads-btn');
+  const leadsOverlay = $('#leads-modal-overlay');
+  const leadsContainer = $('#leads-modal-container');
+  const leadsBackdrop = $('#leads-modal-backdrop');
+  const leadsIframe = $('#leads-iframe');
+
+  // Elements to hide when leads modal is open on mobile
+  const leadsHideTargets = [
+    $('.lala-wrapper'),
+    $('#leads-btn'),
+    $('#registro-btn'),
+    $('#gpsButton'),
+    $('.logoinv-wrapper')
+  ].filter(Boolean);
+  const leadsHideSavedDisplay = new Map();
+  let leadsModalPanned = false;
+
+  function openLeadsModal() {
+    // Close registro modal if open
+    if (window.isRegistroOpen && typeof closeRegistroModal === 'function') {
+      try { closeRegistroModal(); } catch(e) {}
+    }
+    const lotModalWasOpen = document.getElementById('lotModal')?.classList.contains('show');
+    if (typeof closeModal === 'function') {
+      try { closeModal(); } catch(e) {}
+    }
+
+    leadsModalPanned = false;
+    if (map && !lotModalWasOpen) {
+      const isMobile = window.innerWidth < 768;
+      const offset = isMobile ? [0, -Math.round(window.innerHeight * 0.23)] : [-240, 0];
+      map.panBy(offset, { duration: 400 });
+      leadsModalPanned = true;
+    }
+
+    window.isLeadsOpen = true;
+    const agentPhone = window.currentLead?.phone || '';
+    leadsIframe.src = `lead-dashboard.html?mode=agent&agent_phone=${encodeURIComponent(agentPhone)}`;
+    leadsOverlay.style.display = 'block';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        leadsContainer.classList.add('show');
+      });
+    });
+    const openIcon = $('#leads-open-icon');
+    const closedIcon = $('#leads-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'inline-block';
+      closedIcon.style.display = 'none';
+    }
+    leadsBtn.classList.add('active');
+    // Hide bottom buttons on mobile
+    if (window.innerWidth < 768) {
+      leadsHideTargets.forEach(el => {
+        leadsHideSavedDisplay.set(el, el.style.display);
+        el.style.display = 'none';
+      });
+    }
+  }
+
+  function closeLeadsModal() {
+    if (map && leadsModalPanned) {
+      const isMobile = window.innerWidth < 768;
+      const offset = isMobile ? [0, Math.round(window.innerHeight * 0.23)] : [240, 0];
+      map.panBy(offset, { duration: 400 });
+      leadsModalPanned = false;
+    }
+
+    window.isLeadsOpen = false;
+    leadsContainer.classList.remove('show');
+    setTimeout(() => {
+      leadsOverlay.style.display = 'none';
+      leadsIframe.src = 'about:blank';
+    }, 400);
+    const openIcon = $('#leads-open-icon');
+    const closedIcon = $('#leads-closed-icon');
+    if (openIcon && closedIcon) {
+      openIcon.style.display = 'none';
+      closedIcon.style.display = 'inline-block';
+    }
+    leadsBtn.classList.remove('active');
+    // Restore bottom buttons on mobile
+    if (window.innerWidth < 768) {
+      leadsHideTargets.forEach(el => {
+        el.style.display = leadsHideSavedDisplay.get(el) || '';
+      });
+    }
+  }
+
+  leadsBtn && leadsBtn.addEventListener('click', () => {
+    if (window.isLeadsOpen) {
+      closeLeadsModal();
+    } else {
+      openLeadsModal();
+    }
+  });
+
+  leadsBackdrop && leadsBackdrop.addEventListener('click', () => {
+    closeLeadsModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.isLeadsOpen) {
+      closeLeadsModal();
+    }
+  });
+
+  window.addEventListener('message', (e) => {
+    if (e.data === 'closeLeads' && window.isLeadsOpen) {
+      closeLeadsModal();
+    }
+  });
+})();
+</script>
+
+<style>
+  #leads-modal-overlay {
+    z-index: 10001;
+  }
+  #leads-modal-container {
+    opacity: 0;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: translateY(-30px);
+  }
+  #leads-modal-container.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @media (min-width: 768px) {
+    #leads-modal-container {
+      position: fixed;
+      top: 50%;
+      left: calc(5% + 400px);
+      width: 800px;
+      height: 90%;
+      max-height: 1000px;
+      transform: translate(-50%, -55%);
+    }
+    #leads-modal-container.show {
+      transform: translate(-50%, -50%);
+    }
+  }
+</style>
+
 <!-- ===== SEARCH BUTTON COMPONENT ===== -->
 <div class="search-btn-stage" id="searchBtnStage">
   <div class="search-btn-rotator" id="searchBtnRotator">
@@ -13549,5 +13073,255 @@ function buildDots() {
 </script>
 
 <div style="position:fixed;bottom:0;left:0;width:100%;text-align:center;font-size:12px;z-index:9999;pointer-events:none;"><span style="background:rgba(0,0,0,0.75);color:#fff;">Precios sujetos a cambio sin previo aviso.</span></div>
+<!-- ===== VIEW COUNTER + SIGNUP MODAL ===== -->
+<script src="https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/intlTelInput.min.js"></script>
+<script>
+(function() {
+  // Inject intl-tel-input CSS
+  (function() {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/css/intlTelInput.css';
+    const s = document.createElement('style'); s.textContent = '.iti{display:block;width:100%}'; document.head.appendChild(s);
+    document.head.appendChild(l);
+  })();
+
+  // Skip if already authenticated (has session cookie or arrived with token)
+  if (window.__leadAuthenticated) return;
+
+  const VC_KEY = 'vc_' + CURRENT_CLIENT;
+  const FREE_VIEWS = (window.CONFIG && window.CONFIG.misc && window.CONFIG.misc.freeViews != null) ? window.CONFIG.misc.freeViews : 2;
+  let pendingLot = null, browserId = null, pendingToken = null, pollInterval = null, itiInstance = null, submitAttempts = 0, nextSubmitAllowed = 0;
+
+  function genId(len) {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let s = '';
+    for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+
+  // Intercept openModal to add view counter gate (only count actual lot detail views)
+  const _orig = openModal;
+  window.openModal = function(lot, baseIndex, skipPan) {
+    if (window.__leadAuthenticated) return _orig(lot, baseIndex, skipPan);
+    if (!lot) return _orig(lot, baseIndex, skipPan); // info/dashboard opens don't count
+    const count = parseInt(localStorage.getItem(VC_KEY) || '0');
+    if (count < FREE_VIEWS) {
+      localStorage.setItem(VC_KEY, count + 1);
+      return _orig(lot, baseIndex, skipPan);
+    }
+    pendingLot = { lot, baseIndex, skipPan };
+    showSignupModal();
+  };
+
+  // Intercept showDetailViewForLot (clicking a lot from inside the list → detail)
+  const _origDetail = showDetailViewForLot;
+  window.showDetailViewForLot = function(index, isSwitchingLots) {
+    if (window.__leadAuthenticated) return _origDetail(index, isSwitchingLots);
+    const count = parseInt(localStorage.getItem(VC_KEY) || '0');
+    if (count < FREE_VIEWS) {
+      localStorage.setItem(VC_KEY, count + 1);
+      return _origDetail(index, isSwitchingLots);
+    }
+    showSignupModal();
+  };
+
+  // Intercept open360ViewerInModal to close the 360 viewer bypass
+  const _orig360 = open360ViewerInModal;
+  window.open360ViewerInModal = function() {
+    if (window.__leadAuthenticated) return _orig360();
+    const count = parseInt(localStorage.getItem(VC_KEY) || '0');
+    if (count < FREE_VIEWS) {
+      localStorage.setItem(VC_KEY, count + 1);
+      return _orig360();
+    }
+    pendingLot = null;
+    showSignupModal();
+  };
+
+  function injectModal() {
+    if (document.getElementById('signupGateModal')) return;
+    const el = document.createElement('div');
+    el.id = 'signupGateModal';
+    el.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:20000;align-items:center;justify-content:center;padding:20px;';
+    el.innerHTML = `<div style="background:#fcfaf3;border-radius:16px;padding:40px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.4);font-family:'Barlow Condensed',Arial,sans-serif;">
+  <div id="sgFormView">
+    <p style="color:#8a8880;font-size:14px;text-align:center;margin-bottom:0;font-style:italic;">Para seguir explorando...</p>
+    <h2 style="color:#1a1a1a;font-size:32px;font-weight:700;text-align:center;margin:6px 0 8px;text-transform:uppercase;">CREA TU CUENTA</h2>
+    <p style="color:#8a8880;font-size:17px;text-align:center;margin-bottom:28px;line-height:1.4;">Te llegará tu link de acceso a tu WhatsApp.</p>
+    <div id="sgError" style="display:none;background:#fff3cd;border:1px solid #ffc107;color:#856404;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:14px;text-align:center;"></div>
+    <div style="margin-bottom:20px;">
+      <label style="display:block;color:#1a1a1a;font-size:14px;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Tu WhatsApp</label>
+      <input type="tel" id="sgPhone" style="width:100%;padding:16px;border:2px solid #e0ddd5;border-radius:8px;font-size:18px;font-family:'Barlow Condensed',sans-serif;background:#fff;box-sizing:border-box;">
+    </div>
+    <button id="sgSubmit" style="width:100%;padding:18px;background:var(--color-primary,#e91843);color:#fff;border:none;border-radius:8px;font-size:20px;font-weight:700;text-transform:uppercase;font-family:'Barlow Condensed',sans-serif;cursor:pointer;letter-spacing:0.5px;">¡Recibir Acceso!</button>
+  </div>
+  <div id="sgWaitView" style="display:none;text-align:center;padding:20px 0;">
+    <p style="font-size:48px;margin-bottom:16px;">📱</p>
+    <h3 style="font-size:24px;font-weight:700;color:#1a1a1a;margin-bottom:10px;">Revisa tu WhatsApp</h3>
+    <p id="sgPhoneDisplay" style="color:#1a1a1a;font-size:18px;font-weight:600;margin-bottom:10px;"></p>
+    <p style="color:#8a8880;font-size:16px;line-height:1.5;">Abre el link que te enviamos y regresa aquí.</p>
+    <p style="color:#b0aea6;font-size:12px;margin-top:8px;">*A veces tienes que enviar un &quot;.&quot; para habilitar el link.</p>
+    <button id="sgGoBack" style="margin-top:20px;background:none;border:none;color:#8a8880;font-size:14px;cursor:pointer;text-decoration:underline;font-family:'Barlow Condensed',sans-serif;">← Número equivocado</button>
+  </div>
+</div>`;
+    document.body.appendChild(el);
+    if (window.intlTelInput) initITI();
+    document.getElementById('sgSubmit').addEventListener('click', handleSubmit);
+    document.getElementById('sgGoBack').addEventListener('click', goBack);
+  }
+
+  function showSignupModal() {
+    injectModal();
+    document.getElementById('signupGateModal').style.display = 'flex';
+  }
+
+  function initITI() {
+    const input = document.getElementById('sgPhone');
+    if (!input || !window.intlTelInput || itiInstance) return;
+    itiInstance = window.intlTelInput(input, {
+      initialCountry: 'mx',
+      preferredCountries: ['mx', 'us', 'ar', 'es'],
+      separateDialCode: true,
+      utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js',
+    });
+  }
+
+  function formatPhone() {
+    if (!itiInstance) return document.getElementById('sgPhone').value.replace(/\D/g, '');
+    const d = itiInstance.getSelectedCountryData();
+    const raw = itiInstance.getNumber().replace(/\D/g, '');
+    if (d.iso2 === 'mx' && raw.startsWith('52') && !raw.startsWith('521')) return '521' + raw.substring(2);
+    if (d.iso2 === 'ar' && raw.startsWith('54') && !raw.startsWith('549')) return '549' + raw.substring(2);
+    return raw;
+  }
+
+  async function handleSubmit() {
+    const btn = document.getElementById('sgSubmit');
+    const errEl = document.getElementById('sgError');
+    errEl.style.display = 'none';
+    const now = Date.now();
+    if (now < nextSubmitAllowed) {
+      const rem = Math.ceil((nextSubmitAllowed - now) / 1000), m = Math.floor(rem / 60), s = rem % 60;
+      errEl.textContent = `Espera ${m > 0 ? m + 'm ' : ''}${s}s antes de intentar con otro número.`;
+      errEl.style.display = 'block';
+      return;
+    }
+    if (itiInstance && !itiInstance.isValidNumber()) {
+      errEl.textContent = 'Número inválido. Revisa los dígitos.';
+      errEl.style.display = 'block';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Procesando...';
+
+    await window.supabaseReady;
+    const sb = window.supabaseClient;
+    const phone = formatPhone();
+
+    try {
+      let { data: lead } = await sb
+        .from('leads')
+        .select('id,last_link_requested_at,link_request_count,client_id')
+        .eq('phone', phone)
+        .single();
+
+      let leadId;
+      if (lead) {
+        leadId = lead.id;
+        if (lead.last_link_requested_at && lead.link_request_count > 0) {
+          const secs = (Date.now() - new Date(lead.last_link_requested_at).getTime()) / 1000;
+          if (secs < 86400) {
+            const wait = Math.min(60 * Math.pow(2, lead.link_request_count - 1), 900);
+            if (secs < wait) {
+              const rem = Math.ceil(wait - secs), m = Math.floor(rem / 60), s = rem % 60;
+              errEl.textContent = `Por favor espera ${m > 0 ? m + 'm ' : ''}${s}s antes de solicitar otro link.`;
+              errEl.style.display = 'block';
+              btn.disabled = false;
+              btn.textContent = '¡Recibir Acceso!';
+              return;
+            }
+          }
+        }
+        const newCount = lead.last_link_requested_at && (Date.now() - new Date(lead.last_link_requested_at).getTime()) / 1000 < 86400
+          ? (lead.link_request_count || 0) + 1 : 1;
+        const upd = {
+          last_seen_at: new Date().toISOString(),
+          last_link_requested_at: new Date().toISOString(),
+          link_request_count: newCount
+        };
+        const cur = lead.client_id || [];
+        if (!cur.includes(CURRENT_CLIENT)) upd.client_id = [...cur, CURRENT_CLIENT];
+        await sb.from('leads').update(upd).eq('id', leadId);
+      } else {
+        const { data: nl, error: le } = await sb
+          .from('leads')
+          .insert({ phone, client_id: [CURRENT_CLIENT], last_link_requested_at: new Date().toISOString(), link_request_count: 1, campaign: '-' })
+          .select('id')
+          .single();
+        if (le) throw le;
+        leadId = nl.id;
+      }
+
+      pendingToken = genId(10);
+      browserId = genId(12);
+
+      const { error: te } = await sb.from('lead_tokens').insert({ lead_id: leadId, token: pendingToken });
+      if (te) throw te;
+
+      const { error: lre } = await sb.from('link_requests').insert({
+        phone,
+        token: pendingToken,
+        client: CURRENT_CLIENT,
+        status: 'pending',
+        browser_id: browserId
+      });
+      if (lre) throw lre;
+
+      const delays = [10, 30, 60];
+      nextSubmitAllowed = Date.now() + delays[Math.min(submitAttempts, 2)] * 1000;
+      submitAttempts++;
+      document.getElementById('sgPhoneDisplay').textContent = itiInstance ? itiInstance.getNumber() : phone;
+      document.getElementById('sgFormView').style.display = 'none';
+      document.getElementById('sgWaitView').style.display = 'block';
+      startPolling();
+    } catch (e) {
+      console.error('Signup error:', e);
+      errEl.textContent = 'Hubo un error. Por favor intenta de nuevo.';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '¡Recibir Acceso!';
+    }
+  }
+
+  function goBack() {
+    if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    document.getElementById('sgWaitView').style.display = 'none';
+    document.getElementById('sgFormView').style.display = 'block';
+    const btn = document.getElementById('sgSubmit');
+    btn.disabled = false;
+    btn.textContent = '¡Recibir Acceso!';
+  }
+
+  function startPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(async () => {
+      try {
+        const { data } = await window.supabaseClient
+          .from('link_requests')
+          .select('activated_at')
+          .eq('browser_id', browserId)
+          .not('activated_at', 'is', null)
+          .single();
+        if (data) {
+          clearInterval(pollInterval);
+          document.cookie = `lead_session_${CURRENT_CLIENT}=${pendingToken}; expires=${new Date(Date.now() + 365 * 864e5).toUTCString()}; path=/; SameSite=Lax`;
+          window.location.reload();
+        }
+      } catch (_) {}
+    }, 3000);
+  }
+})();
+</script>
 </body>
 </html>
