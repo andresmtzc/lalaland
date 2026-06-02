@@ -6143,6 +6143,10 @@ const detailPrice = document.getElementById('detailPrice');
 const detailAvailability = document.getElementById('detailAvailability');
 const headerLotNumber = document.getElementById('headerLotNumber');
 
+function usesFiniteLotList() {
+  return window.compareMode === true;
+}
+
 //scroll thumb for info page
 let infiniteScrollUpdater = null;
 let infoScrollUpdater = null;
@@ -6150,6 +6154,10 @@ let infoScrollUpdater = null;
 // ===== INFINITE SCROLLBAR (for lot list) =====
 function enableInfiniteScrollbar() {
   console.log('Enabling INFINITE scrollbar');
+  if (usesFiniteLotList()) {
+    enableInfoScrollbar();
+    return;
+  }
   const modalInfoEl = document.getElementById('modalInfo');
   const bar = document.getElementById('customScrollbar');
   const thumb = document.getElementById('customScrollthumb');
@@ -6352,6 +6360,11 @@ async function fetchLots() {
 }
 
 function updateLotsArray() {
+  if (usesFiniteLotList()) {
+    lots = baseLots.map(l => ({ ...l, clone: false }));
+    return;
+  }
+
   lots = [
     ...baseLots.slice(-cloneCount).map(l => ({ ...l, clone: true })),
     ...baseLots,
@@ -7800,7 +7813,7 @@ async function updateBulkPriceM2(oldPriceM2, newPriceM2) {
 function updateScrollbar() {
   const modal = document.getElementById('lotModal');
   
-  if (modal.classList.contains('info-mode')) {
+  if (modal.classList.contains('info-mode') || usesFiniteLotList()) {
     // Info page - use natural scrollbar
     if (infoScrollUpdater) {
       infoScrollUpdater();
@@ -7820,7 +7833,7 @@ function updateScrollbar() {
 function scrollToBaseIndex(baseIndex, smooth = true) {
   if (baseLots.length === 0) return;
   
-  const actualIndex = baseIndex + cloneCount;
+  const actualIndex = usesFiniteLotList() ? baseIndex : baseIndex + cloneCount;
   const target = modalInfo.querySelector(`.info-row[data-index="${actualIndex}"]`);
 
   if (target) {
@@ -7926,7 +7939,7 @@ function clampScroll() {
   const modal = document.getElementById('lotModal');
   
   // DON'T clamp if we're in info mode
-  if (modal.classList.contains('info-mode')) {
+  if (modal.classList.contains('info-mode') || usesFiniteLotList()) {
     return;
   }
   
@@ -7982,7 +7995,7 @@ function stopDragging() {
   const modal = document.getElementById('lotModal');
   
   // Only apply infinite scroll snapping in LOT mode
-  if (modal.classList.contains('info-mode')) {
+  if (modal.classList.contains('info-mode') || usesFiniteLotList()) {
     isDragging = false;
     isScrollbarDragging = false;
     customScrollthumb.classList.remove('active');
@@ -8065,7 +8078,7 @@ function handleContentDrag(e) {
 const modal = document.getElementById('lotModal');
 
   // Don't apply infinite scroll drag behavior in info mode
-  if (modal.classList.contains('info-mode')) {
+  if (modal.classList.contains('info-mode') || usesFiniteLotList()) {
     return; // Let the browser handle natural scrolling
   }
 
@@ -8116,7 +8129,7 @@ function handleScroll() {
   updateScrollbar();
   
   // Only run infinite scroll logic for LOT mode (not info mode)
-  if (modal.classList.contains('lot-mode') && scrollHandlerAttached) {
+  if (modal.classList.contains('lot-mode') && scrollHandlerAttached && !usesFiniteLotList()) {
     requestAnimationFrame(() => {
       highlightCenter();
       
@@ -8135,7 +8148,7 @@ modalInfo.addEventListener('scroll', handleScroll);
 modalInfo.addEventListener('wheel', (e) => {
   const modal = document.getElementById('lotModal');
   // Allow natural scrolling in INFO mode
-  if (modal.classList.contains('info-mode')) {
+  if (modal.classList.contains('info-mode') || usesFiniteLotList()) {
     return; // Let the browser handle scrolling naturally
   }
 
