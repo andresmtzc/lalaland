@@ -8167,16 +8167,48 @@ function handleScroll() {
 
 modalInfo.addEventListener('scroll', handleScroll);
 
+let lotWheelDeltaBuffer = 0;
+let lastLotWheelSnapAt = 0;
+const LOT_WHEEL_TRACKPAD_DELTA_MAX = 8;
+const LOT_WHEEL_TRACKPAD_THRESHOLD = 18;
+const LOT_WHEEL_TRACKPAD_COOLDOWN_MS = 120;
+
 modalInfo.addEventListener('wheel', (e) => {
   const modal = document.getElementById('lotModal');
   // Allow natural scrolling in INFO mode
   if (modal.classList.contains('info-mode') || usesFiniteLotList()) {
+    lotWheelDeltaBuffer = 0;
     return; // Let the browser handle scrolling naturally
   }
 
   // Only apply infinite scroll behavior in LOT mode
   e.preventDefault();
   if(isDragging || isScrollbarDragging) return;
+
+  const absDelta = Math.abs(e.deltaY);
+  if (!absDelta) return;
+
+  const looksLikeTrackpad = e.deltaMode === 0 && absDelta <= LOT_WHEEL_TRACKPAD_DELTA_MAX;
+  const now = performance.now();
+  let direction = 0;
+
+  if (looksLikeTrackpad) {
+    if (now - lastLotWheelSnapAt < LOT_WHEEL_TRACKPAD_COOLDOWN_MS) {
+      return;
+    }
+    lotWheelDeltaBuffer += e.deltaY;
+    if (Math.abs(lotWheelDeltaBuffer) < LOT_WHEEL_TRACKPAD_THRESHOLD) {
+      return;
+    }
+    direction = Math.sign(lotWheelDeltaBuffer);
+    lotWheelDeltaBuffer = 0;
+    lastLotWheelSnapAt = now;
+  } else {
+    lotWheelDeltaBuffer = 0;
+    direction = Math.sign(e.deltaY);
+  }
+
+  if (!direction) return;
 
   const rows = [...modalInfo.querySelectorAll('.info-row')];
   const containerRect = modalInfo.getBoundingClientRect();
@@ -8197,7 +8229,6 @@ modalInfo.addEventListener('wheel', (e) => {
   if (!closestRow) return;
   
   const currentIndex = parseInt(closestRow.dataset.index);
-  const direction = Math.sign(e.deltaY);
   let nextIndex = currentIndex + direction;
 
   if (nextIndex < 0) {
