@@ -9630,7 +9630,11 @@ function hideCalendlyEmbed() {
   'use strict';
 
   const PS = (window.__LL_PINS__ = window.__LL_PINS__ || {});
-  PS.markers = new Map();      // id -> { pin, marker }
+  PS.markers = new Map();      // clusterId -> { cluster, marker }
+  PS.pins = new Map();         // pinId -> pin
+  PS.clusters = [];
+  PS.clusterDistancePx = 40;
+  PS.activePinGroup = null;
   PS.addMode = false;
   PS._mapClickHandler = null;
   PS._isVisible = false;       // markers start hidden (button is now always visible)
@@ -9690,6 +9694,90 @@ function hideCalendlyEmbed() {
 
     return [ ((λ2 * 180) / Math.PI + 540) % 360 - 180, (φ2 * 180) / Math.PI ];
   }
+
+  function getPinClusterId(cluster) {
+    return `cluster-${cluster.representative.id}`;
+  }
+
+  function distancePx(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function clusterPinsByDistance(pins) {
+    if (!window.map || !Array.isArray(pins) || pins.length === 0) return [];
+
+    const projected = pins.map(pin => {
+      const point = map.project([pin.lng, pin.lat]);
+      return { pin, point };
+    });
+
+    const visited = new Set();
+    const clusters = [];
+
+    for (let i = 0; i < projected.length; i++) {
+      if (visited.has(i)) continue;
+      const queue = [i];
+      visited.add(i);
+      const memberIdxs = [];
+
+      while (queue.length) {
+        const current = queue.shift();
+        memberIdxs.push(current);
+        for (let j = 0; j < projected.length; j++) {
+          if (visited.has(j)) continue;
+          if (distancePx(projected[current].point, projected[j].point) <= PS.clusterDistancePx) {
+            visited.add(j);
+            queue.push(j);
+          }
+        }
+      }
+
+      const members = memberIdxs.map(idx => projected[idx].pin);
+      const avgLng = members.reduce((sum, pin) => sum + pin.lng, 0) / members.length;
+      const avgLat = members.reduce((sum, pin) => sum + pin.lat, 0) / members.length;
+      clusters.push({
+        representative: members[0],
+        members,
+        lng: avgLng,
+        lat: avgLat,
+        grouped: members.length > 1
+      });
+    }
+
+    return clusters;
+  }
+
+  PS.refreshClusters = function () {
+    PS.markers.forEach(({ marker }) => marker.remove());
+    PS.markers.clear();
+    PS._pinsAwaitingCone.clear();
+
+    const pins = Array.from(PS.pins.values()).sort((a, b) => a.id - b.id);
+    PS.clusters = clusterPinsByDistance(pins);
+    PS.clusters.forEach(cluster => PS.addMarker(cluster));
+  };
+
+  PS.findClusterForPin = function (pinId) {
+    return PS.clusters.find(cluster => cluster.members.some(pin => pin.id === pinId)) || null;
+  };
+
+  PS.getLatestPinPhotoUrl = async function (pinId) {
+    const { data: photos, error } = await window.supabaseClient
+      .from('pin_photos')
+      .select('id,url,created_at')
+      .eq('pin_id', pinId)
+      .eq('client_id', CURRENT_CLIENT)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Failed to fetch pin photos for viewer:', error);
+      return null;
+    }
+
+    return photos && photos.length ? photos[photos.length - 1].url : null;
+  };
 
 
 
@@ -9772,7 +9860,8 @@ function hideCalendlyEmbed() {
       return;
     }
 
-    PS.addMarker(data);
+    PS.pins.set(data.id, data);
+    PS.refreshClusters();
     toast('Pin added');
   };
 
@@ -9784,10 +9873,9 @@ function hideCalendlyEmbed() {
         .from('pins').delete().eq('id', pinId);
       if (error) { console.error(error); toast('Failed to delete pin'); return false; }
 
-      // Optimistic local cleanup (RT delete will also do this)
-      const rec = PS.markers.get(pinId);
-      if (rec) { rec.marker.remove(); PS.markers.delete(pinId); }
-
+      PS.pins.delete(pinId);
+      PS.pinLocks.delete(pinId);
+      PS.refreshClusters();
 
       toast('Pin deleted');
       return true;
@@ -9799,12 +9887,12 @@ function hideCalendlyEmbed() {
   };
 
   // ---- HTML marker (12px dot)
-  PS.markerElement = function () {
+  PS.markerElement = function (isGrouped) {
     const el = document.createElement('div');
     el.style.width = '10px';
     el.style.height = '10px';
     el.style.borderRadius = '50%';
-    el.style.background = 'transparent';
+    el.style.background = CONFIG.colors.primary;
     el.style.border = 'none';
     el.style.boxShadow = 'none';
     el.style.cursor = 'pointer';
@@ -9813,56 +9901,58 @@ function hideCalendlyEmbed() {
   };
 
   // ---- Add marker with reveal animation
-  PS.addMarker = function (pin) {
-    const updating = PS.markers.has(pin.id);
+  PS.addMarker = function (cluster) {
+    const clusterId = getPinClusterId(cluster);
+    const updating = PS.markers.has(clusterId);
     if (updating) {
-      PS.markers.get(pin.id).marker.setLngLat([pin.lng, pin.lat]);
-      PS.markers.get(pin.id).pin = pin;
+      PS.markers.get(clusterId).marker.setLngLat([cluster.lng, cluster.lat]);
+      PS.markers.get(clusterId).cluster = cluster;
       return;
     }
 
-    const el = PS.markerElement();
+    const el = PS.markerElement(cluster.grouped);
     const marker = new mapboxgl.Marker({ element: el, draggable: false })
-      .setLngLat([pin.lng, pin.lat]);
+      .setLngLat([cluster.lng, cluster.lat]);
 
-    PS.markers.set(pin.id, { pin, marker });
+    PS.markers.set(clusterId, { cluster, marker });
 
     // Add marker to map immediately if pins are already visible
     if (PS._isVisible && window.map) {
       marker.addTo(map);
     } else {
       // Initial load path: marker is not yet on map; _revealMarkers will add + fade-in.
-      PS._pinsAwaitingCone.add(pin.id);
+      PS._pinsAwaitingCone.add(clusterId);
     }
 
     marker.on('dragend', async () => {
+      if (cluster.grouped) return;
+      const pin = cluster.representative;
       const ll = marker.getLngLat();
       const { error } = await window.supabaseClient
         .from('pins').update({ lng: ll.lng, lat: ll.lat }).eq('id', pin.id);
       if (error) toast('Failed to save position'); else toast('Position saved');
-      const rec = PS.markers.get(pin.id);
-      if (rec) {
-        rec.pin.lng = ll.lng; rec.pin.lat = ll.lat;
-
+      const existingPin = PS.pins.get(pin.id);
+      if (existingPin) {
+        existingPin.lng = ll.lng;
+        existingPin.lat = ll.lat;
+        PS.pins.set(pin.id, existingPin);
       }
+      PS.refreshClusters();
     });
 
     el.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      PS.openPinInModal(pin);
+      PS.openPinInModal(cluster.members, 0);
     });
-
-
-
-    
   };
 
   // programmatic setter (update heading + persist + refresh cone)
   PS.setPinHeading = async function (pinId, newHeading, { persist = true } = {}) {
-    const rec = PS.markers.get(pinId);
+    const rec = PS.pins.get(pinId);
     if (!rec) return;
     const h = (Math.round(newHeading) % 360 + 360) % 360;
-    rec.pin.heading = h;
+    rec.heading = h;
+    PS.pins.set(pinId, rec);
     if (persist) {
       await window.supabaseReady;
       const { error } = await window.supabaseClient
@@ -9873,7 +9963,8 @@ function hideCalendlyEmbed() {
 
   // ---- Toggle pin lock state (enable/disable dragging)
   PS.togglePinLock = function (pinId) {
-    const rec = PS.markers.get(pinId);
+    const cluster = PS.findClusterForPin(pinId);
+    const rec = cluster ? PS.markers.get(getPinClusterId(cluster)) : null;
     if (!rec) return;
 
     // Default to locked (true) if not explicitly set
@@ -9915,17 +10006,18 @@ function hideCalendlyEmbed() {
     let revealedCount = 0;
     const totalToReveal = awaitingIds.size;
 
-    PS.markers.forEach(({ marker, pin }) => {
+    PS.markers.forEach(({ marker, cluster }) => {
       const el = marker.getElement();
       if (!el.parentNode) marker.addTo(map); // put it on the map
       el.style.display = 'block';
       el.style.opacity = '0';
       el.style.transition = 'opacity 600ms ease';
+      const clusterId = getPinClusterId(cluster);
 
       const onDone = () => {
         el.removeEventListener('transitionend', onDone);
-        if (awaitingIds.has(pin.id)) {
-          awaitingIds.delete(pin.id);
+        if (awaitingIds.has(clusterId)) {
+          awaitingIds.delete(clusterId);
         }
         revealedCount++;
         if (revealedCount === totalToReveal) {
@@ -9937,7 +10029,7 @@ function hideCalendlyEmbed() {
 
       // Safety: if transitionend never fires (browser quirk), force after 1s
       setTimeout(() => {
-        if (awaitingIds.has(pin.id)) onDone();
+        if (awaitingIds.has(clusterId)) onDone();
       }, 1000);
 
       // start fade-in
@@ -9948,12 +10040,17 @@ function hideCalendlyEmbed() {
   // ---- Open in your lot modal (with heading controls + DELETE button)
   // ---- Open in modal (full-width photo, no thumbnails)
 // ---- Open in modal (full-width photo, controls overlayed above photo)
-PS.openPinInModal = async function (pin) {
+PS.openPinInModal = async function (pinOrPins, startIndex = 0) {
   await window.supabaseReady;
   
   // Check if user is authenticated
   const { data: { session } } = await window.supabaseClient.auth.getSession();
   const isAuthenticated = !!(session && session.user);
+  const pins = Array.isArray(pinOrPins) ? pinOrPins.slice() : [pinOrPins];
+  if (!pins.length) return;
+  const currentIndex = Math.max(0, Math.min(startIndex, pins.length - 1));
+  const pin = pins[currentIndex];
+  PS.activePinGroup = { pins, index: currentIndex };
   
   document.getElementById('lotModal').classList.add('pin-mode');
 
@@ -9999,7 +10096,10 @@ PS.openPinInModal = async function (pin) {
   
   if (headerFracc) {
     headerFracc.textContent = pin.title || 'PIN';
-    headerLotNumber.style.display = 'none';
+    if (headerLotNumber) {
+      headerLotNumber.textContent = pins.length > 1 ? `${currentIndex + 1}/${pins.length}` : '';
+      headerLotNumber.style.display = pins.length > 1 ? 'inline' : 'none';
+    }
     
     // Make header editable if authenticated
     if (isAuthenticated) {
@@ -10045,7 +10145,7 @@ PS.openPinInModal = async function (pin) {
   // Show lock button if authenticated
   const lockButton = document.getElementById('pinLockButton');
   if (lockButton) {
-    if (isAuthenticated) {
+    if (isAuthenticated && pins.length === 1) {
       lockButton.style.display = 'block';
 
       // Set initial icon state based on current lock state (default to locked)
@@ -10119,11 +10219,22 @@ PS.openPinInModal = async function (pin) {
   }
 
   const latest = (photos && photos.length) ? photos[photos.length - 1] : null;
-  const currentHeading = (typeof pin.heading === 'number') ? pin.heading : 0;
-
   // Build UI: Only show photo when not authenticated, show controls when authenticated
   const container = document.createElement('div');
   container.style.padding = '0';
+  const navControlsHtml = pins.length > 1 ? `
+      <button id="ps-prev-${pin.id}" type="button"
+        style="position:absolute;left:12px;top:50%;transform:translateY(-50%);z-index:3;background:${CONFIG.colors.overlaySubtle};color:${CONFIG.colors.white};width:38px;height:38px;border:none;border-radius:999px;cursor:pointer;font-weight:700;font-size:22px;line-height:1;font-family:'${CONFIG.misc.fontFamily}', Arial, sans-serif;display:flex;align-items:center;justify-content:center;">
+        &lt;
+      </button>
+      <button id="ps-next-${pin.id}" type="button"
+        style="position:absolute;right:12px;top:50%;transform:translateY(-50%);z-index:3;background:${CONFIG.colors.overlaySubtle};color:${CONFIG.colors.white};width:38px;height:38px;border:none;border-radius:999px;cursor:pointer;font-weight:700;font-size:22px;line-height:1;font-family:'${CONFIG.misc.fontFamily}', Arial, sans-serif;display:flex;align-items:center;justify-content:center;">
+        &gt;
+      </button>
+      <div style="position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:3;background:${CONFIG.colors.overlaySubtle};color:${CONFIG.colors.white};padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;font-family:'${CONFIG.misc.fontFamily}', Arial, sans-serif;pointer-events:none;">
+        ${currentIndex + 1}/${pins.length}
+      </div>
+  ` : '';
   
   // Only show controls if authenticated
   const authControlsHtml = isAuthenticated ? `
@@ -10151,11 +10262,13 @@ PS.openPinInModal = async function (pin) {
       ${
         latest
           ? `<img id="ps-photo-${pin.id}" src="${latest.url}" alt=""
-                 style="display:block;width:100%;height:auto;border-radius:0;cursor:pointer;">`
+                 style="display:block;width:100%;height:min(68vh, 620px);object-fit:cover;object-position:center;border-radius:0;cursor:pointer;">`
           : isAuthenticated 
             ? `<div id="ps-photo-empty-${pin.id}" style="padding:48px 0;text-align:center;color:${CONFIG.colors.textLight};">No photo yet.</div>`
             : `<div id="ps-photo-empty-${pin.id}" style="padding:48px 0;text-align:center;color:${CONFIG.colors.textLight};">No photo available.</div>`
       }
+
+      ${navControlsHtml}
 
       <!-- Only show overlay with controls if authenticated -->
       ${isAuthenticated ? `
@@ -10189,7 +10302,17 @@ PS.openPinInModal = async function (pin) {
 
   // photo click => fullscreen viewer (available for all users)
   const imgEl = container.querySelector(`#ps-photo-${pin.id}`);
-  imgEl?.addEventListener('click', () => PS.showViewer(imgEl.src));
+  imgEl?.addEventListener('click', () => PS.showViewer(pins, currentIndex));
+  const prevBtn = container.querySelector(`#ps-prev-${pin.id}`);
+  const nextBtn = container.querySelector(`#ps-next-${pin.id}`);
+  prevBtn?.addEventListener('click', () => {
+    const nextIndex = (currentIndex - 1 + pins.length) % pins.length;
+    PS.openPinInModal(pins, nextIndex);
+  });
+  nextBtn?.addEventListener('click', () => {
+    const nextIndex = (currentIndex + 1) % pins.length;
+    PS.openPinInModal(pins, nextIndex);
+  });
 
   // Only set up event handlers if authenticated
   if (isAuthenticated) {
@@ -10198,7 +10321,14 @@ PS.openPinInModal = async function (pin) {
     delBtn.addEventListener('click', async () => {
       if (!confirm('Delete this pin?')) return;
       const ok = await PS.deletePin(pin.id);
-      if (ok) { try { closeModal(); } catch {} }
+      if (!ok) return;
+      const remainingPins = pins.filter(member => member.id !== pin.id);
+      if (remainingPins.length === 0) {
+        try { closeModal(); } catch {}
+        return;
+      }
+      const nextIndex = Math.min(currentIndex, remainingPins.length - 1);
+      PS.openPinInModal(remainingPins, nextIndex);
     });
 
     // upload: replace full-width image (no thumbnails)
@@ -10234,9 +10364,9 @@ PS.openPinInModal = async function (pin) {
         let img = container.querySelector(`#ps-photo-${pin.id}`);
         if (!img) {
           wrap.insertAdjacentHTML('afterbegin',
-            `<img id="ps-photo-${pin.id}" src="${url}" alt="" style="display:block;width:100%;height:auto;border-radius:0;cursor:pointer;">`);
+            `<img id="ps-photo-${pin.id}" src="${url}" alt="" style="display:block;width:100%;height:min(68vh, 620px);object-fit:cover;object-position:center;border-radius:0;cursor:pointer;">`);
           img = container.querySelector(`#ps-photo-${pin.id}`);
-          img.addEventListener('click', () => PS.showViewer(img.src));
+          img.addEventListener('click', () => PS.showViewer(pins, currentIndex));
           document.getElementById(`ps-photo-empty-${pin.id}`)?.remove();
         } else {
           img.src = url;
@@ -10262,16 +10392,78 @@ PS.openPinInModal = async function (pin) {
     document.body.insertAdjacentHTML('beforeend', `
       <div id="pinViewer" style="display:none;position:fixed;inset:0;background:${CONFIG.colors.overlayDark};z-index:10000;">
         <img id="pinViewerImg" style="max-width:90%;max-height:90%;position:absolute;top:50%;left:50%;transform:translate(-50%, -50%);" />
+        <div id="pinViewerEmpty" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%, -50%);color:${CONFIG.colors.white};font-family:'${CONFIG.misc.fontFamily}', Arial, sans-serif;font-size:16px;text-align:center;">No photo available.</div>
+        <button id="pinViewerPrev" style="display:none;position:absolute;left:16px;top:50%;transform:translateY(-50%);background:${CONFIG.colors.overlaySubtle};color:${CONFIG.colors.white};border:none;border-radius:999px;width:42px;height:42px;font-size:24px;cursor:pointer;">&lt;</button>
+        <button id="pinViewerNext" style="display:none;position:absolute;right:16px;top:50%;transform:translateY(-50%);background:${CONFIG.colors.overlaySubtle};color:${CONFIG.colors.white};border:none;border-radius:999px;width:42px;height:42px;font-size:24px;cursor:pointer;">&gt;</button>
+        <div id="pinViewerCounter" style="display:none;position:absolute;left:50%;bottom:18px;transform:translateX(-50%);background:${CONFIG.colors.overlaySubtle};color:${CONFIG.colors.white};padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;font-family:'${CONFIG.misc.fontFamily}', Arial, sans-serif;"></div>
         <button id="pinViewerClose" style="position:absolute;top:20px;right:20px;background:${CONFIG.colors.error};color:${CONFIG.colors.white};border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;">×</button>
       </div>`);
+    const viewer = document.getElementById('pinViewer');
     document.getElementById('pinViewerClose').addEventListener('click', () => {
-      document.getElementById('pinViewer').style.display = 'none';
+      viewer.style.display = 'none';
+    });
+    document.getElementById('pinViewerPrev').addEventListener('click', () => PS.stepViewer(-1));
+    document.getElementById('pinViewerNext').addEventListener('click', () => PS.stepViewer(1));
+    viewer.addEventListener('click', (e) => {
+      if (e.target === viewer) viewer.style.display = 'none';
     });
   };
-  PS.showViewer = function (url) {
+
+  PS.renderViewer = async function () {
     PS.ensureViewer();
-    document.getElementById('pinViewerImg').src = url;
+    const state = PS.viewerState;
+    if (!state || !state.pins || !state.pins.length) return;
+
+    const img = document.getElementById('pinViewerImg');
+    const empty = document.getElementById('pinViewerEmpty');
+    const prev = document.getElementById('pinViewerPrev');
+    const next = document.getElementById('pinViewerNext');
+    const counter = document.getElementById('pinViewerCounter');
+    const pin = state.pins[state.index];
+    const url = await PS.getLatestPinPhotoUrl(pin.id);
+
+    prev.style.display = state.pins.length > 1 ? 'block' : 'none';
+    next.style.display = state.pins.length > 1 ? 'block' : 'none';
+    counter.style.display = state.pins.length > 1 ? 'block' : 'none';
+    counter.textContent = `${state.index + 1}/${state.pins.length}`;
+
+    if (url) {
+      img.src = url;
+      img.style.display = 'block';
+      empty.style.display = 'none';
+    } else {
+      img.removeAttribute('src');
+      img.style.display = 'none';
+      empty.style.display = 'block';
+    }
+  };
+
+  PS.stepViewer = function (direction) {
+    const state = PS.viewerState;
+    if (!state || !state.pins || state.pins.length < 2) return;
+    state.index = (state.index + direction + state.pins.length) % state.pins.length;
+    PS.viewerState = state;
+    PS.renderViewer();
+  };
+
+  PS.showViewer = function (pinOrPins, startIndex = 0) {
+    PS.ensureViewer();
+    const pins = Array.isArray(pinOrPins) ? pinOrPins.slice() : [{ id: null, url: pinOrPins }];
+    PS.viewerState = {
+      pins,
+      index: Math.max(0, Math.min(startIndex, pins.length - 1))
+    };
     document.getElementById('pinViewer').style.display = 'block';
+    if (pins.length === 1 && pins[0].url && !pins[0].id) {
+      document.getElementById('pinViewerImg').src = pins[0].url;
+      document.getElementById('pinViewerImg').style.display = 'block';
+      document.getElementById('pinViewerEmpty').style.display = 'none';
+      document.getElementById('pinViewerPrev').style.display = 'none';
+      document.getElementById('pinViewerNext').style.display = 'none';
+      document.getElementById('pinViewerCounter').style.display = 'none';
+      return;
+    }
+    PS.renderViewer();
   };
 
   // ---- Load + realtime
@@ -10307,34 +10499,29 @@ PS.openPinInModal = async function (pin) {
 
     console.log('✅ Successfully loaded', data?.length || 0, 'pins');
 
+    PS.pins.clear();
     (data || []).forEach(p => {
-      PS.addMarker(p); // reveal animation deferred
+      PS.pins.set(p.id, p);
     });
+    PS.refreshClusters();
   };
 
   PS.subscribe = function () {
     window.supabaseClient
       .channel('pins-rt')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pins', filter: `client_id=eq.${CURRENT_CLIENT}` }, (payload) => {
-        PS.addMarker(payload.new); // for live inserts
+        PS.pins.set(payload.new.id, payload.new);
+        PS.refreshClusters();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pins', filter: `client_id=eq.${CURRENT_CLIENT}` }, (payload) => {
-        const rec = PS.markers.get(payload.new.id);
-        if (!rec) return;
-        const { lng, lat, heading } = payload.new;
-        if (typeof lng === 'number' && typeof lat === 'number') {
-          rec.marker.setLngLat([lng, lat]);
-          rec.pin.lng = lng; rec.pin.lat = lat;
-        }
-        if (typeof heading === 'number') {
-          rec.pin.heading = ((heading % 360) + 360) % 360;
-        }
-
+        const existing = PS.pins.get(payload.new.id) || {};
+        PS.pins.set(payload.new.id, { ...existing, ...payload.new });
+        PS.refreshClusters();
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pins', filter: `client_id=eq.${CURRENT_CLIENT}` }, (payload) => {
-        const rec = PS.markers.get(payload.old.id);
-        if (rec) { rec.marker.remove(); PS.markers.delete(payload.old.id); }
-
+        PS.pins.delete(payload.old.id);
+        PS.pinLocks.delete(payload.old.id);
+        PS.refreshClusters();
       })
       .subscribe();
   };
